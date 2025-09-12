@@ -1,0 +1,13 @@
+[workspace]
+exclude = [
+  "scripts/build-protos",
+]
+members = [
+  "crates/boon",
+  "crates/boon-cli",
+  "crates/boon-proto",
+]
+resolver = "2"
+
+[workspace.dependencies]
+boon-proto = { path = "crates/boon-proto" }
