@@ -10,4 +10,5 @@ members = [
 resolver = "2"
 
 [workspace.dependencies]
+boon = { path = "crates/boon" }
 boon-proto = { path = "crates/boon-proto" }

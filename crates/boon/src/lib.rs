@@ -1,2 +1,7 @@
-// Import generated code
-use boon_proto::generated;
+// Parser module with convenience re-exports
+pub mod parser;
+pub use parser::{Parser, ParserError};
+
+// Reader module with convenience re-exports
+pub mod reader;
+pub use reader::{ReadError, Reader};

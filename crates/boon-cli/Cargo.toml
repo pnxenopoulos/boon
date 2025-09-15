@@ -4,4 +4,11 @@ version = "0.0.0"
 edition = "2024"
 
 [dependencies]
-clap = "4.5.47"
+anyhow = "1.0.99"
+clap = { version = "4.5.47", features = ["derive"] }
+
+boon = { package = "boon-deadlock", path = "../boon" }
+
+[[bin]]
+name = "boon"
+path = "src/main.rs"
