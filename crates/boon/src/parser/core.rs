@@ -2,6 +2,7 @@
 //! - verify: checks magic and advances past 8-byte prologue
 //! - prologue: consume messages until CDemoSyncTick; store CDemoFileHeader if seen.
 
+use std::convert::TryFrom;
 use std::path::Path;
 
 use super::ParserError;
@@ -24,6 +25,8 @@ pub struct Parser {
     prologue_completed: bool,
     /// The most recent CDemoFileHeader encountered during `prologue()`.
     pub file_header: Option<pb::CDemoFileHeader>,
+    /// The last CDemoFileInfo encountered while parsing.
+    pub file_info: Option<pb::CDemoFileInfo>,
 }
 
 impl Parser {
@@ -35,6 +38,7 @@ impl Parser {
             start: 0,
             prologue_completed: false,
             file_header: None,
+            file_info: None,
         })
     }
 
@@ -45,6 +49,7 @@ impl Parser {
             start: 0,
             prologue_completed: false,
             file_header: None,
+            file_info: None,
         }
     }
 
@@ -73,10 +78,7 @@ impl Parser {
 
     /// Run the "prologue" phase:
     /// iterate framed messages (cmd, tick, size) starting at `start`
-    /// until we hit `EDemoCommands::DemSyncTick`.
-    ///
-    /// - If we see `EDemoCommands::DemFileHeader`, decode and keep it.
-    /// - Handles Snappy compression when `DemIsCompressed` flag bit is set.
+    /// until we hit `EDemoCommands::DemFileHeader`.
     pub fn prologue(&mut self) -> Result<(), ParserError> {
         // Ensure we've verified the header
         if self.start < 16 {
@@ -89,28 +91,19 @@ impl Parser {
         while let Some((cmd_raw, _tick, size)) = r.read_message_header()? {
             let payload = r.read_message_bytes(size)?;
 
-            // Separate "is compressed" flag from command id
             let cmd_i32 = cmd_raw as i32;
             let flag = pb::EDemoCommands::DemIsCompressed as i32;
             let id = cmd_i32 & !flag;
 
-            let bytes = payload;
-
-            if let Some(kind) = pb::EDemoCommands::from_i32(id) {
-                match kind {
-                    pb::EDemoCommands::DemFileHeader => {
-                        if let Ok(hdr) = pb::CDemoFileHeader::decode(bytes.as_slice()) {
-                            self.file_header = Some(hdr);
-                        }
-                    }
-                    pb::EDemoCommands::DemSyncTick => {
-                        self.prologue_completed = true;
-                        self.start = r.position(); // where to continue from later
-                        break;
-                    }
-                    _ => { /* ignore other commands during prologue */ }
+            if let Ok(pb::EDemoCommands::DemFileHeader) = pb::EDemoCommands::try_from(id) {
+                if let Ok(hdr) = pb::CDemoFileHeader::decode(payload.as_slice()) {
+                    self.file_header = Some(hdr);
                 }
+                self.prologue_completed = true;
+                self.start = r.position();
+                break;
             }
+            // else: ignore other commands until FileHeader
         }
 
         Ok(())
@@ -119,6 +112,39 @@ impl Parser {
     /// Has the parser completed its prologue phase (i.e., reached CDemoSyncTick)?
     pub fn prologue_completed(&self) -> bool {
         self.prologue_completed
+    }
+
+    /// Scan framed messages (starting at `start`) until we find `CDemoFileInfo`.
+    /// Returns the decoded info if found and also stores it in `self.file_info`.
+    pub fn read_demo_file_info(&mut self) -> Result<Option<pb::CDemoFileInfo>, ParserError> {
+        // Ensure header verified so `start` is set (usually 16)
+        if self.start < 16 {
+            self.verify()?;
+        }
+
+        let mut r = Reader::new(&self.data);
+        r.seek(self.start)?;
+
+        while let Some((cmd_raw, _tick, size)) = r.read_message_header()? {
+            let payload = r.read_message_bytes(size)?;
+
+            // mask off compression bit
+            let id = (cmd_raw as i32) & !(pb::EDemoCommands::DemIsCompressed as i32);
+
+            match pb::EDemoCommands::try_from(id) {
+                Ok(pb::EDemoCommands::DemFileInfo) => {
+                    let info = pb::CDemoFileInfo::decode(payload.as_slice())
+                        .map_err(|_| ParserError::Decode("CDemoFileInfo".to_string()))?;
+                    self.file_info = Some(info.clone());
+                    return Ok(Some(info));
+                }
+                _ => {
+                    // ignore others (including unknown enum values) and keep scanning
+                }
+            }
+        }
+
+        Ok(None) // reached EOF without FileInfo
     }
 }
 
@@ -173,29 +199,21 @@ mod tests {
     }
 
     #[test]
-    fn prologue_collects_header_and_stops_at_sync() {
-        // Build: magic + prologue + [FileHeader frame] + [SyncTick frame]
+    fn prologue_stops_at_file_header() {
         let mut buf = Vec::new();
         buf.extend_from_slice(&MAGIC);
         buf.extend_from_slice(&[0; 8]);
 
-        // FileHeader payload (default)
         let fh = pb::CDemoFileHeader::default();
         let fh_bytes = fh.encode_to_vec();
 
         let file_header_id = pb::EDemoCommands::DemFileHeader as i32 as u32;
-        let sync_id = pb::EDemoCommands::DemSyncTick as i32 as u32;
 
-        // FileHeader frame: cmd, tick=0, size=len, payload
+        // FileHeader frame only
         buf.extend(enc_var_u32(file_header_id));
         buf.extend(enc_var_u32(0));
         buf.extend(enc_var_u32(fh_bytes.len() as u32));
         buf.extend_from_slice(&fh_bytes);
-
-        // SyncTick frame: cmd, tick=0, size=0, no payload
-        buf.extend(enc_var_u32(sync_id));
-        buf.extend(enc_var_u32(0));
-        buf.extend(enc_var_u32(0));
 
         let mut p = Parser::from_bytes(buf);
         p.verify().unwrap();
@@ -203,5 +221,46 @@ mod tests {
 
         assert!(p.prologue_completed());
         assert!(p.file_header.is_some());
+    }
+
+    #[test]
+    fn read_demo_file_info_finds_and_stores() {
+        use prost::Message;
+
+        // Build: magic + prologue + [FileHeader] + [FileInfo]
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&MAGIC);
+        buf.extend_from_slice(&[0; 8]);
+
+        let fh = pb::CDemoFileHeader::default();
+        let fh_bytes = fh.encode_to_vec();
+        let fi = pb::CDemoFileInfo::default();
+        let fi_bytes = fi.encode_to_vec();
+
+        let file_header_id = pb::EDemoCommands::DemFileHeader as i32 as u32;
+        let file_info_id = pb::EDemoCommands::DemFileInfo as i32 as u32;
+
+        // header frame
+        buf.extend(enc_var_u32(file_header_id));
+        buf.extend(enc_var_u32(0));
+        buf.extend(enc_var_u32(fh_bytes.len() as u32));
+        buf.extend_from_slice(&fh_bytes);
+
+        // info frame
+        buf.extend(enc_var_u32(file_info_id));
+        buf.extend(enc_var_u32(0));
+        buf.extend(enc_var_u32(fi_bytes.len() as u32));
+        buf.extend_from_slice(&fi_bytes);
+
+        let mut p = Parser::from_bytes(buf);
+        p.verify().unwrap();
+
+        let got = p.read_demo_file_info().unwrap();
+        assert!(got.is_some());
+        assert!(p.file_info.is_some());
+
+        // prologue state unchanged
+        assert!(!p.prologue_completed());
+        assert_eq!(p.start, 16);
     }
 }

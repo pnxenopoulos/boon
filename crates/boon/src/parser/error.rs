@@ -18,4 +18,8 @@ pub enum ParserError {
     /// Wrong magic header. (Expected `PBDEMS2\0`.)
     #[error("wrong magic: got {0:02X?}")]
     WrongMagic([u8; 8]),
+
+    /// Errors while decoding.
+    #[error("Error while decoding {0}")]
+    Decode(String),
 }
