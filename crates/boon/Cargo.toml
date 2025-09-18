@@ -8,6 +8,7 @@ description = "Boon is a Deadlock demo / replay file parser"
 anyhow = "1.0.99"
 bytes = "1.10.1"
 prost = "0.14"
+snap = "1.1.1"
 thiserror = "2.0.16"
 tokio = { version = "1.47.1", features = ["full"] }
 

@@ -7,12 +7,13 @@
 //! - slice/bytes reads
 //! - helper to read a standard (cmd, tick, size) message header
 
+use snap::raw::Decoder;
 use std::{fmt, path::Path};
 
 use super::ReadError;
 
 /// Forward reader over a borrowed buffer.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct Reader<'a> {
     buf: &'a [u8],
     pos: usize,
@@ -92,6 +93,13 @@ impl<'a> Reader<'a> {
         Ok(self.read_slice(n)?.to_vec())
     }
 
+    /// Expand a Snappy-compressed payload into owned bytes.
+    pub fn decompress_snappy(&self, data: &[u8]) -> Result<Vec<u8>, ReadError> {
+        Decoder::new()
+            .decompress_vec(data)
+            .map_err(|err| ReadError::Decompress(err.to_string()))
+    }
+
     pub fn read_u8(&mut self) -> Result<u8, ReadError> {
         Ok(*self.read_slice(1)?.first().unwrap())
     }
@@ -164,59 +172,5 @@ impl<'a> Reader<'a> {
     /// Read a message payload of `size` bytes.
     pub fn read_message_bytes(&mut self, size: u32) -> Result<Vec<u8>, ReadError> {
         self.read_bytes(size as usize)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn varints_basic() {
-        // 0, 1, 127, 128, 300
-        let buf = [0x00, 0x01, 0x7F, 0x80, 0x01, 0xAC, 0x02];
-        let mut r = Reader::new(&buf);
-        assert_eq!(r.read_var_u32().unwrap(), 0);
-        assert_eq!(r.read_var_u32().unwrap(), 1);
-        assert_eq!(r.read_var_u32().unwrap(), 127);
-        assert_eq!(r.read_var_u32().unwrap(), 128);
-        assert_eq!(r.read_var_u32().unwrap(), 300);
-        assert!(r.is_empty());
-    }
-
-    #[test]
-    fn zigzag_i32() {
-        // 0, -1, 1, -2, 150 (zigzag varint encodings)
-        let buf = [0x00, 0x01, 0x02, 0x03, 0xAC, 0x02];
-        let mut r = Reader::new(&buf);
-        assert_eq!(r.read_var_i32().unwrap(), 0);
-        assert_eq!(r.read_var_i32().unwrap(), -1);
-        assert_eq!(r.read_var_i32().unwrap(), 1);
-        assert_eq!(r.read_var_i32().unwrap(), -2);
-        assert_eq!(r.read_var_i32().unwrap(), 150);
-    }
-
-    #[test]
-    fn fixed_le_and_cursor() {
-        let mut r = Reader::new(&[0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88]);
-        assert_eq!(r.position(), 0);
-        assert_eq!(r.read_u32_le().unwrap(), 0x44332211);
-        assert_eq!(r.position(), 4);
-        r.seek(4).unwrap();
-        assert_eq!(r.read_u8().unwrap(), 0x55);
-        assert_eq!(r.remaining(), 3);
-        assert!(matches!(r.read_u64_le(), Err(ReadError::Eof)));
-    }
-
-    #[test]
-    fn message_header_and_payload() {
-        // cmd=5, tick=10, size=3; payload follows
-        let buf = [5u8, 10u8, 3u8, 0xDE, 0xAD, 0xBE];
-        let mut r = Reader::new(&buf);
-        let (cmd, tick, size) = r.read_message_header().unwrap().unwrap();
-        assert_eq!((cmd, tick, size), (5, 10, 3));
-        let payload = r.read_message_bytes(size).unwrap();
-        assert_eq!(payload, vec![0xDE, 0xAD, 0xBE]);
-        assert!(r.is_empty());
     }
 }

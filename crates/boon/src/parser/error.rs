@@ -22,4 +22,12 @@ pub enum ParserError {
     /// Errors while decoding.
     #[error("Error while decoding {0}")]
     Decode(String),
+
+    /// Unknown command encountered.
+    #[error("Unknown command {0}")]
+    UnknownCmd(i32),
+
+    /// Error while decompressing.
+    #[error("Error while decompressing {0}")]
+    Decompression(String)
 }
