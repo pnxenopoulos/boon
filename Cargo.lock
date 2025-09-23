@@ -101,6 +101,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2261d10cca569e4643e526d8dc2e62e433cc8aba21ab764233731f8d369bf394"
 
 [[package]]
+name = "bitter"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b66902ef37c92662310c6a02df613caf898133c12b7d121ef3c2f1d19eebabb5"
+
+[[package]]
 name = "boon-cli"
 version = "0.0.0"
 dependencies = [
@@ -116,6 +122,7 @@ name = "boon-deadlock"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "bitter",
  "boon-proto",
  "bytes",
  "prost",

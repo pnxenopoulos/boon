@@ -1,176 +1,156 @@
 //! A compact byte reader for Source-like demo files.
-//!
-//! Features:
-//! - forward-only cursor over a byte slice
-//! - varint (LEB128) u32/u64, zigzag i32
-//! - little-endian fixed-width reads (u8/u32/u64)
-//! - slice/bytes reads
-//! - helper to read a standard (cmd, tick, size) message header
-
-use snap::raw::Decoder;
-use std::{fmt, path::Path};
+use bitter::{BitReader, LittleEndianReader};
 
 use super::ReadError;
 
-/// Forward reader over a borrowed buffer.
-#[derive(Clone)]
-pub struct Reader<'a> {
-    buf: &'a [u8],
-    pos: usize,
-}
+/// Counts
+const UBV_COUNT: [u8; 4] = [0, 4, 8, 28];
 
-impl<'a> fmt::Debug for Reader<'a> {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Reader")
-            .field("len", &self.buf.len())
-            .field("pos", &self.pos)
-            .finish()
-    }
+/// Forward reader over a borrowed buffer.
+#[derive(Debug, Clone)]
+pub struct Reader<'a> {
+    buffer: &'a [u8],
+    little_endian_reader: LittleEndianReader<'a>,
+    position: usize,
 }
 
 impl<'a> Reader<'a> {
-    /// Create a reader over `buf`.
-    pub fn new(buf: &'a [u8]) -> Self {
-        Self { buf, pos: 0 }
-    }
-
-    /// Convenience: read a whole file; you keep the Vec alive, then borrow it:
-    ///
-    /// ```no_run
-    /// # use boon::reader::Reader;
-    /// # fn demo() -> Result<(), Box<dyn std::error::Error>> {
-    /// let data = Reader::load_file("path/to/demo.dem")?;
-    /// let mut r = Reader::new(&data);
-    /// # Ok(()) }
-    /// ```
-    pub fn load_file(path: impl AsRef<Path>) -> Result<Vec<u8>, ReadError> {
-        Ok(std::fs::read(path)?)
-    }
-
-    /// Cursor position (bytes consumed).
-    #[inline]
-    pub fn position(&self) -> usize {
-        self.pos
-    }
-    /// Bytes remaining.
-    #[inline]
-    pub fn remaining(&self) -> usize {
-        self.buf.len().saturating_sub(self.pos)
-    }
-    /// True if nothing left to read.
-    #[inline]
-    pub fn is_empty(&self) -> bool {
-        self.remaining() == 0
-    }
-
-    /// Seek to absolute `pos`.
-    pub fn seek(&mut self, pos: usize) -> Result<(), ReadError> {
-        if pos > self.buf.len() {
-            return Err(ReadError::Eof);
+    /// Create a reader over `buffer`.
+    pub fn new(buffer: &'a [u8]) -> Self {
+        Self {
+            buffer,
+            little_endian_reader: LittleEndianReader::new(buffer),
+            position: 0,
         }
-        self.pos = pos;
+    }
+
+    #[inline]
+    pub fn reset(&mut self) {
+        self.little_endian_reader = LittleEndianReader::new(self.buffer);
+        self.position = 0;
+    }
+
+    #[inline]
+    pub fn bytes_remaining(&self) -> usize {
+        self.little_endian_reader.bytes_remaining()
+    }
+
+    #[inline]
+    pub fn has_no_more_bytes(&self) -> bool {
+        self.bytes_remaining() == 0
+    }
+
+    #[inline]
+    pub fn refill(&mut self) {
+        self.little_endian_reader.refill_lookahead();
+    }
+
+    #[inline]
+    pub fn align_to_byte(&mut self) {
+        let mis = self.position & 7; // bits past the last boundary
+        if mis != 0 {
+            let need = (8 - mis) as u32; // bits to consume to reach the boundary
+            self.little_endian_reader.consume(need);
+            self.position += need as usize;
+        }
+    }
+
+    #[inline]
+    pub fn read_bits(&mut self, n: u32) -> u32 {
+        self.refill();
+        self.read_bits_no_refill(n)
+    }
+
+    #[inline]
+    pub fn read_bits_no_refill(&mut self, n: u32) -> u32 {
+        let bits = self.little_endian_reader.peek(n);
+        self.little_endian_reader.consume(n);
+        self.position += n as usize; // keep position in sync
+        bits as u32
+    }
+
+    #[inline]
+    pub fn read_bytes(&mut self, n: u32) -> Vec<u8> {
+        let mut bytes = vec![0; n as usize];
+        self.little_endian_reader.read_bytes(&mut bytes);
+        self.position += (n as usize) * 8; // 8 bits per byte
+        bytes
+    }
+
+    #[inline]
+    pub fn skip_bytes(&mut self, n: usize) -> Result<(), ReadError> {
+        let mut bits_left: u32 = (n as u32) * 8;
+
+        while bits_left > 0 {
+            let mut la = self.little_endian_reader.lookahead_bits();
+            if la == 0 {
+                // Pull more bits into lookahead; if none remain, it's EOF.
+                if self.little_endian_reader.bytes_remaining() == 0 {
+                    return Err(ReadError::Eof);
+                }
+                self.little_endian_reader.refill_lookahead();
+                la = self.little_endian_reader.lookahead_bits();
+                if la == 0 {
+                    // Defensive: if refill didn't add bits, treat as EOF.
+                    return Err(ReadError::Eof);
+                }
+            }
+
+            let step = la.min(bits_left);
+            self.little_endian_reader.consume(step);
+            self.position += step as usize;
+            bits_left -= step;
+        }
+
         Ok(())
     }
 
-    /// Skip `n` bytes.
-    pub fn skip(&mut self, n: usize) -> Result<(), ReadError> {
-        self.seek(self.pos.checked_add(n).ok_or(ReadError::Eof)?)
+    #[inline]
+    pub fn is_byte_aligned(&self) -> bool {
+        (self.position & 7) == 0
     }
 
-    /// Read exactly `n` bytes as a borrowed slice.
-    pub fn read_slice(&mut self, n: usize) -> Result<&'a [u8], ReadError> {
-        let end = self.pos.checked_add(n).ok_or(ReadError::Eof)?;
-        if end > self.buf.len() {
-            return Err(ReadError::Eof);
+    #[inline]
+    pub fn read_ubit_var(&mut self) -> u32 {
+        self.refill();
+
+        let prefix = self.read_bits_no_refill(6);
+        let prefix_class = prefix >> 4;
+        if prefix == 0 {
+            return prefix_class;
         }
-        let out = &self.buf[self.pos..end];
-        self.pos = end;
-        Ok(out)
+        (prefix & 15) | (self.read_bits_no_refill(UBV_COUNT[prefix_class as usize] as u32) << 4)
     }
 
-    /// Read exactly `n` bytes, owned.
-    pub fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ReadError> {
-        Ok(self.read_slice(n)?.to_vec())
-    }
+    #[inline]
+    pub fn read_var_u32(&mut self) -> u32 {
+        let mut x: u32 = 0;
+        let mut y: u32 = 0;
+        self.refill();
+        loop {
+            let byte = self.read_bits_no_refill(8);
 
-    /// Expand a Snappy-compressed payload into owned bytes.
-    pub fn decompress_snappy(&self, data: &[u8]) -> Result<Vec<u8>, ReadError> {
-        Decoder::new()
-            .decompress_vec(data)
-            .map_err(|err| ReadError::Decompress(err.to_string()))
-    }
+            x |= (byte & 0x7F) << y;
+            y += 7;
 
-    pub fn read_u8(&mut self) -> Result<u8, ReadError> {
-        Ok(*self.read_slice(1)?.first().unwrap())
-    }
-    pub fn read_u32_le(&mut self) -> Result<u32, ReadError> {
-        let s = self.read_slice(4)?;
-        Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-    }
-    pub fn read_u64_le(&mut self) -> Result<u64, ReadError> {
-        let s = self.read_slice(8)?;
-        Ok(u64::from_le_bytes([
-            s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7],
-        ]))
-    }
-
-    /// Decode LEB128 varint (u32).
-    pub fn read_var_u32(&mut self) -> Result<u32, ReadError> {
-        let mut out: u32 = 0;
-        let mut shift = 0u32;
-        while shift < 35 {
-            let b = self.read_u8()?;
-            out |= ((b & 0x7F) as u32) << shift;
-            if (b & 0x80) == 0 {
-                return Ok(out);
+            if (byte & 0x80) == 0 || y == 35 {
+                return x;
             }
-            shift += 7;
         }
-        Err(ReadError::VarintTooLong)
     }
 
-    /// Decode LEB128 varint (u64).
-    pub fn read_var_u64(&mut self) -> Result<u64, ReadError> {
-        let mut out: u64 = 0;
-        let mut shift = 0u32;
-        while shift < 70 {
-            let b = self.read_u8()?;
-            out |= ((b & 0x7F) as u64) << shift;
-            if (b & 0x80) == 0 {
-                return Ok(out);
-            }
-            shift += 7;
-        }
-        Err(ReadError::VarintTooLong)
-    }
-
-    /// Zigzag decode signed i32 from an unsigned varint.
-    pub fn read_var_i32(&mut self) -> Result<i32, ReadError> {
-        let u = self.read_var_u32()?;
-        Ok(((u >> 1) as i32) ^ -((u & 1) as i32))
-    }
-
-    /// Read boolean from one byte (non-zero = true).
-    pub fn read_bool(&mut self) -> Result<bool, ReadError> {
-        Ok(self.read_u8()? != 0)
-    }
-
-    // Demo message helpers
-
-    /// Read the standard demo header triple: `(cmd, tick, size)` as varints.
-    /// Returns `Ok(None)` on clean EOF (no bytes remaining).
+    /// Demo-specific methods
+    #[inline]
     pub fn read_message_header(&mut self) -> Result<Option<(u32, u32, u32)>, ReadError> {
-        if self.is_empty() {
+        // If no more bytes, return None
+        if self.has_no_more_bytes() {
             return Ok(None);
         }
-        let cmd = self.read_var_u32()?;
-        let tick = self.read_var_u32()?;
-        let size = self.read_var_u32()?;
-        Ok(Some((cmd, tick, size)))
-    }
 
-    /// Read a message payload of `size` bytes.
-    pub fn read_message_bytes(&mut self, size: u32) -> Result<Vec<u8>, ReadError> {
-        self.read_bytes(size as usize)
+        // Read the command, tick, and its size
+        let cmd = self.read_var_u32();
+        let tick = self.read_var_u32();
+        let size = self.read_var_u32();
+        Ok(Some((cmd, tick, size)))
     }
 }

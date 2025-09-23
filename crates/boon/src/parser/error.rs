@@ -11,6 +11,10 @@ pub enum ParserError {
     #[error(transparent)]
     Read(#[from] crate::reader::ReadError),
 
+    /// Error while decoding (prost)
+    #[error(transparent)]
+    Prost(#[from] prost::DecodeError),
+
     /// File too small to contain the required header.
     #[error("file too small: {0} bytes")]
     TooSmall(usize),
@@ -29,5 +33,5 @@ pub enum ParserError {
 
     /// Error while decompressing.
     #[error("Error while decompressing {0}")]
-    Decompression(String)
+    Decompression(String),
 }
