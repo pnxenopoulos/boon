@@ -103,7 +103,7 @@ impl Parser {
         Ok(meta)
     }
 
-    pub fn scan(&self) -> Result<Vec<(i32, i32, u32, bool)>, ParserError> {
+    pub fn scan_messages(&self) -> Result<Vec<(i32, i32, u32, bool)>, ParserError> {
         self.verify()?;
         let mut r = Reader::new(&self.buffer);
         r.align_to_byte();
@@ -120,13 +120,15 @@ impl Parser {
         Ok(out)
     }
 
-    pub fn test_parse(&self) -> Result<(), ParserError> {
+    pub fn scan_packet_events(&self) -> Result<Vec<(i32, String)>, ParserError> {
         self.verify()?;
         let mut r = Reader::new(&self.buffer);
         r.align_to_byte();
-        let _ = r.skip_bytes(16);
+        let _ = r.skip_bytes(16); // magic + prologue
 
-        while let Some((cmd_raw, _tick, size)) = r.read_message_header()? {
+        let mut out: Vec<(i32, String)> = Vec::new();
+
+        while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
             let compressed = Self::is_compressed(cmd_raw);
             let cmd = Self::strip_compressed_flag(cmd_raw);
 
@@ -141,41 +143,57 @@ impl Parser {
                 match kind {
                     pb::EDemoCommands::DemPacket => {
                         let packet = pb::CDemoPacket::decode(payload.as_ref())?;
-                        Self::parse_dem_packet(&packet)?;
+                        let events = Self::get_packet_events(&packet)?;
+                        out.extend(events.into_iter().map(|name| (tick as i32, name)));
+                    }
+                    pb::EDemoCommands::DemFullPacket => {
+                        // Full packet wraps an optional CDemoPacket; decode that first
+                        let full = pb::CDemoFullPacket::decode(payload.as_ref())?;
+                        if let Some(packet) = full.packet {
+                            let events = Self::get_packet_events(&packet)?;
+                            out.extend(events.into_iter().map(|name| (tick as i32, name)));
+                        }
                     }
                     _ => {}
                 }
             }
         }
 
-        Ok(())
+        Ok(out)
     }
 
     #[inline]
-    fn parse_dem_packet(dem_packet: &pb::CDemoPacket) -> Result<(), ParserError> {
-        // Option<Vec<u8>> -> &[u8]
+    pub fn get_packet_events(dem_packet: &pb::CDemoPacket) -> Result<Vec<String>, ParserError> {
         let data: &[u8] = dem_packet
             .data
-            .as_deref() // Option<&[u8]>
+            .as_deref()
             .ok_or_else(|| ParserError::Decode("CDemoPacket.data missing".into()))?;
 
         let mut r = Reader::new(data);
+        let mut detected_events: Vec<String> = Vec::new();
 
         while r.bytes_remaining() != 0 {
             let msg_type = r.read_ubit_var() as i32;
             let msg_size = r.read_var_u32();
             let _msg_buf = r.read_bytes(msg_size);
 
-            println!("Got id {}, size {}", msg_type, msg_size);
-
+            // Convert each recognized enum to a readable name
+            // prost::Enumeration gives as_str_name()
             if let Ok(msg) = pb::CitadelUserMessageIds::try_from(msg_type) {
-                println!("Received {:#?}", msg);
-                continue;
+                detected_events.push(msg.as_str_name().to_string());
             } else if let Ok(msg) = pb::ECitadelGameEvents::try_from(msg_type) {
-                println!("Received {:#?}", msg);
-                continue;
+                detected_events.push(msg.as_str_name().to_string());
+            } else if let Ok(msg) = pb::SvcMessages::try_from(msg_type) {
+                detected_events.push(msg.as_str_name().to_string());
+            } else if let Ok(msg) = pb::EBaseUserMessages::try_from(msg_type) {
+                detected_events.push(msg.as_str_name().to_string());
+            } else if let Ok(msg) = pb::EBaseGameEvents::try_from(msg_type) {
+                detected_events.push(msg.as_str_name().to_string());
+            } else if let Ok(msg) = pb::NetMessages::try_from(msg_type) {
+                detected_events.push(msg.as_str_name().to_string());
             }
         }
-        Ok(())
+
+        Ok(detected_events)
     }
 }

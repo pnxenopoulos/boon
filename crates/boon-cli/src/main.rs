@@ -21,11 +21,9 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Verify and print header/info found in the prologue
-    Check {
-        file: PathBuf,
-    },
+    Check { file: PathBuf },
 
-    /// Print each framed message: command, tick, size, compressed
+    /// Print framed messages or extracted packet events
     Debug {
         /// File: the demo to print
         file: PathBuf,
@@ -41,10 +39,14 @@ enum Commands {
         /// Filter: end tick (inclusive)
         #[arg(long)]
         end_tick: Option<u32>,
-    },
 
-    Test {
-        file: PathBuf,
+        /// Show framed messages (command, tick, size, compressed)
+        #[arg(long, conflicts_with = "events")]
+        messages: bool,
+
+        /// Show (tick, EventName) extracted from packets
+        #[arg(long, conflicts_with = "messages")]
+        events: bool,
     },
 }
 
@@ -57,8 +59,9 @@ fn main() -> Result<()> {
             csv,
             start_tick,
             end_tick,
-        } => cmd_debug(file, csv, start_tick, end_tick)?,
-        Commands::Test { file } => cmd_test(file)?,
+            messages,
+            events,
+        } => cmd_debug(file, csv, start_tick, end_tick, messages, events)?,
     }
     Ok(())
 }
@@ -105,65 +108,76 @@ fn cmd_debug(
     csv: bool,
     start_tick: Option<u32>,
     end_tick: Option<u32>,
+    messages: bool,
+    events: bool,
 ) -> Result<()> {
     let parser = Parser::new(&path)?;
     parser.verify()?;
 
-    // Scan to get all events
-    let events = parser.scan()?;
-
-    // If csv mode, print the CSV header
-    if csv {
-        println!("idx,command,tick,size,compressed");
-    }
-
-    for (idx, (cmd, tick, size, compressed)) in events.into_iter().enumerate() {
-        // If not inside the start_tick and end_tick bounds, skip
-        if let Some(start) = start_tick
-            && tick < start.try_into().unwrap()
-        {
-            continue;
-        }
-        if let Some(end) = end_tick
-            && tick > end.try_into().unwrap()
-        {
-            continue;
-        }
-
-        // Get the command name from the protos
-        let cmd_name = pb::EDemoCommands::try_from(cmd)
-            .map(|k| format!("{k:?}"))
-            .unwrap_or_else(|_| format!("Unknown({cmd})"));
+    // default to messages if neither flag is provided
+    if messages || !events {
+        // Scan and print framed messages
+        let entries = parser.scan_messages()?;
 
         if csv {
-            println!("{},{},{},{},{}", idx, cmd_name, tick, size, compressed);
-        } else {
-            println!(
-                "{:05}  {:<22}  tick={}  size={}  compressed={}",
-                idx, cmd_name, tick, size, compressed
-            );
+            println!("idx,command,tick,size,compressed");
+        }
+
+        for (idx, (cmd, tick, size, compressed)) in entries.into_iter().enumerate() {
+            // Filter by tick range, if provided
+            if let Some(start) = start_tick
+                && tick < start as i32
+            {
+                continue;
+            }
+            if let Some(end) = end_tick
+                && tick > end as i32
+            {
+                continue;
+            }
+
+            // Get the command name from the protos
+            let cmd_name = pb::EDemoCommands::try_from(cmd)
+                .map(|k| format!("{k:?}"))
+                .unwrap_or_else(|_| format!("Unknown({cmd})"));
+
+            if csv {
+                println!("{},{},{},{},{}", idx, cmd_name, tick, size, compressed);
+            } else {
+                println!(
+                    "{:05}  {:<22}  tick={}  size={}  compressed={}",
+                    idx, cmd_name, tick, size, compressed
+                );
+            }
+        }
+    } else if events {
+        // Scan and print (tick, EventName)
+        let evs = parser.scan_packet_events()?;
+
+        if csv {
+            println!("idx,tick,event");
+        }
+
+        for (idx, (tick, name)) in evs.into_iter().enumerate() {
+            // Filter by tick range, if provided
+            if let Some(start) = start_tick
+                && tick < start as i32
+            {
+                continue;
+            }
+            if let Some(end) = end_tick
+                && tick > end as i32
+            {
+                continue;
+            }
+
+            if csv {
+                println!("{},{},{}", idx, tick, name);
+            } else {
+                println!("{:05}  tick={}  {}", idx, tick, name);
+            }
         }
     }
-
-    Ok(())
-}
-
-fn cmd_test(path: PathBuf) -> Result<()> {
-    println!("Reading {:#?}", path);
-    let parser = Parser::new(&path)?;
-
-    // Print demo file verification status
-    if let Err(e) = parser.verify() {
-        println!("Demo Verification: {}", "FAILURE".red());
-        println!("{}", format!("Verification failed: {e}").red());
-        return Ok(());
-    } else {
-        println!("Demo Verification: {}", "SUCCESS".green());
-    }
-    println!();
-
-    // Parse to get the string tables
-    let tables = parser.test_parse()?; // already returns Result<_, _>?
 
     Ok(())
 }
