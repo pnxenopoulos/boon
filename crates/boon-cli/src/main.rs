@@ -48,6 +48,8 @@ enum Commands {
         #[arg(long, conflicts_with = "messages")]
         events: bool,
     },
+
+    Kills { file: PathBuf },
 }
 
 fn main() -> Result<()> {
@@ -62,6 +64,7 @@ fn main() -> Result<()> {
             messages,
             events,
         } => cmd_debug(file, csv, start_tick, end_tick, messages, events)?,
+        Commands::Kills { file } => cmd_kill(file)?,
     }
     Ok(())
 }
@@ -178,6 +181,16 @@ fn cmd_debug(
             }
         }
     }
+
+    Ok(())
+}
+
+fn cmd_kill(
+    path: PathBuf,
+) -> Result<()> {
+    let parser = Parser::new(&path)?;
+    parser.verify()?;
+    parser.scan_kill_events()?;
 
     Ok(())
 }

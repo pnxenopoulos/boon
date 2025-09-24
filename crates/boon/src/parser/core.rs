@@ -30,13 +30,13 @@ impl Parser {
 
     #[inline]
     fn is_compressed(cmd_raw: u32) -> bool {
-        let flag = pb::EDemoCommands::DemIsCompressed as i32;
-        ((cmd_raw as i32) & flag) != 0
+        let flag = pb::EDemoCommands::DemIsCompressed as u32;
+        (cmd_raw & flag) != 0
     }
     #[inline]
     fn strip_compressed_flag(cmd_raw: u32) -> i32 {
-        let flag = pb::EDemoCommands::DemIsCompressed as i32;
-        (cmd_raw as i32) & !flag
+        let flag = pb::EDemoCommands::DemIsCompressed as u32;
+        (cmd_raw & !flag) as i32
     }
     #[inline]
     fn decompress_snappy(&self, data: &[u8]) -> Result<Vec<u8>, ParserError> {
@@ -47,32 +47,29 @@ impl Parser {
 
     /// Verify magic + prologue
     pub fn verify(&self) -> Result<(), ParserError> {
-        let mut r = Reader::new(&self.buffer); // local reader borrowing self.buffer
-
-        if r.bytes_remaining() < MINIMUM_SIZE {
-            return Err(ParserError::TooSmall(r.bytes_remaining()));
+        if self.buffer.len() < MINIMUM_SIZE {
+            return Err(ParserError::TooSmall(self.buffer.len()));
         }
 
-        let magic = r.read_bytes(8);
-        if magic.as_slice() != MAGIC {
-            // Convert to [u8;8] only for error payload
-            let found: [u8; 8] = magic
-                .clone()
-                .try_into()
-                .map_err(|_| ParserError::TooSmall(magic.len()))?;
+        let header = &self.buffer[..8];
+        if header != MAGIC {
+            let mut found = [0u8; 8];
+            found.copy_from_slice(header);
             return Err(ParserError::WrongMagic(found));
         }
-
-        // skip prologue (8 more bytes)
-        let _prologue = r.read_bytes(8);
         Ok(())
     }
 
-    pub fn parse_metadata(&self) -> Result<DemoMetadata, ParserError> {
-        self.verify()?; // checks file
+    fn reader_after_header(&self) -> Result<Reader<'_>, ParserError> {
+        self.verify()?;
         let mut r = Reader::new(&self.buffer);
         r.align_to_byte();
-        let _ = r.skip_bytes(16); // magic + prologue
+        r.skip_bytes(16)?; // Skips Magic + Prologue
+        Ok(r)
+    }
+
+    pub fn parse_metadata(&self) -> Result<DemoMetadata, ParserError> {
+        let mut r = self.reader_after_header()?;
 
         let mut meta = DemoMetadata::default();
 
@@ -104,10 +101,7 @@ impl Parser {
     }
 
     pub fn scan_messages(&self) -> Result<Vec<(i32, i32, u32, bool)>, ParserError> {
-        self.verify()?;
-        let mut r = Reader::new(&self.buffer);
-        r.align_to_byte();
-        let _ = r.skip_bytes(16); // magic + prologue
+        let mut r = self.reader_after_header()?;
 
         let mut out = Vec::new();
         while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
@@ -121,13 +115,9 @@ impl Parser {
     }
 
     pub fn scan_packet_events(&self) -> Result<Vec<(i32, String)>, ParserError> {
-        self.verify()?;
-        let mut r = Reader::new(&self.buffer);
-        r.align_to_byte();
-        let _ = r.skip_bytes(16); // magic + prologue
+        let mut r = self.reader_after_header()?;
 
         let mut out: Vec<(i32, String)> = Vec::new();
-
         while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
             let compressed = Self::is_compressed(cmd_raw);
             let cmd = Self::strip_compressed_flag(cmd_raw);
@@ -195,5 +185,80 @@ impl Parser {
         }
 
         Ok(detected_events)
+    }
+
+    pub fn scan_kill_events(&self) -> Result<(), ParserError> {
+        let mut r = self.reader_after_header()?;
+
+        while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
+            let compressed = Self::is_compressed(cmd_raw);
+            let cmd = Self::strip_compressed_flag(cmd_raw);
+
+            let data = r.read_bytes(size);
+            let payload: Cow<[u8]> = if compressed {
+                Cow::Owned(self.decompress_snappy(&data)?)
+            } else {
+                Cow::Borrowed(&data)
+            };
+
+            if let Ok(kind) = pb::EDemoCommands::try_from(cmd) {
+                match kind {
+                    pb::EDemoCommands::DemPacket => {
+                        let packet = pb::CDemoPacket::decode(payload.as_ref())?;
+                        Self::get_kill_events(&packet)?;
+                    }
+                    pb::EDemoCommands::DemFullPacket => {
+                        // Full packet wraps an optional CDemoPacket; decode that first
+                        let full = pb::CDemoFullPacket::decode(payload.as_ref())?;
+                        if let Some(packet) = full.packet {
+                            Self::get_kill_events(&packet)?;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[inline]
+    pub fn get_kill_events(dem_packet: &pb::CDemoPacket) -> Result<(), ParserError> {
+        let data: &[u8] = dem_packet
+            .data
+            .as_deref()
+            .ok_or_else(|| ParserError::Decode("CDemoPacket.data missing".into()))?;
+
+        let mut r = Reader::new(data);
+
+        while r.bytes_remaining() != 0 {
+            let msg_type = r.read_ubit_var() as i32;
+            let msg_size = r.read_var_u32();
+            let msg_buf = r.read_bytes(msg_size);
+
+            // Convert each recognized enum to a readable name
+            // prost::Enumeration gives as_str_name()
+            if let Ok(msg) = pb::CitadelUserMessageIds::try_from(msg_type) {
+                if msg == pb::CitadelUserMessageIds::KEUserMsgHeroKilled {
+                    // Decode the payload into your prost-generated type
+                    match pb::CCitadelUserMsgHeroKilled::decode(msg_buf.as_ref()) {
+                        Ok(ev) => {
+                            println!(
+                                "kill: victim={:?} attacker={:?} assisters={:?} scorer={:?} respawn_reason={:?} victim_team={:?}",
+                                ev.entindex_victim,
+                                ev.entindex_attacker,
+                                ev.entindex_assisters,
+                                ev.entindex_scorer,
+                                ev.respawn_reason,
+                                ev.victim_team_number,
+                            );
+                        }
+                        Err(e) => eprintln!("failed to decode CCitadelUserMsgHeroKilled: {e}"),
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 }
