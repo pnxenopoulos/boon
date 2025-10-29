@@ -3,10 +3,11 @@ use std::borrow::Cow;
 use std::convert::TryFrom;
 use std::path::Path;
 
-use super::ParserError;
-use crate::reader::Reader;
 use boon_proto::generated as pb;
 use prost::Message;
+
+use crate::parser::ParserError;
+use crate::reader::Reader;
 
 const MAGIC: [u8; 8] = *b"PBDEMS2\0";
 const MINIMUM_SIZE: usize = 16;
@@ -187,7 +188,7 @@ impl Parser {
         Ok(detected_events)
     }
 
-    pub fn scan_kill_events(&self) -> Result<(), ParserError> {
+    pub fn scan_debug_events(&self) -> Result<(), ParserError> {
         let mut r = self.reader_after_header()?;
 
         while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
@@ -205,13 +206,13 @@ impl Parser {
                 match kind {
                     pb::EDemoCommands::DemPacket => {
                         let packet = pb::CDemoPacket::decode(payload.as_ref())?;
-                        Self::get_kill_events(&packet)?;
+                        Self::get_debug_events(&packet)?;
                     }
                     pb::EDemoCommands::DemFullPacket => {
                         // Full packet wraps an optional CDemoPacket; decode that first
                         let full = pb::CDemoFullPacket::decode(payload.as_ref())?;
                         if let Some(packet) = full.packet {
-                            Self::get_kill_events(&packet)?;
+                            Self::get_debug_events(&packet)?;
                         }
                     }
                     _ => {}
@@ -223,7 +224,7 @@ impl Parser {
     }
 
     #[inline]
-    pub fn get_kill_events(dem_packet: &pb::CDemoPacket) -> Result<(), ParserError> {
+    pub fn get_debug_events(dem_packet: &pb::CDemoPacket) -> Result<(), ParserError> {
         let data: &[u8] = dem_packet
             .data
             .as_deref()
@@ -238,27 +239,24 @@ impl Parser {
 
             // Convert each recognized enum to a readable name
             // prost::Enumeration gives as_str_name()
-            if let Ok(msg) = pb::CitadelUserMessageIds::try_from(msg_type) {
-                if msg == pb::CitadelUserMessageIds::KEUserMsgHeroKilled {
+            if let Ok(msg) = pb::ECitadelGameEvents::try_from(msg_type) {
+                if msg == pb::ECitadelGameEvents::GeBulletImpact {
                     // Decode the payload into your prost-generated type
-                    match pb::CCitadelUserMsgHeroKilled::decode(msg_buf.as_ref()) {
+                    match pb::CMsgBulletImpact::decode(msg_buf.as_ref()) {
                         Ok(ev) => {
-                            println!(
-                                "kill: victim={:?} attacker={:?} assisters={:?} scorer={:?} respawn_reason={:?} victim_team={:?}",
-                                ev.entindex_victim,
-                                ev.entindex_attacker,
-                                ev.entindex_assisters,
-                                ev.entindex_scorer,
-                                ev.respawn_reason,
-                                ev.victim_team_number,
-                            );
+                            println!("impact: start={:?} impact={:?} normal={:?} dmg={:?} surface={:?} impacted={:?} shooter={:?}", ev.trace_start, ev.impact_origin, ev.surface_normal, ev.damage, ev.surface_type, ev.impacted_ehandle, ev.shooter_ehandle);
+                            println!("bullet impact");
                         }
-                        Err(e) => eprintln!("failed to decode CCitadelUserMsgHeroKilled: {e}"),
+                        Err(e) => eprintln!("failed to decode debug event: {e}"),
                     }
                 }
             }
         }
 
         Ok(())
+    }
+
+    pub fn scan_send_tables() -> Result<(), ParserError> {
+        // TODO: Implement this, too
     }
 }

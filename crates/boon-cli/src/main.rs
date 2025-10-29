@@ -21,7 +21,9 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Commands {
     /// Verify and print header/info found in the prologue
-    Check { file: PathBuf },
+    Check {
+        file: PathBuf,
+    },
 
     /// Print framed messages or extracted packet events
     Debug {
@@ -49,7 +51,17 @@ enum Commands {
         events: bool,
     },
 
-    Kills { file: PathBuf },
+    Event {
+        file: PathBuf,
+    },
+
+    Scan {
+        file: PathBuf
+    }
+
+    SendTables {
+        file: PathBuf
+    }
 }
 
 fn main() -> Result<()> {
@@ -64,7 +76,9 @@ fn main() -> Result<()> {
             messages,
             events,
         } => cmd_debug(file, csv, start_tick, end_tick, messages, events)?,
-        Commands::Kills { file } => cmd_kill(file)?,
+        Commands::Event { file } => cmd_event(file)?,
+        Commands::Scan { file } => cmd_scan(file)?,
+        Commands::SendTables { file } => cmd_sendtables(file)?,
     }
     Ok(())
 }
@@ -185,12 +199,27 @@ fn cmd_debug(
     Ok(())
 }
 
-fn cmd_kill(
-    path: PathBuf,
-) -> Result<()> {
+fn cmd_event(path: PathBuf) -> Result<()> {
     let parser = Parser::new(&path)?;
     parser.verify()?;
-    parser.scan_kill_events()?;
+    parser.scan_debug_events()?;
+
+    Ok(())
+}
+
+fn cmd_scan(path: PathBuf) -> Result<()> {
+    let parser = Parser::new(&path)?;
+    parser.verify()?;
+    parser.scan_string_tables()?;
+
+    Ok(())
+}
+
+fn cmd_sendtables(path: PathBuf) -> Result<()> {
+    let parser = Parser::new(&path)?;
+    parser.verify()?;
+
+    parser.scan_send_tables()?;
 
     Ok(())
 }

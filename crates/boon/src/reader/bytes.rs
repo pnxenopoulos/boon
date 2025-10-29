@@ -111,6 +111,11 @@ impl<'a> Reader<'a> {
     }
 
     #[inline]
+    pub fn read_bool(&mut self) -> bool {
+        self.read_bits_no_refill(1) == 1
+    }
+
+    #[inline]
     pub fn read_ubit_var(&mut self) -> u32 {
         self.refill();
 
@@ -137,6 +142,36 @@ impl<'a> Reader<'a> {
                 return x;
             }
         }
+    }
+
+    #[inline]
+    pub fn read_var_u32_no_refill(&mut self) -> u32 {
+        let mut x: u32 = 0;
+        let mut y: u32 = 0;
+        loop {
+            let byte = self.read_bits(8);
+
+            x |= (byte & 0x7F) << y;
+            y += 7;
+
+            if (byte & 0x80) == 0 || y == 35 {
+                return x;
+            }
+        }
+    }
+
+    #[inline]
+    pub fn read_var_i32(&mut self) -> i32 {
+        let ux = self.read_var_u32();
+        if ux & 1 != 0 {
+            return !((ux >> 1) as i32);
+        }
+        (ux >> 1) as i32
+    }
+
+    #[inline]
+    pub fn read_f32(&mut self) -> f32 {
+        f32::from_bits(self.read_bits(32))
     }
 
     /// Demo-specific methods
