@@ -1,20 +1,21 @@
-use snap::raw::Decoder;
-use std::borrow::Cow;
-use std::convert::TryFrom;
-use std::path::Path;
+use std::{cell::RefCell, path::Path};
 
 use boon_proto::generated as pb;
 use prost::Message;
+use snap::raw::Decoder;
 
-use crate::parser::ParserError;
-use crate::reader::Reader;
+use crate::parser::error::ParserError;
+use crate::parser::sendtables::{SerializerRegistry as SendTableRegistry, parse_sendtables};
+use crate::reader::{ReadError, Reader};
 
 const MAGIC: [u8; 8] = *b"PBDEMS2\0";
-const MINIMUM_SIZE: usize = 16;
+const PROLOGUE_BYTES: usize = 16; // magic (8) + prologue (8)
 
 #[derive(Debug, Clone)]
 pub struct Parser {
-    buffer: Vec<u8>, // own the bytes
+    bytes: Vec<u8>,
+    // Reuse a Snappy decoder; interior mutability avoids &mut self borrow conflicts
+    snappy: RefCell<Decoder>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -24,239 +25,269 @@ pub struct DemoMetadata {
 }
 
 impl Parser {
-    pub fn new(path: impl AsRef<Path>) -> Result<Self, ParserError> {
-        let buffer = std::fs::read(path)?; // own it here
-        Ok(Self { buffer })
+    /* ---------- construction ---------- */
+
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self, ParserError> {
+        let p = Self {
+            bytes,
+            snappy: RefCell::new(Decoder::new()),
+        };
+        p.verify()?;
+        Ok(p)
     }
+
+    pub fn from_path(path: impl AsRef<Path>) -> Result<Self, ParserError> {
+        let bytes = std::fs::read(path)?;
+        Self::from_bytes(bytes)
+    }
+
+    /* ---------- basic checks / reader ---------- */
+
+    /// Basic format sanity.
+    pub fn verify(&self) -> Result<(), ParserError> {
+        if self.bytes.len() < PROLOGUE_BYTES {
+            return Err(ParserError::TooSmall(self.bytes.len()));
+        }
+        if self.bytes[..8] != MAGIC {
+            let mut got = [0u8; 8];
+            got.copy_from_slice(&self.bytes[..8]);
+            return Err(ParserError::WrongMagic(got));
+        }
+        Ok(())
+    }
+
+    fn reader(&self) -> Result<Reader<'_>, ParserError> {
+        self.verify()?;
+        let mut r = Reader::new(&self.bytes);
+        // starts byte-aligned, but keep this for robustness
+        r.align_to_byte()?;
+        r.skip_bytes(PROLOGUE_BYTES)?;
+        Ok(r)
+    }
+
+    /* ---------- bitstream helpers ---------- */
 
     #[inline]
     fn is_compressed(cmd_raw: u32) -> bool {
         let flag = pb::EDemoCommands::DemIsCompressed as u32;
         (cmd_raw & flag) != 0
     }
+
     #[inline]
-    fn strip_compressed_flag(cmd_raw: u32) -> i32 {
+    fn strip_compressed(cmd_raw: u32) -> u32 {
         let flag = pb::EDemoCommands::DemIsCompressed as u32;
-        (cmd_raw & !flag) as i32
+        cmd_raw & !flag
     }
-    #[inline]
-    fn decompress_snappy(&self, data: &[u8]) -> Result<Vec<u8>, ParserError> {
-        Decoder::new()
-            .decompress_vec(data)
+
+    /// Read `size` bytes then optionally Snappy-decompress. Always returns owned bytes.
+    fn read_payload<'a>(
+        &self,
+        r: &mut Reader<'a>,
+        size: u32,
+        compressed: bool,
+    ) -> Result<Vec<u8>, ParserError> {
+        let raw = r.read_bytes(size as usize)?;
+        if !compressed {
+            return Ok(raw);
+        }
+        self.snappy
+            .borrow_mut()
+            .decompress_vec(&raw)
             .map_err(|e| ParserError::Decompression(e.to_string()))
     }
 
-    /// Verify magic + prologue
-    pub fn verify(&self) -> Result<(), ParserError> {
-        if self.buffer.len() < MINIMUM_SIZE {
-            return Err(ParserError::TooSmall(self.buffer.len()));
-        }
-
-        let header = &self.buffer[..8];
-        if header != MAGIC {
-            let mut found = [0u8; 8];
-            found.copy_from_slice(header);
-            return Err(ParserError::WrongMagic(found));
-        }
-        Ok(())
+    /// Decode a protobuf message from bytes.
+    #[inline]
+    fn decode<M: Message + Default>(&self, bytes: &[u8]) -> Result<M, ParserError> {
+        Ok(M::decode(bytes)?)
     }
 
-    fn reader_after_header(&self) -> Result<Reader<'_>, ParserError> {
-        self.verify()?;
-        let mut r = Reader::new(&self.buffer);
-        r.align_to_byte();
-        r.skip_bytes(16)?; // Skips Magic + Prologue
-        Ok(r)
-    }
+    /* ---------- top-level passes ---------- */
 
     pub fn parse_metadata(&self) -> Result<DemoMetadata, ParserError> {
-        let mut r = self.reader_after_header()?;
-
+        let mut r = self.reader()?;
         let mut meta = DemoMetadata::default();
 
         while let Some((cmd_raw, _tick, size)) = r.read_message_header()? {
             let compressed = Self::is_compressed(cmd_raw);
-            let cmd = Self::strip_compressed_flag(cmd_raw);
+            let cmd = Self::strip_compressed(cmd_raw);
+            let payload = self.read_payload(&mut r, size, compressed)?;
 
-            let data = r.read_bytes(size);
-            let payload: Cow<[u8]> = if compressed {
-                Cow::Owned(self.decompress_snappy(&data)?)
-            } else {
-                Cow::Borrowed(&data)
-            };
-
-            if let Ok(kind) = pb::EDemoCommands::try_from(cmd) {
+            if let Ok(kind) = pb::EDemoCommands::try_from(cmd as i32) {
                 match kind {
                     pb::EDemoCommands::DemFileHeader if meta.header.is_none() => {
-                        meta.header = Some(pb::CDemoFileHeader::decode(payload.as_ref())?);
+                        meta.header = Some(self.decode::<pb::CDemoFileHeader>(&payload)?);
                     }
                     pb::EDemoCommands::DemFileInfo if meta.info.is_none() => {
-                        meta.info = Some(pb::CDemoFileInfo::decode(payload.as_ref())?);
+                        meta.info = Some(self.decode::<pb::CDemoFileInfo>(&payload)?);
                     }
                     _ => {}
                 }
             }
         }
-
         Ok(meta)
     }
 
-    pub fn scan_messages(&self) -> Result<Vec<(i32, i32, u32, bool)>, ParserError> {
-        let mut r = self.reader_after_header()?;
-
+    /// Returns (cmd, tick, size, compressed)
+    pub fn scan_messages(&self) -> Result<Vec<(u32, u32, u32, bool)>, ParserError> {
+        let mut r = self.reader()?;
         let mut out = Vec::new();
+
         while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
             let compressed = Self::is_compressed(cmd_raw);
-            let cmd = Self::strip_compressed_flag(cmd_raw);
-            out.push((cmd, tick as i32, size, compressed));
-            r.align_to_byte();
-            let _ = r.skip_bytes(size as usize);
+            let cmd = Self::strip_compressed(cmd_raw);
+            out.push((cmd, tick, size, compressed));
+            r.align_to_byte()?;
+            r.skip_bytes(size as usize)?;
         }
         Ok(out)
     }
 
-    pub fn scan_packet_events(&self) -> Result<Vec<(i32, String)>, ParserError> {
-        let mut r = self.reader_after_header()?;
+    /// Extract event names present in DemPacket/DemFullPacket messages.
+    /// Returns (tick, event_name)
+    pub fn scan_packet_events(&self) -> Result<Vec<(u32, String)>, ParserError> {
+        let mut r = self.reader()?;
+        let mut out: Vec<(u32, String)> = Vec::new();
 
-        let mut out: Vec<(i32, String)> = Vec::new();
         while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
             let compressed = Self::is_compressed(cmd_raw);
-            let cmd = Self::strip_compressed_flag(cmd_raw);
+            let cmd = Self::strip_compressed(cmd_raw);
+            let payload = self.read_payload(&mut r, size, compressed)?;
 
-            let data = r.read_bytes(size);
-            let payload: Cow<[u8]> = if compressed {
-                Cow::Owned(self.decompress_snappy(&data)?)
-            } else {
-                Cow::Borrowed(&data)
-            };
-
-            if let Ok(kind) = pb::EDemoCommands::try_from(cmd) {
+            if let Ok(kind) = pb::EDemoCommands::try_from(cmd as i32) {
                 match kind {
                     pb::EDemoCommands::DemPacket => {
-                        let packet = pb::CDemoPacket::decode(payload.as_ref())?;
-                        let events = Self::get_packet_events(&packet)?;
-                        out.extend(events.into_iter().map(|name| (tick as i32, name)));
+                        let packet: pb::CDemoPacket = self.decode(&payload)?;
+                        Self::collect_packet_events(&packet, tick, &mut out)?;
                     }
                     pb::EDemoCommands::DemFullPacket => {
-                        // Full packet wraps an optional CDemoPacket; decode that first
-                        let full = pb::CDemoFullPacket::decode(payload.as_ref())?;
+                        let full: pb::CDemoFullPacket = self.decode(&payload)?;
                         if let Some(packet) = full.packet {
-                            let events = Self::get_packet_events(&packet)?;
-                            out.extend(events.into_iter().map(|name| (tick as i32, name)));
+                            Self::collect_packet_events(&packet, tick, &mut out)?;
                         }
                     }
                     _ => {}
                 }
             }
         }
-
         Ok(out)
     }
 
-    #[inline]
-    pub fn get_packet_events(dem_packet: &pb::CDemoPacket) -> Result<Vec<String>, ParserError> {
-        let data: &[u8] = dem_packet
+    fn collect_packet_events(
+        dem_packet: &pb::CDemoPacket,
+        tick: u32,
+        out: &mut Vec<(u32, String)>,
+    ) -> Result<(), ParserError> {
+        let data = dem_packet
             .data
             .as_deref()
             .ok_or_else(|| ParserError::Decode("CDemoPacket.data missing".into()))?;
 
         let mut r = Reader::new(data);
-        let mut detected_events: Vec<String> = Vec::new();
 
-        while r.bytes_remaining() != 0 {
-            let msg_type = r.read_ubit_var() as i32;
-            let msg_size = r.read_var_u32();
-            let _msg_buf = r.read_bytes(msg_size);
+        loop {
+            // Need the 6-bit UBitVar prefix to start another entry.
+            if r.bits_remaining_total() < 6 {
+                break;
+            }
 
-            // Convert each recognized enum to a readable name
-            // prost::Enumeration gives as_str_name()
-            if let Ok(msg) = pb::CitadelUserMessageIds::try_from(msg_type) {
-                detected_events.push(msg.as_str_name().to_string());
-            } else if let Ok(msg) = pb::ECitadelGameEvents::try_from(msg_type) {
-                detected_events.push(msg.as_str_name().to_string());
-            } else if let Ok(msg) = pb::SvcMessages::try_from(msg_type) {
-                detected_events.push(msg.as_str_name().to_string());
-            } else if let Ok(msg) = pb::EBaseUserMessages::try_from(msg_type) {
-                detected_events.push(msg.as_str_name().to_string());
-            } else if let Ok(msg) = pb::EBaseGameEvents::try_from(msg_type) {
-                detected_events.push(msg.as_str_name().to_string());
-            } else if let Ok(msg) = pb::NetMessages::try_from(msg_type) {
-                detected_events.push(msg.as_str_name().to_string());
+            // 1) type: UBitVar. Clean EOF => end of packet payload.
+            let msg_type = match r.read_ubit_var() {
+                Ok(t) => t as i32,
+                Err(ReadError::Eof) => break,
+                Err(e) => return Err(e.into()),
+            };
+
+            // Before size, ensure we have at least one byte available.
+            if r.bits_remaining_total() < 8 {
+                break;
+            }
+
+            // 2) size: varuint32 (bytes). Treat overflow as malformed tail -> stop scanning.
+            let msg_size = match r.read_var_u32() {
+                Ok(sz) => sz as usize,
+                Err(_) => break,
+            };
+
+            // Optional sanity: if the claimed size is clearly impossible, stop gracefully.
+            let remain_bytes = r.bits_remaining_total() / 8;
+            if msg_size > remain_bytes.saturating_add(4) {
+                break;
+            }
+
+            // 3) payload: byte-aligned by the format.
+            match r.read_bytes(msg_size) {
+                Ok(_buf) => {
+                    let push = |name: &str, out: &mut Vec<(u32, String)>| {
+                        out.push((tick, name.to_string()))
+                    };
+
+                    if let Ok(m) = pb::CitadelUserMessageIds::try_from(msg_type) {
+                        push(m.as_str_name(), out);
+                    } else if let Ok(m) = pb::ECitadelGameEvents::try_from(msg_type) {
+                        push(m.as_str_name(), out);
+                    } else if let Ok(m) = pb::SvcMessages::try_from(msg_type) {
+                        push(m.as_str_name(), out);
+                    } else if let Ok(m) = pb::EBaseUserMessages::try_from(msg_type) {
+                        push(m.as_str_name(), out);
+                    } else if let Ok(m) = pb::EBaseGameEvents::try_from(msg_type) {
+                        push(m.as_str_name(), out);
+                    } else if let Ok(m) = pb::NetMessages::try_from(msg_type) {
+                        push(m.as_str_name(), out);
+                    }
+                }
+                // For scanning, treat mid-payload EOF as end-of-packet, not an error.
+                Err(ReadError::Eof) => break,
+                Err(e) => return Err(e.into()),
             }
         }
 
-        Ok(detected_events)
+        Ok(())
     }
 
-    pub fn scan_debug_events(&self) -> Result<(), ParserError> {
-        let mut r = self.reader_after_header()?;
+    /* ---------- SendTables ---------- */
 
-        while let Some((cmd_raw, tick, size)) = r.read_message_header()? {
+    /// Extract SendTables and ClassInfo and build a `SerializerRegistry`.
+    pub fn sendtables(&self) -> Result<SendTableRegistry, ParserError> {
+        let mut r = self.reader()?;
+
+        let mut st_bytes: Option<Vec<u8>> = None;
+        let mut class_info: Option<pb::CDemoClassInfo> = None;
+
+        while let Some((cmd_raw, _tick, size)) = r.read_message_header()? {
             let compressed = Self::is_compressed(cmd_raw);
-            let cmd = Self::strip_compressed_flag(cmd_raw);
+            let cmd = Self::strip_compressed(cmd_raw);
+            let payload = self.read_payload(&mut r, size, compressed)?;
 
-            let data = r.read_bytes(size);
-            let payload: Cow<[u8]> = if compressed {
-                Cow::Owned(self.decompress_snappy(&data)?)
-            } else {
-                Cow::Borrowed(&data)
-            };
-
-            if let Ok(kind) = pb::EDemoCommands::try_from(cmd) {
+            if let Ok(kind) = pb::EDemoCommands::try_from(cmd as i32) {
                 match kind {
-                    pb::EDemoCommands::DemPacket => {
-                        let packet = pb::CDemoPacket::decode(payload.as_ref())?;
-                        Self::get_debug_events(&packet)?;
-                    }
-                    pb::EDemoCommands::DemFullPacket => {
-                        // Full packet wraps an optional CDemoPacket; decode that first
-                        let full = pb::CDemoFullPacket::decode(payload.as_ref())?;
-                        if let Some(packet) = full.packet {
-                            Self::get_debug_events(&packet)?;
+                    pb::EDemoCommands::DemSendTables => {
+                        let msg: pb::CDemoSendTables = self.decode(&payload)?;
+                        if let Some(data) = msg.data {
+                            st_bytes = Some(data);
                         }
+                    }
+                    pb::EDemoCommands::DemClassInfo => {
+                        class_info = Some(self.decode::<pb::CDemoClassInfo>(&payload)?);
                     }
                     _ => {}
                 }
             }
-        }
 
-        Ok(())
-    }
-
-    #[inline]
-    pub fn get_debug_events(dem_packet: &pb::CDemoPacket) -> Result<(), ParserError> {
-        let data: &[u8] = dem_packet
-            .data
-            .as_deref()
-            .ok_or_else(|| ParserError::Decode("CDemoPacket.data missing".into()))?;
-
-        let mut r = Reader::new(data);
-
-        while r.bytes_remaining() != 0 {
-            let msg_type = r.read_ubit_var() as i32;
-            let msg_size = r.read_var_u32();
-            let msg_buf = r.read_bytes(msg_size);
-
-            // Convert each recognized enum to a readable name
-            // prost::Enumeration gives as_str_name()
-            if let Ok(msg) = pb::ECitadelGameEvents::try_from(msg_type) {
-                if msg == pb::ECitadelGameEvents::GeBulletImpact {
-                    // Decode the payload into your prost-generated type
-                    match pb::CMsgBulletImpact::decode(msg_buf.as_ref()) {
-                        Ok(ev) => {
-                            println!("impact: start={:?} impact={:?} normal={:?} dmg={:?} surface={:?} impacted={:?} shooter={:?}", ev.trace_start, ev.impact_origin, ev.surface_normal, ev.damage, ev.surface_type, ev.impacted_ehandle, ev.shooter_ehandle);
-                            println!("bullet impact");
-                        }
-                        Err(e) => eprintln!("failed to decode debug event: {e}"),
-                    }
-                }
+            if st_bytes.is_some() && class_info.is_some() {
+                break; // early exit once both are present
             }
         }
 
-        Ok(())
+        let st = st_bytes.ok_or_else(|| ParserError::Decode("no CDemoSendTables found".into()))?;
+        let ci = class_info.ok_or_else(|| ParserError::Decode("no CDemoClassInfo found".into()))?;
+
+        parse_sendtables(&st, &ci)
     }
 
-    pub fn scan_send_tables() -> Result<(), ParserError> {
-        // TODO: Implement this, too
+    /// Convenience alias: clearer call-sites (`parser.load_sendtables()?`)
+    #[inline]
+    pub fn load_sendtables(&self) -> Result<SendTableRegistry, ParserError> {
+        self.sendtables()
     }
 }

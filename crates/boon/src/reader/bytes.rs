@@ -1,191 +1,211 @@
-//! A compact byte reader for Source-like demo files.
-use bitter::{BitReader, LittleEndianReader};
+//! Minimal bit/byte reader for Source-like demo streams.
+//! Wraps `bitter::LittleEndianReader` but provides clearer, checked APIs.
+
+use bitter::BitReader;
+use bitter::LittleEndianReader;
 
 use super::ReadError;
 
-/// Counts
-const UBV_COUNT: [u8; 4] = [0, 4, 8, 28];
+/// Extra-bit counts for Source UBitVar by prefix class (00,01,10,11).
+const UBITVAR_EXTRA: [u8; 4] = [0, 4, 8, 28];
 
 /// Forward reader over a borrowed buffer.
 #[derive(Debug, Clone)]
 pub struct Reader<'a> {
-    buffer: &'a [u8],
-    little_endian_reader: LittleEndianReader<'a>,
-    position: usize,
+    buf: &'a [u8],
+    r: LittleEndianReader<'a>,
+    /// Bit position from start of stream.
+    bit_pos: usize,
 }
 
 impl<'a> Reader<'a> {
     /// Create a reader over `buffer`.
     pub fn new(buffer: &'a [u8]) -> Self {
         Self {
-            buffer,
-            little_endian_reader: LittleEndianReader::new(buffer),
-            position: 0,
+            buf: buffer,
+            r: LittleEndianReader::new(buffer),
+            bit_pos: 0,
         }
     }
 
+    /// Reset to the start of the stream.
     #[inline]
     pub fn reset(&mut self) {
-        self.little_endian_reader = LittleEndianReader::new(self.buffer);
-        self.position = 0;
+        self.r = LittleEndianReader::new(self.buf);
+        self.bit_pos = 0;
     }
 
+    /// Total bytes still unread from the underlying buffer.
     #[inline]
     pub fn bytes_remaining(&self) -> usize {
-        self.little_endian_reader.bytes_remaining()
+        self.r.bytes_remaining()
     }
 
     #[inline]
-    pub fn has_no_more_bytes(&self) -> bool {
-        self.bytes_remaining() == 0
+    pub fn is_eof(&self) -> bool {
+        self.r.lookahead_bits() == 0 && self.r.bytes_remaining() == 0
     }
 
+    /// Total bits remaining including lookahead.
     #[inline]
-    pub fn refill(&mut self) {
-        self.little_endian_reader.refill_lookahead();
+    pub fn bits_remaining_total(&self) -> usize {
+        self.r.lookahead_bits() as usize + 8 * self.r.bytes_remaining()
     }
 
+    /// Whether the current bit position is at a byte boundary.
     #[inline]
-    pub fn align_to_byte(&mut self) {
-        let mis = self.position & 7; // bits past the last boundary
-        if mis != 0 {
-            let need = (8 - mis) as u32; // bits to consume to reach the boundary
-            self.little_endian_reader.consume(need);
-            self.position += need as usize;
-        }
+    pub fn is_byte_aligned(&self) -> bool {
+        (self.bit_pos & 7) == 0
     }
 
+    /// Ensure at least `need` bits in lookahead or report EOF.
     #[inline]
-    pub fn read_bits(&mut self, n: u32) -> u32 {
-        self.refill();
-        self.read_bits_no_refill(n)
-    }
-
-    #[inline]
-    pub fn read_bits_no_refill(&mut self, n: u32) -> u32 {
-        let bits = self.little_endian_reader.peek(n);
-        self.little_endian_reader.consume(n);
-        self.position += n as usize; // keep position in sync
-        bits as u32
-    }
-
-    #[inline]
-    pub fn read_bytes(&mut self, n: u32) -> Vec<u8> {
-        let mut bytes = vec![0; n as usize];
-        self.little_endian_reader.read_bytes(&mut bytes);
-        self.position += (n as usize) * 8; // 8 bits per byte
-        bytes
-    }
-
-    #[inline]
-    pub fn skip_bytes(&mut self, n: usize) -> Result<(), ReadError> {
-        let mut bits_left: u32 = (n as u32) * 8;
-
-        while bits_left > 0 {
-            let mut la = self.little_endian_reader.lookahead_bits();
-            if la == 0 {
-                // Pull more bits into lookahead; if none remain, it's EOF.
-                if self.little_endian_reader.bytes_remaining() == 0 {
-                    return Err(ReadError::Eof);
-                }
-                self.little_endian_reader.refill_lookahead();
-                la = self.little_endian_reader.lookahead_bits();
-                if la == 0 {
-                    // Defensive: if refill didn't add bits, treat as EOF.
-                    return Err(ReadError::Eof);
-                }
+    fn need_bits(&mut self, need: u32) -> Result<(), ReadError> {
+        if self.r.lookahead_bits() < need {
+            if self.r.bytes_remaining() == 0 {
+                return Err(ReadError::Eof);
             }
-
-            let step = la.min(bits_left);
-            self.little_endian_reader.consume(step);
-            self.position += step as usize;
-            bits_left -= step;
+            self.r.refill_lookahead();
+            if self.r.lookahead_bits() < need {
+                // Defensive: refill but still not enough.
+                return Err(ReadError::Eof);
+            }
         }
-
         Ok(())
     }
 
+    /// Align to next byte boundary by consuming padding bits.
     #[inline]
-    pub fn is_byte_aligned(&self) -> bool {
-        (self.position & 7) == 0
-    }
-
-    #[inline]
-    pub fn read_bool(&mut self) -> bool {
-        self.read_bits_no_refill(1) == 1
-    }
-
-    #[inline]
-    pub fn read_ubit_var(&mut self) -> u32 {
-        self.refill();
-
-        let prefix = self.read_bits_no_refill(6);
-        let prefix_class = prefix >> 4;
-        if prefix == 0 {
-            return prefix_class;
+    pub fn align_to_byte(&mut self) -> Result<(), ReadError> {
+        let mis = (self.bit_pos & 7) as u32;
+        if mis != 0 {
+            let pad = 8 - mis;
+            self.need_bits(pad)?;
+            self.r.consume(pad);
+            self.bit_pos += pad as usize;
         }
-        (prefix & 15) | (self.read_bits_no_refill(UBV_COUNT[prefix_class as usize] as u32) << 4)
+        Ok(())
     }
 
+    /// Read `n` bits (n ∈ [0,32]) as a u32.
     #[inline]
-    pub fn read_var_u32(&mut self) -> u32 {
-        let mut x: u32 = 0;
-        let mut y: u32 = 0;
-        self.refill();
-        loop {
-            let byte = self.read_bits_no_refill(8);
+    pub fn read_bits(&mut self, n: u32) -> Result<u32, ReadError> {
+        if n == 0 {
+            return Ok(0);
+        }
+        self.need_bits(n)?;
+        let v = self.r.peek(n) as u32;
+        self.r.consume(n);
+        self.bit_pos += n as usize;
+        Ok(v)
+    }
 
-            x |= (byte & 0x7F) << y;
-            y += 7;
+    /// Read a single bit as bool.
+    #[inline]
+    pub fn read_bool(&mut self) -> Result<bool, ReadError> {
+        Ok(self.read_bits(1)? == 1)
+    }
 
-            if (byte & 0x80) == 0 || y == 35 {
-                return x;
+    /// Read exactly `n` bytes. Stream must be byte-aligned.
+    #[inline]
+    pub fn read_bytes(&mut self, n: usize) -> Result<Vec<u8>, ReadError> {
+        self.align_to_byte()?;
+        if self.bytes_remaining() < n {
+            // If not enough whole bytes, treat as EOF.
+            return Err(ReadError::Eof);
+        }
+        // `LittleEndianReader::read_bytes` consumes from lookahead+buffer.
+        let mut out = vec![0u8; n];
+        self.r.read_bytes(&mut out);
+        self.bit_pos += n * 8;
+        Ok(out)
+    }
+
+    /// Skip exactly `n` bytes.
+    #[inline]
+    pub fn skip_bytes(&mut self, n: usize) -> Result<(), ReadError> {
+        self.align_to_byte()?;
+        // Consume in bit chunks through lookahead to avoid re-implementing internals.
+        let mut bits_left = (n as u32) * 8;
+        while bits_left > 0 {
+            let have = self.r.lookahead_bits();
+            if have == 0 {
+                if self.r.bytes_remaining() == 0 {
+                    return Err(ReadError::Eof);
+                }
+                self.r.refill_lookahead();
+                let again = self.r.lookahead_bits();
+                if again == 0 {
+                    return Err(ReadError::Eof);
+                }
             }
+            let step = self.r.lookahead_bits().min(bits_left);
+            self.r.consume(step);
+            self.bit_pos += step as usize;
+            bits_left -= step;
         }
+        Ok(())
     }
 
+    /// Read a 32-bit IEEE754 float.
     #[inline]
-    pub fn read_var_u32_no_refill(&mut self) -> u32 {
+    pub fn read_f32(&mut self) -> Result<f32, ReadError> {
+        Ok(f32::from_bits(self.read_bits(32)?))
+    }
+
+    /// Read an unsigned LEB128 up to 32 bits. Stops at MSB=0 or when 5 bytes consumed.
+    #[inline]
+    pub fn read_var_u32(&mut self) -> Result<u32, ReadError> {
         let mut x: u32 = 0;
-        let mut y: u32 = 0;
-        loop {
-            let byte = self.read_bits(8);
-
-            x |= (byte & 0x7F) << y;
-            y += 7;
-
-            if (byte & 0x80) == 0 || y == 35 {
-                return x;
+        let mut shift: u32 = 0;
+        // At most 5 bytes for 32-bit.
+        for _ in 0..5 {
+            let byte = self.read_bits(8)?;
+            x |= (byte & 0x7F) << shift;
+            if (byte & 0x80) == 0 {
+                return Ok(x);
             }
+            shift += 7;
         }
+        // If we hit here, we consumed 5 bytes and the last had MSB=1; treat as overflow.
+        Err(ReadError::Overflow)
     }
 
+    /// Read signed varint via zig-zag decoding of the above.
     #[inline]
-    pub fn read_var_i32(&mut self) -> i32 {
-        let ux = self.read_var_u32();
-        if ux & 1 != 0 {
-            return !((ux >> 1) as i32);
+    pub fn read_var_i32(&mut self) -> Result<i32, ReadError> {
+        let ux = self.read_var_u32()?;
+        // Zig-zag: LSB is sign.
+        let val = ((ux >> 1) as i32) ^ -((ux & 1) as i32);
+        Ok(val)
+    }
+
+    /// Read Source UBitVar as used in S2 demos.
+    ///
+    /// Layout: read 6 bits. Top 2 bits are class C∈{0,1,2,3}. Low 4 bits are the low nibble V.
+    /// Then read EXTRA[C] bits as the high part and return: V | (high << 4).
+    #[inline]
+    pub fn read_ubit_var(&mut self) -> Result<u32, ReadError> {
+        let prefix = self.read_bits(6)?; // [C1 C0 v3 v2 v1 v0]
+        let class = (prefix >> 4) as usize; // C in 0..3
+        let low = prefix & 0x0F; // v in 0..15
+        let extra = UBITVAR_EXTRA[class] as u32; // 0,4,8,28
+        if extra == 0 {
+            return Ok(low);
         }
-        (ux >> 1) as i32
+        let high = self.read_bits(extra)?; // high part
+        Ok(low | (high << 4))
     }
 
-    #[inline]
-    pub fn read_f32(&mut self) -> f32 {
-        f32::from_bits(self.read_bits(32))
-    }
-
-    /// Demo-specific methods
+    /// Demo-specific: read (cmd, tick, size) if available, or None at clean EOF.
     #[inline]
     pub fn read_message_header(&mut self) -> Result<Option<(u32, u32, u32)>, ReadError> {
-        // If no more bytes, return None
-        if self.has_no_more_bytes() {
+        if self.is_eof() {
             return Ok(None);
         }
-
-        // Read the command, tick, and its size
-        let cmd = self.read_var_u32();
-        let tick = self.read_var_u32();
-        let size = self.read_var_u32();
+        let cmd = self.read_var_u32()?;
+        let tick = self.read_var_u32()?;
+        let size = self.read_var_u32()?;
         Ok(Some((cmd, tick, size)))
     }
 }

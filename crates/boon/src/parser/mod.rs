@@ -4,8 +4,6 @@
 //! Source-style demo by checking its magic header (`"PBDEMS2\0"`), reads the
 //! 8-byte prologue, and can peek the first `(cmd, tick, size)` triple.
 
-mod core;
-mod error;
-
-pub use core::Parser;
-pub use error::ParserError;
+pub mod core;
+pub mod error;
+pub mod sendtables;
