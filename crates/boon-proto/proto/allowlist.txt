@@ -1,0 +1,17 @@
+base_modifier.proto
+citadel_gameevents.proto
+citadel_gcmessages_common.proto
+citadel_usermessages.proto
+base_gcmessages.proto
+demo.proto
+gameevents.proto
+gcsdk_gcmessages.proto
+netmessages.proto
+network_connection.proto
+networkbasetypes.proto
+steammessages.proto
+steammessages_steamlearn.steamworkssdk.proto
+steammessages_unified_base.steamworkssdk.proto
+te.proto
+usermessages.proto
+valveextensions.proto

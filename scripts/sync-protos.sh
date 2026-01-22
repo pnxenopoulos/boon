@@ -1,185 +1,252 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# ---------------------------------------
-# Requirements
-#   git
-#   sha256sum or shasum
-# ---------------------------------------
-
-# ---------------------------------------
-# Usage
-#   ./scripts/sync-protos.sh \
-#     --workspace-root /path/to/workspace/root \
-#     --manifest /path/to/workspace/root/crates/boon-proto/proto/manifest.txt \
-#     --local-dir /path/to/workspace/root/crates/boon-proto/proto
+# Sync Deadlock protos + version info into ../crates/boon-proto
 #
-#  or just
-#  
-#    ./scripts/sync-protos.sh
-# ---------------------------------------
+# What it does:
+# 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
+# 2) Copies ONLY the allowlisted Protobufs/*.proto into ../crates/boon-proto/proto/
+# 3) Reads game/citadel/steam.inf and updates ../crates/boon-proto/Cargo.toml:
+#    - Sets [package].version to MAJOR.MINOR.PATCH (Cargo-safe SemVer)
+#    - Sets [package.metadata.boon-proto].version to:
+#        MAJOR.MINOR.PATCH.ClientVersion.ServerVersion.SourceRevision
+#
+# Environment:
+#   CLEAN_DEST=1         delete existing *.proto in DEST_DIR before copying
+#   DEADLOCK_REF=<ref>   optional: branch/tag/commit to checkout
 
-# ---------------------------------------
-# Locate workspace root (assumes this file lives in <workspace>/scripts/)
-# ---------------------------------------
-SCRIPT_DIR="$(cd -- "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
-# Default workspace root is parent of scripts/
-DEFAULT_WS_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_URL="https://github.com/SteamDatabase/GameTracking-Deadlock.git"
 
-# Allow override via env/flag
-WORKSPACE_ROOT="${WORKSPACE_ROOT:-$DEFAULT_WS_ROOT}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ---------------------------------------
-# Config (override via env or flags)
-# ---------------------------------------
-REPO_URL="${REPO_URL:-https://github.com/SteamDatabase/GameTracking-Deadlock.git}"
+# Destination for synced protos (relative to this script)
+DEST_DIR="$SCRIPT_DIR/../crates/boon-proto/proto"
 
-# New defaults pointing at crates/boon-proto/proto/
-MANIFEST_PATH="${MANIFEST_PATH:-$WORKSPACE_ROOT/crates/boon-proto/proto/manifest.txt}"  # local manifest path
-LOCAL_PROTO_DIR="${LOCAL_PROTO_DIR:-$WORKSPACE_ROOT/crates/boon-proto/proto}"           # local *.proto path
+# Cargo.toml to update (relative to this script)
+CARGO_TOML="$SCRIPT_DIR/../crates/boon-proto/Cargo.toml"
 
-# Flags (optional):
-#   --manifest <path>        override MANIFEST_PATH
-#   --local-dir <path>       override LOCAL_PROTO_DIR
-#   --repo-url <url>         override REPO_URL
-#   --workspace-root <path>  set WORKSPACE_ROOT (affects default paths)
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --manifest) MANIFEST_PATH="$2"; shift 2 ;;
-    --local-dir) LOCAL_PROTO_DIR="$2"; shift 2 ;;
-    --repo-url) REPO_URL="$2"; shift 2 ;;
-    --workspace-root) WORKSPACE_ROOT="$2"; shift 2 ;;
-    *) echo "Unknown arg: $1" >&2; exit 1 ;;
-  esac
-done
+# Single source of truth for which protos to sync (relative to this script)
+MANIFEST="$SCRIPT_DIR/../crates/boon-proto/proto/allowlist.txt"
 
-# ---------------------------------------
-# Utilities
-# ---------------------------------------
-hash_file() {
-  local f="$1"
-  if [[ ! -f "$f" ]]; then
-    echo "MISSING"
-    return 0
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then
-    sha256sum "$f" | awk '{print $1}'
-  elif command -v shasum >/dev/null 2>&1; then
-    shasum -a 256 "$f" | awk '{print $1}'
+CLEAN_DEST="${CLEAN_DEST:-0}"           # 1 to delete existing *.proto in DEST_DIR before copying
+DEADLOCK_REF="${DEADLOCK_REF:-}"        # optional: branch/tag/commit to checkout
+
+die() { echo "ERROR: $*" >&2; exit 1; }
+
+need_file() { [[ -f "$1" ]] || die "Missing file: $1"; }
+need_cmd() { command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"; }
+
+need_cmd git
+need_file "$CARGO_TOML"
+need_file "$MANIFEST"
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+REPO_DIR="$TMP_DIR/deadlock"
+INF_PATH="game/citadel/steam.inf"
+
+has_sparse_checkout() {
+  git help -a 2>/dev/null | grep -qE '^\s*sparse-checkout\s*$'
+}
+
+clone_repo() {
+  if git clone --filter=blob:none --no-checkout "$REPO_URL" "$REPO_DIR" >/dev/null 2>&1; then
+    :
   else
-    echo "Error: neither sha256sum nor shasum found in PATH" >&2
-    exit 1
+    git clone --no-checkout "$REPO_URL" "$REPO_DIR"
+  fi
+
+  cd "$REPO_DIR"
+
+  if has_sparse_checkout; then
+    git sparse-checkout init --cone >/dev/null 2>&1 || true
+    git sparse-checkout set "Protobufs" "$INF_PATH" >/dev/null 2>&1 || true
+  fi
+
+  if [[ -n "$DEADLOCK_REF" ]]; then
+    git checkout -f "$DEADLOCK_REF" >/dev/null 2>&1 || die "Failed to checkout DEADLOCK_REF=$DEADLOCK_REF"
+  else
+    git checkout -f >/dev/null 2>&1 || die "Failed to checkout repo"
   fi
 }
 
-trim() { awk '{$1=$1;print}'; }
+copy_protos() {
+  mkdir -p "$DEST_DIR"
 
-# ---------------------------------------
-# Pre-flight checks
-# ---------------------------------------
-if [[ ! -f "$MANIFEST_PATH" ]]; then
-  echo "Error: manifest not found at '$MANIFEST_PATH'." >&2
-  exit 1
-fi
-
-# ---------------------------------------
-# Clone repo into a temp dir
-# ---------------------------------------
-WORKDIR="$(mktemp -d)"
-cleanup() { rm -rf "$WORKDIR"; }
-trap cleanup EXIT
-
-echo "Cloning $REPO_URL ..."
-git clone --depth=1 "$REPO_URL" "$WORKDIR/repo" >/dev/null 2>&1
-
-REPO_PROTO_DIR="$WORKDIR/repo/Protobufs"
-if [[ ! -d "$REPO_PROTO_DIR" ]]; then
-  echo "Error: expected directory '$REPO_PROTO_DIR' not found in repo." >&2
-  exit 1
-fi
-
-# ---------------------------------------
-# Process manifest
-# ---------------------------------------
-echo "Reading manifest: $MANIFEST_PATH"
-echo "Local proto dir: $LOCAL_PROTO_DIR"
-echo "Repo proto dir : $REPO_PROTO_DIR"
-echo
-
-UPDATED=0
-ADDED=0
-UNCHANGED=0
-MISSING_IN_REPO=0
-
-declare -a CHANGES
-declare -a ADDS
-declare -a UNCHANGED_LIST
-declare -a MISSING_LIST
-
-while IFS= read -r line || [[ -n "$line" ]]; do
-  entry="$(echo "$line" | sed 's/\r//g' | trim)"
-  [[ -z "$entry" ]] && continue
-  [[ "$entry" =~ ^# ]] && continue
-
-  repo_file="$REPO_PROTO_DIR/$entry"
-  local_file="$LOCAL_PROTO_DIR/$entry"
-
-  repo_hash="$(hash_file "$repo_file")"
-  if [[ "$repo_hash" == "MISSING" ]]; then
-    MISSING_IN_REPO=$((MISSING_IN_REPO+1))
-    MISSING_LIST+=("$entry  [missing in upstream repo]")
-    echo "SKIP  $entry  (missing in upstream repo)"
-    continue
+  if [[ "$CLEAN_DEST" == "1" ]]; then
+    find "$DEST_DIR" -maxdepth 1 -type f -name '*.proto' -delete
   fi
 
-  local_hash="$(hash_file "$local_file")"
-  if [[ "$local_hash" == "MISSING" ]]; then
-    mkdir -p "$(dirname "$local_file")"
-    cp -f "$repo_file" "$local_file"
-    ADDED=$((ADDED+1))
-    ADDS+=("$entry")
-    echo "ADD   $entry"
-    continue
+  local copied=0
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    raw="${raw%$'\r'}"              # strip CR for CRLF files
+
+    local line="${raw%%#*}"
+    line="$(echo -n "$line" | xargs || true)"
+    [[ -z "$line" ]] && continue
+
+    [[ "$line" == *.proto ]] || die "Manifest entry is not a .proto: '$line'"
+    [[ "$line" != */* ]] || die "Manifest entry must be a basename (no '/'): '$line'"
+
+    local src="$REPO_DIR/Protobufs/$line"
+    [[ -f "$src" ]] || die "Missing proto in upstream: $src"
+
+    cp -f "$src" "$DEST_DIR/"
+    copied=$((copied + 1))
+  done < "$MANIFEST"
+
+  (( copied > 0 )) || die "Manifest produced 0 files"
+  echo "Copied $copied proto files to: $DEST_DIR"
+}
+
+parse_steam_inf() {
+  local inf_file="$REPO_DIR/$INF_PATH"
+  need_file "$inf_file"
+
+  local client server rev
+  client="$(grep -E '^ClientVersion=' "$inf_file" | head -n1 | cut -d= -f2 | tr -d '\r')"
+  server="$(grep -E '^ServerVersion=' "$inf_file" | head -n1 | cut -d= -f2 | tr -d '\r')"
+  rev="$(grep -E '^SourceRevision=' "$inf_file" | head -n1 | cut -d= -f2 | tr -d '\r')"
+
+  [[ "$client" =~ ^[0-9]+$ ]] || die "Invalid ClientVersion: '$client'"
+  [[ "$server" =~ ^[0-9]+$ ]] || die "Invalid ServerVersion: '$server'"
+  [[ "$rev"    =~ ^[0-9]+$ ]] || die "Invalid SourceRevision: '$rev'"
+
+  echo "$client" "$server" "$rev"
+}
+
+extract_version_in_section() {
+  local header="$1" toml="$2"
+  awk -v header="$header" '
+    BEGIN { in_section=0 }
+    $0 == "[" header "]" { in_section=1; next }
+    $0 ~ /^\[/ {
+      if (in_section) exit
+    }
+    in_section && $0 ~ /^[[:space:]]*version[[:space:]]*=/ {
+      if (match($0, /"([^"]+)"/, m)) { print m[1]; exit }
+    }
+  ' "$toml"
+}
+
+update_version_in_section() {
+  local header="$1" toml="$2" new_version="$3"
+  local tmp
+  tmp="$(mktemp)"
+
+  awk -v header="$header" -v new="$new_version" '
+    BEGIN { in_section=0; done=0 }
+    $0 == "[" header "]" { in_section=1 }
+    $0 ~ /^\[/ {
+      if (in_section && $0 != "[" header "]") in_section=0
+    }
+    {
+      if (!done && in_section && $0 ~ /^[[:space:]]*version[[:space:]]*=/) {
+        if ($0 ~ /"[^"]*"/) {
+          sub(/"[^"]*"/, "\"" new "\"")
+          done=1
+        }
+      }
+      print
+    }
+    END {
+      if (!done) exit 3
+    }
+  ' "$toml" > "$tmp" || {
+    rm -f "$tmp"
+    die "Could not update version in section [$header] in $toml (expected version = \"...\")"
+  }
+
+  mv -f "$tmp" "$toml"
+}
+
+upsert_metadata_version() {
+  # Upsert:
+  #   [package.metadata.boon-proto]
+  #   version = "<full>"
+  #
+  # Args:
+  #   $1 = toml file path
+  #   $2 = full version string
+  local toml="$1" full="$2"
+  local hdr="[package.metadata.boon-proto]"
+  local tmp
+  tmp="$(mktemp)"
+
+  awk -v hdr="$hdr" -v full="$full" '
+    BEGIN { in_meta=0; found=0; wrote=0 }
+    $0 == hdr { in_meta=1; found=1; print; next }
+    $0 ~ /^\[/ {
+      if (in_meta) {
+        if (!wrote) { print "version = \"" full "\""; wrote=1 }
+        in_meta=0
+      }
+      print
+      next
+    }
+    in_meta && $0 ~ /^[[:space:]]*version[[:space:]]*=/ {
+      if ($0 ~ /"[^"]*"/) {
+        sub(/"[^"]*"/, "\"" full "\"")
+      } else {
+        $0 = "version = \"" full "\""
+      }
+      wrote=1
+      print
+      next
+    }
+    { print }
+    END {
+      if (in_meta && !wrote) {
+        print "version = \"" full "\""
+        wrote=1
+      }
+      if (!found) {
+        print ""
+        print hdr
+        print "version = \"" full "\""
+      }
+    }
+  ' "$toml" > "$tmp" || {
+    rm -f "$tmp"
+    die "Failed to update $hdr in $toml"
+  }
+
+  mv -f "$tmp" "$toml"
+}
+
+update_cargo_toml() {
+  local client="$1" server="$2" rev="$3"
+
+  local section current_version
+  section="package"
+  current_version="$(extract_version_in_section "$section" "$CARGO_TOML")"
+  [[ -n "$current_version" ]] || die "Could not find quoted version in [$section] in $CARGO_TOML"
+
+  if [[ ! "$current_version" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
+    die "Existing version '$current_version' does not contain MAJOR.MINOR.PATCH"
   fi
 
-  if [[ "$repo_hash" != "$local_hash" ]]; then
-    mkdir -p "$(dirname "$local_file")"
-    cp -f "$repo_file" "$local_file"
-    UPDATED=$((UPDATED+1))
-    CHANGES+=("$entry")
-    echo "UPDATE $entry"
-  else
-    UNCHANGED=$((UNCHANGED+1))
-    UNCHANGED_LIST+=("$entry")
-    echo "OK    $entry"
-  fi
-done < "$MANIFEST_PATH"
+  local major="${BASH_REMATCH[1]}"
+  local minor="${BASH_REMATCH[2]}"
+  local patch="${BASH_REMATCH[3]}"
 
-# ---------------------------------------
-# Summary
-# ---------------------------------------
-echo
-echo "Summary:"
-echo "  Updated : $UPDATED"
-echo "  Added   : $ADDED"
-echo "  Unchanged: $UNCHANGED"
-echo "  Missing in upstream: $MISSING_IN_REPO"
-echo
+  local pkg_version="${major}.${minor}.${patch}"
+  local full_version="${major}.${minor}.${patch}.${client}.${server}.${rev}"
 
-if (( UPDATED > 0 )); then
-  echo "Updated files:"
-  for f in "${CHANGES[@]}"; do echo "  - $f"; done
-  echo
-fi
+  update_version_in_section "package" "$CARGO_TOML" "$pkg_version"
+  upsert_metadata_version "$CARGO_TOML" "$full_version"
 
-if (( ADDED > 0 )); then
-  echo "Added files:"
-  for f in "${ADDS[@]}"; do echo "  - $f"; done
-  echo
-fi
+  echo "Updated $CARGO_TOML ([package].version): $current_version -> $pkg_version"
+  echo "Updated $CARGO_TOML ([package.metadata.boon-proto].version): -> $full_version"
+}
 
-if (( MISSING_IN_REPO > 0 )); then
-  echo "Missing in upstream (skipped):"
-  for f in "${MISSING_LIST[@]}"; do echo "  - $f"; done
-  echo
-fi
+main() {
+  clone_repo
+  copy_protos
+
+  read -r client server rev < <(parse_steam_inf)
+  update_cargo_toml "$client" "$server" "$rev"
+}
+
+main "$@"

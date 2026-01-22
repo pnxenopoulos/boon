@@ -5,7 +5,8 @@ use prost::Message;
 use snap::raw::Decoder;
 
 use crate::parser::error::ParserError;
-use crate::parser::sendtables::{SerializerRegistry as SendTableRegistry, parse_sendtables};
+use crate::parser::sendtables::{parse_sendtables, SerializerRegistry as SendTableRegistry};
+use crate::parser::stringtables::{BaselineRegistry, StringTableRegistry};
 use crate::reader::{ReadError, Reader};
 
 const MAGIC: [u8; 8] = *b"PBDEMS2\0";
@@ -15,7 +16,7 @@ const PROLOGUE_BYTES: usize = 16; // magic (8) + prologue (8)
 pub struct Parser {
     bytes: Vec<u8>,
     // Reuse a Snappy decoder; interior mutability avoids &mut self borrow conflicts
-    snappy: RefCell<Decoder>,
+    pub(crate) snappy: RefCell<Decoder>, // keep crate-visible for helpers if needed
 }
 
 #[derive(Debug, Clone, Default)]
@@ -245,7 +246,7 @@ impl Parser {
         Ok(())
     }
 
-    /* ---------- SendTables ---------- */
+    /* ---------- SendTables / ClassInfo ---------- */
 
     /// Extract SendTables and ClassInfo and build a `SerializerRegistry`.
     pub fn sendtables(&self) -> Result<SendTableRegistry, ParserError> {
@@ -285,9 +286,108 @@ impl Parser {
         parse_sendtables(&st, &ci)
     }
 
+    /// Just return the first CDemoClassInfo found.
+    pub fn class_info(&self) -> Result<pb::CDemoClassInfo, ParserError> {
+        let mut r = self.reader()?;
+        while let Some((cmd_raw, _tick, size)) = r.read_message_header()? {
+            let compressed = Self::is_compressed(cmd_raw);
+            let cmd = Self::strip_compressed(cmd_raw);
+            let payload = self.read_payload(&mut r, size, compressed)?;
+            if let Ok(kind) = pb::EDemoCommands::try_from(cmd as i32) {
+                if matches!(kind, pb::EDemoCommands::DemClassInfo) {
+                    return self.decode::<pb::CDemoClassInfo>(&payload);
+                }
+            }
+        }
+        Err(ParserError::Decode("no CDemoClassInfo found".into()))
+    }
+
     /// Convenience alias: clearer call-sites (`parser.load_sendtables()?`)
     #[inline]
     pub fn load_sendtables(&self) -> Result<SendTableRegistry, ParserError> {
         self.sendtables()
+    }
+
+    /* ---------- StringTables scanning ---------- */
+
+    /// Scan the demo and return the most recent StringTables snapshot found.
+    /// Returns (tick_of_snapshot, registry).
+    pub fn stringtables_latest(&self) -> Result<(u32, StringTableRegistry), ParserError> {
+        self.stringtables_at_tick(None)
+    }
+
+    /// Scan forward and keep the newest CDemoStringTables snapshot seen up to (and including) `target_tick`.
+    /// If `target_tick` is None, returns the last snapshot in the file.
+    pub fn stringtables_at_tick(
+        &self,
+        target_tick: Option<u32>,
+    ) -> Result<(u32, StringTableRegistry), ParserError> {
+        let mut r = self.reader()?;
+
+        let mut last_game_tick: u32 = 0;               // from DemPacket/DemFullPacket
+        let mut latest_tick: Option<u32> = None;       // effective tick of last snapshot ≤ target
+        let mut latest_reg: Option<StringTableRegistry> = None;
+
+        while let Some((cmd_raw, tick_raw, size)) = r.read_message_header()? {
+            let compressed = Self::is_compressed(cmd_raw);
+            let cmd = Self::strip_compressed(cmd_raw);
+            let payload = self.read_payload(&mut r, size, compressed)?;
+
+            // Sentinel (-1 as u32) appears on out-of-band frames.
+            let effective_tick = if tick_raw == u32::MAX { last_game_tick } else { tick_raw };
+
+            // If caller wants a cutoff and we’re already past it, we can stop.
+            if let Some(tgt) = target_tick {
+                if effective_tick > tgt {
+                    break;
+                }
+            }
+
+            if let Ok(kind) = pb::EDemoCommands::try_from(cmd as i32) {
+                match kind {
+                    // Advance gameplay tick markers.
+                    pb::EDemoCommands::DemPacket => {
+                        let _: pb::CDemoPacket = self.decode(&payload)?;
+                        last_game_tick = effective_tick;
+                    }
+                    pb::EDemoCommands::DemFullPacket => {
+                        let full: pb::CDemoFullPacket = self.decode(&payload)?;
+
+                        if let Some(st) = full.string_table.as_ref() {
+                            let reg = StringTableRegistry::from_demo_snapshot(st)?;
+                            latest_tick = Some(effective_tick);
+                            latest_reg = Some(reg);
+                        }
+
+                        last_game_tick = effective_tick;
+                    }
+
+                    // Standalone string-table snapshot (often at sentinel tick).
+                    pb::EDemoCommands::DemStringTables => {
+                        let snap: pb::CDemoStringTables = self.decode(&payload)?;
+                        let reg = StringTableRegistry::from_demo_snapshot(&snap)?;
+                        latest_tick = Some(effective_tick);
+                        latest_reg = Some(reg);
+                    }
+
+                    _ => {}
+                }
+            }
+        }
+
+        match (latest_tick, latest_reg) {
+            (Some(t), Some(reg)) => Ok((t, reg)),
+            _ => Err(ParserError::Decode("no string-table snapshot found".into())),
+        }
+    }
+
+    /* ---------- Helpers that use Snappy internally ---------- */
+
+    /// Build baselines from a given StringTable snapshot using the parser's Snappy decoder.
+    pub fn build_instance_baselines(
+        &self,
+        st: &StringTableRegistry,
+    ) -> Result<BaselineRegistry, ParserError> {
+        st.build_instance_baselines(&self.snappy)
     }
 }

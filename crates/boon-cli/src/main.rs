@@ -6,7 +6,8 @@ use clap::{Parser as ClapParser, Subcommand};
 use owo_colors::OwoColorize;
 
 use boon::parser::core::Parser;
-use boon::parser::sendtables::Serializer as STSerializer;
+use boon::parser::sendtables::{Serializer as STSerializer, SerializerRegistry as STRegistry};
+use boon::parser::stringtables::{StringTable, StringTableRegistry};
 use boon_proto::generated as pb;
 
 #[derive(ClapParser, Debug)]
@@ -80,6 +81,38 @@ enum Commands {
         #[arg(long)]
         include_orphans: bool,
     },
+
+    /// Print StringTables at a tick (or the latest snapshot if --tick not given)
+    ///
+    /// Subcommand name is kebab-cased by Clap, so invoke as `string-tables`.
+    StringTables {
+        /// File: the demo to inspect
+        file: PathBuf,
+
+        /// Tick to inspect; uses the newest snapshot with tick <= this value.
+        #[arg(long)]
+        tick: Option<u32>,
+
+        /// Only show this table name (exact). Can be repeated.
+        #[arg(long = "table", value_name = "NAME")]
+        tables: Vec<String>,
+
+        /// Print entries (key + data length) instead of just the table list.
+        #[arg(long)]
+        entries: bool,
+
+        /// Decode `instancebaseline` values and summarize per class.
+        #[arg(long)]
+        baselines: bool,
+
+        /// Limit entry output per table (helps avoid huge dumps)
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+
+        /// CSV output
+        #[arg(long)]
+        csv: bool,
+    },
 }
 
 fn main() -> Result<()> {
@@ -103,6 +136,8 @@ fn main() -> Result<()> {
             like,
             include_orphans,
         } => cmd_sendtables(file, fields, csv, classes, ids, like, include_orphans)?,
+        Commands::StringTables { file, tick, tables, entries, baselines, limit, csv } =>
+            cmd_stringtables(file, tick, tables, entries, baselines, limit, csv)?,
     }
     Ok(())
 }
@@ -248,7 +283,7 @@ fn cmd_sendtables(
 ) -> Result<()> {
     let parser = Parser::from_path(&path)?;
     parser.verify()?; // quick sanity check
-    let reg = parser.sendtables()?; // uses Parser::sendtables you added
+    let reg = parser.sendtables()?; // uses Parser::sendtables
 
     // If user targeted specific entries (by --class/--id), print those and exit.
     if !classes.is_empty() || !ids.is_empty() {
@@ -358,7 +393,188 @@ fn cmd_sendtables(
     Ok(())
 }
 
-/* ------------------- helpers ------------------- */
+/* ------------------- stringtables ------------------- */
+
+fn cmd_stringtables(
+    path: PathBuf,
+    tick: Option<u32>,
+    tables: Vec<String>,
+    entries: bool,
+    baselines: bool,
+    limit: usize,
+    csv: bool,
+) -> Result<()> {
+    let parser = Parser::from_path(&path)?;
+    parser.verify()?; // quick sanity
+
+    let (snap_tick, reg) = match tick {
+        Some(t) => parser.stringtables_at_tick(Some(t))?,
+        None => parser.stringtables_latest()?,
+    };
+
+    if csv {
+        if baselines {
+            println!("snapshot_tick,class_id,class_name,decoded,updated_entries,serialized_len,entity_data_len,is_delta");
+        } else if tables.is_empty() && !entries {
+            println!("snapshot_tick,table_name,item_count,flags");
+        } else if entries {
+            println!("snapshot_tick,table_name,index,key,data_len");
+        }
+    } else {
+        println!("{}", format!("StringTables (snapshot @ tick {})", snap_tick).bold());
+    }
+
+    if baselines {
+        // Build baselines and print summary per class id with resolved names from SendTables.
+        let bl = parser.build_instance_baselines(&reg)?;
+        let st_reg = parser.sendtables()?; // for names
+
+        // deterministic order
+        let mut cids: Vec<_> = bl.by_class.keys().copied().collect();
+        cids.sort_unstable();
+
+        for cid in cids {
+            let (name, vers) = resolve_class_name(cid, &st_reg);
+
+            let pe = &bl.by_class[&cid];
+            let sz_ser = pe.serialized_entities.as_ref().map(|v| v.len()).unwrap_or(0);
+            let sz_legacy = pe.entity_data.as_ref().map(|v| v.len()).unwrap_or(0);
+            let upd = pe.updated_entries.unwrap_or_default();
+            let is_delta = pe.legacy_is_delta.unwrap_or(false);
+
+            // Heuristic: if this is the "flexible" stub (only serialized_entities set),
+            // label it as a stub so it's clear we didn't parse counters from the blob.
+            let looks_stub = pe.max_entries.is_none()
+                && pe.updated_entries.is_none()
+                && sz_legacy == 0
+                && sz_ser > 0;
+
+            let decoded_label = if looks_stub {
+                "packet_entities(stub)"
+            } else {
+                "packet_entities"
+            };
+
+            if csv {
+                println!(
+                    "{},{},{},{},{},{},{},{}",
+                    snap_tick,
+                    cid,
+                    name.clone().unwrap_or_else(|| "-".into()),
+                    decoded_label,
+                    upd,
+                    sz_ser,
+                    sz_legacy,
+                    is_delta
+                );
+            } else {
+                let nm = name.clone().unwrap_or_else(|| "<unknown>".into());
+                let ver_sfx = vers.map(|v| format!("@v{}", v)).unwrap_or_default();
+                println!(
+                    "[{:4}] {:<40} {}  decoded={}  updated={:<3}  serialized={:<5}  legacy={:<5}  delta={}",
+                    cid, nm, ver_sfx, decoded_label, upd, sz_ser, sz_legacy, is_delta
+                );
+            }
+        }
+        return Ok(());
+    }
+
+    if tables.is_empty() {
+        // List mode: print all tables with counts
+        let mut names: Vec<_> = reg.tables.keys().cloned().collect();
+        names.sort();
+
+        for name in names {
+            let t = &reg.tables[&name];
+            if csv {
+                println!("{},{},{},{}", snap_tick, t.name, t.items.len(), t.flags);
+            } else {
+                println!("{:<40} items={:<5} flags={}", t.name, t.items.len(), t.flags);
+            }
+        }
+        return Ok(());
+    }
+
+    // Filtered/dump mode: user asked for specific table(s)
+    let wanted: HashSet<_> = tables.into_iter().collect();
+
+    for name in wanted {
+        match reg.tables.get(&name) {
+            Some(t) => {
+                if !entries {
+                    if csv {
+                        println!("{},{},{},{}", snap_tick, t.name, t.items.len(), t.flags);
+                    } else {
+                        println!(
+                            "{}",
+                            format!("{:<40} items={} flags={}", t.name, t.items.len(), t.flags)
+                                .bold()
+                        );
+                    }
+                } else {
+                    dump_table_entries(snap_tick, t, limit, csv);
+                }
+            }
+            None => {
+                eprintln!("{}", format!("No string table named '{}'", name).red());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn dump_table_entries(snap_tick: u32, t: &StringTable, limit: usize, csv: bool) {
+    let n = t.items.len().min(limit);
+    if !csv {
+        println!(
+            "{}",
+            format!("Entries in '{}' (showing {} of {})", t.name, n, t.items.len())
+                .underline()
+        );
+    }
+    for (i, it) in t.items.iter().take(n).enumerate() {
+        let data_len = it.data.len();
+        // tiny hex preview of first few bytes
+        let preview_len = it.data.len().min(8);
+        let preview = it
+            .data
+            .iter()
+            .take(preview_len)
+            .map(|b| format!("{:02X}", b))
+            .collect::<Vec<_>>()
+            .join(" ");
+
+        if csv {
+            println!("{},{},{},{},{}", snap_tick, t.name, i, it.key, data_len);
+        } else {
+            println!(
+                "{:04}  key={:<40} data_len={:<6} preview=[{}{}]",
+                i,
+                it.key,
+                data_len,
+                preview,
+                if data_len > preview_len { " …" } else { "" }
+            );
+        }
+    }
+}
+
+/* ------------------- local helpers ------------------- */
+
+/// Resolve class name (and optional version) for a class_id using SendTables only.
+/// (If a class id is not present in SendTables, we print "<unknown>".)
+fn resolve_class_name(
+    class_id: u16,
+    st: &STRegistry,
+) -> (Option<String>, Option<i32>) {
+    if let Some(s) = st.by_class.get(&class_id) {
+        return (Some(s.name.clone()), Some(s.version));
+    }
+    (None, None)
+}
+
+/* ------------------- shared printing helpers ------------------- */
 
 fn print_one_serializer(ser: &STSerializer, csv: bool, fields: bool) -> Result<()> {
     let class_id_str = ser

@@ -7,3 +7,4 @@
 pub mod core;
 pub mod error;
 pub mod sendtables;
+pub mod stringtables;
