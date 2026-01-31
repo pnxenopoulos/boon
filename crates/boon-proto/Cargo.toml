@@ -4,7 +4,7 @@ version = "0.0.0"
 edition = "2024"
 
 [package.metadata.boon-proto]
-version = "0.0.0.6111.6111.10384043"
+version = "0.0.0.6217.6217.10417637"
 
 [dependencies]
 bytes = "1.11"
