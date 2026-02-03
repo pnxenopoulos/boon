@@ -12,3 +12,7 @@ resolver = "2"
 [workspace.dependencies]
 boon = { path = "crates/boon" }
 boon-proto = { path = "crates/boon-proto" }
+
+[profile.release]
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization, slower compile

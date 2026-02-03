@@ -6,8 +6,6 @@ description = "Boon is a Deadlock demo / replay file parser"
 
 [dependencies]
 anyhow = "1.0"
-bitter = "0.8"
-bytes = "1.11"
 memmap2 = "0.9"
 prost = "0.14"
 serde = { version = "1.0", features = ["derive"] }
