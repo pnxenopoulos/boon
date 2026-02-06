@@ -186,4 +186,21 @@ impl QuantizedFloat {
         let value = br.read_bits(self.bit_count as usize)?;
         Ok(self.low_value + range * (value as f32 * self.decode_mul))
     }
+
+    /// Skip past a quantized float value without decoding it.
+    pub fn skip(&self, br: &mut BitReader) -> Result<()> {
+        if (self.encode_flags & QFE_ROUNDDOWN) != 0 && br.read_bool()? {
+            return Ok(());
+        }
+
+        if (self.encode_flags & QFE_ROUNDUP) != 0 && br.read_bool()? {
+            return Ok(());
+        }
+
+        if (self.encode_flags & QFE_ENCODE_ZERO_EXACTLY) != 0 && br.read_bool()? {
+            return Ok(());
+        }
+
+        br.skip_bits(self.bit_count as usize)
+    }
 }

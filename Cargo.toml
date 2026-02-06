@@ -6,11 +6,12 @@ members = [
   "crates/boon",
   "crates/boon-cli",
   "crates/boon-proto",
+  "crates/boon-python",
 ]
 resolver = "2"
 
 [workspace.dependencies]
-boon = { path = "crates/boon" }
+boon = { path = "crates/boon", package = "boon-deadlock" }
 boon-proto = { path = "crates/boon-proto" }
 
 [profile.release]

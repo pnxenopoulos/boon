@@ -19,7 +19,7 @@ pub mod error;
 pub mod io;
 
 // Re-export commonly used types at the crate root for convenience
-pub use demo::{command_name, CmdHeader, Context, DemoHeader, MessageInfo, Parser};
+pub use demo::{CmdHeader, Context, DemoHeader, MessageInfo, Parser, command_name};
 pub use entity::{
     ClassEntry, ClassInfo, Entity, EntityContainer, FieldValue, Serializer, SerializerContainer,
     SerializerField, StringTable, StringTableContainer, StringTableEntry,

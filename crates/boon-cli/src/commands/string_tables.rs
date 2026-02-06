@@ -22,11 +22,7 @@ pub fn run(
 
     if summary {
         // Summary mode: just names and entry counts
-        println!(
-            "{:<40} {:>8}",
-            "Table".bold(),
-            "Entries".bold(),
-        );
+        println!("{:<40} {:>8}", "Table".bold(), "Entries".bold(),);
         println!("{}", "-".repeat(50));
 
         for table in tables.iter().take(limit) {
@@ -49,10 +45,7 @@ pub fn run(
 
             // Show up to 5 sample entries
             for (i, entry) in table.entries.iter().enumerate().take(5) {
-                let key = entry
-                    .string
-                    .as_deref()
-                    .unwrap_or("<none>");
+                let key = entry.string.as_deref().unwrap_or("<none>");
                 let data_len = entry
                     .user_data
                     .as_ref()

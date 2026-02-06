@@ -125,7 +125,9 @@ fn main() -> Result<()> {
             min_size,
             max_size,
             limit,
-        } => commands::messages(&file, cmd, tick, min_tick, max_tick, min_size, max_size, limit),
+        } => commands::messages(
+            &file, cmd, tick, min_tick, max_tick, min_size, max_size, limit,
+        ),
         Commands::Info { file } => commands::info(&file),
         Commands::SendTables {
             file,

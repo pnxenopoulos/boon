@@ -1,0 +1,21 @@
+[project]
+name = "boon"
+version = "0.0.0"
+description = "Boon is a powerful Deadlock demo / replay file parser."
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["polars>=1.0"]
+
+[dependency-groups]
+dev = [
+    "maturin>=1.0,<2.0",
+]
+
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "boon._boon"
+python-source = "python"

@@ -36,9 +36,13 @@ pub enum Decoder {
     Vector3(Box<Decoder>),
     Vector3Normal,
     Vector4(Box<Decoder>),
-    QAnglePitchYaw { bit_count: usize },
+    QAnglePitchYaw {
+        bit_count: usize,
+    },
     QAnglePrecise,
-    QAngleBitCount { bit_count: usize },
+    QAngleBitCount {
+        bit_count: usize,
+    },
     QAngleCoord,
     /// Used as a placeholder/invalid decoder.
     Default,
@@ -144,6 +148,106 @@ impl Decoder {
             _ => Ok(0.0),
         }
     }
+
+    /// Skip a field value without fully decoding it - just advances the bit reader.
+    /// This is faster than decode() when we don't need the value.
+    pub fn skip(&self, ctx: &mut FieldDecodeContext, br: &mut BitReader) -> Result<()> {
+        match self {
+            Decoder::Bool => {
+                br.skip_bits(1)?;
+            }
+
+            Decoder::I64 => {
+                br.skip_varint()?;
+            }
+
+            Decoder::U64 => {
+                br.skip_varint()?;
+            }
+
+            Decoder::U64Fixed64 => {
+                br.skip_bits(64)?;
+            }
+
+            Decoder::F32NoScale => {
+                br.skip_bits(32)?;
+            }
+
+            Decoder::F32SimulationTime => {
+                br.skip_varint()?;
+            }
+
+            Decoder::F32Coord => {
+                br.skip_bitcoord()?;
+            }
+
+            Decoder::F32Normal => {
+                br.skip_bitnormal()?;
+            }
+
+            Decoder::F32Quantized(qf) => {
+                qf.skip(br)?;
+            }
+
+            Decoder::String => {
+                br.skip_string()?;
+            }
+
+            Decoder::Vector2(inner) => {
+                inner.skip(ctx, br)?;
+                inner.skip(ctx, br)?;
+            }
+
+            Decoder::Vector3(inner) => {
+                inner.skip(ctx, br)?;
+                inner.skip(ctx, br)?;
+                inner.skip(ctx, br)?;
+            }
+
+            Decoder::Vector3Normal => {
+                br.skip_bitvec3normal()?;
+            }
+
+            Decoder::Vector4(inner) => {
+                inner.skip(ctx, br)?;
+                inner.skip(ctx, br)?;
+                inner.skip(ctx, br)?;
+                inner.skip(ctx, br)?;
+            }
+
+            Decoder::QAnglePitchYaw { bit_count } => {
+                br.skip_bits(*bit_count * 2)?;
+            }
+
+            Decoder::QAnglePrecise => {
+                let rx = br.read_bool()?;
+                let ry = br.read_bool()?;
+                let rz = br.read_bool()?;
+                if rx {
+                    br.skip_bits(20)?;
+                }
+                if ry {
+                    br.skip_bits(20)?;
+                }
+                if rz {
+                    br.skip_bits(20)?;
+                }
+            }
+
+            Decoder::QAngleBitCount { bit_count } => {
+                br.skip_bits(*bit_count * 3)?;
+            }
+
+            Decoder::QAngleCoord => {
+                br.skip_bitvec3coord()?;
+            }
+
+            Decoder::Default => {
+                br.skip_varint()?;
+            }
+        }
+        Ok(())
+    }
 }
 
 /// Special descriptor for fields that need non-standard handling.
@@ -181,7 +285,10 @@ impl FieldMetadata {
     }
 
     pub fn is_fixed_array(&self) -> bool {
-        matches!(self.special, Some(FieldSpecialDescriptor::FixedArray { .. }))
+        matches!(
+            self.special,
+            Some(FieldSpecialDescriptor::FixedArray { .. })
+        )
     }
 
     pub fn fixed_array_length(&self) -> Option<usize> {
@@ -293,7 +400,13 @@ pub fn get_field_metadata(
             });
 
             let inner = get_field_metadata(
-                base, var_name, bit_count, low_value, high_value, encode_flags, var_encoder,
+                base,
+                var_name,
+                bit_count,
+                low_value,
+                high_value,
+                encode_flags,
+                var_encoder,
                 has_field_serializer,
             );
 
@@ -324,8 +437,14 @@ pub fn get_field_metadata(
                 }
 
                 let inner = get_field_metadata(
-                    inner_type, var_name, bit_count, low_value, high_value, encode_flags,
-                    var_encoder, has_field_serializer,
+                    inner_type,
+                    var_name,
+                    bit_count,
+                    low_value,
+                    high_value,
+                    encode_flags,
+                    var_encoder,
+                    has_field_serializer,
                 );
 
                 return FieldMetadata {
@@ -338,7 +457,13 @@ pub fn get_field_metadata(
 
             // For non-vector templates, decode as the base type
             return get_field_metadata(
-                base, var_name, bit_count, low_value, high_value, encode_flags, var_encoder,
+                base,
+                var_name,
+                bit_count,
+                low_value,
+                high_value,
+                encode_flags,
+                var_encoder,
                 has_field_serializer,
             );
         }
@@ -358,8 +483,14 @@ pub fn get_field_metadata(
         },
 
         "float32" | "CNetworkedQuantizedFloat" | "GameTime_t" => {
-            let decoder =
-                build_f32_decoder(var_name, bit_count, low_value, high_value, encode_flags, var_encoder);
+            let decoder = build_f32_decoder(
+                var_name,
+                bit_count,
+                low_value,
+                high_value,
+                encode_flags,
+                var_encoder,
+            );
             FieldMetadata {
                 decoder,
                 special: None,
@@ -423,8 +554,14 @@ pub fn get_field_metadata(
                     special: None,
                 }
             } else {
-                let inner =
-                    build_f32_decoder(var_name, bit_count, low_value, high_value, encode_flags, var_encoder);
+                let inner = build_f32_decoder(
+                    var_name,
+                    bit_count,
+                    low_value,
+                    high_value,
+                    encode_flags,
+                    var_encoder,
+                );
                 FieldMetadata {
                     decoder: Decoder::Vector3(Box::new(inner)),
                     special: None,
@@ -433,8 +570,14 @@ pub fn get_field_metadata(
         }
 
         "Vector2D" => {
-            let inner =
-                build_f32_decoder(var_name, bit_count, low_value, high_value, encode_flags, var_encoder);
+            let inner = build_f32_decoder(
+                var_name,
+                bit_count,
+                low_value,
+                high_value,
+                encode_flags,
+                var_encoder,
+            );
             FieldMetadata {
                 decoder: Decoder::Vector2(Box::new(inner)),
                 special: None,
@@ -442,8 +585,14 @@ pub fn get_field_metadata(
         }
 
         "Vector4D" => {
-            let inner =
-                build_f32_decoder(var_name, bit_count, low_value, high_value, encode_flags, var_encoder);
+            let inner = build_f32_decoder(
+                var_name,
+                bit_count,
+                low_value,
+                high_value,
+                encode_flags,
+                var_encoder,
+            );
             FieldMetadata {
                 decoder: Decoder::Vector4(Box::new(inner)),
                 special: None,

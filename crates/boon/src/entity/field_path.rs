@@ -82,10 +82,7 @@ fn push_one_left_delta_zero_right_zero(fp: &mut FieldPath, _br: &mut BitReader) 
     Ok(())
 }
 
-fn push_one_left_delta_zero_right_non_zero(
-    fp: &mut FieldPath,
-    br: &mut BitReader,
-) -> Result<()> {
+fn push_one_left_delta_zero_right_non_zero(fp: &mut FieldPath, br: &mut BitReader) -> Result<()> {
     fp.push(br.read_ubitvarfp()? as i32);
     Ok(())
 }
@@ -96,10 +93,7 @@ fn push_one_left_delta_one_right_zero(fp: &mut FieldPath, _br: &mut BitReader) -
     Ok(())
 }
 
-fn push_one_left_delta_one_right_non_zero(
-    fp: &mut FieldPath,
-    br: &mut BitReader,
-) -> Result<()> {
+fn push_one_left_delta_one_right_non_zero(fp: &mut FieldPath, br: &mut BitReader) -> Result<()> {
     fp.inc_last(1);
     fp.push(br.read_ubitvarfp()? as i32);
     Ok(())
@@ -335,46 +329,166 @@ struct FieldOpDescriptor {
 }
 
 const FIELDOP_DESCRIPTORS: &[FieldOpDescriptor] = &[
-    FieldOpDescriptor { weight: 36271, op: plus_one },
-    FieldOpDescriptor { weight: 10334, op: plus_two },
-    FieldOpDescriptor { weight: 1375, op: plus_three },
-    FieldOpDescriptor { weight: 646, op: plus_four },
-    FieldOpDescriptor { weight: 4128, op: plus_n },
-    FieldOpDescriptor { weight: 35, op: push_one_left_delta_zero_right_zero },
-    FieldOpDescriptor { weight: 3, op: push_one_left_delta_zero_right_non_zero },
-    FieldOpDescriptor { weight: 521, op: push_one_left_delta_one_right_zero },
-    FieldOpDescriptor { weight: 2942, op: push_one_left_delta_one_right_non_zero },
-    FieldOpDescriptor { weight: 560, op: push_one_left_delta_n_right_zero },
-    FieldOpDescriptor { weight: 471, op: push_one_left_delta_n_right_non_zero },
-    FieldOpDescriptor { weight: 10530, op: push_one_left_delta_n_right_non_zero_pack6_bits },
-    FieldOpDescriptor { weight: 251, op: push_one_left_delta_n_right_non_zero_pack8_bits },
-    FieldOpDescriptor { weight: 1, op: push_two_left_delta_zero },
-    FieldOpDescriptor { weight: 1, op: push_two_pack5_left_delta_zero },
-    FieldOpDescriptor { weight: 1, op: push_three_left_delta_zero },
-    FieldOpDescriptor { weight: 1, op: push_three_pack5_left_delta_zero },
-    FieldOpDescriptor { weight: 1, op: push_two_left_delta_one },
-    FieldOpDescriptor { weight: 1, op: push_two_pack5_left_delta_one },
-    FieldOpDescriptor { weight: 1, op: push_three_left_delta_one },
-    FieldOpDescriptor { weight: 1, op: push_three_pack5_left_delta_one },
-    FieldOpDescriptor { weight: 1, op: push_two_left_delta_n },
-    FieldOpDescriptor { weight: 1, op: push_two_pack5_left_delta_n },
-    FieldOpDescriptor { weight: 1, op: push_three_left_delta_n },
-    FieldOpDescriptor { weight: 1, op: push_three_pack5_left_delta_n },
-    FieldOpDescriptor { weight: 1, op: push_n },
-    FieldOpDescriptor { weight: 310, op: push_n_and_non_topographical },
-    FieldOpDescriptor { weight: 2, op: pop_one_plus_one },
-    FieldOpDescriptor { weight: 1, op: pop_one_plus_n },
-    FieldOpDescriptor { weight: 1837, op: pop_all_but_one_plus_one },
-    FieldOpDescriptor { weight: 149, op: pop_all_but_one_plus_n },
-    FieldOpDescriptor { weight: 300, op: pop_all_but_one_plus_n_pack3_bits },
-    FieldOpDescriptor { weight: 634, op: pop_all_but_one_plus_n_pack6_bits },
-    FieldOpDescriptor { weight: 1, op: pop_n_plus_one },
-    FieldOpDescriptor { weight: 1, op: pop_n_plus_n },
-    FieldOpDescriptor { weight: 1, op: pop_n_and_non_topographical },
-    FieldOpDescriptor { weight: 76, op: non_topo_complex },
-    FieldOpDescriptor { weight: 271, op: non_topo_penultimate_plus_one },
-    FieldOpDescriptor { weight: 99, op: non_topo_complex_pack4_bits },
-    FieldOpDescriptor { weight: 25474, op: field_path_encode_finish },
+    FieldOpDescriptor {
+        weight: 36271,
+        op: plus_one,
+    },
+    FieldOpDescriptor {
+        weight: 10334,
+        op: plus_two,
+    },
+    FieldOpDescriptor {
+        weight: 1375,
+        op: plus_three,
+    },
+    FieldOpDescriptor {
+        weight: 646,
+        op: plus_four,
+    },
+    FieldOpDescriptor {
+        weight: 4128,
+        op: plus_n,
+    },
+    FieldOpDescriptor {
+        weight: 35,
+        op: push_one_left_delta_zero_right_zero,
+    },
+    FieldOpDescriptor {
+        weight: 3,
+        op: push_one_left_delta_zero_right_non_zero,
+    },
+    FieldOpDescriptor {
+        weight: 521,
+        op: push_one_left_delta_one_right_zero,
+    },
+    FieldOpDescriptor {
+        weight: 2942,
+        op: push_one_left_delta_one_right_non_zero,
+    },
+    FieldOpDescriptor {
+        weight: 560,
+        op: push_one_left_delta_n_right_zero,
+    },
+    FieldOpDescriptor {
+        weight: 471,
+        op: push_one_left_delta_n_right_non_zero,
+    },
+    FieldOpDescriptor {
+        weight: 10530,
+        op: push_one_left_delta_n_right_non_zero_pack6_bits,
+    },
+    FieldOpDescriptor {
+        weight: 251,
+        op: push_one_left_delta_n_right_non_zero_pack8_bits,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_two_left_delta_zero,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_two_pack5_left_delta_zero,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_three_left_delta_zero,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_three_pack5_left_delta_zero,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_two_left_delta_one,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_two_pack5_left_delta_one,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_three_left_delta_one,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_three_pack5_left_delta_one,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_two_left_delta_n,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_two_pack5_left_delta_n,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_three_left_delta_n,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_three_pack5_left_delta_n,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: push_n,
+    },
+    FieldOpDescriptor {
+        weight: 310,
+        op: push_n_and_non_topographical,
+    },
+    FieldOpDescriptor {
+        weight: 2,
+        op: pop_one_plus_one,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: pop_one_plus_n,
+    },
+    FieldOpDescriptor {
+        weight: 1837,
+        op: pop_all_but_one_plus_one,
+    },
+    FieldOpDescriptor {
+        weight: 149,
+        op: pop_all_but_one_plus_n,
+    },
+    FieldOpDescriptor {
+        weight: 300,
+        op: pop_all_but_one_plus_n_pack3_bits,
+    },
+    FieldOpDescriptor {
+        weight: 634,
+        op: pop_all_but_one_plus_n_pack6_bits,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: pop_n_plus_one,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: pop_n_plus_n,
+    },
+    FieldOpDescriptor {
+        weight: 1,
+        op: pop_n_and_non_topographical,
+    },
+    FieldOpDescriptor {
+        weight: 76,
+        op: non_topo_complex,
+    },
+    FieldOpDescriptor {
+        weight: 271,
+        op: non_topo_penultimate_plus_one,
+    },
+    FieldOpDescriptor {
+        weight: 99,
+        op: non_topo_complex_pack4_bits,
+    },
+    FieldOpDescriptor {
+        weight: 25474,
+        op: field_path_encode_finish,
+    },
 ];
 
 #[derive(Debug)]

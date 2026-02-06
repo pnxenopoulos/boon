@@ -349,16 +349,95 @@ impl<'a> BitReader<'a> {
         self.position += n;
         Ok(())
     }
+
+    /// Skip a varint without decoding it.
+    pub fn skip_varint(&mut self) -> Result<()> {
+        for _ in 0..10 {
+            let byte = self.read_u8()?;
+            if byte & 0x80 == 0 {
+                return Ok(());
+            }
+        }
+        Ok(())
+    }
+
+    /// Skip a bitcoord value.
+    pub fn skip_bitcoord(&mut self) -> Result<()> {
+        let has_int = self.read_bool()?;
+        let has_frac = self.read_bool()?;
+
+        if !has_int && !has_frac {
+            return Ok(());
+        }
+
+        self.skip_bits(1)?; // negative flag
+
+        if has_int {
+            self.skip_bits(COORD_INTEGER_BITS)?;
+        }
+        if has_frac {
+            self.skip_bits(COORD_FRACTIONAL_BITS)?;
+        }
+
+        Ok(())
+    }
+
+    /// Skip a bitnormal value.
+    pub fn skip_bitnormal(&mut self) -> Result<()> {
+        self.skip_bits(1 + NORMAL_FRACTIONAL_BITS)
+    }
+
+    /// Skip a 3D coordinate vector.
+    pub fn skip_bitvec3coord(&mut self) -> Result<()> {
+        let has_x = self.read_bool()?;
+        let has_y = self.read_bool()?;
+        let has_z = self.read_bool()?;
+
+        if has_x {
+            self.skip_bitcoord()?;
+        }
+        if has_y {
+            self.skip_bitcoord()?;
+        }
+        if has_z {
+            self.skip_bitcoord()?;
+        }
+
+        Ok(())
+    }
+
+    /// Skip a 3D normal vector.
+    pub fn skip_bitvec3normal(&mut self) -> Result<()> {
+        let has_x = self.read_bool()?;
+        let has_y = self.read_bool()?;
+
+        if has_x {
+            self.skip_bitnormal()?;
+        }
+        if has_y {
+            self.skip_bitnormal()?;
+        }
+
+        self.skip_bits(1)?; // z_sign
+
+        Ok(())
+    }
+
+    /// Skip a null-terminated string.
+    pub fn skip_string(&mut self) -> Result<()> {
+        loop {
+            let b = self.read_u8()?;
+            if b == 0 {
+                return Ok(());
+            }
+        }
+    }
 }
 
 /// Create a bitmask with n bits set.
 #[inline(always)]
 fn mask(n: usize) -> u64 {
-    if n >= 64 {
-        u64::MAX
-    } else {
-        (1u64 << n) - 1
-    }
+    if n >= 64 { u64::MAX } else { (1u64 << n) - 1 }
 }
 
 #[cfg(test)]

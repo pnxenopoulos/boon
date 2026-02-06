@@ -24,11 +24,7 @@ pub fn run(
 
     if summary {
         // Summary mode: just names and field counts
-        println!(
-            "{:<50} {:>6}",
-            "Serializer".bold(),
-            "Fields".bold(),
-        );
+        println!("{:<50} {:>6}", "Serializer".bold(), "Fields".bold(),);
         println!("{}", "-".repeat(58));
 
         for ser in &serializers {

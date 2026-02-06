@@ -6,5 +6,5 @@
 mod command;
 mod parser;
 
-pub use command::{command_name, CmdHeader, EDemoCommands, SvcMessages};
+pub use command::{CmdHeader, EDemoCommands, SvcMessages, command_name};
 pub use parser::{Context, DemoHeader, MessageInfo, Parser};

@@ -56,10 +56,7 @@ impl<'a> ByteReader<'a> {
 
     pub fn read_u16(&mut self) -> Result<u16> {
         self.check_remaining(2)?;
-        let val = u16::from_le_bytes([
-            self.data[self.position],
-            self.data[self.position + 1],
-        ]);
+        let val = u16::from_le_bytes([self.data[self.position], self.data[self.position + 1]]);
         self.position += 2;
         Ok(val)
     }

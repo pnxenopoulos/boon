@@ -34,11 +34,7 @@ pub fn run(
 
         let limit = limit.unwrap_or(counts.len());
 
-        println!(
-            "{:<50} {:>6}",
-            "Class".bold(),
-            "Count".bold(),
-        );
+        println!("{:<50} {:>6}", "Class".bold(), "Count".bold(),);
         println!("{}", "-".repeat(58));
 
         for (class_name, count) in counts.iter().take(limit) {

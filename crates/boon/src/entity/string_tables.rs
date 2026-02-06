@@ -5,9 +5,7 @@ use crate::io::BitReader;
 
 use super::class_info::ClassInfo;
 
-use boon_proto::proto::{
-    CDemoStringTables, CsvcMsgCreateStringTable, CsvcMsgUpdateStringTable,
-};
+use boon_proto::proto::{CDemoStringTables, CsvcMsgCreateStringTable, CsvcMsgUpdateStringTable};
 
 const HISTORY_SIZE: usize = 32;
 const HISTORY_BITMASK: usize = HISTORY_SIZE - 1;
@@ -88,13 +86,11 @@ impl StringTable {
                         history_delta_zero = history_delta_index & HISTORY_BITMASK;
                     }
 
-                    let index =
-                        (history_delta_zero + br.read_bits(5)? as usize) & HISTORY_BITMASK;
+                    let index = (history_delta_zero + br.read_bits(5)? as usize) & HISTORY_BITMASK;
                     let bytes_to_copy = br.read_bits(MAX_STRING_BITS)? as usize;
                     size += bytes_to_copy;
 
-                    string_buf[..bytes_to_copy]
-                        .copy_from_slice(&history[index][..bytes_to_copy]);
+                    string_buf[..bytes_to_copy].copy_from_slice(&history[index][..bytes_to_copy]);
                     size += br.read_string_into(&mut string_buf[bytes_to_copy..])?;
                 } else {
                     size += br.read_string_into(&mut string_buf)?;
@@ -116,10 +112,7 @@ impl StringTable {
             let has_user_data = br.read_bool()?;
             let user_data = if has_user_data {
                 if self.user_data_fixed_size {
-                    br.read_bits_to_bytes(
-                        &mut user_data_buf,
-                        self.user_data_size_bits as usize,
-                    )?;
+                    br.read_bits_to_bytes(&mut user_data_buf, self.user_data_size_bits as usize)?;
                     Some(user_data_buf[..self.user_data_size as usize].to_vec())
                 } else {
                     let mut is_compressed = false;
@@ -140,10 +133,7 @@ impl StringTable {
                             .map_err(|e| Error::Decompress(e.to_string()))?;
                         user_data_uncompressed_buf.resize(decomp_len, 0);
                         snap::raw::Decoder::new()
-                            .decompress(
-                                &user_data_buf[..size],
-                                &mut user_data_uncompressed_buf,
-                            )
+                            .decompress(&user_data_buf[..size], &mut user_data_uncompressed_buf)
                             .map_err(|e| Error::Decompress(e.to_string()))?;
                         Some(user_data_uncompressed_buf[..decomp_len].to_vec())
                     } else {
@@ -171,10 +161,7 @@ impl StringTable {
                         user_data: None,
                     });
                 }
-                self.entries.push(StringTableEntry {
-                    string,
-                    user_data,
-                });
+                self.entries.push(StringTableEntry { string, user_data });
             }
         }
 
@@ -275,7 +262,11 @@ impl StringTableContainer {
 
     /// Update instance baselines from the instancebaseline string table.
     pub fn update_instance_baselines(&mut self, _class_info: &ClassInfo) {
-        if let Some(table) = self.tables.iter().find(|t| t.name == INSTANCE_BASELINE_TABLE_NAME) {
+        if let Some(table) = self
+            .tables
+            .iter()
+            .find(|t| t.name == INSTANCE_BASELINE_TABLE_NAME)
+        {
             for entry in &table.entries {
                 if let (Some(s), Some(data)) = (&entry.string, &entry.user_data) {
                     if let Ok(class_id) = s.parse::<i32>() {
