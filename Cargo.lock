@@ -225,7 +225,9 @@ name = "boon-python"
 version = "0.0.0"
 dependencies = [
  "boon-deadlock",
+ "boon-proto",
  "polars",
+ "prost",
  "pyo3",
  "pyo3-polars",
 ]

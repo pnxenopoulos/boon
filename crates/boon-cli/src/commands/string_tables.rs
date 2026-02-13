@@ -1,14 +1,9 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 
-pub fn run(
-    file: &PathBuf,
-    filter: Option<String>,
-    summary: bool,
-    limit: Option<usize>,
-) -> Result<()> {
+pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usize>) -> Result<()> {
     let parser = boon::Parser::from_file(file)?;
     let ctx = parser.parse_init()?;
 
@@ -30,13 +25,7 @@ pub fn run(
         }
     } else {
         // Detailed mode: show sample entries
-        let mut count = 0;
-
-        for table in &tables {
-            if count >= limit {
-                break;
-            }
-
+        for table in tables.iter().take(limit) {
             println!(
                 "{} ({} entries)",
                 table.name.green().bold(),
@@ -59,7 +48,6 @@ pub fn run(
             }
 
             println!();
-            count += 1;
         }
     }
 

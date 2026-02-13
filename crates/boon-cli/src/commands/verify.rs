@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 
-pub fn run(file: &PathBuf) -> Result<()> {
+pub fn run(file: &Path) -> Result<()> {
     let result = boon::Parser::from_file(file).and_then(|p| p.verify());
 
     match result {

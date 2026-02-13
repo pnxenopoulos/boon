@@ -10,7 +10,7 @@
 mod class_info;
 mod entities;
 mod field_decoder;
-mod field_path;
+pub(crate) mod field_path;
 mod field_value;
 mod quantized_float;
 mod serializers;

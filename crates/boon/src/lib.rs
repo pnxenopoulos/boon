@@ -6,20 +6,26 @@
 //! # Example
 //!
 //! ```no_run
+//! use std::path::Path;
 //! use boon::Parser;
 //!
-//! let parser = Parser::from_file("demo.dem").unwrap();
+//! let parser = Parser::from_file(Path::new("demo.dem")).unwrap();
 //! let header = parser.file_header().unwrap();
 //! println!("Map: {:?}", header.map_name);
 //! ```
 
+pub mod abilities;
 pub mod demo;
 pub mod entity;
 pub mod error;
 pub mod io;
 
 // Re-export commonly used types at the crate root for convenience
-pub use demo::{CmdHeader, Context, DemoHeader, MessageInfo, Parser, command_name};
+pub use abilities::ability_name;
+pub use demo::{
+    CmdHeader, Context, DemoHeader, GameEvent, MessageInfo, Parser, command_name,
+    decode_event_payload,
+};
 pub use entity::{
     ClassEntry, ClassInfo, Entity, EntityContainer, FieldValue, Serializer, SerializerContainer,
     SerializerField, StringTable, StringTableContainer, StringTableEntry,

@@ -25,6 +25,19 @@ pub mod svc {
     pub const CREATE_STRING_TABLE: u32 = SvcMessages::SvcCreateStringTable as u32;
     pub const UPDATE_STRING_TABLE: u32 = SvcMessages::SvcUpdateStringTable as u32;
     pub const PACKET_ENTITIES: u32 = SvcMessages::SvcPacketEntities as u32;
+    pub const USER_MESSAGE: u32 = SvcMessages::SvcUserMessage as u32;
+}
+
+pub mod ge {
+    pub const SOURCE1_LEGACY_GAME_EVENT_LIST: u32 = 205;
+    pub const SOURCE1_LEGACY_GAME_EVENT: u32 = 207;
+}
+
+/// Return a human-readable name for a user message type.
+pub fn user_message_name(msg_type: i32) -> String {
+    boon_proto::proto::CitadelUserMessageIds::try_from(msg_type)
+        .map(|e| e.as_str_name().to_string())
+        .unwrap_or_else(|_| format!("UserMessage_{}", msg_type))
 }
 
 /// Header for a demo command in the stream.

@@ -7,7 +7,7 @@ use crate::io::BitReader;
 
 use super::class_info::ClassInfo;
 use super::field_decoder::FieldDecodeContext;
-use super::field_path;
+use super::field_path::{self, FieldPath};
 use super::field_value::FieldValue;
 use super::serializers::{Serializer, SerializerContainer};
 use super::string_tables::StringTableContainer;
@@ -31,7 +31,7 @@ pub struct Entity {
     pub serial: u32,
     pub class_id: i32,
     pub class_name: String,
-    pub fields: FxHashMap<String, FieldValue>,
+    pub fields: FxHashMap<u64, FieldValue>,
 }
 
 impl Entity {
@@ -46,60 +46,42 @@ impl Entity {
     }
 
     /// Apply field path deltas from a bit reader using the given serializer.
+    #[allow(clippy::needless_range_loop)]
     fn apply_update(
         &mut self,
         br: &mut BitReader,
         serializer: &Serializer,
         ctx: &mut FieldDecodeContext,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
-        let fps = field_path::read_field_paths(br)?;
+        field_path::read_field_paths(br, fp_buf)?;
 
-        for (fp_idx, fp) in fps.iter().enumerate() {
-            // Walk the serializer hierarchy to find the field and build the path name
-            let mut path_parts: Vec<String> = Vec::new();
-            let mut field = &serializer.fields[fp.get(0)];
+        for fp_idx in 0..fp_buf.len() {
+            // Walk the serializer hierarchy to find the decoder (same as skip_update)
+            let fp_last = fp_buf[fp_idx].last;
+            let mut field = &serializer.fields[fp_buf[fp_idx].get(0)];
 
-            // Add send_node prefix if present
-            if let Some(ref sn) = field.send_node {
-                if !sn.is_empty() {
-                    for part in sn.split('.') {
-                        path_parts.push(part.to_string());
-                    }
-                }
-            }
-            path_parts.push(field.var_name.clone());
-
-            for i in 1..=fp.last {
-                let idx = fp.get(i);
+            for i in 1..=fp_last {
+                let idx = fp_buf[fp_idx].get(i);
                 if field.is_dynamic_array() {
-                    // Dynamic array: index into the single-element serializer
-                    path_parts.push(idx.to_string());
                     if let Some(ref fs) = field.field_serializer {
                         field = &fs.fields[0];
                     }
                 } else if let Some(ref fs) = field.field_serializer {
                     field = &fs.fields[idx];
-                    if let Some(ref sn) = field.send_node {
-                        if !sn.is_empty() {
-                            for part in sn.split('.') {
-                                path_parts.push(part.to_string());
-                            }
-                        }
-                    }
-                    path_parts.push(field.var_name.clone());
                 } else {
                     break;
                 }
             }
 
-            let key = path_parts.join(".");
+            let key = fp_buf[fp_idx].pack();
             let value = field
                 .metadata
                 .decoder
                 .decode(ctx, br)
                 .map_err(|e| Error::Parse {
                     context: format!(
-                        "field #{} '{}' (type: {}, decoder: {:?}, pos: {}, remaining: {}): {}",
+                        "field #{} key={:#x} (type: {}, decoder: {:?}, pos: {}, remaining: {}): {}",
                         fp_idx,
                         key,
                         field.var_type,
@@ -116,20 +98,23 @@ impl Entity {
     }
 
     /// Skip field updates - reads the data to advance the bit reader but doesn't store anything.
-    /// This avoids string allocations and FxHashMap insertions for entities we don't care about.
+    /// This avoids allocations and FxHashMap insertions for entities we don't care about.
+    #[allow(clippy::needless_range_loop)]
     fn skip_update(
         br: &mut BitReader,
         serializer: &Serializer,
         ctx: &mut FieldDecodeContext,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
-        let fps = field_path::read_field_paths(br)?;
+        field_path::read_field_paths(br, fp_buf)?;
 
-        for fp in fps.iter() {
+        for fp_idx in 0..fp_buf.len() {
             // Walk the serializer hierarchy to find the decoder
-            let mut field = &serializer.fields[fp.get(0)];
+            let fp_last = fp_buf[fp_idx].last;
+            let mut field = &serializer.fields[fp_buf[fp_idx].get(0)];
 
-            for i in 1..=fp.last {
-                let idx = fp.get(i);
+            for i in 1..=fp_last {
+                let idx = fp_buf[fp_idx].get(i);
                 if field.is_dynamic_array() {
                     if let Some(ref fs) = field.field_serializer {
                         field = &fs.fields[0];
@@ -147,9 +132,16 @@ impl Entity {
 
         Ok(())
     }
+
+    /// Look up a field by its dotted name string using the serializer to resolve the key.
+    pub fn get_by_name(&self, path: &str, serializer: &Serializer) -> Option<&FieldValue> {
+        let key = serializer.resolve_field_key(path)?;
+        self.fields.get(&key)
+    }
 }
 
 /// Container managing all active entities.
+#[derive(Default)]
 pub struct EntityContainer {
     pub entities: FxHashMap<i32, Entity>,
     baseline_cache: FxHashMap<i32, Entity>,
@@ -160,11 +152,7 @@ pub struct EntityContainer {
 
 impl EntityContainer {
     pub fn new() -> Self {
-        Self {
-            entities: FxHashMap::default(),
-            baseline_cache: FxHashMap::default(),
-            skipped_entity_classes: FxHashMap::default(),
-        }
+        Self::default()
     }
 
     /// Handle a CSVCMsg_PacketEntities message.
@@ -175,6 +163,7 @@ impl EntityContainer {
         serializers: &SerializerContainer,
         string_tables: &StringTableContainer,
         field_decode_ctx: &mut FieldDecodeContext,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
         let entity_data = msg.entity_data.unwrap_or_default();
         let mut br = BitReader::new(&entity_data);
@@ -196,6 +185,7 @@ impl EntityContainer {
                         serializers,
                         string_tables,
                         field_decode_ctx,
+                        fp_buf,
                     )
                     .map_err(|e| Error::Parse {
                         context: format!("entity create #{}: {}", entity_index, e),
@@ -208,6 +198,7 @@ impl EntityContainer {
                         class_info,
                         serializers,
                         field_decode_ctx,
+                        fp_buf,
                     )
                     .map_err(|e| Error::Parse {
                         context: format!(
@@ -230,6 +221,7 @@ impl EntityContainer {
 
     /// Handle a CSVCMsg_PacketEntities message, only tracking specified entity classes.
     /// Entities not in the filter are parsed (to advance the bit reader) but not stored.
+    #[allow(clippy::too_many_arguments)]
     pub fn handle_packet_entities_filtered(
         &mut self,
         msg: CsvcMsgPacketEntities,
@@ -238,6 +230,7 @@ impl EntityContainer {
         string_tables: &StringTableContainer,
         field_decode_ctx: &mut FieldDecodeContext,
         class_filter: &HashSet<&str>,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
         let entity_data = msg.entity_data.unwrap_or_default();
         let mut br = BitReader::new(&entity_data);
@@ -260,6 +253,7 @@ impl EntityContainer {
                         string_tables,
                         field_decode_ctx,
                         class_filter,
+                        fp_buf,
                     )?;
                 }
                 DELTA_UPDATE => {
@@ -270,6 +264,7 @@ impl EntityContainer {
                         serializers,
                         field_decode_ctx,
                         class_filter,
+                        fp_buf,
                     )?;
                 }
                 DELTA_DELETE | DELTA_LEAVE => {
@@ -283,6 +278,7 @@ impl EntityContainer {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_create(
         &mut self,
         index: i32,
@@ -291,6 +287,7 @@ impl EntityContainer {
         serializers: &SerializerContainer,
         string_tables: &StringTableContainer,
         field_decode_ctx: &mut FieldDecodeContext,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
         let class_id = br.read_bits(class_info.bits)? as i32;
         let _serial = br.read_bits(NUM_SERIAL_NUM_BITS as usize)?;
@@ -318,7 +315,7 @@ impl EntityContainer {
             // Apply baseline from instancebaseline string table
             if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
                 let mut baseline_br = BitReader::new(baseline_data);
-                e.apply_update(&mut baseline_br, &serializer, field_decode_ctx)
+                e.apply_update(&mut baseline_br, &serializer, field_decode_ctx, fp_buf)
                     .map_err(|err| Error::Parse {
                         context: format!(
                             "baseline for {} (class_id {}): {}",
@@ -333,7 +330,7 @@ impl EntityContainer {
 
         // Apply create delta
         entity
-            .apply_update(br, &serializer, field_decode_ctx)
+            .apply_update(br, &serializer, field_decode_ctx, fp_buf)
             .map_err(|err| Error::Parse {
                 context: format!(
                     "create delta for {} (class_id {}): {}",
@@ -352,6 +349,7 @@ impl EntityContainer {
         _class_info: &ClassInfo,
         serializers: &SerializerContainer,
         field_decode_ctx: &mut FieldDecodeContext,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
         let entity = match self.entities.get_mut(&index) {
             Some(e) => e,
@@ -368,10 +366,11 @@ impl EntityContainer {
                 context: format!("no serializer for {}", entity.class_name),
             })?;
 
-        entity.apply_update(br, &serializer, field_decode_ctx)?;
+        entity.apply_update(br, &serializer, field_decode_ctx, fp_buf)?;
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_create_filtered(
         &mut self,
         index: i32,
@@ -381,6 +380,7 @@ impl EntityContainer {
         string_tables: &StringTableContainer,
         field_decode_ctx: &mut FieldDecodeContext,
         class_filter: &HashSet<&str>,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
         let class_id = br.read_bits(class_info.bits)? as i32;
         let _serial = br.read_bits(NUM_SERIAL_NUM_BITS as usize)?;
@@ -402,7 +402,7 @@ impl EntityContainer {
             // Skip this entity - just advance the bit reader
             // But track its class_id so we can skip updates later
             self.skipped_entity_classes.insert(index, class_id);
-            Entity::skip_update(br, &serializer, field_decode_ctx)?;
+            Entity::skip_update(br, &serializer, field_decode_ctx, fp_buf)?;
             return Ok(());
         }
 
@@ -416,19 +416,20 @@ impl EntityContainer {
 
             if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
                 let mut baseline_br = BitReader::new(baseline_data);
-                e.apply_update(&mut baseline_br, &serializer, field_decode_ctx)?;
+                e.apply_update(&mut baseline_br, &serializer, field_decode_ctx, fp_buf)?;
             }
 
             self.baseline_cache.insert(class_id, e.clone());
             e
         };
 
-        entity.apply_update(br, &serializer, field_decode_ctx)?;
+        entity.apply_update(br, &serializer, field_decode_ctx, fp_buf)?;
         self.entities.insert(index, entity);
 
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn handle_update_filtered(
         &mut self,
         index: i32,
@@ -437,6 +438,7 @@ impl EntityContainer {
         serializers: &SerializerContainer,
         field_decode_ctx: &mut FieldDecodeContext,
         _class_filter: &HashSet<&str>,
+        fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
         // Check if we're tracking this entity
         if let Some(entity) = self.entities.get_mut(&index) {
@@ -446,7 +448,7 @@ impl EntityContainer {
                     context: format!("no serializer for {}", entity.class_name),
                 })?;
 
-            entity.apply_update(br, &serializer, field_decode_ctx)?;
+            entity.apply_update(br, &serializer, field_decode_ctx, fp_buf)?;
             return Ok(());
         }
 
@@ -464,7 +466,7 @@ impl EntityContainer {
                     })?;
 
             // Skip this update
-            Entity::skip_update(br, &serializer, field_decode_ctx)?;
+            Entity::skip_update(br, &serializer, field_decode_ctx, fp_buf)?;
         }
 
         // If we don't know about this entity at all, it was created before filtering started

@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 
-pub fn run(file: &PathBuf) -> Result<()> {
+pub fn run(file: &Path) -> Result<()> {
     let parser = boon::Parser::from_file(file)?;
 
     // File header
@@ -57,22 +57,22 @@ pub fn run(file: &PathBuf) -> Result<()> {
             if let Some(v) = info.playback_frames {
                 println!("  playback_frames:  {}", v);
             }
-            if let Some(ref gi) = info.game_info {
-                if let Some(ref dota_info) = gi.dota {
-                    if let Some(v) = dota_info.match_id {
-                        println!("  match_id:         {}", v);
-                    }
-                    if let Some(v) = dota_info.game_mode {
-                        println!("  game_mode:        {}", v);
-                    }
-                    if let Some(v) = dota_info.game_winner {
-                        println!("  game_winner:      {}", v);
-                    }
-                    for player in &dota_info.player_info {
-                        if let Some(ref name) = player.player_name {
-                            let hero = player.hero_name.as_deref().unwrap_or("?");
-                            println!("  player:           {} ({})", name, hero);
-                        }
+            if let Some(ref gi) = info.game_info
+                && let Some(ref dota_info) = gi.dota
+            {
+                if let Some(v) = dota_info.match_id {
+                    println!("  match_id:         {}", v);
+                }
+                if let Some(v) = dota_info.game_mode {
+                    println!("  game_mode:        {}", v);
+                }
+                if let Some(v) = dota_info.game_winner {
+                    println!("  game_winner:      {}", v);
+                }
+                for player in &dota_info.player_info {
+                    if let Some(ref name) = player.player_name {
+                        let hero = player.hero_name.as_deref().unwrap_or("?");
+                        println!("  player:           {} ({})", name, hero);
                     }
                 }
             }

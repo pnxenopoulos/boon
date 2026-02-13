@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 mod commands;
 
 #[derive(Parser)]
-#[command(name = "boon", about = "Deadlock demo file parser")]
+#[command(name = "boon", about = "Boon — Deadlock demo file parser")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -89,6 +89,26 @@ enum Commands {
         #[arg(long)]
         limit: Option<usize>,
     },
+    /// List game events from a demo
+    Events {
+        /// Path to the demo file
+        file: PathBuf,
+        /// Filter events by name substring
+        #[arg(long)]
+        filter: Option<String>,
+        /// Show only event names and counts
+        #[arg(long)]
+        summary: bool,
+        /// Maximum tick to parse up to
+        #[arg(long)]
+        tick: Option<i32>,
+        /// Maximum number of events to display
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Decode and display full message contents
+        #[arg(long)]
+        inspect: bool,
+    },
     /// Inspect entity state at a given tick
     Entities {
         /// Path to the demo file
@@ -146,6 +166,14 @@ fn main() -> Result<()> {
             summary,
             limit,
         } => commands::string_tables(&file, filter, summary, limit),
+        Commands::Events {
+            file,
+            filter,
+            summary,
+            tick,
+            limit,
+            inspect,
+        } => commands::events(&file, filter, summary, tick, limit, inspect),
         Commands::Entities {
             file,
             tick,

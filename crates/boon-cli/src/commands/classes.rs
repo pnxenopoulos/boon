@@ -1,9 +1,9 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 
-pub fn run(file: &PathBuf, filter: Option<String>, limit: Option<usize>) -> Result<()> {
+pub fn run(file: &Path, filter: Option<String>, limit: Option<usize>) -> Result<()> {
     let parser = boon::Parser::from_file(file)?;
     let class_info = parser.parse_class_info()?;
 

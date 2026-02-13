@@ -1,11 +1,11 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 
 pub fn run(
-    file: &PathBuf,
+    file: &Path,
     tick: i32,
     filter: Option<String>,
     summary: bool,
@@ -55,13 +55,8 @@ pub fn run(
     } else {
         // Detailed mode: show entity fields
         let limit = limit.unwrap_or(entities.len());
-        let mut count = 0;
 
-        for (idx, entity) in &entities {
-            if count >= limit {
-                break;
-            }
-
+        for (idx, entity) in entities.iter().take(limit) {
             println!(
                 "{} #{} (class_id: {})",
                 entity.class_name.green().bold(),
@@ -69,13 +64,23 @@ pub fn run(
                 entity.class_id,
             );
 
-            let mut field_keys: Vec<_> = entity.fields.keys().collect();
-            field_keys.sort();
+            // Resolve field names using the serializer
+            let serializer = ctx.serializers.get(&entity.class_name);
+            let mut resolved_fields: Vec<(String, &boon::FieldValue)> = entity
+                .fields
+                .iter()
+                .map(|(&key, value)| {
+                    let name = serializer
+                        .as_ref()
+                        .and_then(|s| s.field_name_for_key(key))
+                        .unwrap_or_else(|| format!("{:#x}", key));
+                    (name, value)
+                })
+                .collect();
+            resolved_fields.sort_by(|a, b| a.0.cmp(&b.0));
 
-            for key in field_keys.iter().take(fields) {
-                if let Some(value) = entity.fields.get(*key) {
-                    println!("  {}: {}", key, format!("{:?}", value).dimmed());
-                }
+            for (name, value) in resolved_fields.iter().take(fields) {
+                println!("  {}: {}", name, format!("{:?}", value).dimmed());
             }
 
             if entity.fields.len() > fields {
@@ -83,7 +88,6 @@ pub fn run(
             }
 
             println!();
-            count += 1;
         }
 
         println!(

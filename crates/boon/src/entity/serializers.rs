@@ -7,6 +7,7 @@ use crate::error::Result;
 use crate::io::ByteReader;
 
 use super::field_decoder::{self, FieldMetadata};
+use super::field_path::FieldPath;
 
 use boon_proto::proto::{CDemoSendTables, CsvcMsgFlattenedSerializer};
 
@@ -54,6 +55,152 @@ impl SerializerField {
 pub struct Serializer {
     pub name: String,
     pub fields: Vec<Rc<SerializerField>>,
+}
+
+impl Serializer {
+    /// Resolve a dotted field name (e.g. "m_pGameRules.m_bGamePaused") to a packed u64 key.
+    /// Walks the serializer hierarchy matching send_node + var_name against path components.
+    pub fn resolve_field_key(&self, path: &str) -> Option<u64> {
+        let parts: Vec<&str> = path.split('.').collect();
+        self.resolve_parts(&parts, 0)
+    }
+
+    fn resolve_parts(&self, parts: &[&str], depth: usize) -> Option<u64> {
+        if depth >= parts.len() {
+            return None;
+        }
+
+        for (field_idx, field) in self.fields.iter().enumerate() {
+            // Build the name parts this field contributes (send_node + var_name)
+            let mut field_parts: Vec<&str> = Vec::new();
+            if let Some(ref sn) = field.send_node
+                && !sn.is_empty()
+            {
+                for part in sn.split('.') {
+                    field_parts.push(part);
+                }
+            }
+            if !field.var_name.is_empty() {
+                field_parts.push(&field.var_name);
+            }
+
+            // Check if the remaining path starts with these field parts
+            let remaining = &parts[depth..];
+            if remaining.len() < field_parts.len() {
+                continue;
+            }
+            if field_parts != remaining[..field_parts.len()] {
+                continue;
+            }
+
+            let consumed = depth + field_parts.len();
+
+            // If we've consumed all parts, this is the field
+            if consumed == parts.len() {
+                let mut fp = FieldPath::default();
+                fp.data[0] = field_idx as u8;
+                // last stays 0
+                return Some(fp.pack());
+            }
+
+            // More parts remain — we need to recurse into a sub-serializer
+            let next_part = parts[consumed];
+
+            // Dynamic array: next part is a numeric index
+            if field.is_dynamic_array() {
+                if let Ok(array_idx) = next_part.parse::<usize>()
+                    && let Some(ref fs) = field.field_serializer
+                {
+                    let inner_field = &fs.fields[0];
+                    let after_idx = consumed + 1;
+
+                    if after_idx == parts.len() {
+                        // The array element itself is the value
+                        let mut fp = FieldPath::default();
+                        fp.data[0] = field_idx as u8;
+                        fp.data[1] = array_idx as u8;
+                        fp.last = 1;
+                        return Some(fp.pack());
+                    }
+
+                    // Recurse into the inner field's serializer
+                    if let Some(ref inner_fs) = inner_field.field_serializer
+                        && let Some(key) = inner_fs.resolve_parts(parts, after_idx)
+                    {
+                        let inner_fp = FieldPath::unpack(key);
+                        let mut fp = FieldPath::default();
+                        fp.data[0] = field_idx as u8;
+                        fp.data[1] = array_idx as u8;
+                        fp.last = 2 + inner_fp.last;
+                        for i in 0..=inner_fp.last {
+                            fp.data[2 + i] = inner_fp.data[i];
+                        }
+                        return Some(fp.pack());
+                    }
+                }
+                continue;
+            }
+
+            // Non-dynamic: recurse into field_serializer
+            if let Some(ref fs) = field.field_serializer
+                && let Some(key) = fs.resolve_parts(parts, consumed)
+            {
+                let inner_fp = FieldPath::unpack(key);
+                let mut fp = FieldPath::default();
+                fp.data[0] = field_idx as u8;
+                fp.last = 1 + inner_fp.last;
+                for i in 0..=inner_fp.last {
+                    fp.data[1 + i] = inner_fp.data[i];
+                }
+                return Some(fp.pack());
+            }
+        }
+
+        None
+    }
+
+    /// Convert a packed u64 key back to a dotted field name string.
+    /// Walks the serializer hierarchy using the unpacked FieldPath.
+    pub fn field_name_for_key(&self, key: u64) -> Option<String> {
+        let fp = FieldPath::unpack(key);
+        let mut parts: Vec<String> = Vec::new();
+        let mut field = self.fields.get(fp.get(0))?;
+
+        if let Some(ref sn) = field.send_node
+            && !sn.is_empty()
+        {
+            for part in sn.split('.') {
+                parts.push(part.to_string());
+            }
+        }
+        parts.push(field.var_name.clone());
+
+        for i in 1..=fp.last {
+            let idx = fp.get(i);
+            if field.is_dynamic_array() {
+                parts.push(idx.to_string());
+                if let Some(ref fs) = field.field_serializer {
+                    field = &fs.fields[0];
+                } else {
+                    break;
+                }
+            } else if let Some(ref fs) = field.field_serializer {
+                field = fs.fields.get(idx)?;
+                if let Some(ref sn) = field.send_node
+                    && !sn.is_empty()
+                {
+                    for part in sn.split('.') {
+                        parts.push(part.to_string());
+                    }
+                }
+                parts.push(field.var_name.clone());
+            } else {
+                break;
+            }
+        }
+
+        Some(parts.join("."))
+    }
 }
 
 /// Container holding all parsed serializers, indexed by name.
@@ -250,9 +397,9 @@ pub fn parse_type(s: &str) -> FieldType {
     let s = s.trim();
 
     // Check for pointer
-    if s.ends_with('*') {
+    if let Some(stripped) = s.strip_suffix('*') {
         return FieldType {
-            base_type: s[..s.len() - 1].trim().to_string(),
+            base_type: stripped.trim().to_string(),
             pointer: true,
             generic_type: None,
             array_length: None,
@@ -261,39 +408,39 @@ pub fn parse_type(s: &str) -> FieldType {
     }
 
     // Check for array: type[length]
-    if let Some(bracket_pos) = s.find('[') {
-        if s.ends_with(']') {
-            let base = s[..bracket_pos].trim();
-            let len_str = s[bracket_pos + 1..s.len() - 1].trim();
-            let array_length = len_str.parse::<usize>().ok();
-            let count = if array_length.is_none() {
-                Some(len_str.to_string())
-            } else {
-                None
-            };
-            return FieldType {
-                base_type: base.to_string(),
-                pointer: false,
-                generic_type: None,
-                array_length,
-                count,
-            };
-        }
+    if let Some(bracket_pos) = s.find('[')
+        && s.ends_with(']')
+    {
+        let base = s[..bracket_pos].trim();
+        let len_str = s[bracket_pos + 1..s.len() - 1].trim();
+        let array_length = len_str.parse::<usize>().ok();
+        let count = if array_length.is_none() {
+            Some(len_str.to_string())
+        } else {
+            None
+        };
+        return FieldType {
+            base_type: base.to_string(),
+            pointer: false,
+            generic_type: None,
+            array_length,
+            count,
+        };
     }
 
     // Check for generic: Type< InnerType >
-    if let Some(angle_pos) = s.find('<') {
-        if let Some(close_pos) = s.rfind('>') {
-            let base = s[..angle_pos].trim();
-            let inner = s[angle_pos + 1..close_pos].trim();
-            return FieldType {
-                base_type: base.to_string(),
-                pointer: false,
-                generic_type: Some(Box::new(parse_type(inner))),
-                array_length: None,
-                count: None,
-            };
-        }
+    if let Some(angle_pos) = s.find('<')
+        && let Some(close_pos) = s.rfind('>')
+    {
+        let base = s[..angle_pos].trim();
+        let inner = s[angle_pos + 1..close_pos].trim();
+        return FieldType {
+            base_type: base.to_string(),
+            pointer: false,
+            generic_type: Some(Box::new(parse_type(inner))),
+            array_length: None,
+            count: None,
+        };
     }
 
     // Simple type

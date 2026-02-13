@@ -2,6 +2,7 @@
 
 mod classes;
 mod entities;
+mod events;
 mod info;
 mod messages;
 mod send_tables;
@@ -10,6 +11,7 @@ mod verify;
 
 pub use classes::run as classes;
 pub use entities::run as entities;
+pub use events::run as events;
 pub use info::run as info;
 pub use messages::run as messages;
 pub use send_tables::run as send_tables;

@@ -1,10 +1,11 @@
-use std::path::PathBuf;
+use std::path::Path;
 
 use anyhow::Result;
 use colored::Colorize;
 
+#[allow(clippy::too_many_arguments)]
 pub fn run(
-    file: &PathBuf,
+    file: &Path,
     cmd_filter: Option<String>,
     tick_filter: Option<i32>,
     min_tick: Option<i32>,
@@ -21,40 +22,40 @@ pub fn run(
         .iter()
         .filter(|msg| {
             // Command type filter (substring match, case-insensitive)
-            if let Some(ref cmd) = cmd_filter {
-                if !msg.cmd_name.to_lowercase().contains(&cmd.to_lowercase()) {
-                    return false;
-                }
+            if let Some(ref cmd) = cmd_filter
+                && !msg.cmd_name.to_lowercase().contains(&cmd.to_lowercase())
+            {
+                return false;
             }
             // Exact tick filter
-            if let Some(tick) = tick_filter {
-                if msg.tick != tick {
-                    return false;
-                }
+            if let Some(tick) = tick_filter
+                && msg.tick != tick
+            {
+                return false;
             }
             // Min tick filter
-            if let Some(min) = min_tick {
-                if msg.tick < min {
-                    return false;
-                }
+            if let Some(min) = min_tick
+                && msg.tick < min
+            {
+                return false;
             }
             // Max tick filter
-            if let Some(max) = max_tick {
-                if msg.tick > max {
-                    return false;
-                }
+            if let Some(max) = max_tick
+                && msg.tick > max
+            {
+                return false;
             }
             // Min size filter
-            if let Some(min) = min_size {
-                if msg.body_size < min {
-                    return false;
-                }
+            if let Some(min) = min_size
+                && msg.body_size < min
+            {
+                return false;
             }
             // Max size filter
-            if let Some(max) = max_size {
-                if msg.body_size > max {
-                    return false;
-                }
+            if let Some(max) = max_size
+                && msg.body_size > max
+            {
+                return false;
             }
             true
         })

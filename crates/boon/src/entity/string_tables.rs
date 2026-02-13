@@ -170,6 +170,7 @@ impl StringTable {
 }
 
 /// Container for all string tables.
+#[derive(Default)]
 pub struct StringTableContainer {
     tables: Vec<StringTable>,
     /// Cached instance baselines: class_id -> baseline data.
@@ -178,10 +179,7 @@ pub struct StringTableContainer {
 
 impl StringTableContainer {
     pub fn new() -> Self {
-        Self {
-            tables: Vec::new(),
-            instance_baselines: HashMap::new(),
-        }
+        Self::default()
     }
 
     /// Handle CSVCMsg_CreateStringTable.
@@ -268,10 +266,10 @@ impl StringTableContainer {
             .find(|t| t.name == INSTANCE_BASELINE_TABLE_NAME)
         {
             for entry in &table.entries {
-                if let (Some(s), Some(data)) = (&entry.string, &entry.user_data) {
-                    if let Ok(class_id) = s.parse::<i32>() {
-                        self.instance_baselines.insert(class_id, data.clone());
-                    }
+                if let (Some(s), Some(data)) = (&entry.string, &entry.user_data)
+                    && let Ok(class_id) = s.parse::<i32>()
+                {
+                    self.instance_baselines.insert(class_id, data.clone());
                 }
             }
         }

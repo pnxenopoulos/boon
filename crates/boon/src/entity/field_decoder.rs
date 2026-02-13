@@ -151,6 +151,7 @@ impl Decoder {
 
     /// Skip a field value without fully decoding it - just advances the bit reader.
     /// This is faster than decode() when we don't need the value.
+    #[allow(clippy::only_used_in_recursion)]
     pub fn skip(&self, ctx: &mut FieldDecodeContext, br: &mut BitReader) -> Result<()> {
         match self {
             Decoder::Bool => {
@@ -358,6 +359,7 @@ fn build_f32_decoder(
 }
 
 /// Determine the field metadata (decoder + special descriptor) for a field.
+#[allow(clippy::too_many_arguments)]
 pub fn get_field_metadata(
     var_type: &str,
     var_name: &str,
@@ -380,27 +382,65 @@ pub fn get_field_metadata(
     }
 
     // Array types: type[length]
-    if let Some(bracket_pos) = trimmed.find('[') {
-        if trimmed.ends_with(']') {
-            let base = trimmed[..bracket_pos].trim();
-            let len_str = trimmed[bracket_pos + 1..trimmed.len() - 1].trim();
+    if let Some(bracket_pos) = trimmed.find('[')
+        && trimmed.ends_with(']')
+    {
+        let base = trimmed[..bracket_pos].trim();
+        let len_str = trimmed[bracket_pos + 1..trimmed.len() - 1].trim();
 
-            // char[N] is a string
-            if base == "char" {
+        // char[N] is a string
+        if base == "char" {
+            return FieldMetadata {
+                decoder: Decoder::String,
+                special: None,
+            };
+        }
+
+        let length = len_str.parse::<usize>().unwrap_or(match len_str {
+            "MAX_ABILITY_DRAFT_ABILITIES" => 48,
+            "DOTA_ABILITY_DRAFT_HEROES_PER_GAME" => 10,
+            _ => 64,
+        });
+
+        let inner = get_field_metadata(
+            base,
+            var_name,
+            bit_count,
+            low_value,
+            high_value,
+            encode_flags,
+            var_encoder,
+            has_field_serializer,
+        );
+
+        return FieldMetadata {
+            decoder: inner.decoder,
+            special: Some(FieldSpecialDescriptor::FixedArray { length }),
+        };
+    }
+
+    // Generic/template types: CNetworkUtlVectorBase< T >
+    if let Some(angle_pos) = trimmed.find('<')
+        && let Some(close_pos) = trimmed.rfind('>')
+    {
+        let base = trimmed[..angle_pos].trim();
+        let inner_type = trimmed[angle_pos + 1..close_pos].trim();
+
+        let is_vector_base = matches!(
+            base,
+            "CNetworkUtlVectorBase" | "CUtlVectorEmbeddedNetworkVar" | "CUtlVector"
+        );
+
+        if is_vector_base {
+            if has_field_serializer {
                 return FieldMetadata {
-                    decoder: Decoder::String,
-                    special: None,
+                    decoder: Decoder::U64,
+                    special: Some(FieldSpecialDescriptor::DynamicSerializerArray),
                 };
             }
 
-            let length = len_str.parse::<usize>().unwrap_or(match len_str {
-                "MAX_ABILITY_DRAFT_ABILITIES" => 48,
-                "DOTA_ABILITY_DRAFT_HEROES_PER_GAME" => 10,
-                _ => 64,
-            });
-
             let inner = get_field_metadata(
-                base,
+                inner_type,
                 var_name,
                 bit_count,
                 low_value,
@@ -411,62 +451,24 @@ pub fn get_field_metadata(
             );
 
             return FieldMetadata {
-                decoder: inner.decoder,
-                special: Some(FieldSpecialDescriptor::FixedArray { length }),
+                decoder: Decoder::U64,
+                special: Some(FieldSpecialDescriptor::DynamicArray {
+                    inner_decoder: inner.decoder,
+                }),
             };
         }
-    }
 
-    // Generic/template types: CNetworkUtlVectorBase< T >
-    if let Some(angle_pos) = trimmed.find('<') {
-        if let Some(close_pos) = trimmed.rfind('>') {
-            let base = trimmed[..angle_pos].trim();
-            let inner_type = trimmed[angle_pos + 1..close_pos].trim();
-
-            let is_vector_base = matches!(
-                base,
-                "CNetworkUtlVectorBase" | "CUtlVectorEmbeddedNetworkVar" | "CUtlVector"
-            );
-
-            if is_vector_base {
-                if has_field_serializer {
-                    return FieldMetadata {
-                        decoder: Decoder::U64,
-                        special: Some(FieldSpecialDescriptor::DynamicSerializerArray),
-                    };
-                }
-
-                let inner = get_field_metadata(
-                    inner_type,
-                    var_name,
-                    bit_count,
-                    low_value,
-                    high_value,
-                    encode_flags,
-                    var_encoder,
-                    has_field_serializer,
-                );
-
-                return FieldMetadata {
-                    decoder: Decoder::U64,
-                    special: Some(FieldSpecialDescriptor::DynamicArray {
-                        inner_decoder: inner.decoder,
-                    }),
-                };
-            }
-
-            // For non-vector templates, decode as the base type
-            return get_field_metadata(
-                base,
-                var_name,
-                bit_count,
-                low_value,
-                high_value,
-                encode_flags,
-                var_encoder,
-                has_field_serializer,
-            );
-        }
+        // For non-vector templates, decode as the base type
+        return get_field_metadata(
+            base,
+            var_name,
+            bit_count,
+            low_value,
+            high_value,
+            encode_flags,
+            var_encoder,
+            has_field_serializer,
+        );
     }
 
     // Identify the base type

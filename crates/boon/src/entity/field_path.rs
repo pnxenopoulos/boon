@@ -48,6 +48,35 @@ impl FieldPath {
     pub fn get(&self, index: usize) -> usize {
         self.data[index] as usize
     }
+
+    /// Pack the field path into a single u64 key.
+    /// Layout: bits [0..56) = data[0..7], bits [56..59) = last (3 bits, max value 6).
+    #[inline]
+    pub fn pack(&self) -> u64 {
+        let mut key: u64 = 0;
+        // Pack 7 bytes of data into bits 0..56
+        for (i, &byte) in self.data.iter().enumerate() {
+            key |= (byte as u64) << (i * 8);
+        }
+        // Pack `last` (0..=6) into bits 56..59
+        key |= (self.last as u64) << 56;
+        key
+    }
+
+    /// Unpack a u64 key back into a FieldPath.
+    #[inline]
+    pub fn unpack(key: u64) -> FieldPath {
+        let mut data = [0u8; 7];
+        for (i, byte) in data.iter_mut().enumerate() {
+            *byte = ((key >> (i * 8)) & 0xFF) as u8;
+        }
+        let last = ((key >> 56) & 0x07) as usize;
+        FieldPath {
+            data,
+            last,
+            finished: false,
+        }
+    }
 }
 
 type FieldOp = fn(&mut FieldPath, &mut BitReader) -> Result<()>;
@@ -577,10 +606,10 @@ fn build_fieldop_hierarchy() -> Node {
 static FIELDOP_HIERARCHY: LazyLock<Node> = LazyLock::new(build_fieldop_hierarchy);
 
 /// Read field paths from a bit reader using the Huffman-coded encoding.
-/// Returns the decoded field paths.
-pub fn read_field_paths(br: &mut BitReader) -> Result<Vec<FieldPath>> {
+/// Clears and fills the provided buffer with decoded field paths.
+pub fn read_field_paths(br: &mut BitReader, buf: &mut Vec<FieldPath>) -> Result<()> {
+    buf.clear();
     let mut fp = FieldPath::default();
-    let mut result = Vec::new();
     let mut node: &Node = &FIELDOP_HIERARCHY;
 
     loop {
@@ -599,9 +628,9 @@ pub fn read_field_paths(br: &mut BitReader) -> Result<Vec<FieldPath>> {
         node = if let Node::Leaf { op, .. } = next {
             op(&mut fp, br)?;
             if fp.finished {
-                return Ok(result);
+                return Ok(());
             }
-            result.push(fp.clone());
+            buf.push(fp.clone());
             &FIELDOP_HIERARCHY
         } else {
             next

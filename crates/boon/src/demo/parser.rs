@@ -9,11 +9,15 @@ use crate::entity::{
 use crate::error::{Error, Result};
 use crate::io::{BitReader, ByteReader};
 
-use super::command::{self, CmdHeader, dem, svc};
+use std::collections::HashMap;
+
+use super::command::{self, CmdHeader, dem, ge, svc};
 
 use boon_proto::proto::{
     CDemoClassInfo, CDemoFileHeader, CDemoFileInfo, CDemoFullPacket, CDemoPacket, CDemoSendTables,
+    CMsgSource1LegacyGameEvent, CMsgSource1LegacyGameEventList, CitadelUserMessageIds,
     CsvcMsgCreateStringTable, CsvcMsgPacketEntities, CsvcMsgServerInfo, CsvcMsgUpdateStringTable,
+    CsvcMsgUserMessage, EBaseUserMessages, ECitadelGameEvents,
 };
 
 const MAGIC: &[u8; 8] = b"PBDEMS2\0";
@@ -47,6 +51,46 @@ pub struct Context {
     pub tick_interval: f32,
     pub full_packet_interval: i32,
     pub tick: i32,
+}
+
+/// A game event extracted from the demo.
+#[derive(Debug, Clone)]
+pub struct GameEvent {
+    pub tick: i32,
+    pub name: String,
+    pub msg_type: u32,
+    pub keys: Vec<(String, String)>,
+    pub payload: Vec<u8>,
+}
+
+struct EventDescriptor {
+    name: String,
+    field_names: Vec<String>,
+}
+
+fn format_event_key(key: &boon_proto::proto::c_msg_source1_legacy_game_event::KeyT) -> String {
+    if let Some(ref s) = key.val_string {
+        return s.clone();
+    }
+    if let Some(f) = key.val_float {
+        return f.to_string();
+    }
+    if let Some(l) = key.val_long {
+        return l.to_string();
+    }
+    if let Some(s) = key.val_short {
+        return s.to_string();
+    }
+    if let Some(b) = key.val_byte {
+        return b.to_string();
+    }
+    if let Some(b) = key.val_bool {
+        return b.to_string();
+    }
+    if let Some(u) = key.val_uint64 {
+        return u.to_string();
+    }
+    String::new()
 }
 
 /// The main parser. Owns the memory-mapped demo file.
@@ -95,19 +139,23 @@ impl Parser {
         })
     }
 
-    fn read_cmd_body(reader: &mut ByteReader, header: &CmdHeader) -> Result<Vec<u8>> {
+    /// Read and decompress a command body into the provided buffer.
+    /// The buffer is resized as needed and can be reused across calls.
+    fn read_cmd_body(reader: &mut ByteReader, header: &CmdHeader, buf: &mut Vec<u8>) -> Result<()> {
         let raw = reader.read_bytes(header.body_size as usize)?;
         if header.compressed {
             let decompressed_len =
                 snap::raw::decompress_len(raw).map_err(|e| Error::Decompress(e.to_string()))?;
-            let mut buf = vec![0u8; decompressed_len];
+            buf.clear();
+            buf.resize(decompressed_len, 0);
             snap::raw::Decoder::new()
-                .decompress(raw, &mut buf)
+                .decompress(raw, buf)
                 .map_err(|e| Error::Decompress(e.to_string()))?;
-            Ok(buf)
         } else {
-            Ok(raw.to_vec())
+            buf.clear();
+            buf.extend_from_slice(raw);
         }
+        Ok(())
     }
 
     /// Iterate all commands and return metadata about each.
@@ -163,12 +211,14 @@ impl Parser {
         self.verify()?;
         let data = &self.mmap[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+
         while reader.remaining() > 0 {
             let header = Self::read_cmd_header(&mut reader)?;
 
             if header.cmd == dem::FILE_HEADER {
-                let body = Self::read_cmd_body(&mut reader, &header)?;
-                return CDemoFileHeader::decode(&body[..]).map_err(Error::from);
+                Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+                return CDemoFileHeader::decode(&body_buf[..]).map_err(Error::from);
             }
 
             if header.cmd == dem::STOP {
@@ -183,32 +233,199 @@ impl Parser {
         })
     }
 
-    /// Scan the command stream to find and decode CDemoFileInfo.
-    /// DEM_FileInfo appears after DEM_Stop in the command stream.
+    /// Decode CDemoFileInfo using the offset stored in the file header.
     pub fn file_info(&self) -> Result<CDemoFileInfo> {
+        self.verify()?;
+
+        // Bytes 8..12 of the file header contain the absolute offset to DEM_FileInfo.
+        let fileinfo_offset =
+            u32::from_le_bytes([self.mmap[8], self.mmap[9], self.mmap[10], self.mmap[11]]) as usize;
+
+        let data = &self.mmap[HEADER_SIZE..];
+        let mut reader = ByteReader::new(data);
+        // The offset is relative to the start of the file; adjust for the header we sliced off.
+        reader.seek(fileinfo_offset.saturating_sub(HEADER_SIZE))?;
+
+        let header = Self::read_cmd_header(&mut reader)?;
+        if header.cmd != dem::FILE_INFO {
+            return Err(Error::Parse {
+                context: format!(
+                    "expected DEM_FileInfo at offset {}, found command {}",
+                    fileinfo_offset, header.cmd
+                ),
+            });
+        }
+
+        let mut body_buf = Vec::new();
+        Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+        CDemoFileInfo::decode(&body_buf[..]).map_err(Error::from)
+    }
+
+    /// Parse game events from the demo.
+    ///
+    /// Extracts Source 1 legacy game events and Citadel user messages from
+    /// `DEM_Packet`, `DEM_SignonPacket`, and `DEM_FullPacket` commands.
+    /// If `max_tick` is set, stops parsing once the tick exceeds the limit.
+    pub fn events(&self, max_tick: Option<i32>) -> Result<Vec<GameEvent>> {
         self.verify()?;
         let data = &self.mmap[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut events = Vec::new();
+        let mut descriptors: HashMap<i32, EventDescriptor> = HashMap::new();
 
         while reader.remaining() > 0 {
-            let header = Self::read_cmd_header(&mut reader)?;
+            let header = match Self::read_cmd_header(&mut reader) {
+                Ok(h) => h,
+                Err(_) => break,
+            };
 
-            if header.cmd == dem::FILE_INFO {
-                let body = Self::read_cmd_body(&mut reader, &header)?;
-                return CDemoFileInfo::decode(&body[..]).map_err(Error::from);
-            }
-
-            // DEM_Stop has no body, continue to find DEM_FileInfo after it
             if header.cmd == dem::STOP {
-                continue;
+                break;
             }
 
-            reader.skip(header.body_size as usize)?;
+            if let Some(max) = max_tick
+                && header.tick > max
+            {
+                break;
+            }
+
+            match header.cmd {
+                dem::PACKET | dem::SIGNON_PACKET => {
+                    Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
+                    let pkt_data = cmd.data.unwrap_or_default();
+                    Self::process_packet_events(
+                        &pkt_data,
+                        header.tick,
+                        &mut descriptors,
+                        &mut events,
+                        &mut packet_buf,
+                    )?;
+                }
+                dem::FULL_PACKET => {
+                    Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+                    let cmd = CDemoFullPacket::decode(&body_buf[..])?;
+                    if let Some(packet) = cmd.packet {
+                        let pkt_data = packet.data.unwrap_or_default();
+                        Self::process_packet_events(
+                            &pkt_data,
+                            header.tick,
+                            &mut descriptors,
+                            &mut events,
+                            &mut packet_buf,
+                        )?;
+                    }
+                }
+                _ => {
+                    reader.skip(header.body_size as usize)?;
+                }
+            }
         }
 
-        Err(Error::Parse {
-            context: "DEM_FileInfo not found".into(),
-        })
+        Ok(events)
+    }
+
+    /// Process a packet's inner messages for game events.
+    fn process_packet_events(
+        pkt_data: &[u8],
+        tick: i32,
+        descriptors: &mut HashMap<i32, EventDescriptor>,
+        events: &mut Vec<GameEvent>,
+        packet_buf: &mut Vec<u8>,
+    ) -> Result<()> {
+        let mut br = BitReader::new(pkt_data);
+
+        while br.bits_remaining() > 8 {
+            let msg_type = br.read_ubitvar()?;
+            let size = br.read_uvarint32()? as usize;
+
+            if size > packet_buf.len() {
+                packet_buf.resize(size, 0);
+            }
+            br.read_bytes(&mut packet_buf[..size])?;
+            let msg_data = &packet_buf[..size];
+
+            match msg_type {
+                ge::SOURCE1_LEGACY_GAME_EVENT_LIST => {
+                    let msg = CMsgSource1LegacyGameEventList::decode(msg_data)?;
+                    for desc in msg.descriptors {
+                        let eventid = desc.eventid.unwrap_or_default();
+                        let name = desc.name.unwrap_or_default();
+                        let field_names = desc
+                            .keys
+                            .iter()
+                            .map(|k| k.name.clone().unwrap_or_default())
+                            .collect();
+                        descriptors.insert(eventid, EventDescriptor { name, field_names });
+                    }
+                }
+                ge::SOURCE1_LEGACY_GAME_EVENT => {
+                    let msg = CMsgSource1LegacyGameEvent::decode(msg_data)?;
+                    let eventid = msg.eventid.unwrap_or_default();
+                    let (name, keys) = if let Some(desc) = descriptors.get(&eventid) {
+                        let keys: Vec<(String, String)> = desc
+                            .field_names
+                            .iter()
+                            .zip(msg.keys.iter())
+                            .map(|(fname, key)| (fname.clone(), format_event_key(key)))
+                            .collect();
+                        (desc.name.clone(), keys)
+                    } else {
+                        let name = msg
+                            .event_name
+                            .unwrap_or_else(|| format!("event_{}", eventid));
+                        (name, Vec::new())
+                    };
+                    events.push(GameEvent {
+                        tick,
+                        name,
+                        msg_type,
+                        keys,
+                        payload: msg_data.to_vec(),
+                    });
+                }
+                svc::USER_MESSAGE => {
+                    let msg = CsvcMsgUserMessage::decode(msg_data)?;
+                    let inner_type = msg.msg_type.unwrap_or_default();
+                    let name = command::user_message_name(inner_type);
+                    let inner_payload = msg.msg_data.unwrap_or_default();
+                    events.push(GameEvent {
+                        tick,
+                        name,
+                        msg_type: inner_type as u32,
+                        keys: Vec::new(),
+                        payload: inner_payload,
+                    });
+                }
+                _ => {
+                    // Citadel user messages (300-366) are sent directly in
+                    // the packet stream, not wrapped in CSVCMsg_UserMessage.
+                    let t = msg_type as i32;
+                    let name = if let Ok(e) = CitadelUserMessageIds::try_from(t) {
+                        Some(e.as_str_name().to_string())
+                    } else if let Ok(e) = ECitadelGameEvents::try_from(t) {
+                        Some(e.as_str_name().to_string())
+                    } else if let Ok(e) = EBaseUserMessages::try_from(t) {
+                        Some(e.as_str_name().to_string())
+                    } else {
+                        None
+                    };
+                    if let Some(name) = name {
+                        events.push(GameEvent {
+                            tick,
+                            name,
+                            msg_type,
+                            keys: Vec::new(),
+                            payload: msg_data.to_vec(),
+                        });
+                    }
+                }
+            }
+        }
+
+        Ok(())
     }
 
     /// Parse send tables from DEM_SendTables command.
@@ -216,13 +433,14 @@ impl Parser {
         self.verify()?;
         let data = &self.mmap[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
 
         while reader.remaining() > 0 {
             let header = Self::read_cmd_header(&mut reader)?;
 
             if header.cmd == dem::SEND_TABLES {
-                let body = Self::read_cmd_body(&mut reader, &header)?;
-                let cmd = CDemoSendTables::decode(&body[..])?;
+                Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+                let cmd = CDemoSendTables::decode(&body_buf[..])?;
                 return SerializerContainer::parse(cmd);
             }
 
@@ -243,13 +461,14 @@ impl Parser {
         self.verify()?;
         let data = &self.mmap[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
 
         while reader.remaining() > 0 {
             let header = Self::read_cmd_header(&mut reader)?;
 
             if header.cmd == dem::CLASS_INFO {
-                let body = Self::read_cmd_body(&mut reader, &header)?;
-                let cmd = CDemoClassInfo::decode(&body[..])?;
+                Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+                let cmd = CDemoClassInfo::decode(&body_buf[..])?;
                 return Ok(ClassInfo::parse(cmd));
             }
 
@@ -272,6 +491,7 @@ impl Parser {
         let mut reader = ByteReader::new(data);
 
         let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
 
         let mut serializers: Option<SerializerContainer> = None;
         let mut class_info: Option<ClassInfo> = None;
@@ -291,19 +511,19 @@ impl Parser {
                 break;
             }
 
-            let body = Self::read_cmd_body(&mut reader, &header)?;
+            Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
 
             match header.cmd {
                 dem::SEND_TABLES => {
-                    let cmd = CDemoSendTables::decode(&body[..])?;
+                    let cmd = CDemoSendTables::decode(&body_buf[..])?;
                     serializers = Some(SerializerContainer::parse(cmd)?);
                 }
                 dem::CLASS_INFO => {
-                    let cmd = CDemoClassInfo::decode(&body[..])?;
+                    let cmd = CDemoClassInfo::decode(&body_buf[..])?;
                     class_info = Some(ClassInfo::parse(cmd));
                 }
                 dem::PACKET | dem::SIGNON_PACKET => {
-                    let cmd = CDemoPacket::decode(&body[..])?;
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
                     let pkt_data = cmd.data.unwrap_or_default();
                     Self::process_packet_for_init(
                         &pkt_data,
@@ -390,6 +610,8 @@ impl Parser {
         let mut reader = ByteReader::new(data);
 
         let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 
         // Skip past init (up to and including SyncTick)
@@ -432,8 +654,8 @@ impl Parser {
             let has_full_packet_ahead = distance > ctx.full_packet_interval + 100;
 
             if is_full_packet {
-                let body = Self::read_cmd_body(&mut reader, &header)?;
-                let cmd = CDemoFullPacket::decode(&body[..])?;
+                Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+                let cmd = CDemoFullPacket::decode(&body_buf[..])?;
 
                 // Handle string tables from full packet
                 if let Some(st) = cmd.string_table {
@@ -450,6 +672,7 @@ impl Parser {
                             &mut ctx,
                             &mut field_decode_ctx,
                             &mut packet_buf,
+                            &mut fp_buf,
                         )?;
                     }
                     did_handle_last_full_packet = true;
@@ -463,17 +686,18 @@ impl Parser {
                 continue;
             }
 
-            let body = Self::read_cmd_body(&mut reader, &header)?;
+            Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
 
             match header.cmd {
                 dem::PACKET | dem::SIGNON_PACKET => {
-                    let cmd = CDemoPacket::decode(&body[..])?;
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
                     let pkt_data = cmd.data.unwrap_or_default();
                     Self::process_packet_entities(
                         &pkt_data,
                         &mut ctx,
                         &mut field_decode_ctx,
                         &mut packet_buf,
+                        &mut fp_buf,
                     )?;
                 }
                 _ => {}
@@ -494,6 +718,8 @@ impl Parser {
         let mut reader = ByteReader::new(data);
 
         let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 
         // Skip past init (up to and including SyncTick)
@@ -529,11 +755,11 @@ impl Parser {
                 break;
             }
 
-            let body = Self::read_cmd_body(&mut reader, &header)?;
+            Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
 
             match header.cmd {
                 dem::FULL_PACKET => {
-                    let cmd = CDemoFullPacket::decode(&body[..])?;
+                    let cmd = CDemoFullPacket::decode(&body_buf[..])?;
 
                     if let Some(st) = cmd.string_table {
                         ctx.string_tables.do_full_update(st);
@@ -547,17 +773,19 @@ impl Parser {
                             &mut ctx,
                             &mut field_decode_ctx,
                             &mut packet_buf,
+                            &mut fp_buf,
                         )?;
                     }
                 }
                 dem::PACKET | dem::SIGNON_PACKET => {
-                    let cmd = CDemoPacket::decode(&body[..])?;
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
                     let pkt_data = cmd.data.unwrap_or_default();
                     Self::process_packet_entities(
                         &pkt_data,
                         &mut ctx,
                         &mut field_decode_ctx,
                         &mut packet_buf,
+                        &mut fp_buf,
                     )?;
                 }
                 _ => {}
@@ -583,6 +811,8 @@ impl Parser {
         let mut reader = ByteReader::new(data);
 
         let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 
         // Skip past init (up to and including SyncTick)
@@ -618,11 +848,11 @@ impl Parser {
                 break;
             }
 
-            let body = Self::read_cmd_body(&mut reader, &header)?;
+            Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
 
             match header.cmd {
                 dem::FULL_PACKET => {
-                    let cmd = CDemoFullPacket::decode(&body[..])?;
+                    let cmd = CDemoFullPacket::decode(&body_buf[..])?;
 
                     if let Some(st) = cmd.string_table {
                         ctx.string_tables.do_full_update(st);
@@ -637,11 +867,12 @@ impl Parser {
                             &mut field_decode_ctx,
                             &mut packet_buf,
                             class_filter,
+                            &mut fp_buf,
                         )?;
                     }
                 }
                 dem::PACKET | dem::SIGNON_PACKET => {
-                    let cmd = CDemoPacket::decode(&body[..])?;
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
                     let pkt_data = cmd.data.unwrap_or_default();
                     Self::process_packet_entities_filtered(
                         &pkt_data,
@@ -649,6 +880,121 @@ impl Parser {
                         &mut field_decode_ctx,
                         &mut packet_buf,
                         class_filter,
+                        &mut fp_buf,
+                    )?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Parse the entire demo with entity class filtering AND event collection.
+    /// Combines `run_to_end_filtered` with `process_packet_events` in a single pass.
+    /// The callback receives both the entity context and accumulated events for the tick.
+    pub fn run_to_end_with_events_filtered<F>(
+        &self,
+        class_filter: &std::collections::HashSet<&str>,
+        mut on_tick: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Context, &[GameEvent]),
+    {
+        let mut ctx = self.parse_init()?;
+        let data = &self.mmap[HEADER_SIZE..];
+        let mut reader = ByteReader::new(data);
+
+        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut event_packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut fp_buf = Vec::with_capacity(256);
+        let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
+
+        let mut descriptors: HashMap<i32, EventDescriptor> = HashMap::new();
+        let mut tick_events: Vec<GameEvent> = Vec::new();
+
+        // Skip past init (up to and including SyncTick)
+        while reader.remaining() > 0 {
+            let header = Self::read_cmd_header(&mut reader)?;
+            if header.cmd == dem::SYNC_TICK {
+                reader.skip(header.body_size as usize)?;
+                break;
+            }
+            if header.cmd == dem::STOP {
+                return Ok(());
+            }
+            reader.skip(header.body_size as usize)?;
+        }
+
+        let mut last_tick: i32 = -1;
+
+        while reader.remaining() > 0 {
+            let header = Self::read_cmd_header(&mut reader)?;
+
+            // Call callback when tick changes
+            if header.tick != last_tick && last_tick >= 0 {
+                on_tick(&ctx, &tick_events);
+                tick_events.clear();
+            }
+            last_tick = header.tick;
+            ctx.tick = header.tick;
+
+            if header.cmd == dem::STOP {
+                // Final callback
+                if last_tick >= 0 {
+                    on_tick(&ctx, &tick_events);
+                }
+                break;
+            }
+
+            Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+
+            match header.cmd {
+                dem::FULL_PACKET => {
+                    let cmd = CDemoFullPacket::decode(&body_buf[..])?;
+
+                    if let Some(st) = cmd.string_table {
+                        ctx.string_tables.do_full_update(st);
+                        ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    }
+
+                    if let Some(packet) = cmd.packet {
+                        let pkt_data = packet.data.unwrap_or_default();
+                        Self::process_packet_entities_filtered(
+                            &pkt_data,
+                            &mut ctx,
+                            &mut field_decode_ctx,
+                            &mut packet_buf,
+                            class_filter,
+                            &mut fp_buf,
+                        )?;
+                        Self::process_packet_events(
+                            &pkt_data,
+                            header.tick,
+                            &mut descriptors,
+                            &mut tick_events,
+                            &mut event_packet_buf,
+                        )?;
+                    }
+                }
+                dem::PACKET | dem::SIGNON_PACKET => {
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
+                    let pkt_data = cmd.data.unwrap_or_default();
+                    Self::process_packet_entities_filtered(
+                        &pkt_data,
+                        &mut ctx,
+                        &mut field_decode_ctx,
+                        &mut packet_buf,
+                        class_filter,
+                        &mut fp_buf,
+                    )?;
+                    Self::process_packet_events(
+                        &pkt_data,
+                        header.tick,
+                        &mut descriptors,
+                        &mut tick_events,
+                        &mut event_packet_buf,
                     )?;
                 }
                 _ => {}
@@ -664,6 +1010,7 @@ impl Parser {
         ctx: &mut Context,
         field_decode_ctx: &mut FieldDecodeContext,
         packet_buf: &mut Vec<u8>,
+        fp_buf: &mut Vec<crate::entity::field_path::FieldPath>,
     ) -> Result<()> {
         let mut br = BitReader::new(pkt_data);
 
@@ -705,6 +1052,7 @@ impl Parser {
                         &ctx.serializers,
                         &ctx.string_tables,
                         field_decode_ctx,
+                        fp_buf,
                     )?;
                 }
                 _ => {}
@@ -721,6 +1069,7 @@ impl Parser {
         field_decode_ctx: &mut FieldDecodeContext,
         packet_buf: &mut Vec<u8>,
         class_filter: &std::collections::HashSet<&str>,
+        fp_buf: &mut Vec<crate::entity::field_path::FieldPath>,
     ) -> Result<()> {
         let mut br = BitReader::new(pkt_data);
 
@@ -763,6 +1112,7 @@ impl Parser {
                         &ctx.string_tables,
                         field_decode_ctx,
                         class_filter,
+                        fp_buf,
                     )?;
                 }
                 _ => {}
