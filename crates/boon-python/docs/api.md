@@ -60,6 +60,41 @@ a single parse pass over the file for efficiency.
 
 - `ValueError` -- If an unknown dataset name is provided.
 
+---
+
+#### `tick_to_seconds()`
+
+```python
+demo.tick_to_seconds(11400)  # -> 190.0
+```
+
+Convert a tick number to seconds elapsed, excluding paused time.
+Automatically loads `world_ticks` on first call to determine pauses.
+
+**Parameters:**
+
+- **tick** (`int`) -- The game tick to convert.
+
+**Returns:** `float` -- The elapsed time in seconds, excluding pauses.
+
+---
+
+#### `tick_to_clock_time()`
+
+```python
+demo.tick_to_clock_time(11400)  # -> "3:10"
+```
+
+Convert a tick number to a clock time string (e.g., `"3:14"` or `"12:34"`),
+excluding paused time. Automatically loads `world_ticks` on first call to
+determine pauses.
+
+**Parameters:**
+
+- **tick** (`int`) -- The game tick to convert.
+
+**Returns:** `str` -- A formatted clock time string.
+
 ### Metadata Properties
 
 #### `path`

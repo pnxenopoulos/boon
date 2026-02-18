@@ -171,9 +171,12 @@ struct Demo {
     // Cached info from file_info
     total_ticks: i32,
     playback_time: f32,
+    tick_rate: i32,
     // Cached info from first tick entities
     match_id: u64,
     teams: DataFrame,
+    // Sorted ticks where the game was paused (lazily built from world_ticks)
+    paused_ticks: Option<Vec<i32>>,
     // Cached dataset DataFrames
     cached_player_ticks: Option<DataFrame>,
     cached_world_ticks: Option<DataFrame>,
@@ -259,6 +262,12 @@ impl Demo {
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
 
+        let tick_rate = if playback_time > 0.0 {
+            (total_ticks as f32 / playback_time).round() as i32
+        } else {
+            0
+        };
+
         Ok(Demo {
             parser,
             path,
@@ -266,8 +275,10 @@ impl Demo {
             map_name,
             total_ticks,
             playback_time,
+            tick_rate,
             match_id,
             teams,
+            paused_ticks: None,
             cached_player_ticks: None,
             cached_world_ticks: None,
             cached_kills: None,
@@ -347,11 +358,31 @@ impl Demo {
     /// The tick rate of the demo (ticks per second).
     #[getter]
     fn tick_rate(&self) -> i32 {
-        if self.playback_time > 0.0 {
-            (self.total_ticks as f32 / self.playback_time).round() as i32
-        } else {
-            0
+        self.tick_rate
+    }
+
+    /// Convert a tick number to seconds elapsed, excluding paused time.
+    ///
+    /// Automatically loads ``world_ticks`` on first call to determine pauses.
+    fn tick_to_seconds(&mut self, tick: i32) -> PyResult<f64> {
+        if self.tick_rate == 0 {
+            return Ok(0.0);
         }
+        self.ensure_paused_ticks_built()?;
+        let active_ticks = self.count_active_ticks(tick);
+        Ok(active_ticks as f64 / self.tick_rate as f64)
+    }
+
+    /// Convert a tick number to a clock time string (e.g., ``"03:14"``),
+    /// excluding paused time.
+    ///
+    /// Automatically loads ``world_ticks`` on first call to determine pauses.
+    fn tick_to_clock_time(&mut self, tick: i32) -> PyResult<String> {
+        let secs = self.tick_to_seconds(tick)?;
+        let total_seconds = secs as u32;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        Ok(format!("{minutes}:{seconds:02}"))
     }
 
     /// Team number to team name mapping as a Polars DataFrame.
@@ -1468,6 +1499,41 @@ impl Demo {
 }
 
 impl Demo {
+    /// Build the paused_ticks cache from world_ticks if not already done.
+    fn ensure_paused_ticks_built(&mut self) -> PyResult<()> {
+        if self.paused_ticks.is_some() {
+            return Ok(());
+        }
+        // Ensure world_ticks is loaded
+        if self.cached_world_ticks.is_none() {
+            self.load(vec!["world_ticks".to_string()])?;
+        }
+        let wt = self.cached_world_ticks.as_ref().unwrap();
+        let tick_col = wt.column("tick").unwrap();
+        let paused_col = wt.column("is_paused").unwrap();
+        let ticks = tick_col.i32().unwrap();
+        let paused = paused_col.bool().unwrap();
+
+        let mut paused_ticks = Vec::new();
+        for i in 0..ticks.len() {
+            if paused.get(i).unwrap_or(false) {
+                paused_ticks.push(ticks.get(i).unwrap());
+            }
+        }
+        self.paused_ticks = Some(paused_ticks);
+        Ok(())
+    }
+
+    /// Count non-paused ticks up to the given tick.
+    fn count_active_ticks(&self, tick: i32) -> i32 {
+        let paused = self
+            .paused_ticks
+            .as_ref()
+            .map(|pts| pts.partition_point(|&t| t < tick) as i32)
+            .unwrap_or(0);
+        (tick - paused).max(0)
+    }
+
     /// Scan for always-needed events (GameOver, BannedHeroes) if not already done.
     /// Uses the lightweight events-only parser pass.
     fn ensure_always_events_scanned(&mut self) -> PyResult<()> {

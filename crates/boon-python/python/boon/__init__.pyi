@@ -118,6 +118,32 @@ class Demo:
         """The tick rate of the demo (ticks per second)."""
         ...
 
+    def tick_to_seconds(self, tick: int) -> float:
+        """Convert a tick number to seconds elapsed, excluding paused time.
+
+        Automatically loads ``world_ticks`` on first call to determine pauses.
+
+        Args:
+            tick: The game tick to convert.
+
+        Returns:
+            The elapsed time in seconds, excluding pauses.
+        """
+        ...
+
+    def tick_to_clock_time(self, tick: int) -> str:
+        """Convert a tick number to a clock time string (e.g., ``"03:14"``), excluding paused time.
+
+        Automatically loads ``world_ticks`` on first call to determine pauses.
+
+        Args:
+            tick: The game tick to convert.
+
+        Returns:
+            A formatted string like ``"3:14"`` or ``"12:34"``.
+        """
+        ...
+
     @property
     def winning_team_num(self) -> int | None:
         """The team number of the winning team, or ``None`` if no game-over event was found."""
