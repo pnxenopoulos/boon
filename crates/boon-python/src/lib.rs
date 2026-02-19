@@ -531,7 +531,8 @@ impl Demo {
 
     /// Load one or more datasets from the demo file in a single pass.
     ///
-    /// Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``.
+    /// Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
+    /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``.
     /// Already-loaded datasets are skipped. Multiple datasets requested together
     /// share a single parse pass over the file for efficiency.
     ///

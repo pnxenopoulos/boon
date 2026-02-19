@@ -1,6 +1,6 @@
 [package]
 name = "boon-proto"
-version = "0.0.0"
+version.workspace = true
 edition = "2024"
 
 [package.metadata.boon-proto]

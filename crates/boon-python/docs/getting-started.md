@@ -12,7 +12,7 @@ Boon is a Rust library with Python bindings built using [PyO3](https://pyo3.rs) 
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/boon.git
+git clone https://github.com/pnxenopoulos/boon.git
 cd boon/crates/boon-python
 
 # Install in development mode (editable)

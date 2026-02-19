@@ -7,6 +7,7 @@ mod info;
 mod messages;
 mod send_tables;
 mod string_tables;
+mod summary;
 mod verify;
 
 pub use classes::run as classes;
@@ -16,4 +17,5 @@ pub use info::run as info;
 pub use messages::run as messages;
 pub use send_tables::run as send_tables;
 pub use string_tables::run as string_tables;
+pub use summary::run as summary;
 pub use verify::run as verify;

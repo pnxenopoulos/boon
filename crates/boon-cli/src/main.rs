@@ -109,6 +109,11 @@ enum Commands {
         #[arg(long)]
         inspect: bool,
     },
+    /// Print post-match summary from the last-tick game event
+    Summary {
+        /// Path to the demo file
+        file: PathBuf,
+    },
     /// Inspect entity state at a given tick
     Entities {
         /// Path to the demo file
@@ -174,6 +179,7 @@ fn main() -> Result<()> {
             limit,
             inspect,
         } => commands::events(&file, filter, summary, tick, limit, inspect),
+        Commands::Summary { file } => commands::summary(&file),
         Commands::Entities {
             file,
             tick,

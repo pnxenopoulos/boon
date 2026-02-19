@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### boon (parser)
+
+_No changes yet._
+
+### boon-cli
+
+_No changes yet._
+
+### boon-python
+
+_No changes yet._
+
+---
+
+## boon-python 0.1.0
+
 - Ability name resolution for item purchases using MurmurHash2 lookup
   from `abilities.vdata`. The `purchases` DataFrame now has an `ability`
   string column instead of a numeric `ability_id`.
@@ -18,9 +34,6 @@
 - All DataFrame properties (`player_ticks`, `world_ticks`, `kills`, `damage`,
   `purchases`, `respawns`, `flex_slots`) now auto-load on first access.
 - `events` CLI command for listing and inspecting decoded game events.
-
-### Initial
-
 - `Demo` class with metadata properties: `path`, `total_ticks`, `total_seconds`,
   `total_clock_time`, `build`, `map_name`, `match_id`, `tick_rate`.
 - `Demo.players` property returning a Polars DataFrame of player info.

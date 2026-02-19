@@ -1,14 +1,14 @@
 # CLI
 
 Boon includes a command-line tool for inspecting demo files. It is built from the
-`boon-cli` crate.
+`boon` crate.
 
 ## Building
 
 ```bash
 cd boon
-cargo build --release -p boon-cli
-# Binary is at target/release/boon-cli
+cargo build --release -p boon
+# Binary is at target/release/boon
 ```
 
 ## Commands
@@ -18,7 +18,7 @@ cargo build --release -p boon-cli
 Check that a file is a valid demo.
 
 ```bash
-boon-cli verify match.dem
+boon verify match.dem
 ```
 
 ---
@@ -29,7 +29,7 @@ Display file header and game information: build number, map, playback time, matc
 game mode, winner, and player list.
 
 ```bash
-boon-cli info match.dem
+boon info match.dem
 ```
 
 ---
@@ -39,7 +39,7 @@ boon-cli info match.dem
 List all commands in the demo file with metadata.
 
 ```bash
-boon-cli messages match.dem
+boon messages match.dem
 ```
 
 **Options:**
@@ -58,10 +58,10 @@ boon-cli messages match.dem
 
 ```bash
 # Show only full packets
-boon-cli messages match.dem --cmd FullPacket
+boon messages match.dem --cmd FullPacket
 
 # Show messages in a tick range
-boon-cli messages match.dem --min-tick 1000 --max-tick 2000
+boon messages match.dem --min-tick 1000 --max-tick 2000
 ```
 
 ---
@@ -71,7 +71,7 @@ boon-cli messages match.dem --min-tick 1000 --max-tick 2000
 Display the class ID to network name mapping.
 
 ```bash
-boon-cli classes match.dem
+boon classes match.dem
 ```
 
 **Options:**
@@ -85,7 +85,7 @@ boon-cli classes match.dem
 
 ```bash
 # Find all Citadel player-related classes
-boon-cli classes match.dem --filter Player
+boon classes match.dem --filter Player
 ```
 
 ---
@@ -95,7 +95,7 @@ boon-cli classes match.dem --filter Player
 Display serializer (send table) definitions — the field schemas for each entity class.
 
 ```bash
-boon-cli send-tables match.dem --summary
+boon send-tables match.dem --summary
 ```
 
 **Options:**
@@ -110,7 +110,7 @@ boon-cli send-tables match.dem --summary
 
 ```bash
 # See all fields on the player pawn
-boon-cli send-tables match.dem --filter CCitadelPlayerPawn
+boon send-tables match.dem --filter CCitadelPlayerPawn
 ```
 
 ---
@@ -120,7 +120,7 @@ boon-cli send-tables match.dem --filter CCitadelPlayerPawn
 Display string tables from the demo initialization.
 
 ```bash
-boon-cli string-tables match.dem --summary
+boon string-tables match.dem --summary
 ```
 
 **Options:**
@@ -135,7 +135,7 @@ boon-cli string-tables match.dem --summary
 
 ```bash
 # Inspect instance baselines
-boon-cli string-tables match.dem --filter instancebaseline
+boon string-tables match.dem --filter instancebaseline
 ```
 
 ---
@@ -145,7 +145,7 @@ boon-cli string-tables match.dem --filter instancebaseline
 List decoded game events from a demo file (user messages parsed from embedded packets).
 
 ```bash
-boon-cli events match.dem
+boon events match.dem
 ```
 
 **Options:**
@@ -162,13 +162,25 @@ boon-cli events match.dem
 
 ```bash
 # Count all event types
-boon-cli events match.dem --summary
+boon events match.dem --summary
 
 # Show only kill events
-boon-cli events match.dem --filter HeroKilled
+boon events match.dem --filter HeroKilled
 
 # Inspect full message payloads for damage events
-boon-cli events match.dem --filter Damage --inspect --limit 5
+boon events match.dem --filter Damage --inspect --limit 5
+```
+
+---
+
+### `summary`
+
+Print a post-match summary extracted from the last-tick game event, including match
+overview, player stats with gold breakdowns, objectives, mid boss kills, and damage
+matrix info.
+
+```bash
+boon summary match.dem
 ```
 
 ---
@@ -178,7 +190,7 @@ boon-cli events match.dem --filter Damage --inspect --limit 5
 Inspect entity state at a specific game tick.
 
 ```bash
-boon-cli entities match.dem --tick 10000 --summary
+boon entities match.dem --tick 10000 --summary
 ```
 
 **Options:**
@@ -195,8 +207,8 @@ boon-cli entities match.dem --tick 10000 --summary
 
 ```bash
 # Show all player controllers with full fields
-boon-cli entities match.dem --tick 10000 --filter CCitadelPlayerController --fields 50
+boon entities match.dem --tick 10000 --filter CCitadelPlayerController --fields 50
 
 # Count all entity types at a given tick
-boon-cli entities match.dem --tick 10000 --summary
+boon entities match.dem --tick 10000 --summary
 ```

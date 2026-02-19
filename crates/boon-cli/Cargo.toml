@@ -1,6 +1,6 @@
 [package]
 name = "boon-cli"
-version = "0.0.0"
+version = "0.1.0"
 edition = "2024"
 
 [dependencies]
@@ -8,6 +8,8 @@ anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 colored = "2"
 boon = { package = "boon-deadlock", path = "../boon" }
+boon-proto = { path = "../boon-proto" }
+prost = "0.14"
 
 [[bin]]
 name = "boon"

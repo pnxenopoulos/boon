@@ -1,6 +1,6 @@
 [package]
 name = "boon-deadlock"
-version = "0.0.0"
+version.workspace = true
 edition = "2024"
 description = "Boon is a Deadlock demo / replay file parser"
 

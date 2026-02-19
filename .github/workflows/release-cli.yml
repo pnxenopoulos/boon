@@ -1,0 +1,101 @@
+name: Release CLI
+
+on:
+  push:
+    tags:
+      - "boon-cli-v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+          - target: x86_64-apple-darwin
+            runner: macos-13
+          - target: aarch64-apple-darwin
+            runner: macos-14
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Parse version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#boon-cli-v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag matches crate version
+        shell: bash
+        run: |
+          CARGO_VERSION=$(grep '^version' crates/boon-cli/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/')
+          if [ "$CARGO_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "Tag version (${{ steps.version.outputs.version }}) does not match Cargo.toml version ($CARGO_VERSION)"
+            exit 1
+          fi
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo/target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: cargo build --release --locked -p boon-cli
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          ARCHIVE="boon-${{ steps.version.outputs.version }}-${{ matrix.target }}.tar.gz"
+          tar -czf "$ARCHIVE" -C target/release boon
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          ARCHIVE="boon-${{ steps.version.outputs.version }}-${{ matrix.target }}.zip"
+          7z a "$ARCHIVE" ./target/release/boon.exe
+          echo "ARCHIVE=$ARCHIVE" >> "$GITHUB_ENV"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: binary-${{ matrix.target }}
+          path: ${{ env.ARCHIVE }}
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: binary-*
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            *.tar.gz
+            *.zip
