@@ -11,7 +11,7 @@
 [![Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
 
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
-[![crates.io downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+[![downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser. It is written in Rust and ships with Python bindings, a CLI tool, and a standalone Rust library.
 
@@ -54,7 +54,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon = { package = "boon-deadlock", git = "https://github.com/pnxenopoulos/boon.git" }
+boon-deadlock = "0.1"
 ```
 
 ## Quick Start
