@@ -1,11 +1,17 @@
 # Boon
 
+[![Discord](https://img.shields.io/discord/868146581419999232?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/tWCwmHDy2u)
+[![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
+[![Project](https://img.shields.io/badge/project-board-24292e.svg?logo=github)](https://github.com/users/pnxenopoulos/projects/6)
 [![CI](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml/badge.svg)](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![PyPI](https://img.shields.io/pypi/v/boon.svg)](https://pypi.org/project/boon/)
-[![Downloads](https://img.shields.io/pypi/dm/boon.svg)](https://pypi.org/project/boon/)
-[![Discord](https://img.shields.io/discord/868146581419999232?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/W34XjsSs2H)
+[![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+[![Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+
+[![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+[![crates.io downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser. It is written in Rust and ships with Python bindings, a CLI tool, and a standalone Rust library.
 
@@ -22,11 +28,11 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 ### Python
 
 ```bash
-pip install boon
+pip install boon-deadlock
 
 # or
 
-uv add boon
+uv add boon-deadlock
 ```
 
 Requires Python 3.11+. Boon depends on [Polars](https://pola.rs) for DataFrames.

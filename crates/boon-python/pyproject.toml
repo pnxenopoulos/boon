@@ -1,5 +1,5 @@
 [project]
-name = "boon"
+name = "boon-deadlock"
 description = "Boon is a powerful Deadlock demo / replay file parser."
 requires-python = ">=3.11"
 license = "MIT"
