@@ -4,6 +4,9 @@ description = "Boon is a powerful Deadlock demo / replay file parser."
 requires-python = ">=3.11"
 license = "MIT"
 readme = "README.md"
+authors = [
+    { name = "Peter Xenopoulos", email = "pnxenopoulos+boon@gmail.com" },
+]
 dynamic = ["version"]
 keywords = ["deadlock", "demo", "parser", "replay"]
 classifiers = [

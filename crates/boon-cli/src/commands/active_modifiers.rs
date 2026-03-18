@@ -56,6 +56,7 @@ pub fn run(
 
     // Track active modifiers by serial_number
     let mut prev_modifiers: HashMap<u32, CachedModifier> = HashMap::new();
+    let mut current_serials: HashSet<u32> = HashSet::new();
     let mut events_out: Vec<ActiveModifierOutput> = Vec::new();
 
     parser
@@ -96,7 +97,7 @@ pub fn run(
 
             // Scan ActiveModifiers string table
             if let Some(table) = ctx.string_tables.find_table("ActiveModifiers") {
-                let mut current_serials: HashSet<u32> = HashSet::new();
+                current_serials.clear();
 
                 for entry in &table.entries {
                     let data = match &entry.user_data {

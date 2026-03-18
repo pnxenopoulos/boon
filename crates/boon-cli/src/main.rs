@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-mod commands;
+use boon_cli::commands;
 
 #[derive(Parser)]
 #[command(name = "boon", about = "Boon — Deadlock demo file parser", version)]

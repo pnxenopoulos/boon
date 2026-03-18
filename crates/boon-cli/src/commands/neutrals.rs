@@ -50,7 +50,7 @@ struct NeutralState {
 #[derive(Serialize)]
 struct NeutralOutput {
     tick: i32,
-    neutral_type: String,
+    neutral_type: &'static str,
     team_num: i64,
     health: i64,
     max_health: i64,
@@ -61,7 +61,7 @@ struct NeutralOutput {
 
 #[derive(Serialize)]
 struct NeutralSummaryOutput {
-    neutral_type: String,
+    neutral_type: &'static str,
     team_num: i64,
     count: usize,
 }
@@ -153,7 +153,7 @@ pub fn run(
                     if alive {
                         rows.push(NeutralOutput {
                             tick: ctx.tick,
-                            neutral_type: neutral_type(&entity.class_name).to_string(),
+                            neutral_type: neutral_type(&entity.class_name),
                             team_num: get_i64(entity, nk_team_num),
                             health: current.health,
                             max_health: current.max_health,
@@ -184,7 +184,7 @@ pub fn run(
             std::collections::HashMap::new();
         for r in &rows {
             *counts
-                .entry((r.neutral_type.as_str(), r.team_num))
+                .entry((r.neutral_type, r.team_num))
                 .or_insert(0) += 1;
         }
 
@@ -198,7 +198,7 @@ pub fn run(
                 .iter()
                 .take(limit)
                 .map(|((ntype, team), count)| NeutralSummaryOutput {
-                    neutral_type: ntype.to_string(),
+                    neutral_type: ntype,
                     team_num: *team,
                     count: *count,
                 })

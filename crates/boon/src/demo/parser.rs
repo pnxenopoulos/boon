@@ -1098,13 +1098,15 @@ impl Parser {
             match msg_type {
                 svc::CREATE_STRING_TABLE => {
                     let msg = CsvcMsgCreateStringTable::decode(msg_data)?;
-                    ctx.string_tables.handle_create(msg)?;
-                    ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    if ctx.string_tables.handle_create(msg)? {
+                        ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    }
                 }
                 svc::UPDATE_STRING_TABLE => {
                     let msg = CsvcMsgUpdateStringTable::decode(msg_data)?;
-                    ctx.string_tables.handle_update(msg)?;
-                    ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    if ctx.string_tables.handle_update(msg)? {
+                        ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    }
                 }
                 svc::SERVER_INFO => {
                     let msg = CsvcMsgServerInfo::decode(msg_data)?;
@@ -1157,13 +1159,15 @@ impl Parser {
             match msg_type {
                 svc::CREATE_STRING_TABLE => {
                     let msg = CsvcMsgCreateStringTable::decode(msg_data)?;
-                    ctx.string_tables.handle_create(msg)?;
-                    ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    if ctx.string_tables.handle_create(msg)? {
+                        ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    }
                 }
                 svc::UPDATE_STRING_TABLE => {
                     let msg = CsvcMsgUpdateStringTable::decode(msg_data)?;
-                    ctx.string_tables.handle_update(msg)?;
-                    ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    if ctx.string_tables.handle_update(msg)? {
+                        ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    }
                 }
                 svc::SERVER_INFO => {
                     let msg = CsvcMsgServerInfo::decode(msg_data)?;

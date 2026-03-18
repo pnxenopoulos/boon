@@ -14,9 +14,20 @@ pub struct ClassInfo {
     pub classes: Vec<ClassEntry>,
     /// Number of bits needed to encode a class_id.
     pub bits: usize,
+    /// O(1) lookup table: index is class_id, value is index into `classes`.
+    lookup: Vec<Option<usize>>,
 }
 
 impl ClassInfo {
+    /// Create an empty `ClassInfo` (used for tests / default initialization).
+    pub fn empty() -> Self {
+        ClassInfo {
+            classes: Vec::new(),
+            bits: 1,
+            lookup: Vec::new(),
+        }
+    }
+
     /// Parse a `CDemoClassInfo` protobuf message into a [`ClassInfo`].
     pub fn parse(cmd: CDemoClassInfo) -> Self {
         let classes: Vec<ClassEntry> = cmd
@@ -39,12 +50,25 @@ impl ClassInfo {
             32 - max_id.leading_zeros() as usize
         };
 
-        ClassInfo { classes, bits }
+        // Build flat lookup table indexed by class_id.
+        let mut lookup = vec![None; max_id as usize + 1];
+        for (i, c) in classes.iter().enumerate() {
+            if c.class_id >= 0 {
+                lookup[c.class_id as usize] = Some(i);
+            }
+        }
+
+        ClassInfo {
+            classes,
+            bits,
+            lookup,
+        }
     }
 
-    /// Look up a class entry by its numeric ID.
+    /// Look up a class entry by its numeric ID. O(1).
     pub fn by_id(&self, class_id: i32) -> Option<&ClassEntry> {
-        self.classes.iter().find(|c| c.class_id == class_id)
+        let idx = *self.lookup.get(class_id as usize)?.as_ref()?;
+        Some(&self.classes[idx])
     }
 
     /// Shorthand to get the network name for a class ID.

@@ -11,11 +11,11 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 ## Installation
 
 ```bash
-pip install boon-deadlock
+uv add boon-deadlock
 
 # or
 
-uv add boon-deadlock
+pip install boon-deadlock
 ```
 
 Requires Python 3.11+.

@@ -3,7 +3,19 @@
 Boon includes a command-line tool for inspecting demo files. It is built from the
 `boon` crate.
 
-## Building
+## Installation
+
+Install a prebuilt binary via [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall)
+(no compilation needed):
+
+```bash
+cargo binstall boon-cli
+```
+
+Or download a binary from the
+[GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
+
+Or build from source (requires Rust):
 
 ```bash
 cd boon

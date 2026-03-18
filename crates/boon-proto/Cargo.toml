@@ -1,10 +1,17 @@
 [package]
 name = "boon-proto"
 version.workspace = true
+rust-version.workspace = true
 edition = "2024"
+description = "Protobuf definitions for Deadlock demo files"
+license = "MIT"
+repository = "https://github.com/pnxenopoulos/boon"
+authors = ["Peter Xenopoulos"]
+keywords = ["deadlock", "protobuf", "demo"]
+categories = ["game-development", "encoding"]
 
 [package.metadata.boon-proto]
-version = "0.0.1.6217.6217.10417637"
+version = "0.1.0.6217.6217.10417637"
 
 [dependencies]
 bytes = "1.11"

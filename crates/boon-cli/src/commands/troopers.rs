@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -36,10 +36,22 @@ fn get_f32(e: &boon::Entity, key: Option<u64>) -> f32 {
         .unwrap_or(0.0)
 }
 
+/// State snapshot for change detection.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct TrooperState {
+    health: i64,
+    max_health: i64,
+    team_num: i64,
+    lane: i64,
+    x_bits: u32,
+    y_bits: u32,
+    z_bits: u32,
+}
+
 #[derive(Serialize)]
 struct TrooperOutput {
     tick: i32,
-    trooper_type: String,
+    trooper_type: &'static str,
     team_num: i64,
     lane: i64,
     health: i64,
@@ -51,7 +63,7 @@ struct TrooperOutput {
 
 #[derive(Serialize)]
 struct TrooperSummaryOutput {
-    trooper_type: String,
+    trooper_type: &'static str,
     team_num: i64,
     lane: i64,
     count: usize,
@@ -81,6 +93,7 @@ pub fn run(
     let mut nk_vec_y: Option<u64> = None;
     let mut nk_vec_z: Option<u64> = None;
 
+    let mut prev_state: HashMap<i32, (bool, TrooperState)> = HashMap::new();
     let mut rows: Vec<TrooperOutput> = Vec::new();
 
     parser
@@ -108,7 +121,7 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (_, entity) in ctx.entities.iter() {
+            for (&idx, entity) in ctx.entities.iter() {
                 if !TROOPER_CLASSES.contains(&entity.class_name.as_str()) {
                     continue;
                 }
@@ -118,22 +131,47 @@ pub fn run(
                     continue;
                 }
 
-                // Only alive troopers (lifeState == 0)
                 let lifestate = get_i64(entity, nk_lifestate);
-                if lifestate != 0 {
+                let alive = lifestate == 0;
+
+                let x = get_f32(entity, nk_vec_x);
+                let y = get_f32(entity, nk_vec_y);
+                let z = get_f32(entity, nk_vec_z);
+
+                let current = TrooperState {
+                    health: get_i64(entity, nk_health),
+                    max_health,
+                    team_num: get_i64(entity, nk_team_num),
+                    lane: get_i64(entity, nk_lane),
+                    x_bits: x.to_bits(),
+                    y_bits: y.to_bits(),
+                    z_bits: z.to_bits(),
+                };
+
+                let changed = match prev_state.get(&idx) {
+                    None => true,
+                    Some((was_alive, prev)) => alive != *was_alive || (alive && current != *prev),
+                };
+
+                if !changed {
+                    continue;
+                }
+                prev_state.insert(idx, (alive, current));
+
+                if !alive {
                     continue;
                 }
 
                 rows.push(TrooperOutput {
                     tick: ctx.tick,
-                    trooper_type: trooper_type(&entity.class_name).to_string(),
-                    team_num: get_i64(entity, nk_team_num),
-                    lane: get_i64(entity, nk_lane),
-                    health: get_i64(entity, nk_health),
+                    trooper_type: trooper_type(&entity.class_name),
+                    team_num: current.team_num,
+                    lane: current.lane,
+                    health: current.health,
                     max_health,
-                    x: get_f32(entity, nk_vec_x),
-                    y: get_f32(entity, nk_vec_y),
-                    z: get_f32(entity, nk_vec_z),
+                    x,
+                    y,
+                    z,
                 });
             }
         })
@@ -156,7 +194,7 @@ pub fn run(
             std::collections::HashMap::new();
         for r in &rows {
             *counts
-                .entry((r.trooper_type.as_str(), r.team_num, r.lane))
+                .entry((r.trooper_type, r.team_num, r.lane))
                 .or_insert(0) += 1;
         }
 
@@ -175,7 +213,7 @@ pub fn run(
                 .iter()
                 .take(limit)
                 .map(|((ttype, team, lane), count)| TrooperSummaryOutput {
-                    trooper_type: ttype.to_string(),
+                    trooper_type: ttype,
                     team_num: *team,
                     lane: *lane,
                     count: *count,

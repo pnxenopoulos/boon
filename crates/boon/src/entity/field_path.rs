@@ -10,7 +10,7 @@ use crate::io::BitReader;
 /// Each component is an index into the serializer's fields array at that
 /// nesting level. For example, `[3, 0, 2]` means "field 3 → sub-serializer
 /// field 0 → sub-serializer field 2".
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct FieldPath {
     /// Component indices (up to 7 levels of nesting).
     pub data: [u8; 7],
@@ -62,27 +62,21 @@ impl FieldPath {
     /// Layout: bits [0..56) = data[0..7], bits [56..59) = last (3 bits, max value 6).
     #[inline]
     pub fn pack(&self) -> u64 {
-        let mut key: u64 = 0;
-        // Pack 7 bytes of data into bits 0..56
-        for (i, &byte) in self.data.iter().enumerate() {
-            key |= (byte as u64) << (i * 8);
-        }
-        // Pack `last` (0..=6) into bits 56..59
-        key |= (self.last as u64) << 56;
-        key
+        let mut buf = [0u8; 8];
+        buf[..7].copy_from_slice(&self.data);
+        buf[7] = self.last as u8;
+        u64::from_le_bytes(buf)
     }
 
     /// Unpack a u64 key back into a FieldPath.
     #[inline]
     pub fn unpack(key: u64) -> FieldPath {
+        let buf = key.to_le_bytes();
         let mut data = [0u8; 7];
-        for (i, byte) in data.iter_mut().enumerate() {
-            *byte = ((key >> (i * 8)) & 0xFF) as u8;
-        }
-        let last = ((key >> 56) & 0x07) as usize;
+        data.copy_from_slice(&buf[..7]);
         FieldPath {
             data,
-            last,
+            last: buf[7] as usize,
             finished: false,
         }
     }
@@ -647,7 +641,7 @@ pub fn read_field_paths(br: &mut BitReader, buf: &mut Vec<FieldPath>) -> Result<
             if fp.finished {
                 return Ok(());
             }
-            buf.push(fp.clone());
+            buf.push(fp);
             &FIELDOP_HIERARCHY
         } else {
             next

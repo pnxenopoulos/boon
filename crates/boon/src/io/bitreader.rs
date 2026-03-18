@@ -82,36 +82,21 @@ impl<'a> BitReader<'a> {
     /// Internal: peek without bounds checking.
     ///
     /// Reads a little-endian u64 from the byte at `position / 8`, shifts
-    /// right by the intra-byte bit offset, and masks to `n` bits. Three
-    /// code paths handle proximity to the end of the buffer.
+    /// right by the intra-byte bit offset, and masks to `n` bits.
     #[inline(always)]
     fn peek_bits_unchecked(&self, n: usize) -> u64 {
         let byte_pos = self.position / 8;
         let bit_offset = self.position % 8;
-
-        // How many bytes we can safely read from byte_pos
         let remaining_bytes = self.data.len() - byte_pos;
 
+        let mut buf = [0u8; 8];
         if remaining_bytes >= 8 {
-            // Fast path: read a full u64
-            let mut buf = [0u8; 8];
             buf.copy_from_slice(&self.data[byte_pos..byte_pos + 8]);
-            let raw = u64::from_le_bytes(buf);
-            (raw >> bit_offset) & mask(n)
-        } else if remaining_bytes >= 4 && bit_offset + n <= remaining_bytes * 8 {
-            // Medium path: enough bytes to cover the read
-            let mut buf = [0u8; 8];
-            buf[..remaining_bytes].copy_from_slice(&self.data[byte_pos..]);
-            let raw = u64::from_le_bytes(buf);
-            (raw >> bit_offset) & mask(n)
         } else {
-            // Slow path: near end of data, read byte by byte
-            let mut buf = [0u8; 8];
-            let to_copy = remaining_bytes.min(8);
-            buf[..to_copy].copy_from_slice(&self.data[byte_pos..byte_pos + to_copy]);
-            let raw = u64::from_le_bytes(buf);
-            (raw >> bit_offset) & mask(n)
+            buf[..remaining_bytes].copy_from_slice(&self.data[byte_pos..byte_pos + remaining_bytes]);
         }
+        let raw = u64::from_le_bytes(buf);
+        (raw >> bit_offset) & mask(n)
     }
 
     /// Read a single bit as a boolean.
@@ -152,8 +137,26 @@ impl<'a> BitReader<'a> {
 
     /// Read N bytes into the provided buffer.
     pub fn read_bytes(&mut self, buf: &mut [u8]) -> Result<()> {
+        let needed = buf.len() * 8;
+        if self.position + needed > self.total_bits {
+            return Err(Error::Overflow {
+                needed,
+                available: self.bits_remaining(),
+            });
+        }
+
+        // Fast path: byte-aligned — direct memcpy.
+        if self.position.is_multiple_of(8) {
+            let byte_pos = self.position / 8;
+            buf.copy_from_slice(&self.data[byte_pos..byte_pos + buf.len()]);
+            self.position += needed;
+            return Ok(());
+        }
+
+        // Slow path: unaligned — read byte at a time via bit extraction.
         for byte in buf.iter_mut() {
-            *byte = self.read_u8()?;
+            *byte = self.peek_bits_unchecked(8) as u8;
+            self.position += 8;
         }
         Ok(())
     }
@@ -163,14 +166,15 @@ impl<'a> BitReader<'a> {
         let full_bytes = bits / 8;
         let remaining_bits = bits % 8;
 
-        for byte in buf[..full_bytes].iter_mut() {
-            *byte = self.read_bits(8)? as u8;
+        if remaining_bits == 0 {
+            return self.read_bytes(&mut buf[..full_bytes]);
         }
 
-        if remaining_bits > 0 {
-            buf[full_bytes] = self.read_bits(remaining_bits)? as u8;
+        // Has trailing bits — can still fast-path the full bytes.
+        if full_bytes > 0 {
+            self.read_bytes(&mut buf[..full_bytes])?;
         }
-
+        buf[full_bytes] = self.read_bits(remaining_bits)? as u8;
         Ok(())
     }
 

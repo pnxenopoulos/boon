@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -34,10 +34,19 @@ fn get_i64(e: &boon::Entity, key: Option<u64>) -> i64 {
         .unwrap_or(0)
 }
 
+/// State snapshot for change detection.
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct ObjectiveState {
+    health: i64,
+    max_health: i64,
+    team_num: i64,
+    lane: i64,
+}
+
 #[derive(Serialize)]
 struct ObjectiveOutput {
     tick: i32,
-    objective_type: String,
+    objective_type: &'static str,
     team_num: i64,
     lane: i64,
     health: i64,
@@ -46,7 +55,7 @@ struct ObjectiveOutput {
 
 #[derive(Serialize)]
 struct ObjectiveSummaryOutput {
-    objective_type: String,
+    objective_type: &'static str,
     team_num: i64,
     lane: i64,
     count: usize,
@@ -73,6 +82,7 @@ pub fn run(
     let mut nk_team_num: Option<u64> = None;
     let mut nk_lane: Option<u64> = None;
 
+    let mut prev_state: HashMap<i32, ObjectiveState> = HashMap::new();
     let mut rows: Vec<ObjectiveOutput> = Vec::new();
 
     parser
@@ -91,12 +101,11 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (_, entity) in ctx.entities.iter() {
+            for (&idx, entity) in ctx.entities.iter() {
                 if !OBJECTIVE_CLASSES.contains(&entity.class_name.as_str()) {
                     continue;
                 }
 
-                let health = get_i64(entity, nk_health);
                 let max_health = get_i64(entity, nk_max_health);
 
                 // Skip entities with no max_health (not yet initialized)
@@ -104,12 +113,24 @@ pub fn run(
                     continue;
                 }
 
-                rows.push(ObjectiveOutput {
-                    tick: ctx.tick,
-                    objective_type: objective_type(&entity.class_name).to_string(),
+                let current = ObjectiveState {
+                    health: get_i64(entity, nk_health),
+                    max_health,
                     team_num: get_i64(entity, nk_team_num),
                     lane: get_i64(entity, nk_lane),
-                    health,
+                };
+
+                if prev_state.get(&idx) == Some(&current) {
+                    continue;
+                }
+                prev_state.insert(idx, current);
+
+                rows.push(ObjectiveOutput {
+                    tick: ctx.tick,
+                    objective_type: objective_type(&entity.class_name),
+                    team_num: current.team_num,
+                    lane: current.lane,
+                    health: current.health,
                     max_health,
                 });
             }
@@ -133,7 +154,7 @@ pub fn run(
             std::collections::HashMap::new();
         for r in &rows {
             *counts
-                .entry((r.objective_type.as_str(), r.team_num, r.lane))
+                .entry((r.objective_type, r.team_num, r.lane))
                 .or_insert(0) += 1;
         }
 
@@ -152,7 +173,7 @@ pub fn run(
                 .iter()
                 .take(limit)
                 .map(|((obj_type, team, lane), count)| ObjectiveSummaryOutput {
-                    objective_type: obj_type.to_string(),
+                    objective_type: obj_type,
                     team_num: *team,
                     lane: *lane,
                     count: *count,

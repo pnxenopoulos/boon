@@ -51,18 +51,26 @@ The following data can be extracted from demo files:
 ### Python
 
 ```bash
-pip install boon-deadlock
+uv add boon-deadlock
 
 # or
 
-uv add boon-deadlock
+pip install boon-deadlock
 ```
 
 Requires Python 3.11+. Boon depends on [Polars](https://pola.rs) for DataFrames.
 
 ### CLI
 
-Build the CLI from source (requires Rust):
+Install a prebuilt binary via [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall) (no compilation needed):
+
+```bash
+cargo binstall boon-cli
+```
+
+Or download a binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
+
+Or build from source (requires Rust):
 
 ```bash
 git clone https://github.com/pnxenopoulos/boon.git
@@ -154,7 +162,7 @@ boon --help
 
 ## Documentation
 
-Full documentation is available at the [Boon docs site](https://github.com/pnxenopoulos/boon/tree/main/crates/boon-python/docs), including:
+Full documentation is available at the [Boon docs site](https://boon.readthedocs.io/en/latest/), including:
 
 - [Getting Started](crates/boon-python/docs/getting-started.md)
 - [Python API Reference](crates/boon-python/docs/api.md)

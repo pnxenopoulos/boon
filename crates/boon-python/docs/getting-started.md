@@ -8,27 +8,14 @@
 ## Installation
 
 Boon is a Rust library with Python bindings built using [PyO3](https://pyo3.rs) and
-[maturin](https://www.maturin.rs). Install it from source:
+[maturin](https://www.maturin.rs). Install it using [uv](https://docs.astral.sh/uv/guides/install-python/) or pip:
 
 ```bash
-# Clone the repository
-git clone https://github.com/pnxenopoulos/boon.git
-cd boon/crates/boon-python
+uv add boon-deadlock
 
-# Install in development mode (editable)
-pip install maturin
-maturin develop --release
+# or
 
-# Or install directly
-pip install .
-```
-
-If you use [uv](https://docs.astral.sh/uv/):
-
-```bash
-cd boon/crates/boon-python
-uv sync
-uv run maturin develop --release
+pip install boon-deadlock
 ```
 
 ## Quick Start

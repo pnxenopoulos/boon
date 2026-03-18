@@ -410,8 +410,8 @@ impl SerializerContainer {
     }
 
     /// Look up a serializer by class network name.
-    pub fn get(&self, name: &str) -> Option<Arc<Serializer>> {
-        self.serializers.get(name).cloned()
+    pub fn get(&self, name: &str) -> Option<&Serializer> {
+        self.serializers.get(name).map(|arc| arc.as_ref())
     }
 }
 

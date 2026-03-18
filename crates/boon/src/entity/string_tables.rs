@@ -188,9 +188,11 @@ impl StringTableContainer {
         Self::default()
     }
 
-    /// Handle CSVCMsg_CreateStringTable.
-    pub fn handle_create(&mut self, msg: CsvcMsgCreateStringTable) -> Result<()> {
+    /// Handle CSVCMsg_CreateStringTable. Returns `true` if the created table
+    /// is `instancebaseline` (caller should refresh baselines).
+    pub fn handle_create(&mut self, msg: CsvcMsgCreateStringTable) -> Result<bool> {
         let name = msg.name.as_deref().unwrap_or("");
+        let is_baseline = name == INSTANCE_BASELINE_TABLE_NAME;
         let mut table = StringTable::new(
             name,
             msg.user_data_fixed_size.unwrap_or(false),
@@ -217,11 +219,12 @@ impl StringTableContainer {
         table.parse_update(&mut br, msg.num_entries.unwrap_or(0))?;
 
         self.tables.push(table);
-        Ok(())
+        Ok(is_baseline)
     }
 
-    /// Handle CSVCMsg_UpdateStringTable.
-    pub fn handle_update(&mut self, msg: CsvcMsgUpdateStringTable) -> Result<()> {
+    /// Handle CSVCMsg_UpdateStringTable. Returns `true` if the updated table
+    /// is `instancebaseline` (caller should refresh baselines).
+    pub fn handle_update(&mut self, msg: CsvcMsgUpdateStringTable) -> Result<bool> {
         let table_id = msg.table_id.unwrap_or(0) as usize;
         if table_id >= self.tables.len() {
             return Err(Error::Parse {
@@ -229,11 +232,13 @@ impl StringTableContainer {
             });
         }
 
+        let is_baseline = self.tables[table_id].name == INSTANCE_BASELINE_TABLE_NAME;
+
         let string_data = msg.string_data.unwrap_or_default();
         let mut br = BitReader::new(&string_data);
         self.tables[table_id].parse_update(&mut br, msg.num_changed_entries.unwrap_or(0))?;
 
-        Ok(())
+        Ok(is_baseline)
     }
 
     /// Do a full update from CDemoStringTables (used in full packets).
@@ -275,7 +280,10 @@ impl StringTableContainer {
                 if let (Some(s), Some(data)) = (&entry.string, &entry.user_data)
                     && let Ok(class_id) = s.parse::<i32>()
                 {
-                    self.instance_baselines.insert(class_id, data.clone());
+                    // Only clone if new or changed
+                    if self.instance_baselines.get(&class_id) != Some(data) {
+                        self.instance_baselines.insert(class_id, data.clone());
+                    }
                 }
             }
         }
@@ -312,10 +320,7 @@ mod tests {
     #[test]
     fn update_instance_baselines_on_empty_is_noop() {
         let mut c = StringTableContainer::new();
-        let ci = ClassInfo {
-            classes: vec![],
-            bits: 1,
-        };
+        let ci = ClassInfo::empty();
         c.update_instance_baselines(&ci);
         assert!(c.instance_baselines.is_empty());
     }

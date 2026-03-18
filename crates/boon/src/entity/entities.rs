@@ -152,7 +152,6 @@ impl Entity {
 #[derive(Default)]
 pub struct EntityContainer {
     pub entities: FxHashMap<i32, Entity>,
-    baseline_cache: FxHashMap<i32, Entity>,
     /// Tracks class_id for entities we're not fully tracking (for filtered parsing).
     /// This lets us skip updates properly by knowing which serializer to use.
     skipped_entity_classes: FxHashMap<i32, i32>,
@@ -312,33 +311,24 @@ impl EntityContainer {
                     context: format!("no serializer for {}", class_entry.network_name),
                 })?;
 
-        // Get or create baseline entity
-        let mut entity = if let Some(cached) = self.baseline_cache.get(&class_id) {
-            let mut e = cached.clone();
-            e.index = index;
-            e
-        } else {
-            let mut e = Entity::new(index, class_id, class_entry.network_name.clone());
+        let mut entity = Entity::new(index, class_id, class_entry.network_name.clone());
 
-            // Apply baseline from instancebaseline string table
-            if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
-                let mut baseline_br = BitReader::new(baseline_data);
-                e.apply_update(&mut baseline_br, &serializer, field_decode_ctx, fp_buf)
-                    .map_err(|err| Error::Parse {
-                        context: format!(
-                            "baseline for {} (class_id {}): {}",
-                            class_entry.network_name, class_id, err
-                        ),
-                    })?;
-            }
-
-            self.baseline_cache.insert(class_id, e.clone());
-            e
-        };
+        // Apply baseline from instancebaseline string table
+        if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
+            let mut baseline_br = BitReader::new(baseline_data);
+            entity
+                .apply_update(&mut baseline_br, serializer, field_decode_ctx, fp_buf)
+                .map_err(|err| Error::Parse {
+                    context: format!(
+                        "baseline for {} (class_id {}): {}",
+                        class_entry.network_name, class_id, err
+                    ),
+                })?;
+        }
 
         // Apply create delta
         entity
-            .apply_update(br, &serializer, field_decode_ctx, fp_buf)
+            .apply_update(br, serializer, field_decode_ctx, fp_buf)
             .map_err(|err| Error::Parse {
                 context: format!(
                     "create delta for {} (class_id {}): {}",
@@ -374,7 +364,7 @@ impl EntityContainer {
                 context: format!("no serializer for {}", entity.class_name),
             })?;
 
-        entity.apply_update(br, &serializer, field_decode_ctx, fp_buf)?;
+        entity.apply_update(br, serializer, field_decode_ctx, fp_buf)?;
         Ok(())
     }
 
@@ -410,28 +400,19 @@ impl EntityContainer {
             // Skip this entity - just advance the bit reader
             // But track its class_id so we can skip updates later
             self.skipped_entity_classes.insert(index, class_id);
-            Entity::skip_update(br, &serializer, field_decode_ctx, fp_buf)?;
+            Entity::skip_update(br, serializer, field_decode_ctx, fp_buf)?;
             return Ok(());
         }
 
         // Full processing for filtered entities
-        let mut entity = if let Some(cached) = self.baseline_cache.get(&class_id) {
-            let mut e = cached.clone();
-            e.index = index;
-            e
-        } else {
-            let mut e = Entity::new(index, class_id, class_entry.network_name.clone());
+        let mut entity = Entity::new(index, class_id, class_entry.network_name.clone());
 
-            if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
-                let mut baseline_br = BitReader::new(baseline_data);
-                e.apply_update(&mut baseline_br, &serializer, field_decode_ctx, fp_buf)?;
-            }
+        if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
+            let mut baseline_br = BitReader::new(baseline_data);
+            entity.apply_update(&mut baseline_br, serializer, field_decode_ctx, fp_buf)?;
+        }
 
-            self.baseline_cache.insert(class_id, e.clone());
-            e
-        };
-
-        entity.apply_update(br, &serializer, field_decode_ctx, fp_buf)?;
+        entity.apply_update(br, serializer, field_decode_ctx, fp_buf)?;
         self.entities.insert(index, entity);
 
         Ok(())
@@ -456,7 +437,7 @@ impl EntityContainer {
                     context: format!("no serializer for {}", entity.class_name),
                 })?;
 
-            entity.apply_update(br, &serializer, field_decode_ctx, fp_buf)?;
+            entity.apply_update(br, serializer, field_decode_ctx, fp_buf)?;
             return Ok(());
         }
 
@@ -474,7 +455,7 @@ impl EntityContainer {
                     })?;
 
             // Skip this update
-            Entity::skip_update(br, &serializer, field_decode_ctx, fp_buf)?;
+            Entity::skip_update(br, serializer, field_decode_ctx, fp_buf)?;
         }
 
         // If we don't know about this entity at all, it was created before filtering started
