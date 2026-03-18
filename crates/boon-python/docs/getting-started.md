@@ -72,6 +72,38 @@ print(player_ticks.shape)    # (648000, 50) — 12 players × 54000 ticks
 print(player_ticks.columns)  # ['tick', 'hero_id', 'x', 'y', 'z', ...]
 ```
 
+## Events and Economy
+
+```python
+# Kill events
+kills = demo.kills
+
+# Damage events
+damage = demo.damage
+
+# Item shop transactions
+shop_events = demo.shop_events
+
+# Ability point spending
+ability_upgrades = demo.ability_upgrades
+
+# Chat messages
+chat = demo.chat
+```
+
+## Objectives and Map State
+
+```python
+# Objective health per tick (walkers, titans, barracks, mid boss)
+objectives = demo.objectives
+
+# Objective destruction events
+boss_kills = demo.boss_kills
+
+# Mid boss lifecycle (spawn, kill, rejuv buffs)
+mid_boss = demo.mid_boss
+```
+
 ## Filtering with Polars
 
 Boon returns [Polars](https://pola.rs) DataFrames, so you can use the full Polars

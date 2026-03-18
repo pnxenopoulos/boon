@@ -20,46 +20,76 @@ use boon_proto::proto::{
     CsvcMsgUserMessage, EBaseUserMessages, ECitadelGameEvents,
 };
 
+/// Magic bytes at the start of every Source 2 demo file.
 const MAGIC: &[u8; 8] = b"PBDEMS2\0";
-const HEADER_SIZE: usize = 16; // 8 magic + 4 fileinfo_offset + 4 spawngroups_offset
+/// File header: 8 bytes magic + 4 bytes fileinfo_offset + 4 bytes spawngroups_offset.
+const HEADER_SIZE: usize = 16;
 
+/// Default tick rate (1/30 s). Used to compute `full_packet_interval` when
+/// `CSVCMsg_ServerInfo.tick_interval` is not yet available.
 const DEFAULT_TICK_INTERVAL: f32 = 1.0 / 30.0;
+/// Default number of ticks between full-packet snapshots (at 30 Hz).
 const DEFAULT_FULL_PACKET_INTERVAL: i32 = 1800;
 
+/// Scratch buffer size for decompressed command bodies and packet payloads.
+const BUF_SIZE: usize = 2 * 1024 * 1024;
+
 /// Information about a demo message in the command stream.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct MessageInfo {
+    /// Zero-based ordinal position in the command stream.
     pub index: usize,
+    /// Command type (one of the `dem::*` constants).
     pub cmd: i32,
+    /// Human-readable command name.
     pub cmd_name: String,
+    /// Game tick this command applies to.
     pub tick: i32,
+    /// Whether the body is Snappy-compressed.
     pub compressed: bool,
+    /// Body size in bytes (before decompression).
     pub body_size: u32,
+    /// Absolute byte offset from the start of the file.
     pub offset: usize,
 }
 
-/// Parsed demo file header.
-#[derive(Debug, Clone)]
-pub struct DemoHeader {}
 
 /// Full parser context after initialization.
+///
+/// Holds all decoded game state: serializers, class definitions, string
+/// tables, and live entities. Returned by [`Parser::parse_init`],
+/// [`Parser::parse_to_tick`], and updated incrementally during
+/// [`Parser::run_to_end`].
 pub struct Context {
+    /// Field definitions for every entity class.
     pub serializers: SerializerContainer,
+    /// Maps numeric class IDs to network names.
     pub class_info: ClassInfo,
+    /// Key-value tables (models, sounds, instance baselines, etc.).
     pub string_tables: StringTableContainer,
+    /// Currently active entities keyed by entity index.
     pub entities: EntityContainer,
+    /// Seconds per tick (from `CSVCMsg_ServerInfo`).
     pub tick_interval: f32,
+    /// Ticks between full-packet snapshots (derived from tick_interval).
     pub full_packet_interval: i32,
+    /// Most recent tick processed.
     pub tick: i32,
 }
 
 /// A game event extracted from the demo.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct GameEvent {
+    /// Game tick at which this event occurred.
     pub tick: i32,
+    /// Human-readable event name (e.g. `"player_death"`, `"k_ECitadelUserMsg_Damage"`).
     pub name: String,
+    /// Numeric message type from the packet stream.
     pub msg_type: u32,
+    /// Key-value pairs for Source 1 legacy game events; empty for user messages.
     pub keys: Vec<(String, String)>,
+    /// Raw protobuf bytes of the event. Use [`decode_event_payload`] to decode.
+    #[serde(skip)]
     pub payload: Vec<u8>,
 }
 
@@ -93,34 +123,71 @@ fn format_event_key(key: &boon_proto::proto::c_msg_source1_legacy_game_event::Ke
     String::new()
 }
 
-/// The main parser. Owns the memory-mapped demo file.
+/// Internal storage for demo data — either memory-mapped or an owned byte buffer.
+enum Storage {
+    Mmap(Mmap),
+    Bytes(Vec<u8>),
+}
+
+impl AsRef<[u8]> for Storage {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Storage::Mmap(m) => m,
+            Storage::Bytes(b) => b,
+        }
+    }
+}
+
+/// The main parser. Owns the demo file data (memory-mapped or in-memory).
 pub struct Parser {
-    mmap: Mmap,
+    storage: Storage,
 }
 
 impl Parser {
-    /// Open a demo file and memory-map it.
+    /// Open a demo file and memory-map it for zero-copy parsing.
     pub fn from_file(path: &Path) -> Result<Self> {
         let file = std::fs::File::open(path)?;
+        // SAFETY: The file is opened read-only and the mapping lives as
+        // long as the Parser.  Undefined behavior can occur if an external
+        // process truncates or modifies the file while mapped; callers must
+        // ensure the file is not concurrently mutated.
         let mmap = unsafe { Mmap::map(&file)? };
-        Ok(Self { mmap })
+        Ok(Self {
+            storage: Storage::Mmap(mmap),
+        })
+    }
+
+    /// Create a parser from an in-memory byte buffer.
+    ///
+    /// This is useful for testing, WASM targets (where mmap is unavailable),
+    /// or when the demo data has already been loaded into memory.
+    pub fn from_bytes(bytes: Vec<u8>) -> Self {
+        Self {
+            storage: Storage::Bytes(bytes),
+        }
+    }
+
+    /// Returns the raw demo data.
+    fn data(&self) -> &[u8] {
+        self.storage.as_ref()
     }
 
     /// Verify magic bytes.
-    pub fn verify(&self) -> Result<DemoHeader> {
-        if self.mmap.len() < HEADER_SIZE {
+    /// Verify that the file has valid demo magic bytes.
+    pub fn verify(&self) -> Result<()> {
+        if self.data().len() < HEADER_SIZE {
             return Err(Error::Parse {
                 context: "file too small for demo header".into(),
             });
         }
 
         let mut magic = [0u8; 8];
-        magic.copy_from_slice(&self.mmap[0..8]);
+        magic.copy_from_slice(&self.data()[0..8]);
         if &magic != MAGIC {
             return Err(Error::InvalidMagic { got: magic });
         }
 
-        Ok(DemoHeader {})
+        Ok(())
     }
 
     fn read_cmd_header(reader: &mut ByteReader) -> Result<CmdHeader> {
@@ -162,7 +229,7 @@ impl Parser {
     /// Continues past DEM_Stop to capture DEM_FileInfo.
     pub fn messages(&self) -> Result<Vec<MessageInfo>> {
         self.verify()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
         let mut messages = Vec::new();
         let mut index = 0;
@@ -209,9 +276,9 @@ impl Parser {
     /// Find and decode the CDemoFileHeader message.
     pub fn file_header(&self) -> Result<CDemoFileHeader> {
         self.verify()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
 
         while reader.remaining() > 0 {
             let header = Self::read_cmd_header(&mut reader)?;
@@ -239,9 +306,9 @@ impl Parser {
 
         // Bytes 8..12 of the file header contain the absolute offset to DEM_FileInfo.
         let fileinfo_offset =
-            u32::from_le_bytes([self.mmap[8], self.mmap[9], self.mmap[10], self.mmap[11]]) as usize;
+            u32::from_le_bytes([self.data()[8], self.data()[9], self.data()[10], self.data()[11]]) as usize;
 
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
         // The offset is relative to the start of the file; adjust for the header we sliced off.
         reader.seek(fileinfo_offset.saturating_sub(HEADER_SIZE))?;
@@ -268,10 +335,10 @@ impl Parser {
     /// If `max_tick` is set, stops parsing once the tick exceeds the limit.
     pub fn events(&self, max_tick: Option<i32>) -> Result<Vec<GameEvent>> {
         self.verify()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
-        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
+        let mut packet_buf = vec![0u8; BUF_SIZE];
         let mut events = Vec::new();
         let mut descriptors: HashMap<i32, EventDescriptor> = HashMap::new();
 
@@ -431,9 +498,9 @@ impl Parser {
     /// Parse send tables from DEM_SendTables command.
     pub fn parse_send_tables(&self) -> Result<SerializerContainer> {
         self.verify()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
 
         while reader.remaining() > 0 {
             let header = Self::read_cmd_header(&mut reader)?;
@@ -459,9 +526,9 @@ impl Parser {
     /// Parse class info from DEM_ClassInfo command.
     pub fn parse_class_info(&self) -> Result<ClassInfo> {
         self.verify()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
 
         while reader.remaining() > 0 {
             let header = Self::read_cmd_header(&mut reader)?;
@@ -487,11 +554,11 @@ impl Parser {
     /// Parse all initialization data up to DEM_SyncTick and return a Context.
     pub fn parse_init(&self) -> Result<Context> {
         self.verify()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
 
-        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
 
         let mut serializers: Option<SerializerContainer> = None;
         let mut class_info: Option<ClassInfo> = None;
@@ -604,13 +671,17 @@ impl Parser {
     }
 
     /// Parse the demo to a specific tick, returning the full game state.
+    ///
+    /// Uses an optimisation where it skips forward to the last
+    /// `DEM_FullPacket` snapshot before `target_tick`, applies that snapshot,
+    /// then replays individual packets until `target_tick` is reached.
     pub fn parse_to_tick(&self, target_tick: i32) -> Result<Context> {
         let mut ctx = self.parse_init()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
 
-        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
         let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 
@@ -714,11 +785,11 @@ impl Parser {
         F: FnMut(&Context),
     {
         let mut ctx = self.parse_init()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
 
-        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
         let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 
@@ -807,11 +878,11 @@ impl Parser {
         F: FnMut(&Context),
     {
         let mut ctx = self.parse_init()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
 
-        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
         let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 
@@ -902,12 +973,12 @@ impl Parser {
         F: FnMut(&Context, &[GameEvent]),
     {
         let mut ctx = self.parse_init()?;
-        let data = &self.mmap[HEADER_SIZE..];
+        let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
 
-        let mut packet_buf = vec![0u8; 2 * 1024 * 1024];
-        let mut event_packet_buf = vec![0u8; 2 * 1024 * 1024];
-        let mut body_buf = Vec::with_capacity(2 * 1024 * 1024);
+        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut event_packet_buf = vec![0u8; BUF_SIZE];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
         let mut fp_buf = Vec::with_capacity(256);
         let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
 

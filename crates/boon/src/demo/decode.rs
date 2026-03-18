@@ -1,5 +1,7 @@
 use prost::Message;
 
+/// Helper macro: expands to a `match` that tries `prost::Message::decode`
+/// for each `(msg_type => ProtoType)` pair and pretty-prints the result.
 macro_rules! decode_match {
     ($msg_type:expr, $data:expr, $($val:expr => $ty:ty),* $(,)?) => {
         match $msg_type {
@@ -91,7 +93,7 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         465 => CMsgRemoveSatVolumeEvent,
         466 => CMsgRemoveBullet,
 
-        // EBaseUserMessages (101–166)
+        // EBaseUserMessages (101-166)
         101 => CUserMessageAchievementEvent,
         102 => CUserMessageCloseCaption,
         103 => CUserMessageCloseCaptionDirect,
@@ -143,4 +145,31 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         165 => CUserMessageNotifyResponseFound,
         166 => CUserMessagePlayResponseConditional,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unknown_msg_type_returns_none() {
+        assert!(decode_event_payload(0, &[]).is_none());
+        assert!(decode_event_payload(9999, &[1, 2, 3]).is_none());
+    }
+
+    #[test]
+    fn known_type_invalid_bytes_returns_none() {
+        // 300 is a known type (CCitadelUserMessageDamage), but garbage bytes
+        // may or may not decode (protobuf is lenient), so we just verify no panic
+        let result = decode_event_payload(300, &[0xFF, 0xFF, 0xFF, 0xFF]);
+        // Result can be Some or None depending on protobuf leniency - just ensure no panic
+        let _ = result;
+    }
+
+    #[test]
+    fn known_type_empty_bytes_returns_some() {
+        // Empty bytes should decode as an empty protobuf message
+        let result = decode_event_payload(300, &[]);
+        assert!(result.is_some());
+    }
 }

@@ -1,0 +1,43 @@
+# https://embarkstudios.github.io/cargo-deny/
+
+[advisories]
+# Deny any dependency with a known security vulnerability.
+vulnerability = "deny"
+# Warn on unmaintained crates.
+unmaintained = "warn"
+# Warn on advisories with "unsound" status.
+unsound = "warn"
+# Warn on advisories that have been withdrawn.
+yanked = "warn"
+# Warn on advisories with "notice" status.
+notice = "warn"
+
+[licenses]
+# Deny unlicensed crates.
+unlicensed = "deny"
+# Boon is MIT-licensed. Allow permissive licenses compatible with MIT.
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "Zlib",
+]
+# Deny copyleft licenses that would conflict with MIT distribution.
+default = "deny"
+
+[bans]
+# Warn on multiple versions of the same crate in the dependency tree.
+multiple-versions = "warn"
+# Allow all wildcard dependencies (common in workspaces).
+wildcards = "allow"
+
+[sources]
+# Only allow crates from crates.io.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

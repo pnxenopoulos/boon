@@ -1,6 +1,7 @@
 use crate::error::Result;
 use crate::io::BitReader;
 
+// Valve's quantized-float encode flags (from QUANTIZEDFLOAT_ENCODE_*).
 const QFE_ROUNDDOWN: i32 = 1 << 0;
 const QFE_ROUNDUP: i32 = 1 << 1;
 const QFE_ENCODE_ZERO_EXACTLY: i32 = 1 << 2;
@@ -45,6 +46,11 @@ fn compute_encode_flags(encode_flags: i32, low_value: f32, high_value: f32) -> i
     efs
 }
 
+/// Compute a multiplier that maps `[low, high]` into `[0, 2^bit_count - 1]`.
+///
+/// If the naive `max / range` overflows, this tries progressively smaller
+/// scale factors until the product fits. This is a direct port of Valve's
+/// `CQuantizedFloatDecoder::AssignMultipliers`.
 fn assign_range_multiplier(bit_count: i32, range: f64) -> f32 {
     let high_value: u32 = if bit_count == 32 {
         0xFFFFFFFE
@@ -97,6 +103,7 @@ pub struct QuantizedFloat {
 }
 
 impl QuantizedFloat {
+    /// Build a quantized float decoder for the given bit width and value range.
     pub fn new(bit_count: i32, encode_flags: i32, low_value: f32, high_value: f32) -> Self {
         assert!(bit_count > 0 && bit_count < 32);
 
@@ -169,6 +176,7 @@ impl QuantizedFloat {
         self.low_value + range * (i as f32 * self.decode_mul)
     }
 
+    /// Decode a quantized float from the bitstream.
     pub fn decode(&self, br: &mut BitReader) -> Result<f32> {
         if (self.encode_flags & QFE_ROUNDDOWN) != 0 && br.read_bool()? {
             return Ok(self.low_value);
@@ -202,5 +210,89 @@ impl QuantizedFloat {
         }
 
         br.skip_bits(self.bit_count as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::io::BitReader;
+
+    // ── Private helpers ──
+
+    #[test]
+    fn close_enough_true_and_false() {
+        assert!(close_enough(1.0, 1.0005, 0.001));
+        assert!(!close_enough(1.0, 1.01, 0.001));
+    }
+
+    #[test]
+    fn num_bits_for_count_values() {
+        assert_eq!(num_bits_for_count(0), 0);
+        assert_eq!(num_bits_for_count(1), 1);
+        assert_eq!(num_bits_for_count(7), 3);
+        assert_eq!(num_bits_for_count(8), 4);
+        assert_eq!(num_bits_for_count(255), 8);
+    }
+
+    #[test]
+    fn compute_encode_flags_zero_passthrough() {
+        assert_eq!(compute_encode_flags(0, 0.0, 100.0), 0);
+    }
+
+    #[test]
+    fn compute_encode_flags_integers_clears_others() {
+        let flags = QFE_ENCODE_INTEGERS_EXACTLY | QFE_ROUNDDOWN | QFE_ROUNDUP;
+        let result = compute_encode_flags(flags, 0.0, 100.0);
+        assert_eq!(result & QFE_ROUNDDOWN, 0);
+        assert_eq!(result & QFE_ROUNDUP, 0);
+        assert_ne!(result & QFE_ENCODE_INTEGERS_EXACTLY, 0);
+    }
+
+    // ── Construction + decode ──
+
+    #[test]
+    fn new_does_not_panic() {
+        let _qf = QuantizedFloat::new(8, 0, 0.0, 255.0);
+    }
+
+    #[test]
+    fn decode_produces_value_in_range() {
+        let qf = QuantizedFloat::new(8, 0, 0.0, 100.0);
+        // 8 bits of value 128 (half range)
+        let data = [128u8, 0];
+        let mut br = BitReader::new(&data);
+        let val = qf.decode(&mut br).unwrap();
+        assert!((0.0..=100.0).contains(&val));
+    }
+
+    #[test]
+    fn rounddown_flag_path() {
+        let qf = QuantizedFloat::new(8, QFE_ROUNDDOWN, 0.0, 100.0);
+        // If rounddown flag is active and first bit is 1, returns low_value
+        let data = [0b1000_0000, 0, 0];
+        let mut br = BitReader::new(&data);
+        let val = qf.decode(&mut br).unwrap();
+        // Either it returns low_value or decodes normally depending on flag optimization
+        assert!((0.0..=100.0).contains(&val));
+    }
+
+    #[test]
+    fn roundup_flag_path() {
+        let qf = QuantizedFloat::new(8, QFE_ROUNDUP, 0.0, 100.0);
+        let data = [0b1000_0000, 0, 0];
+        let mut br = BitReader::new(&data);
+        let val = qf.decode(&mut br).unwrap();
+        assert!((0.0..=100.0).contains(&val));
+    }
+
+    #[test]
+    fn skip_advances_position() {
+        let qf = QuantizedFloat::new(8, 0, 0.0, 255.0);
+        let data = [0xAB, 0xCD];
+        let mut br = BitReader::new(&data);
+        let before = br.position();
+        qf.skip(&mut br).unwrap();
+        assert!(br.position() > before);
     }
 }

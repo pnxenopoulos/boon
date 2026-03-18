@@ -144,6 +144,12 @@ fn get_handle_index(e: &boon_parser::Entity, key: Option<u64>) -> Option<i32> {
 }
 
 const VALID_DATASETS: &[&str] = &[
+    "abilities",
+    "ability_upgrades",
+    "boss_kills",
+    "chat",
+    "mid_boss",
+    "objectives",
     "player_ticks",
     "world_ticks",
     "kills",
@@ -151,6 +157,11 @@ const VALID_DATASETS: &[&str] = &[
     "flex_slots",
     "respawns",
     "purchases",
+    "shop_events",
+    "troopers",
+    "neutrals",
+    "stat_modifiers",
+    "active_modifiers",
 ];
 
 /// A Deadlock demo file.
@@ -190,8 +201,20 @@ struct Demo {
     banned_heroes_scanned: bool,
     // Flex slot unlock events
     cached_flex_slots: Option<DataFrame>,
+    cached_abilities: Option<DataFrame>,
     cached_respawns: Option<DataFrame>,
     cached_purchases: Option<DataFrame>,
+    cached_ability_upgrades: Option<DataFrame>,
+    cached_shop_events: Option<DataFrame>,
+    cached_chat: Option<DataFrame>,
+    cached_objectives: Option<DataFrame>,
+    cached_boss_kills: Option<DataFrame>,
+    cached_mid_boss: Option<DataFrame>,
+    cached_troopers: Option<DataFrame>,
+    cached_neutrals: Option<DataFrame>,
+    cached_stat_modifiers: Option<DataFrame>,
+    cached_active_modifiers: Option<DataFrame>,
+    cached_players: Option<DataFrame>,
 }
 
 #[pymethods]
@@ -287,9 +310,21 @@ impl Demo {
             game_over_scanned: false,
             banned_hero_ids: None,
             banned_heroes_scanned: false,
+            cached_abilities: None,
             cached_flex_slots: None,
             cached_respawns: None,
             cached_purchases: None,
+            cached_ability_upgrades: None,
+            cached_shop_events: None,
+            cached_chat: None,
+            cached_objectives: None,
+            cached_boss_kills: None,
+            cached_mid_boss: None,
+            cached_troopers: None,
+            cached_neutrals: None,
+            cached_stat_modifiers: None,
+            cached_active_modifiers: None,
+            cached_players: None,
         })
     }
 
@@ -406,7 +441,11 @@ impl Demo {
     /// - team_num: The player's raw team number
     /// - start_lane: The player's original lane (1=left, 4=center, 6=right)
     #[getter]
-    fn players(&self) -> PyResult<PyDataFrame> {
+    fn players(&mut self) -> PyResult<PyDataFrame> {
+        if let Some(ref df) = self.cached_players {
+            return Ok(PyDataFrame(df.clone()));
+        }
+
         // Parse to the last tick to get final game state
         let last_tick = self.total_ticks;
         let ctx = self.parser.parse_to_tick(last_tick).map_err(to_py_err)?;
@@ -526,13 +565,14 @@ impl Demo {
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
 
+        self.cached_players = Some(df.clone());
         Ok(PyDataFrame(df))
     }
 
     /// Load one or more datasets from the demo file in a single pass.
     ///
-    /// Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
-    /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``.
+    /// Valid dataset names: ``"abilities"``, ``"player_ticks"``, ``"world_ticks"``,
+    /// ``"kills"``, ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``.
     /// Already-loaded datasets are skipped. Multiple datasets requested together
     /// share a single parse pass over the file for efficiency.
     ///
@@ -553,6 +593,8 @@ impl Demo {
         }
 
         // Determine what to load (skip already cached)
+        let load_abilities =
+            datasets.iter().any(|s| s == "abilities") && self.cached_abilities.is_none();
         let load_player_ticks =
             datasets.iter().any(|s| s == "player_ticks") && self.cached_player_ticks.is_none();
         let load_world_ticks =
@@ -565,20 +607,51 @@ impl Demo {
             datasets.iter().any(|s| s == "respawns") && self.cached_respawns.is_none();
         let load_purchases =
             datasets.iter().any(|s| s == "purchases") && self.cached_purchases.is_none();
+        let load_ability_upgrades =
+            datasets.iter().any(|s| s == "ability_upgrades") && self.cached_ability_upgrades.is_none();
+        let load_shop_events =
+            datasets.iter().any(|s| s == "shop_events") && self.cached_shop_events.is_none();
+        let load_chat =
+            datasets.iter().any(|s| s == "chat") && self.cached_chat.is_none();
+        let load_objectives =
+            datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
+        let load_boss_kills =
+            datasets.iter().any(|s| s == "boss_kills") && self.cached_boss_kills.is_none();
+        let load_mid_boss =
+            datasets.iter().any(|s| s == "mid_boss") && self.cached_mid_boss.is_none();
+        let load_troopers =
+            datasets.iter().any(|s| s == "troopers") && self.cached_troopers.is_none();
+        let load_neutrals =
+            datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
+        let load_stat_modifiers =
+            datasets.iter().any(|s| s == "stat_modifiers") && self.cached_stat_modifiers.is_none();
+        let load_active_modifiers =
+            datasets.iter().any(|s| s == "active_modifiers") && self.cached_active_modifiers.is_none();
 
-        if !load_player_ticks
+        if !load_abilities
+            && !load_player_ticks
             && !load_world_ticks
             && !load_kills
             && !load_damage
             && !load_flex_slots
             && !load_respawns
             && !load_purchases
+            && !load_ability_upgrades
+            && !load_shop_events
+            && !load_chat
+            && !load_objectives
+            && !load_boss_kills
+            && !load_mid_boss
+            && !load_troopers
+            && !load_neutrals
+            && !load_stat_modifiers
+            && !load_active_modifiers
         {
             return Ok(());
         }
 
         let need_events =
-            load_kills || load_damage || load_flex_slots || load_respawns || load_purchases;
+            load_abilities || load_kills || load_damage || load_flex_slots || load_respawns || load_purchases || load_shop_events || load_chat || load_boss_kills || load_mid_boss;
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
@@ -589,11 +662,25 @@ impl Demo {
         if load_world_ticks {
             class_names.push("CCitadelGameRulesProxy");
         }
-        if load_kills || load_damage || load_respawns {
+        if load_abilities || load_kills || load_damage || load_respawns || load_mid_boss || load_active_modifiers {
             class_names.push("CCitadelPlayerPawn");
         }
-        if load_purchases {
+        if load_purchases || load_ability_upgrades || load_shop_events || load_chat || load_stat_modifiers {
             class_names.push("CCitadelPlayerController");
+        }
+        if load_objectives {
+            class_names.push("CNPC_Boss_Tier2");
+            class_names.push("CNPC_Boss_Tier3");
+            class_names.push("CNPC_BarrackBoss");
+            class_names.push("CNPC_MidBoss");
+        }
+        if load_troopers {
+            class_names.push("CNPC_Trooper");
+            class_names.push("CNPC_TrooperBoss");
+        }
+        if load_neutrals {
+            class_names.push("CNPC_TrooperNeutral");
+            class_names.push("CNPC_TrooperNeutralNodeMover");
         }
         let class_filter: std::collections::HashSet<&str> = class_names.into_iter().collect();
 
@@ -683,8 +770,118 @@ impl Demo {
         let mut purchase_abilities: Vec<String> = Vec::new();
         let mut purchase_sell: Vec<bool> = Vec::new();
         let mut purchase_quickbuy: Vec<bool> = Vec::new();
+        let mut ability_ticks: Vec<i32> = Vec::new();
+        let mut ability_hero_ids: Vec<i64> = Vec::new();
+        let mut ability_names: Vec<String> = Vec::new();
         let mut slot_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut slot_to_hero_built = false;
+
+        // ── Column vectors for ability_upgrades ──
+        let mut au_ticks: Vec<i32> = Vec::new();
+        let mut au_hero_ids: Vec<i64> = Vec::new();
+        let mut au_ability_ids: Vec<u32> = Vec::new();
+        let mut au_abilities: Vec<String> = Vec::new();
+        let mut au_upgrade_bits: Vec<i32> = Vec::new();
+        // Change detection: (controller_entity_index, slot_index) → previous upgrade_bits
+        let mut au_prev_bits: HashMap<(i32, usize), i32> = HashMap::new();
+
+        // ── Column vectors for chat ──
+        let mut chat_ticks: Vec<i32> = Vec::new();
+        let mut chat_hero_ids: Vec<i64> = Vec::new();
+        let mut chat_texts: Vec<String> = Vec::new();
+        let mut chat_types: Vec<String> = Vec::new();
+
+        // ── Column vectors for objectives ──
+        let obj_capacity = if load_objectives {
+            self.total_ticks as usize * 21
+        } else {
+            0
+        };
+        let mut obj_tick: Vec<i32> = Vec::with_capacity(obj_capacity);
+        let mut obj_type: Vec<String> = Vec::with_capacity(obj_capacity);
+        let mut obj_team_num: Vec<i64> = Vec::with_capacity(obj_capacity);
+        let mut obj_lane: Vec<i64> = Vec::with_capacity(obj_capacity);
+        let mut obj_health: Vec<i64> = Vec::with_capacity(obj_capacity);
+        let mut obj_max_health: Vec<i64> = Vec::with_capacity(obj_capacity);
+
+        // ── Column vectors for boss_kills ──
+        // ── Column vectors for mid_boss ──
+        let mut mb_ticks: Vec<i32> = Vec::new();
+        let mut mb_hero_ids: Vec<i64> = Vec::new();
+        let mut mb_team_nums: Vec<i32> = Vec::new();
+        let mut mb_events: Vec<String> = Vec::new();
+
+        let mut bk_ticks: Vec<i32> = Vec::new();
+        let mut bk_objective_teams: Vec<i32> = Vec::new();
+        let mut bk_objective_ids: Vec<i32> = Vec::new();
+        let mut bk_entity_classes: Vec<String> = Vec::new();
+        let mut bk_gametimes: Vec<f32> = Vec::new();
+        let mut bk_bosses_remaining: Vec<i32> = Vec::new();
+
+        // ── Column vectors for shop_events ──
+        let mut se_ticks: Vec<i32> = Vec::new();
+        let mut se_hero_ids: Vec<i64> = Vec::new();
+        let mut se_ability_ids: Vec<u32> = Vec::new();
+        let mut se_abilities: Vec<String> = Vec::new();
+        let mut se_changes: Vec<String> = Vec::new();
+
+        // ── Column vectors for troopers (lane only) ──
+        let mut tr_tick: Vec<i32> = Vec::new();
+        let mut tr_type: Vec<String> = Vec::new();
+        let mut tr_team_num: Vec<i64> = Vec::new();
+        let mut tr_lane: Vec<i64> = Vec::new();
+        let mut tr_health: Vec<i64> = Vec::new();
+        let mut tr_max_health: Vec<i64> = Vec::new();
+        let mut tr_x: Vec<f32> = Vec::new();
+        let mut tr_y: Vec<f32> = Vec::new();
+        let mut tr_z: Vec<f32> = Vec::new();
+
+        // ── Column vectors for neutrals (change-detected) ──
+        let mut nt_tick: Vec<i32> = Vec::new();
+        let mut nt_type: Vec<String> = Vec::new();
+        let mut nt_team_num: Vec<i64> = Vec::new();
+        let mut nt_health: Vec<i64> = Vec::new();
+        let mut nt_max_health: Vec<i64> = Vec::new();
+        let mut nt_x: Vec<f32> = Vec::new();
+        let mut nt_y: Vec<f32> = Vec::new();
+        let mut nt_z: Vec<f32> = Vec::new();
+        // Change detection: entity_index → (was_alive, health, max_health, x_bits, y_bits, z_bits)
+        let mut nt_prev: HashMap<i32, (bool, i64, i64, u32, u32, u32)> = HashMap::new();
+
+        // ── Column vectors for stat_modifiers ──
+        let sm_capacity = if load_stat_modifiers {
+            self.total_ticks as usize * 12
+        } else {
+            0
+        };
+        let mut sm_tick: Vec<i32> = Vec::with_capacity(sm_capacity);
+        let mut sm_hero_id: Vec<i64> = Vec::with_capacity(sm_capacity);
+        let mut sm_health: Vec<f32> = Vec::with_capacity(sm_capacity);
+        let mut sm_spirit_power: Vec<f32> = Vec::with_capacity(sm_capacity);
+        let mut sm_fire_rate: Vec<f32> = Vec::with_capacity(sm_capacity);
+        let mut sm_weapon_damage: Vec<f32> = Vec::with_capacity(sm_capacity);
+        let mut sm_cooldown_reduction: Vec<f32> = Vec::with_capacity(sm_capacity);
+        let mut sm_ammo: Vec<f32> = Vec::with_capacity(sm_capacity);
+
+        // ── Column vectors for active_modifiers ──
+        let mut am_tick: Vec<i32> = Vec::new();
+        let mut am_hero_id: Vec<i64> = Vec::new();
+        let mut am_event: Vec<String> = Vec::new();
+        let mut am_modifier: Vec<String> = Vec::new();
+        let mut am_ability: Vec<String> = Vec::new();
+        let mut am_duration: Vec<f32> = Vec::new();
+        let mut am_caster_hero_id: Vec<i64> = Vec::new();
+        let mut am_stacks: Vec<i32> = Vec::new();
+        // Track active modifiers by serial_number for change detection
+        struct CachedMod {
+            hero_id: i64,
+            modifier: String,
+            ability: String,
+            duration: f32,
+            caster_hero_id: i64,
+            stacks: i32,
+        }
+        let mut am_prev: HashMap<u32, CachedMod> = HashMap::new();
 
         // ── Field keys ──
         let mut keys_resolved = false;
@@ -739,8 +936,39 @@ impl Demo {
         let mut ck_deaths: Option<u64> = None;
         let mut ck_assists: Option<u64> = None;
 
-        // Controller hero_id key (for purchases slot→hero mapping)
+        // Controller hero_id key (for purchases/shop_events slot→hero mapping)
         let mut ck_hero_id: Option<u64> = None;
+
+        // Ability upgrade slot keys: (item_id_key, upgrade_bits_key) for indices 0..7
+        let mut au_slot_keys: Vec<(Option<u64>, Option<u64>)> = Vec::new();
+
+        // Objective NPC keys (shared across all NPC classes)
+        let mut nk_health: Option<u64> = None;
+        let mut nk_max_health: Option<u64> = None;
+        let mut nk_team_num: Option<u64> = None;
+        let mut nk_lane: Option<u64> = None;
+
+        // Trooper NPC keys (lane troopers)
+        let mut tk_health: Option<u64> = None;
+        let mut tk_max_health: Option<u64> = None;
+        let mut tk_team_num: Option<u64> = None;
+        let mut tk_lane: Option<u64> = None;
+        let mut tk_lifestate: Option<u64> = None;
+        let mut tk_vec_x: Option<u64> = None;
+        let mut tk_vec_y: Option<u64> = None;
+        let mut tk_vec_z: Option<u64> = None;
+
+        // Neutral NPC keys
+        let mut ntk_health: Option<u64> = None;
+        let mut ntk_max_health: Option<u64> = None;
+        let mut ntk_team_num: Option<u64> = None;
+        let mut ntk_lifestate: Option<u64> = None;
+        let mut ntk_vec_x: Option<u64> = None;
+        let mut ntk_vec_y: Option<u64> = None;
+        let mut ntk_vec_z: Option<u64> = None;
+
+        // StatViewerModifierValues keys for indices 0..20: (modifier_id, val_type, value)
+        let mut smk_keys: Vec<(Option<u64>, Option<u64>, Option<u64>)> = Vec::new();
 
         // World keys
         let mut wk_is_paused: Option<u64> = None;
@@ -753,7 +981,7 @@ impl Demo {
         macro_rules! collect_entity_data {
             ($ctx:expr) => {
                 if !keys_resolved {
-                    if load_player_ticks || load_kills || load_damage || load_respawns {
+                    if load_abilities || load_player_ticks || load_kills || load_damage || load_respawns || load_active_modifiers {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
@@ -843,10 +1071,100 @@ impl Demo {
                                 s.resolve_field_key("m_PlayerDataGlobal.m_iPlayerAssists");
                         }
                     }
-                    if load_purchases {
+                    if load_purchases || load_shop_events {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
+                        }
+                    }
+                    if load_ability_upgrades {
+                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                            if ck_hero_id.is_none() {
+                                ck_hero_id =
+                                    s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
+                            }
+                            for i in 0..8usize {
+                                let item_key = s.resolve_field_key(&format!(
+                                    "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_ItemID"
+                                ));
+                                let bits_key = s.resolve_field_key(&format!(
+                                    "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_nUpgradeBits"
+                                ));
+                                au_slot_keys.push((item_key, bits_key));
+                            }
+                        }
+                    }
+                    if load_stat_modifiers {
+                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                            if ck_hero_id.is_none() {
+                                ck_hero_id =
+                                    s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
+                            }
+                            for i in 0..20usize {
+                                let mid = s.resolve_field_key(&format!(
+                                    "m_PlayerDataGlobal.m_vecStatViewerModifierValues.{i}.m_SourceModifierID"
+                                ));
+                                let vt = s.resolve_field_key(&format!(
+                                    "m_PlayerDataGlobal.m_vecStatViewerModifierValues.{i}.m_eValType"
+                                ));
+                                let val = s.resolve_field_key(&format!(
+                                    "m_PlayerDataGlobal.m_vecStatViewerModifierValues.{i}.m_flValue"
+                                ));
+                                smk_keys.push((mid, vt, val));
+                            }
+                        }
+                    }
+                    if load_objectives {
+                        // All objective NPCs share the same base fields; resolve from first found
+                        for obj_class in &["CNPC_Boss_Tier2", "CNPC_Boss_Tier3", "CNPC_BarrackBoss", "CNPC_MidBoss"] {
+                            if let Some(s) = $ctx.serializers.get(*obj_class) {
+                                nk_health = s.resolve_field_key("m_iHealth");
+                                nk_max_health = s.resolve_field_key("m_iMaxHealth");
+                                nk_team_num = s.resolve_field_key("m_iTeamNum");
+                                nk_lane = s.resolve_field_key("m_iLane");
+                                break;
+                            }
+                        }
+                    }
+                    if load_troopers {
+                        for tr_class in &["CNPC_Trooper", "CNPC_TrooperBoss"] {
+                            if let Some(s) = $ctx.serializers.get(*tr_class) {
+                                tk_health = s.resolve_field_key("m_iHealth");
+                                tk_max_health = s.resolve_field_key("m_iMaxHealth");
+                                tk_team_num = s.resolve_field_key("m_iTeamNum");
+                                tk_lane = s.resolve_field_key("m_iLane");
+                                tk_lifestate = s.resolve_field_key("m_lifeState");
+                                tk_vec_x = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
+                                );
+                                tk_vec_y = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
+                                );
+                                tk_vec_z = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                                );
+                                break;
+                            }
+                        }
+                    }
+                    if load_neutrals {
+                        for nt_class in &["CNPC_TrooperNeutral", "CNPC_TrooperNeutralNodeMover"] {
+                            if let Some(s) = $ctx.serializers.get(*nt_class) {
+                                ntk_health = s.resolve_field_key("m_iHealth");
+                                ntk_max_health = s.resolve_field_key("m_iMaxHealth");
+                                ntk_team_num = s.resolve_field_key("m_iTeamNum");
+                                ntk_lifestate = s.resolve_field_key("m_lifeState");
+                                ntk_vec_x = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
+                                );
+                                ntk_vec_y = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
+                                );
+                                ntk_vec_z = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                                );
+                                break;
+                            }
                         }
                     }
                     if load_world_ticks {
@@ -951,8 +1269,8 @@ impl Demo {
                     }
                 }
 
-                // ── Build entity_to_hero map (for kills/damage resolution) ──
-                if (load_kills || load_damage || load_respawns) && !entity_to_hero_built {
+                // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
+                if (load_abilities || load_kills || load_damage || load_respawns || load_mid_boss || load_active_modifiers) && !entity_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerPawn" {
                             let hid = get_i64(entity, pk_hero_id);
@@ -964,8 +1282,8 @@ impl Demo {
                     entity_to_hero_built = true;
                 }
 
-                // ── Build slot_to_hero map (for purchases: userid → hero_id) ──
-                if load_purchases && !slot_to_hero_built {
+                // ── Build slot_to_hero map (for purchases/shop_events/chat: userid → hero_id) ──
+                if (load_purchases || load_shop_events || load_chat) && !slot_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerController" {
                             let hid = get_i64(entity, ck_hero_id);
@@ -977,6 +1295,324 @@ impl Demo {
                     }
                     slot_to_hero_built = true;
                 }
+
+                // ── Collect ability_upgrades (entity change detection) ──
+                if load_ability_upgrades {
+                    for (&idx, entity) in $ctx.entities.iter() {
+                        if entity.class_name != "CCitadelPlayerController" {
+                            continue;
+                        }
+                        let hero_id = get_i64(entity, ck_hero_id);
+                        if hero_id == 0 {
+                            continue;
+                        }
+                        for (slot_idx, (item_key, bits_key)) in au_slot_keys.iter().enumerate() {
+                            let ability_id = item_key
+                                .and_then(|k| entity.fields.get(&k))
+                                .and_then(|v| match v {
+                                    boon_parser::FieldValue::U32(n) => Some(*n),
+                                    boon_parser::FieldValue::U64(n) => Some(*n as u32),
+                                    boon_parser::FieldValue::I32(n) => Some(*n as u32),
+                                    boon_parser::FieldValue::I64(n) => Some(*n as u32),
+                                    _ => None,
+                                })
+                                .unwrap_or(0);
+                            if ability_id == 0 {
+                                continue;
+                            }
+                            let upgrade_bits = bits_key
+                                .and_then(|k| entity.fields.get(&k))
+                                .and_then(|v| match v {
+                                    boon_parser::FieldValue::I32(n) => Some(*n),
+                                    boon_parser::FieldValue::I64(n) => Some(*n as i32),
+                                    boon_parser::FieldValue::U32(n) => Some(*n as i32),
+                                    boon_parser::FieldValue::U64(n) => Some(*n as i32),
+                                    _ => None,
+                                })
+                                .unwrap_or(0);
+                            let key = (idx, slot_idx);
+                            let prev = au_prev_bits.get(&key).copied().unwrap_or(0);
+                            if upgrade_bits != prev {
+                                au_prev_bits.insert(key, upgrade_bits);
+                                if upgrade_bits > prev {
+                                    au_ticks.push($ctx.tick);
+                                    au_hero_ids.push(hero_id);
+                                    au_ability_ids.push(ability_id);
+                                    au_abilities.push(
+                                        boon_parser::ability_name(ability_id).to_string(),
+                                    );
+                                    au_upgrade_bits.push(upgrade_bits);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── Collect objectives (per-tick entity health) ──
+                if load_objectives {
+                    for (_, entity) in $ctx.entities.iter() {
+                        let obj_class = entity.class_name.as_str();
+                        let otype = match obj_class {
+                            "CNPC_Boss_Tier2" => "walker",
+                            "CNPC_Boss_Tier3" => "titan",
+                            "CNPC_BarrackBoss" => "barracks",
+                            "CNPC_MidBoss" => "mid_boss",
+                            _ => continue,
+                        };
+                        let max_hp = get_i64(entity, nk_max_health);
+                        if max_hp == 0 {
+                            continue;
+                        }
+                        obj_tick.push($ctx.tick);
+                        obj_type.push(otype.to_string());
+                        obj_team_num.push(get_i64(entity, nk_team_num));
+                        obj_lane.push(get_i64(entity, nk_lane));
+                        obj_health.push(get_i64(entity, nk_health));
+                        obj_max_health.push(max_hp);
+                    }
+                }
+
+                // ── Collect troopers (lane troopers, per-tick alive only) ──
+                if load_troopers {
+                    for (_, entity) in $ctx.entities.iter() {
+                        let ttype = match entity.class_name.as_str() {
+                            "CNPC_Trooper" => "trooper",
+                            "CNPC_TrooperBoss" => "trooper_boss",
+                            _ => continue,
+                        };
+                        let max_hp = get_i64(entity, tk_max_health);
+                        if max_hp == 0 {
+                            continue;
+                        }
+                        let lifestate = get_i64(entity, tk_lifestate);
+                        if lifestate != 0 {
+                            continue;
+                        }
+                        tr_tick.push($ctx.tick);
+                        tr_type.push(ttype.to_string());
+                        tr_team_num.push(get_i64(entity, tk_team_num));
+                        tr_lane.push(get_i64(entity, tk_lane));
+                        tr_health.push(get_i64(entity, tk_health));
+                        tr_max_health.push(max_hp);
+                        tr_x.push(get_f32(entity, tk_vec_x));
+                        tr_y.push(get_f32(entity, tk_vec_y));
+                        tr_z.push(get_f32(entity, tk_vec_z));
+                    }
+                }
+
+                // ── Collect stat_modifiers (per tick per controller) ──
+                if load_stat_modifiers {
+                    for (_, entity) in $ctx.entities.iter() {
+                        if entity.class_name != "CCitadelPlayerController" {
+                            continue;
+                        }
+                        let hero_id = get_i64(entity, ck_hero_id);
+                        if hero_id == 0 {
+                            continue;
+                        }
+
+                        // Sum values by eValType into 6 stat slots
+                        let mut sums = [0.0f32; 6];
+                        for (mid_key, vt_key, val_key) in &smk_keys {
+                            let mid_val = mid_key
+                                .and_then(|k| entity.fields.get(&k))
+                                .and_then(|v| match v {
+                                    boon_parser::FieldValue::U32(n) => Some(*n),
+                                    boon_parser::FieldValue::I32(n) => Some(*n as u32),
+                                    boon_parser::FieldValue::U64(n) => Some(*n as u32),
+                                    boon_parser::FieldValue::I64(n) => Some(*n as u32),
+                                    _ => None,
+                                })
+                                .unwrap_or(0);
+                            let vt_val = vt_key
+                                .and_then(|k| entity.fields.get(&k))
+                                .and_then(|v| match v {
+                                    boon_parser::FieldValue::U32(n) => Some(*n),
+                                    boon_parser::FieldValue::I32(n) => Some(*n as u32),
+                                    boon_parser::FieldValue::U64(n) => Some(*n as u32),
+                                    boon_parser::FieldValue::I64(n) => Some(*n as u32),
+                                    _ => None,
+                                })
+                                .unwrap_or(0);
+                            let fl_val = get_f32(entity, *val_key);
+                            if mid_val == 0 && vt_val == 0 && fl_val == 0.0 {
+                                continue;
+                            }
+                            let idx = match vt_val {
+                                28 => 0,  // health
+                                48 => 1,  // spirit_power
+                                76 => 2,  // fire_rate
+                                15 => 3,  // weapon_damage
+                                106 => 4, // cooldown_reduction
+                                169 => 5, // ammo
+                                _ => continue,
+                            };
+                            sums[idx] += fl_val;
+                        }
+
+                        sm_tick.push($ctx.tick);
+                        sm_hero_id.push(hero_id);
+                        sm_health.push(sums[0]);
+                        sm_spirit_power.push(sums[1]);
+                        sm_fire_rate.push(sums[2]);
+                        sm_weapon_damage.push(sums[3]);
+                        sm_cooldown_reduction.push(sums[4]);
+                        sm_ammo.push(sums[5]);
+                    }
+                }
+
+                // ── Collect active_modifiers (string table change detection) ──
+                if load_active_modifiers {
+                    if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
+                        let mut current_serials: std::collections::HashSet<u32> = std::collections::HashSet::new();
+
+                        for entry in &table.entries {
+                            let data = match &entry.user_data {
+                                Some(d) if !d.is_empty() => d,
+                                _ => continue,
+                            };
+
+                            let Ok(modifier) =
+                                boon_proto::proto::CModifierTableEntry::decode(data.as_slice())
+                            else {
+                                continue;
+                            };
+
+                            let serial = match modifier.serial_number {
+                                Some(s) => s,
+                                None => continue,
+                            };
+
+                            let parent_handle = modifier.parent.unwrap_or(16777215);
+                            if parent_handle == 16777215 {
+                                continue;
+                            }
+                            let parent_idx = (parent_handle & 0x3FFF) as i32;
+
+                            let hero_id = match entity_to_hero.get(&parent_idx) {
+                                Some(&hid) => hid,
+                                None => continue,
+                            };
+
+                            let mod_entry_type = modifier.entry_type.unwrap_or(1);
+
+                            if mod_entry_type == 2 {
+                                if let Some(cached) = am_prev.remove(&serial) {
+                                    am_tick.push($ctx.tick);
+                                    am_hero_id.push(cached.hero_id);
+                                    am_event.push("removed".to_string());
+                                    am_modifier.push(cached.modifier);
+                                    am_ability.push(cached.ability);
+                                    am_duration.push(cached.duration);
+                                    am_caster_hero_id.push(cached.caster_hero_id);
+                                    am_stacks.push(cached.stacks);
+                                }
+                                continue;
+                            }
+
+                            current_serials.insert(serial);
+
+                            if let std::collections::hash_map::Entry::Vacant(e) = am_prev.entry(serial) {
+                                let mod_name = boon_parser::modifier_name(
+                                    modifier.modifier_subclass.unwrap_or(0),
+                                ).to_string();
+                                let abil_name = boon_parser::ability_name(
+                                    modifier.ability_subclass.unwrap_or(0),
+                                ).to_string();
+                                let duration = modifier.duration.unwrap_or(-1.0);
+                                let caster_handle = modifier.caster.unwrap_or(16777215);
+                                let caster_hero_id = if caster_handle != 16777215 {
+                                    let caster_idx = (caster_handle & 0x3FFF) as i32;
+                                    entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
+                                } else {
+                                    0
+                                };
+                                let stacks = modifier.stack_count.unwrap_or(0);
+
+                                am_tick.push($ctx.tick);
+                                am_hero_id.push(hero_id);
+                                am_event.push("applied".to_string());
+                                am_modifier.push(mod_name.clone());
+                                am_ability.push(abil_name.clone());
+                                am_duration.push(duration);
+                                am_caster_hero_id.push(caster_hero_id);
+                                am_stacks.push(stacks);
+
+                                e.insert(CachedMod {
+                                    hero_id,
+                                    modifier: mod_name,
+                                    ability: abil_name,
+                                    duration,
+                                    caster_hero_id,
+                                    stacks,
+                                });
+                            }
+                        }
+
+                        // Detect removed: serials in prev but not in current
+                        let removed: Vec<u32> = am_prev
+                            .keys()
+                            .filter(|s| !current_serials.contains(s))
+                            .copied()
+                            .collect();
+                        for serial in removed {
+                            if let Some(cached) = am_prev.remove(&serial) {
+                                am_tick.push($ctx.tick);
+                                am_hero_id.push(cached.hero_id);
+                                am_event.push("removed".to_string());
+                                am_modifier.push(cached.modifier);
+                                am_ability.push(cached.ability);
+                                am_duration.push(cached.duration);
+                                am_caster_hero_id.push(cached.caster_hero_id);
+                                am_stacks.push(cached.stacks);
+                            }
+                        }
+                    }
+                }
+
+                // ── Collect neutrals (change-detected, only emit on state change) ──
+                if load_neutrals {
+                    for (&idx, entity) in $ctx.entities.iter() {
+                        let ntype = match entity.class_name.as_str() {
+                            "CNPC_TrooperNeutral" => "neutral",
+                            "CNPC_TrooperNeutralNodeMover" => "neutral_node_mover",
+                            _ => continue,
+                        };
+                        let max_hp = get_i64(entity, ntk_max_health);
+                        if max_hp == 0 {
+                            continue;
+                        }
+                        let lifestate = get_i64(entity, ntk_lifestate);
+                        let alive = lifestate == 0;
+                        let x = get_f32(entity, ntk_vec_x);
+                        let y = get_f32(entity, ntk_vec_y);
+                        let z = get_f32(entity, ntk_vec_z);
+                        let hp = get_i64(entity, ntk_health);
+
+                        let cur = (alive, hp, max_hp, x.to_bits(), y.to_bits(), z.to_bits());
+                        let changed = match nt_prev.get(&idx) {
+                            None => true,
+                            Some(prev) => {
+                                alive != prev.0
+                                    || (alive && (hp != prev.1 || max_hp != prev.2 || x.to_bits() != prev.3 || y.to_bits() != prev.4 || z.to_bits() != prev.5))
+                            }
+                        };
+                        if changed {
+                            nt_prev.insert(idx, cur);
+                            if alive {
+                                nt_tick.push($ctx.tick);
+                                nt_type.push(ntype.to_string());
+                                nt_team_num.push(get_i64(entity, ntk_team_num));
+                                nt_health.push(hp);
+                                nt_max_health.push(max_hp);
+                                nt_x.push(x);
+                                nt_y.push(y);
+                                nt_z.push(z);
+                            }
+                        }
+                    }
+                }
+
             };
         }
 
@@ -1049,6 +1685,23 @@ impl Demo {
                                 respawn_hero_ids.push(hero_id);
                             }
                         }
+                        // Collect ImportantAbilityUsed events (msg_type 365)
+                        if load_abilities
+                            && event.msg_type == 365
+                            && let Ok(msg) =
+                                boon_proto::proto::CCitadelUserMessageImportantAbilityUsed::decode(
+                                    event.payload.as_slice(),
+                                )
+                        {
+                            let pawn_idx = (msg.player.unwrap_or(0) & 0x3FFF) as i32;
+                            let hero_id = entity_to_hero
+                                .get(&pawn_idx)
+                                .copied()
+                                .unwrap_or(0);
+                            ability_ticks.push(event.tick);
+                            ability_hero_ids.push(hero_id);
+                            ability_names.push(msg.ability_name.unwrap_or_default());
+                        }
                         // Collect ItemPurchaseNotification events (msg_type 360)
                         if load_purchases
                             && event.msg_type == 360
@@ -1071,6 +1724,130 @@ impl Demo {
                             );
                             purchase_sell.push(msg.sell.unwrap_or(false));
                             purchase_quickbuy.push(msg.quickbuy.unwrap_or(false));
+                        }
+                        // Collect AbilitiesChanged events (msg_type 309)
+                        if load_shop_events
+                            && event.msg_type == 309
+                            && let Ok(msg) =
+                                boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
+                                    event.payload.as_slice(),
+                                )
+                        {
+                            let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
+                            let hero_id = slot_to_hero
+                                .get(&player_slot)
+                                .copied()
+                                .unwrap_or(0);
+                            let ability_id = msg.ability_id.unwrap_or(0);
+                            let change = match msg.change.unwrap_or(-1) {
+                                0 => "purchased",
+                                1 => "upgraded",
+                                2 => "sold",
+                                3 => "swapped",
+                                4 => "failure",
+                                _ => "unknown",
+                            };
+                            se_ticks.push(event.tick);
+                            se_hero_ids.push(hero_id);
+                            se_ability_ids.push(ability_id);
+                            se_abilities.push(
+                                boon_parser::ability_name(ability_id).to_string(),
+                            );
+                            se_changes.push(change.to_string());
+                        }
+                        // Collect ChatMsg events (msg_type 314)
+                        if load_chat
+                            && event.msg_type == 314
+                            && let Ok(msg) =
+                                boon_proto::proto::CCitadelUserMsgChatMsg::decode(
+                                    event.payload.as_slice(),
+                                )
+                        {
+                            let player_slot = msg.player_slot.unwrap_or(-1);
+                            let hero_id = slot_to_hero
+                                .get(&player_slot)
+                                .copied()
+                                .unwrap_or(0);
+                            let chat_type = if msg.all_chat.unwrap_or(false) {
+                                "all"
+                            } else {
+                                "team"
+                            };
+                            chat_ticks.push(event.tick);
+                            chat_hero_ids.push(hero_id);
+                            chat_texts.push(msg.text.unwrap_or_default());
+                            chat_types.push(chat_type.to_string());
+                        }
+                        // Collect BossKilled events (msg_type 347)
+                        if load_boss_kills
+                            && event.msg_type == 347
+                            && let Ok(msg) =
+                                boon_proto::proto::CCitadelUserMsgBossKilled::decode(
+                                    event.payload.as_slice(),
+                                )
+                        {
+                            let class_id = msg.entity_killed_class.unwrap_or(0);
+                            let entity_class = match class_id {
+                                5 => "walker",
+                                8 => "mid_boss",
+                                28 => "titan_shield_generator",
+                                29 => "barracks",
+                                30 => "titan",
+                                31 => "core",
+                                _ => "unknown",
+                            };
+                            bk_ticks.push(event.tick);
+                            bk_objective_teams.push(msg.objective_team.unwrap_or(0));
+                            bk_objective_ids.push(msg.objective_mask_change.unwrap_or(0));
+                            bk_entity_classes.push(entity_class.to_string());
+                            bk_gametimes.push(msg.gametime.unwrap_or(0.0));
+                            bk_bosses_remaining.push(msg.bosses_remaining.unwrap_or(0));
+                        }
+                        // Collect mid_boss lifecycle events
+                        if load_mid_boss {
+                            // MidBossSpawned (msg_type 349)
+                            if event.msg_type == 349 {
+                                mb_ticks.push(event.tick);
+                                mb_hero_ids.push(0);
+                                mb_team_nums.push(0);
+                                mb_events.push("spawned".to_string());
+                            }
+                            // BossKilled for mid_boss (msg_type 347, entity_killed_class == 8)
+                            if event.msg_type == 347
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgBossKilled::decode(
+                                        event.payload.as_slice(),
+                                    )
+                                && msg.entity_killed_class.unwrap_or(0) == 8
+                            {
+                                mb_ticks.push(event.tick);
+                                mb_hero_ids.push(0);
+                                mb_team_nums.push(msg.objective_team.unwrap_or(0));
+                                mb_events.push("killed".to_string());
+                            }
+                            // RejuvStatus (msg_type 350)
+                            if event.msg_type == 350
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                let pawn_idx = (msg.player_pawn.unwrap_or(0) & 0x3FFF) as i32;
+                                let hero_id = entity_to_hero
+                                    .get(&pawn_idx)
+                                    .copied()
+                                    .unwrap_or(0);
+                                let event_name = match msg.event_type.unwrap_or(0) {
+                                    6 => "picked_up",
+                                    7 => "used",
+                                    8 => "expired",
+                                    _ => "unknown",
+                                };
+                                mb_ticks.push(event.tick);
+                                mb_hero_ids.push(hero_id);
+                                mb_team_nums.push(msg.user_team.unwrap_or(0));
+                                mb_events.push(event_name.to_string());
+                            }
                         }
                     }
                 })
@@ -1282,6 +2059,16 @@ impl Demo {
             self.cached_damage = Some(df);
         }
 
+        if load_abilities {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), ability_ticks),
+                Column::new("hero_id".into(), ability_hero_ids),
+                Column::new("ability".into(), ability_names),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_abilities = Some(df);
+        }
+
         if load_flex_slots {
             let df = DataFrame::new(vec![
                 Column::new("tick".into(), flex_ticks),
@@ -1311,6 +2098,139 @@ impl Demo {
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_purchases = Some(df);
+        }
+
+        if load_ability_upgrades {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), au_ticks),
+                Column::new("hero_id".into(), au_hero_ids),
+                Column::new("ability_id".into(), au_ability_ids),
+                Column::new("ability".into(), au_abilities),
+                Column::new("upgrade_bits".into(), au_upgrade_bits),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_ability_upgrades = Some(df);
+        }
+
+        if load_shop_events {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), se_ticks),
+                Column::new("hero_id".into(), se_hero_ids),
+                Column::new("ability_id".into(), se_ability_ids),
+                Column::new("ability".into(), se_abilities),
+                Column::new("change".into(), se_changes),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_shop_events = Some(df);
+        }
+
+        if load_chat {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), chat_ticks),
+                Column::new("hero_id".into(), chat_hero_ids),
+                Column::new("text".into(), chat_texts),
+                Column::new("chat_type".into(), chat_types),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_chat = Some(df);
+        }
+
+        if load_objectives {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), obj_tick),
+                Column::new("objective_type".into(), obj_type),
+                Column::new("team_num".into(), obj_team_num),
+                Column::new("lane".into(), obj_lane),
+                Column::new("health".into(), obj_health),
+                Column::new("max_health".into(), obj_max_health),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_objectives = Some(df);
+        }
+
+        if load_boss_kills {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), bk_ticks),
+                Column::new("objective_team".into(), bk_objective_teams),
+                Column::new("objective_id".into(), bk_objective_ids),
+                Column::new("entity_class".into(), bk_entity_classes),
+                Column::new("gametime".into(), bk_gametimes),
+                Column::new("bosses_remaining".into(), bk_bosses_remaining),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_boss_kills = Some(df);
+        }
+
+        if load_mid_boss {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), mb_ticks),
+                Column::new("hero_id".into(), mb_hero_ids),
+                Column::new("team_num".into(), mb_team_nums),
+                Column::new("event".into(), mb_events),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_mid_boss = Some(df);
+        }
+
+        if load_troopers {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), tr_tick),
+                Column::new("trooper_type".into(), tr_type),
+                Column::new("team_num".into(), tr_team_num),
+                Column::new("lane".into(), tr_lane),
+                Column::new("health".into(), tr_health),
+                Column::new("max_health".into(), tr_max_health),
+                Column::new("x".into(), tr_x),
+                Column::new("y".into(), tr_y),
+                Column::new("z".into(), tr_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_troopers = Some(df);
+        }
+
+        if load_neutrals {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), nt_tick),
+                Column::new("neutral_type".into(), nt_type),
+                Column::new("team_num".into(), nt_team_num),
+                Column::new("health".into(), nt_health),
+                Column::new("max_health".into(), nt_max_health),
+                Column::new("x".into(), nt_x),
+                Column::new("y".into(), nt_y),
+                Column::new("z".into(), nt_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_neutrals = Some(df);
+        }
+
+        if load_stat_modifiers {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), sm_tick),
+                Column::new("hero_id".into(), sm_hero_id),
+                Column::new("health".into(), sm_health),
+                Column::new("spirit_power".into(), sm_spirit_power),
+                Column::new("fire_rate".into(), sm_fire_rate),
+                Column::new("weapon_damage".into(), sm_weapon_damage),
+                Column::new("cooldown_reduction".into(), sm_cooldown_reduction),
+                Column::new("ammo".into(), sm_ammo),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_stat_modifiers = Some(df);
+        }
+
+        if load_active_modifiers {
+            let df = DataFrame::new(vec![
+                Column::new("tick".into(), am_tick),
+                Column::new("hero_id".into(), am_hero_id),
+                Column::new("event".into(), am_event),
+                Column::new("modifier".into(), am_modifier),
+                Column::new("ability".into(), am_ability),
+                Column::new("duration".into(), am_duration),
+                Column::new("caster_hero_id".into(), am_caster_hero_id),
+                Column::new("stacks".into(), am_stacks),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_active_modifiers = Some(df);
         }
 
         Ok(())
@@ -1405,6 +2325,18 @@ impl Demo {
         Ok(PyDataFrame(self.cached_respawns.clone().unwrap()))
     }
 
+    /// Ability usage events as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``ability``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn abilities(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_abilities.is_none() {
+            self.load(vec!["abilities".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_abilities.clone().unwrap()))
+    }
+
     /// Item purchase events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``ability``, ``sell``, ``quickbuy``.
@@ -1415,6 +2347,149 @@ impl Demo {
             self.load(vec!["purchases".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_purchases.clone().unwrap()))
+    }
+
+    /// Hero ability upgrade events (skill point spending) as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``ability``, ``upgrade_bits``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn ability_upgrades(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_ability_upgrades.is_none() {
+            self.load(vec!["ability_upgrades".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_ability_upgrades.clone().unwrap()))
+    }
+
+    /// Item shop transaction events as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``ability``, ``change``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn shop_events(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_shop_events.is_none() {
+            self.load(vec!["shop_events".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_shop_events.clone().unwrap()))
+    }
+
+    /// Chat messages as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``text``, ``chat_type``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn chat(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_chat.is_none() {
+            self.load(vec!["chat".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_chat.clone().unwrap()))
+    }
+
+    /// Per-tick objective entity health as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn objectives(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_objectives.is_none() {
+            self.load(vec!["objectives".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_objectives.clone().unwrap()))
+    }
+
+    /// Mid boss lifecycle events as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``team_num``, ``event``.
+    /// Events: ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn mid_boss(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_mid_boss.is_none() {
+            self.load(vec!["mid_boss".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_mid_boss.clone().unwrap()))
+    }
+
+    /// Objective destruction events as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``objective_team``, ``objective_id``, ``entity_class``,
+    /// ``gametime``, ``bosses_remaining``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn boss_kills(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_boss_kills.is_none() {
+            self.load(vec!["boss_kills".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_boss_kills.clone().unwrap()))
+    }
+
+    /// Per-tick alive lane trooper state as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``trooper_type``, ``team_num``, ``lane``,
+    /// ``health``, ``max_health``, ``x``, ``y``, ``z``.
+    ///
+    /// Tracks ``CNPC_Trooper`` and ``CNPC_TrooperBoss`` only. Emits a row
+    /// for every alive trooper at every tick.
+    ///
+    /// **Warning:** This dataset is large. It is not loaded by default.
+    /// Access this property or call ``load("troopers")`` explicitly.
+    #[getter]
+    fn troopers(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_troopers.is_none() {
+            self.load(vec!["troopers".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_troopers.clone().unwrap()))
+    }
+
+    /// Neutral creep state changes as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``neutral_type``, ``team_num``,
+    /// ``health``, ``max_health``, ``x``, ``y``, ``z``.
+    ///
+    /// Tracks ``CNPC_TrooperNeutral`` and ``CNPC_TrooperNeutralNodeMover``.
+    /// Only emits a row when an alive neutral's state changes (health,
+    /// position), significantly reducing data volume.
+    ///
+    /// **Note:** Not loaded by default. Access this property or call
+    /// ``load("neutrals")`` explicitly.
+    #[getter]
+    fn neutrals(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_neutrals.is_none() {
+            self.load(vec!["neutrals".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_neutrals.clone().unwrap()))
+    }
+
+    /// Per-tick, per-player cumulative permanent stat bonuses as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``health``, ``spirit_power``,
+    /// ``fire_rate``, ``weapon_damage``, ``cooldown_reduction``, ``ammo``.
+    ///
+    /// Tracks idol and breakable pickup bonuses from
+    /// ``StatViewerModifierValues`` on ``CCitadelPlayerController``.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn stat_modifiers(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_stat_modifiers.is_none() {
+            self.load(vec!["stat_modifiers".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_stat_modifiers.clone().unwrap()))
+    }
+
+    /// Active buff/debuff modifier events as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``event``, ``modifier``, ``ability``,
+    /// ``duration``, ``caster_hero_id``, ``stacks``.
+    ///
+    /// Events: ``"applied"`` when a modifier is first seen on a player,
+    /// ``"removed"`` when it disappears.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn active_modifiers(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_active_modifiers.is_none() {
+            self.load(vec!["active_modifiers".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_active_modifiers.clone().unwrap()))
     }
 
     /// The team number of the winning team.

@@ -1,10 +1,11 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 
-pub fn run(file: &Path, filter: Option<String>, limit: Option<usize>) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+pub fn run(file: &Path, filter: Option<String>, limit: Option<usize>, json: bool) -> Result<()> {
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let class_info = parser.parse_class_info()?;
 
     let mut classes: Vec<_> = class_info.classes.iter().collect();
@@ -15,6 +16,12 @@ pub fn run(file: &Path, filter: Option<String>, limit: Option<usize>) -> Result<
     }
 
     let limit = limit.unwrap_or(classes.len());
+
+    if json {
+        let output: Vec<_> = classes.iter().take(limit).collect();
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
 
     println!(
         "{:<8} {:<50} {}",

@@ -1,6 +1,12 @@
+import re
+from pathlib import Path
+
 project = "boon"
-version = "0.0.0"
 author = "Peter Xenopoulos"
+
+# Read version from Cargo.toml (single source of truth)
+_cargo_toml = Path(__file__).resolve().parent.parent / "Cargo.toml"
+version = re.search(r'^version\s*=\s*"(.+?)"', _cargo_toml.read_text(), re.MULTILINE).group(1)
 
 extensions = [
     "myst_parser",

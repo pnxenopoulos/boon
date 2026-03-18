@@ -187,7 +187,7 @@ checksum = "812e12b5285cc515a9c72a5c1d3b6d46a19dac5acfef5265968c166106e31dd3"
 
 [[package]]
 name = "boon-cli"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "boon-deadlock",
@@ -195,11 +195,13 @@ dependencies = [
  "clap",
  "colored",
  "prost",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
 name = "boon-deadlock"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "anyhow",
  "boon-proto",
@@ -214,7 +216,7 @@ dependencies = [
 
 [[package]]
 name = "boon-proto"
-version = "0.1.0"
+version = "0.0.1"
 dependencies = [
  "bytes",
  "prost",
@@ -224,7 +226,7 @@ dependencies = [
 
 [[package]]
 name = "boon-python"
-version = "0.0.0"
+version = "0.0.1"
 dependencies = [
  "boon-deadlock",
  "boon-proto",

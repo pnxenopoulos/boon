@@ -7,15 +7,21 @@ use super::class_info::ClassInfo;
 
 use boon_proto::proto::{CDemoStringTables, CsvcMsgCreateStringTable, CsvcMsgUpdateStringTable};
 
+// String table delta encoding uses a circular buffer of recently-seen
+// strings. New strings can reference a history entry by index and copy a
+// prefix, then append the remainder. These constants control the buffer.
 const HISTORY_SIZE: usize = 32;
 const HISTORY_BITMASK: usize = HISTORY_SIZE - 1;
 
+/// Maximum length (in characters) of a string table key.
 const MAX_STRING_BITS: usize = 5;
 const MAX_STRING_SIZE: usize = 1 << MAX_STRING_BITS;
 
+/// Maximum size (in bytes) of per-entry user data.
 const MAX_USERDATA_BITS: usize = 17;
 const MAX_USERDATA_SIZE: usize = 1 << MAX_USERDATA_BITS;
 
+/// The `instancebaseline` table stores default field values for each entity class.
 pub const INSTANCE_BASELINE_TABLE_NAME: &str = "instancebaseline";
 
 /// A single entry in a string table.
@@ -275,11 +281,74 @@ impl StringTableContainer {
         }
     }
 
+    /// Look up a string table by name.
     pub fn find_table(&self, name: &str) -> Option<&StringTable> {
         self.tables.iter().find(|t| t.name == name)
     }
 
+    /// Returns a slice of all string tables.
     pub fn tables(&self) -> &[StringTable] {
         &self.tables
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_new_is_empty() {
+        let c = StringTableContainer::new();
+        assert!(c.tables().is_empty());
+        assert!(c.instance_baselines.is_empty());
+    }
+
+    #[test]
+    fn find_table_missing() {
+        let c = StringTableContainer::new();
+        assert!(c.find_table("nonexistent").is_none());
+    }
+
+    #[test]
+    fn update_instance_baselines_on_empty_is_noop() {
+        let mut c = StringTableContainer::new();
+        let ci = ClassInfo {
+            classes: vec![],
+            bits: 1,
+        };
+        c.update_instance_baselines(&ci);
+        assert!(c.instance_baselines.is_empty());
+    }
+
+    #[test]
+    fn handle_update_invalid_table_id() {
+        let mut c = StringTableContainer::new();
+        let msg = CsvcMsgUpdateStringTable {
+            table_id: Some(99),
+            num_changed_entries: Some(0),
+            string_data: None,
+        };
+        let result = c.handle_update(msg);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn handle_create_empty_uncompressed() {
+        let mut c = StringTableContainer::new();
+        let msg = CsvcMsgCreateStringTable {
+            name: Some("test".to_string()),
+            num_entries: Some(0),
+            user_data_fixed_size: Some(false),
+            user_data_size: Some(0),
+            user_data_size_bits: Some(0),
+            flags: Some(0),
+            string_data: Some(vec![]),
+            data_compressed: Some(false),
+            using_varint_bitcounts: Some(false),
+            ..Default::default()
+        };
+        c.handle_create(msg).unwrap();
+        assert_eq!(c.tables().len(), 1);
+        assert!(c.find_table("test").is_some());
     }
 }

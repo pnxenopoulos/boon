@@ -1,0 +1,74 @@
+# Boon
+
+[![Discord](https://img.shields.io/discord/868146581419999232?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/tWCwmHDy2u)
+[![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pnxenopoulos/boon/blob/main/LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+
+Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It returns [Polars](https://pola.rs) DataFrames for easy analysis.
+
+## Installation
+
+```bash
+pip install boon-deadlock
+
+# or
+
+uv add boon-deadlock
+```
+
+Requires Python 3.11+.
+
+## Quick Start
+
+```python
+from boon import Demo
+
+demo = Demo("match.dem")
+
+# Match metadata
+print(demo.match_id)         # 28309863
+print(demo.map_name)         # "street_test"
+print(demo.total_ticks)      # 54000
+print(demo.total_clock_time) # "30:00"
+print(demo.winner)           # "Team1"
+
+# Player info
+print(demo.players)
+# shape: (12, 7)
+# ┌─────────────┬──────────────┬──────────┬─────────┬─────────────┬──────────┬────────────┐
+# │ player_name ┆ steam_id     ┆ hero     ┆ hero_id ┆ team        ┆ team_num ┆ start_lane │
+# ...
+
+# Datasets (Polars DataFrames — all lazy-loaded on first access)
+player_ticks     = demo.player_ticks      # per-player state every tick
+world_ticks      = demo.world_ticks       # world state every tick
+kills            = demo.kills             # kill events
+damage           = demo.damage            # damage events
+purchases        = demo.purchases         # item purchase notifications
+shop_events      = demo.shop_events       # full shop transactions
+ability_upgrades = demo.ability_upgrades  # skill point spending
+abilities        = demo.abilities         # ability usage events
+respawns         = demo.respawns          # respawn events
+flex_slots       = demo.flex_slots        # flex slot unlocks
+chat             = demo.chat              # chat messages
+objectives       = demo.objectives        # objective health per tick
+boss_kills       = demo.boss_kills        # objective destruction events
+mid_boss         = demo.mid_boss          # mid boss lifecycle events
+```
+
+## Features
+
+- Parse Deadlock `.dem` demo files at native speed via Rust
+- 16 built-in datasets covering players, combat, economy, objectives, and map state
+- Access to match metadata, player info, entity state, game events, and post-match summaries
+- All data returned as [Polars](https://pola.rs) DataFrames
+
+## Documentation
+
+Full documentation is available at [boon.readthedocs.io](https://boon.readthedocs.io).
+
+## License
+
+MIT — see [LICENSE](https://github.com/pnxenopoulos/boon/blob/main/LICENSE) for details.

@@ -1,10 +1,30 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use serde::Serialize;
 
-pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usize>) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+#[derive(Serialize)]
+struct SendTableFieldOutput {
+    var_name: String,
+    var_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    var_encoder: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    bit_count: Option<i32>,
+}
+
+#[derive(Serialize)]
+struct SendTableOutput {
+    name: String,
+    field_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    fields: Option<Vec<SendTableFieldOutput>>,
+}
+
+pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usize>, json: bool) -> Result<()> {
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let container = parser.parse_send_tables()?;
 
     let mut serializers: Vec<_> = container.serializers.values().collect();
@@ -15,6 +35,35 @@ pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usi
     }
 
     let limit = limit.unwrap_or(serializers.len());
+
+    if json {
+        let output: Vec<SendTableOutput> = serializers
+            .iter()
+            .take(limit)
+            .map(|ser| SendTableOutput {
+                name: ser.name.clone(),
+                field_count: ser.fields.len(),
+                fields: if summary {
+                    None
+                } else {
+                    Some(
+                        ser.fields
+                            .iter()
+                            .map(|f| SendTableFieldOutput {
+                                var_name: f.var_name.clone(),
+                                var_type: f.var_type.clone(),
+                                var_encoder: f.var_encoder.clone(),
+                                bit_count: f.bit_count,
+                            })
+                            .collect(),
+                    )
+                },
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
     let mut count = 0;
 
     if summary {

@@ -1,10 +1,14 @@
 use crate::error::{Error, Result};
 
+// Source 2 coordinate encoding constants. A coordinate is encoded as an
+// optional integer part (14 bits) plus an optional fractional part (5 bits).
 const COORD_INTEGER_BITS: usize = 14;
 const COORD_FRACTIONAL_BITS: usize = 5;
 const COORD_DENOMINATOR: f32 = (1 << COORD_FRACTIONAL_BITS) as f32;
 const COORD_RESOLUTION: f32 = 1.0 / COORD_DENOMINATOR;
 
+// Source 2 normal encoding constants. A normal component is a sign bit
+// followed by an 11-bit fractional value in [0, 1].
 const NORMAL_FRACTIONAL_BITS: usize = 11;
 const NORMAL_DENOMINATOR: f32 = ((1 << NORMAL_FRACTIONAL_BITS) - 1) as f32;
 const NORMAL_RESOLUTION: f32 = 1.0 / NORMAL_DENOMINATOR;
@@ -20,6 +24,7 @@ pub struct BitReader<'a> {
 }
 
 impl<'a> BitReader<'a> {
+    /// Create a new reader starting at bit 0 of `data`.
     #[inline]
     pub fn new(data: &'a [u8]) -> Self {
         Self {
@@ -29,11 +34,13 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Number of bits between the cursor and the end of the buffer.
     #[inline]
     pub fn bits_remaining(&self) -> usize {
         self.total_bits.saturating_sub(self.position)
     }
 
+    /// Current bit offset from the start of the buffer.
     #[inline]
     pub fn position(&self) -> usize {
         self.position
@@ -73,6 +80,10 @@ impl<'a> BitReader<'a> {
     }
 
     /// Internal: peek without bounds checking.
+    ///
+    /// Reads a little-endian u64 from the byte at `position / 8`, shifts
+    /// right by the intra-byte bit offset, and masks to `n` bits. Three
+    /// code paths handle proximity to the end of the buffer.
     #[inline(always)]
     fn peek_bits_unchecked(&self, n: usize) -> u64 {
         let byte_pos = self.position / 8;
@@ -103,31 +114,37 @@ impl<'a> BitReader<'a> {
         }
     }
 
+    /// Read a single bit as a boolean.
     #[inline]
     pub fn read_bool(&mut self) -> Result<bool> {
         Ok(self.read_bits(1)? != 0)
     }
 
+    /// Read 8 bits as a `u8`.
     #[inline]
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bits(8)? as u8)
     }
 
+    /// Read 16 bits as a little-endian `u16`.
     #[inline]
     pub fn read_u16(&mut self) -> Result<u16> {
         Ok(self.read_bits(16)? as u16)
     }
 
+    /// Read 32 bits as a little-endian `u32`.
     #[inline]
     pub fn read_u32(&mut self) -> Result<u32> {
         Ok(self.read_bits(32)? as u32)
     }
 
+    /// Read 64 bits as a little-endian `u64`.
     #[inline]
     pub fn read_u64(&mut self) -> Result<u64> {
         self.read_bits(64)
     }
 
+    /// Read 32 bits and reinterpret as an IEEE 754 `f32`.
     #[inline]
     pub fn read_f32(&mut self) -> Result<f32> {
         Ok(f32::from_bits(self.read_bits(32)? as u32))
@@ -196,6 +213,9 @@ impl<'a> BitReader<'a> {
     }
 
     /// Valve's variable-length unsigned integer encoding.
+    ///
+    /// Reads 6 bits; bits 4-5 select the total width:
+    /// `00` → 6 bits, `01` → 4+4, `10` → 4+8, `11` → 4+28.
     pub fn read_ubitvar(&mut self) -> Result<u32> {
         let ret = self.read_bits(6)? as u32;
         match ret & (16 | 32) {
@@ -206,7 +226,10 @@ impl<'a> BitReader<'a> {
         }
     }
 
-    /// Field-path variant of ubitvar.
+    /// Field-path variant of ubitvar — cascading 1-bit selectors.
+    ///
+    /// Used exclusively for encoding field path operation indices:
+    /// 2, 4, 10, 17, or 31 bits depending on which prefix bit is set.
     pub fn read_ubitvarfp(&mut self) -> Result<u32> {
         if self.read_bool()? {
             return Ok(self.read_bits(2)? as u32);

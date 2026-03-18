@@ -9,4 +9,4 @@ mod parser;
 
 pub use command::{CmdHeader, EDemoCommands, SvcMessages, command_name};
 pub use decode::decode_event_payload;
-pub use parser::{Context, DemoHeader, GameEvent, MessageInfo, Parser};
+pub use parser::{Context, GameEvent, MessageInfo, Parser};

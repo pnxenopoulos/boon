@@ -816,3 +816,28 @@ pub fn ability_name(id: u32) -> &'static str {
         _ => "ABILITY_NOT_FOUND",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn known_first_entry() {
+        assert_eq!(ability_name(6698938), "tokamak_heat_sinks");
+    }
+
+    #[test]
+    fn known_mid_entry() {
+        assert_eq!(ability_name(46922526), "inherent_base");
+    }
+
+    #[test]
+    fn unknown_id_zero() {
+        assert_eq!(ability_name(0), "ABILITY_NOT_FOUND");
+    }
+
+    #[test]
+    fn unknown_id_max() {
+        assert_eq!(ability_name(u32::MAX), "ABILITY_NOT_FOUND");
+    }
+}

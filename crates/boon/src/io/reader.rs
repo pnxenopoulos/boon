@@ -1,31 +1,46 @@
 use crate::error::{Error, Result};
 
-/// Byte-level cursor reader for the outer demo command stream.
+/// Byte-aligned, forward-scanning cursor over a `&[u8]` buffer.
+///
+/// `ByteReader` is used to walk the **outer** demo command stream — the
+/// sequence of `(cmd, tick, size, body)` tuples that make up a `.dem` file
+/// after the 16-byte file header. All multi-byte integers are little-endian,
+/// and variable-length integers use protobuf-style LEB128 encoding.
+///
+/// For **bit-level** access inside decompressed packet payloads, see
+/// [`BitReader`](crate::io::BitReader).
 pub struct ByteReader<'a> {
     data: &'a [u8],
     position: usize,
 }
 
 impl<'a> ByteReader<'a> {
+    /// Create a new reader starting at the beginning of `data`.
     pub fn new(data: &'a [u8]) -> Self {
         Self { data, position: 0 }
     }
 
+    /// Current byte offset from the start of the buffer.
     #[inline]
     pub fn position(&self) -> usize {
         self.position
     }
 
+    /// Number of bytes between the cursor and the end of the buffer.
     #[inline]
     pub fn remaining(&self) -> usize {
         self.data.len().saturating_sub(self.position)
     }
 
+    /// Returns `true` when the cursor is at or past the end of the buffer.
     #[inline]
     pub fn is_empty(&self) -> bool {
         self.position >= self.data.len()
     }
 
+    /// Move the cursor to an absolute byte `position`.
+    ///
+    /// Returns [`Error::Overflow`] if `position` exceeds the buffer length.
     pub fn seek(&mut self, position: usize) -> Result<()> {
         if position > self.data.len() {
             return Err(Error::Overflow {
@@ -47,6 +62,7 @@ impl<'a> ByteReader<'a> {
         Ok(())
     }
 
+    /// Read a single byte and advance the cursor.
     pub fn read_u8(&mut self) -> Result<u8> {
         self.check_remaining(1)?;
         let val = self.data[self.position];
@@ -54,6 +70,7 @@ impl<'a> ByteReader<'a> {
         Ok(val)
     }
 
+    /// Read a little-endian `u16` and advance the cursor by 2 bytes.
     pub fn read_u16(&mut self) -> Result<u16> {
         self.check_remaining(2)?;
         let val = u16::from_le_bytes([self.data[self.position], self.data[self.position + 1]]);
@@ -61,6 +78,7 @@ impl<'a> ByteReader<'a> {
         Ok(val)
     }
 
+    /// Read a little-endian `u32` and advance the cursor by 4 bytes.
     pub fn read_u32(&mut self) -> Result<u32> {
         self.check_remaining(4)?;
         let val = u32::from_le_bytes([
@@ -73,6 +91,7 @@ impl<'a> ByteReader<'a> {
         Ok(val)
     }
 
+    /// Read a little-endian `i32` and advance the cursor by 4 bytes.
     pub fn read_i32(&mut self) -> Result<i32> {
         self.check_remaining(4)?;
         let val = i32::from_le_bytes([
@@ -85,6 +104,7 @@ impl<'a> ByteReader<'a> {
         Ok(val)
     }
 
+    /// Borrow `n` bytes starting at the cursor and advance past them.
     pub fn read_bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         self.check_remaining(n)?;
         let slice = &self.data[self.position..self.position + n];
@@ -92,7 +112,7 @@ impl<'a> ByteReader<'a> {
         Ok(slice)
     }
 
-    /// Read an unsigned varint32 from the byte stream.
+    /// Read a protobuf-style unsigned varint (up to 32 bits / 5 bytes).
     pub fn read_uvarint32(&mut self) -> Result<u32> {
         let mut result: u32 = 0;
         for i in 0..5 {
@@ -105,7 +125,7 @@ impl<'a> ByteReader<'a> {
         Ok(result)
     }
 
-    /// Read an unsigned varint64 from the byte stream.
+    /// Read a protobuf-style unsigned varint (up to 64 bits / 10 bytes).
     pub fn read_uvarint64(&mut self) -> Result<u64> {
         let mut result: u64 = 0;
         for i in 0..10 {
@@ -118,14 +138,14 @@ impl<'a> ByteReader<'a> {
         Ok(result)
     }
 
-    /// Skip forward by N bytes.
+    /// Advance the cursor by `n` bytes without reading.
     pub fn skip(&mut self, n: usize) -> Result<()> {
         self.check_remaining(n)?;
         self.position += n;
         Ok(())
     }
 
-    /// Get the underlying data slice.
+    /// Returns the full underlying data slice (independent of cursor position).
     pub fn data(&self) -> &'a [u8] {
         self.data
     }

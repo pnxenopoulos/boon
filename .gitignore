@@ -1,7 +1,7 @@
 # Project-specific
 *.dem
 *.csv
-*.vddata
+*.vdata
 *.log
 .claude
 .DS_Store

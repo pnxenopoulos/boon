@@ -11,7 +11,7 @@
 [![Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
 
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
-[![downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+[![crates.io downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser. It is written in Rust and ships with Python bindings, a CLI tool, and a standalone Rust library.
 
@@ -20,8 +20,31 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 - Parse Deadlock `.dem` demo files at native speed
 - Python library returning [Polars](https://pola.rs) DataFrames for analysis
 - CLI for quick inspection of demo files
-- Seven built-in datasets: player ticks, world ticks, kills, damage, flex slots, respawns, and purchases
 - Access to match metadata, player info, entity state, game events, and post-match summaries
+
+## Available Data
+
+The following data can be extracted from demo files:
+
+- **Player ticks** -- per-player state every tick (position, health, souls, net worth, kills, deaths, assists, and 40+ more fields)
+- **World ticks** -- world state every tick (pause state, next mid boss spawn time)
+- **Kills** -- hero kill events with attacker, victim, and assisters
+- **Damage** -- damage events with pre/post mitigation, hitgroups, and crit damage
+- **Purchases** -- item purchase/sell notifications
+- **Shop events** -- full item shop transactions (purchased, upgraded, sold, swapped, failure)
+- **Ability upgrades** -- hero ability point spending (skill tier upgrades T1-T4)
+- **Abilities** -- important ability usage events
+- **Respawns** -- player respawn events
+- **Flex slots** -- flex slot unlock events per team
+- **Chat** -- in-game chat messages (all chat and team chat)
+- **Objectives** -- per-tick objective entity health (walkers, titans, barracks, mid boss)
+- **Boss kills** -- objective destruction events (walkers, titans, barracks, mid boss, core)
+- **Mid boss** -- mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire)
+- **Troopers** -- per-tick alive lane trooper state (position, health, lane) *(opt-in, large dataset)*
+- **Neutrals** -- neutral creep state changes with change detection *(opt-in)*
+- **Players** -- player info (name, Steam ID, hero, team, starting lane)
+- **Match metadata** -- match ID, map name, build number, tick rate, total ticks/time
+- **Game result** -- winning team, game over tick, banned heroes
 
 ## Installation
 
@@ -80,14 +103,25 @@ print(demo.players)
 # │ player_name ┆ steam_id     ┆ hero     ┆ hero_id ┆ team        ┆ team_num ┆ start_lane │
 # ...
 
-# Datasets (Polars DataFrames)
-player_ticks = demo.player_ticks   # per-player state every tick
-world_ticks  = demo.world_ticks    # world state every tick
-kills        = demo.kills          # kill events
-damage       = demo.damage         # damage events
-purchases    = demo.purchases      # item purchases
-respawns     = demo.respawns       # respawn events
-flex_slots   = demo.flex_slots     # flex slot unlocks
+# Datasets (Polars DataFrames — all lazy-loaded on first access)
+player_ticks     = demo.player_ticks      # per-player state every tick
+world_ticks      = demo.world_ticks       # world state every tick
+kills            = demo.kills             # kill events
+damage           = demo.damage            # damage events
+purchases        = demo.purchases         # item purchase notifications
+shop_events      = demo.shop_events       # full shop transactions
+ability_upgrades = demo.ability_upgrades  # skill point spending
+abilities        = demo.abilities         # ability usage events
+respawns         = demo.respawns          # respawn events
+flex_slots       = demo.flex_slots        # flex slot unlocks
+chat             = demo.chat              # chat messages
+objectives       = demo.objectives        # objective health per tick
+boss_kills       = demo.boss_kills        # objective destruction events
+mid_boss         = demo.mid_boss          # mid boss lifecycle events
+
+# Large datasets (opt-in, not loaded by default)
+troopers         = demo.troopers          # lane trooper state per tick
+neutrals         = demo.neutrals          # neutral creep state changes
 ```
 
 ### CLI

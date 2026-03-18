@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
 
 #[allow(clippy::too_many_arguments)]
@@ -13,8 +13,10 @@ pub fn run(
     min_size: Option<u32>,
     max_size: Option<u32>,
     limit: Option<usize>,
+    json: bool,
 ) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let messages = parser.messages()?;
 
     // Apply filters
@@ -62,6 +64,12 @@ pub fn run(
         .collect();
 
     let display_limit = limit.unwrap_or(filtered.len());
+    let output: Vec<_> = filtered.iter().take(display_limit).collect();
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
 
     println!(
         "{:<6} {:<8} {:<10} {:<8} {:<30}",
@@ -73,7 +81,7 @@ pub fn run(
     );
     println!("{}", "-".repeat(70));
 
-    for msg in filtered.iter().take(display_limit) {
+    for msg in &output {
         let compressed = if msg.compressed {
             "yes".yellow().to_string()
         } else {

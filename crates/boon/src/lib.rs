@@ -19,11 +19,13 @@ pub mod demo;
 pub mod entity;
 pub mod error;
 pub mod io;
+pub mod modifiers;
 
 // Re-export commonly used types at the crate root for convenience
 pub use abilities::ability_name;
+pub use modifiers::modifier_name;
 pub use demo::{
-    CmdHeader, Context, DemoHeader, GameEvent, MessageInfo, Parser, command_name,
+    CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name,
     decode_event_payload,
 };
 pub use entity::{

@@ -9,8 +9,9 @@ use boon_proto::proto::{
     c_msg_match_meta_data_contents::{self, MatchInfo},
 };
 
-pub fn run(file: &Path) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+pub fn run(file: &Path, json: bool) -> Result<()> {
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let events = parser.events(None)?;
 
     let event = events
@@ -28,6 +29,11 @@ pub fn run(file: &Path) -> Result<()> {
 
     let contents = CMsgMatchMetaDataContents::decode(details_bytes.as_slice())
         .context("failed to decode CMsgMatchMetaDataContents")?;
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&contents)?);
+        return Ok(());
+    }
 
     let info = contents
         .match_info

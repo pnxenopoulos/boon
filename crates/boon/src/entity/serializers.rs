@@ -1,5 +1,8 @@
 use std::collections::HashMap;
-use std::rc::Rc;
+// Arc (not Rc) so that SerializerContainer is Send + Sync and can be
+// shared across threads.  The serializer graph is immutable after
+// construction, so atomic refcounting adds negligible overhead.
+use std::sync::Arc;
 
 use prost::Message;
 
@@ -11,40 +14,59 @@ use super::field_path::FieldPath;
 
 use boon_proto::proto::{CDemoSendTables, CsvcMsgFlattenedSerializer};
 
-/// Parsed type information from a var_type string.
+/// Parsed type information from a `var_type` string (e.g. `"CNetworkUtlVectorBase< int32 >"`).
 #[derive(Debug, Clone)]
 pub struct FieldType {
+    /// The core type name (e.g. `"int32"`, `"CNetworkUtlVectorBase"`).
     pub base_type: String,
+    /// `true` if the type ends with `*` (pointer / handle).
     pub pointer: bool,
+    /// Inner type parameter for generics (e.g. `int32` inside `CNetworkUtlVectorBase<int32>`).
     pub generic_type: Option<Box<FieldType>>,
+    /// Numeric array length for `Type[N]` syntax.
     pub array_length: Option<usize>,
+    /// Symbolic array length for `Type[SYMBOL]` syntax (e.g. `MAX_ABILITY_DRAFT_ABILITIES`).
     pub count: Option<String>,
 }
 
-/// A single field within a serializer.
+/// A single field within a serializer, describing one network property.
 #[derive(Debug, Clone)]
 pub struct SerializerField {
+    /// Source 2 type string (e.g. `"float32"`, `"CNetworkUtlVectorBase< int32 >"`).
     pub var_type: String,
+    /// Field name (e.g. `"m_iHealth"`).
     pub var_name: String,
+    /// Bit width hint for quantized floats and QAngle.
     pub bit_count: Option<i32>,
+    /// Low end of quantized float range.
     pub low_value: Option<f32>,
+    /// High end of quantized float range.
     pub high_value: Option<f32>,
+    /// Quantized float encoding flags (see `QFE_*` constants).
     pub encode_flags: Option<i32>,
+    /// Name of a nested serializer (for composite / array fields).
     pub field_serializer_name: Option<String>,
+    /// Dotted path prefix used by the entity field name resolution.
     pub send_node: Option<String>,
+    /// Optional encoder hint (e.g. `"coord"`, `"normal"`, `"fixed64"`).
     pub var_encoder: Option<String>,
-    pub field_serializer: Option<Rc<Serializer>>,
+    /// Resolved nested serializer (populated during [`SerializerContainer::parse`]).
+    pub field_serializer: Option<Arc<Serializer>>,
+    /// Parsed type information.
     pub field_type: FieldType,
+    /// Resolved decoder and special descriptor.
     pub metadata: FieldMetadata,
 }
 
 impl SerializerField {
+    /// Get a field from the nested serializer at `index`, if present.
     pub fn get_child(&self, index: usize) -> Option<&SerializerField> {
         self.field_serializer
             .as_ref()
             .and_then(|s| s.fields.get(index).map(|f| f.as_ref()))
     }
 
+    /// Returns `true` if this field represents a variable-length array.
     pub fn is_dynamic_array(&self) -> bool {
         self.metadata.is_dynamic_array()
     }
@@ -54,7 +76,7 @@ impl SerializerField {
 #[derive(Debug, Clone)]
 pub struct Serializer {
     pub name: String,
-    pub fields: Vec<Rc<SerializerField>>,
+    pub fields: Vec<Arc<SerializerField>>,
 }
 
 impl Serializer {
@@ -205,7 +227,7 @@ impl Serializer {
 
 /// Container holding all parsed serializers, indexed by name.
 pub struct SerializerContainer {
-    pub serializers: HashMap<String, Rc<Serializer>>,
+    pub serializers: HashMap<String, Arc<Serializer>>,
 }
 
 impl SerializerContainer {
@@ -224,8 +246,8 @@ impl SerializerContainer {
         let resolve_sym = |i: i32| -> &str { &symbols[i as usize] };
 
         // Build fields and serializers
-        let mut field_cache: HashMap<i32, Rc<SerializerField>> = HashMap::new();
-        let mut serializer_map: HashMap<String, Rc<Serializer>> = HashMap::new();
+        let mut field_cache: HashMap<i32, Arc<SerializerField>> = HashMap::new();
+        let mut serializer_map: HashMap<String, Arc<Serializer>> = HashMap::new();
 
         for serializer_proto in &msg.serializers {
             let ser_name = resolve_sym(serializer_proto.serializer_name_sym.unwrap_or(0));
@@ -297,10 +319,10 @@ impl SerializerContainer {
                             field_type: field_type.clone(),
                             metadata: metadata.clone(),
                         };
-                        let inner_rc = Rc::new(inner_field);
+                        let inner_rc = Arc::new(inner_field);
                         let mut fields = Vec::with_capacity(length);
                         fields.resize(length, inner_rc);
-                        Some(Rc::new(Serializer {
+                        Some(Arc::new(Serializer {
                             name: String::new(),
                             fields,
                         }))
@@ -311,7 +333,7 @@ impl SerializerContainer {
                             let inner_ser = field_serializer_name
                                 .as_deref()
                                 .and_then(|n| serializer_map.get(n).cloned());
-                            let inner = Rc::new(SerializerField {
+                            let inner = Arc::new(SerializerField {
                                 var_type: String::new(),
                                 var_name: String::new(),
                                 bit_count: None,
@@ -325,14 +347,14 @@ impl SerializerContainer {
                                 field_type: parse_type(""),
                                 metadata: FieldMetadata::default(),
                             });
-                            Some(Rc::new(Serializer {
+                            Some(Arc::new(Serializer {
                                 name: String::new(),
                                 fields: vec![inner],
                             }))
                         } else {
                             // Dynamic array of primitives: single-element serializer with inner decoder
                             let inner_metadata = fm.dynamic_array_inner_metadata();
-                            let inner = Rc::new(SerializerField {
+                            let inner = Arc::new(SerializerField {
                                 var_type: String::new(),
                                 var_name: String::new(),
                                 bit_count: None,
@@ -346,7 +368,7 @@ impl SerializerContainer {
                                 field_type: parse_type(""),
                                 metadata: inner_metadata,
                             });
-                            Some(Rc::new(Serializer {
+                            Some(Arc::new(Serializer {
                                 name: String::new(),
                                 fields: vec![inner],
                             }))
@@ -360,7 +382,7 @@ impl SerializerContainer {
                         .and_then(|n| serializer_map.get(n).cloned()),
                 };
 
-                let field = Rc::new(SerializerField {
+                let field = Arc::new(SerializerField {
                     var_type,
                     var_name,
                     bit_count: field_proto.bit_count,
@@ -379,7 +401,7 @@ impl SerializerContainer {
                 serializer.fields.push(field);
             }
 
-            serializer_map.insert(serializer.name.clone(), Rc::new(serializer));
+            serializer_map.insert(serializer.name.clone(), Arc::new(serializer));
         }
 
         Ok(Self {
@@ -387,7 +409,8 @@ impl SerializerContainer {
         })
     }
 
-    pub fn get(&self, name: &str) -> Option<Rc<Serializer>> {
+    /// Look up a serializer by class network name.
+    pub fn get(&self, name: &str) -> Option<Arc<Serializer>> {
         self.serializers.get(name).cloned()
     }
 }
@@ -450,5 +473,150 @@ pub fn parse_type(s: &str) -> FieldType {
         generic_type: None,
         array_length: None,
         count: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::super::field_decoder::{Decoder, FieldMetadata};
+
+    // ── parse_type ──
+
+    #[test]
+    fn parse_type_simple() {
+        let ft = parse_type("int32");
+        assert_eq!(ft.base_type, "int32");
+        assert!(!ft.pointer);
+        assert!(ft.generic_type.is_none());
+        assert!(ft.array_length.is_none());
+        assert!(ft.count.is_none());
+    }
+
+    #[test]
+    fn parse_type_pointer() {
+        let ft = parse_type("CBaseEntity*");
+        assert_eq!(ft.base_type, "CBaseEntity");
+        assert!(ft.pointer);
+    }
+
+    #[test]
+    fn parse_type_array_numeric() {
+        let ft = parse_type("int32[4]");
+        assert_eq!(ft.base_type, "int32");
+        assert_eq!(ft.array_length, Some(4));
+        assert!(ft.count.is_none());
+    }
+
+    #[test]
+    fn parse_type_array_symbolic() {
+        let ft = parse_type("int32[MAX_ABILITIES]");
+        assert_eq!(ft.base_type, "int32");
+        assert!(ft.array_length.is_none());
+        assert_eq!(ft.count.as_deref(), Some("MAX_ABILITIES"));
+    }
+
+    #[test]
+    fn parse_type_generic() {
+        let ft = parse_type("CNetworkUtlVectorBase< int32 >");
+        assert_eq!(ft.base_type, "CNetworkUtlVectorBase");
+        let inner = ft.generic_type.as_ref().unwrap();
+        assert_eq!(inner.base_type, "int32");
+    }
+
+    #[test]
+    fn parse_type_generic_nested() {
+        let ft = parse_type("CHandle< CBaseEntity >");
+        assert_eq!(ft.base_type, "CHandle");
+        assert_eq!(ft.generic_type.as_ref().unwrap().base_type, "CBaseEntity");
+    }
+
+    #[test]
+    fn parse_type_whitespace_trimming() {
+        let ft = parse_type("  float32  ");
+        assert_eq!(ft.base_type, "float32");
+    }
+
+    #[test]
+    fn parse_type_empty_string() {
+        let ft = parse_type("");
+        assert_eq!(ft.base_type, "");
+        assert!(!ft.pointer);
+    }
+
+    #[test]
+    fn parse_type_complex_all_fields() {
+        let ft = parse_type("uint32[16]");
+        assert_eq!(ft.base_type, "uint32");
+        assert!(!ft.pointer);
+        assert!(ft.generic_type.is_none());
+        assert_eq!(ft.array_length, Some(16));
+        assert!(ft.count.is_none());
+    }
+
+    // ── Serializer key resolution ──
+
+    fn make_field(name: &str, send_node: Option<&str>) -> Arc<SerializerField> {
+        Arc::new(SerializerField {
+            var_type: String::new(),
+            var_name: name.to_string(),
+            bit_count: None,
+            low_value: None,
+            high_value: None,
+            encode_flags: None,
+            field_serializer_name: None,
+            send_node: send_node.map(String::from),
+            var_encoder: None,
+            field_serializer: None,
+            field_type: parse_type(""),
+            metadata: FieldMetadata {
+                decoder: Decoder::U64,
+                special: None,
+            },
+        })
+    }
+
+    #[test]
+    fn resolve_field_key_found() {
+        let ser = Serializer {
+            name: "test".to_string(),
+            fields: vec![make_field("m_iHealth", None)],
+        };
+        assert!(ser.resolve_field_key("m_iHealth").is_some());
+    }
+
+    #[test]
+    fn resolve_field_key_not_found() {
+        let ser = Serializer {
+            name: "test".to_string(),
+            fields: vec![make_field("m_iHealth", None)],
+        };
+        assert!(ser.resolve_field_key("m_iMana").is_none());
+    }
+
+    #[test]
+    fn field_name_roundtrip() {
+        let ser = Serializer {
+            name: "test".to_string(),
+            fields: vec![
+                make_field("m_iHealth", None),
+                make_field("m_iMana", None),
+            ],
+        };
+        let key = ser.resolve_field_key("m_iMana").unwrap();
+        let name = ser.field_name_for_key(key).unwrap();
+        assert_eq!(name, "m_iMana");
+    }
+
+    #[test]
+    fn resolve_with_send_node() {
+        let ser = Serializer {
+            name: "test".to_string(),
+            fields: vec![make_field("m_bPaused", Some("m_pGameRules"))],
+        };
+        let key = ser.resolve_field_key("m_pGameRules.m_bPaused");
+        assert!(key.is_some());
+        let name = ser.field_name_for_key(key.unwrap()).unwrap();
+        assert_eq!(name, "m_pGameRules.m_bPaused");
     }
 }

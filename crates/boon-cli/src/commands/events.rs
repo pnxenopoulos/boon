@@ -1,8 +1,15 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct EventSummaryOutput {
+    name: String,
+    count: usize,
+}
 
 pub fn run(
     file: &Path,
@@ -11,8 +18,10 @@ pub fn run(
     tick: Option<i32>,
     limit: Option<usize>,
     inspect: bool,
+    json: bool,
 ) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let mut events = parser.events(tick)?;
 
     if let Some(ref f) = filter {
@@ -30,6 +39,19 @@ pub fn run(
         sorted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
 
         let limit = limit.unwrap_or(sorted.len());
+
+        if json {
+            let output: Vec<EventSummaryOutput> = sorted
+                .iter()
+                .take(limit)
+                .map(|(name, count)| EventSummaryOutput {
+                    name: name.to_string(),
+                    count: *count,
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&output)?);
+            return Ok(());
+        }
 
         println!("{:<50} {:>6}", "Event".bold(), "Count".bold());
         println!("{}", "-".repeat(58));
@@ -50,6 +72,12 @@ pub fn run(
         );
     } else {
         let limit = limit.unwrap_or(events.len());
+
+        if json {
+            let output: Vec<_> = events.iter().take(limit).collect();
+            println!("{}", serde_json::to_string_pretty(&output)?);
+            return Ok(());
+        }
 
         for event in events.iter().take(limit) {
             if event.keys.is_empty() {

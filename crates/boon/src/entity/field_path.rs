@@ -6,16 +6,25 @@ use crate::error::Result;
 use crate::io::BitReader;
 
 /// Represents a path to a field within a serializer hierarchy.
-/// Each component is an index into the serializer's fields array.
+///
+/// Each component is an index into the serializer's fields array at that
+/// nesting level. For example, `[3, 0, 2]` means "field 3 → sub-serializer
+/// field 0 → sub-serializer field 2".
 #[derive(Debug, Clone)]
 pub struct FieldPath {
+    /// Component indices (up to 7 levels of nesting).
     pub data: [u8; 7],
+    /// Index of the deepest active component (0-based).
     pub last: usize,
+    /// Set to `true` by the `field_path_encode_finish` op to signal end-of-list.
     pub finished: bool,
 }
 
 impl Default for FieldPath {
     fn default() -> Self {
+        // data[0] starts at 255 (i.e. -1 unsigned). The first field path
+        // operation always calls `plus_one` which increments it to 0,
+        // producing a valid field index.
         Self {
             data: [255, 0, 0, 0, 0, 0, 0],
             last: 0,
@@ -357,6 +366,12 @@ struct FieldOpDescriptor {
     op: FieldOp,
 }
 
+/// Valve-defined Huffman weights for field path delta operations.
+///
+/// Each entry pairs a weight (empirical frequency) with a field-path
+/// mutation function. These are assembled into a Huffman tree at startup
+/// (see [`build_fieldop_hierarchy`]) so that common operations like
+/// `plus_one` use fewer bits on the wire.
 const FIELDOP_DESCRIPTORS: &[FieldOpDescriptor] = &[
     FieldOpDescriptor {
         weight: 36271,
@@ -551,6 +566,7 @@ impl Node {
     }
 }
 
+// Ordering is inverted (other vs self) so BinaryHeap acts as a min-heap.
 impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
         if self.weight() == other.weight() {
@@ -575,6 +591,7 @@ impl PartialEq for Node {
 
 impl Eq for Node {}
 
+/// Build a Huffman tree from the weighted operation descriptors.
 fn build_fieldop_hierarchy() -> Node {
     let mut heap = BinaryHeap::with_capacity(FIELDOP_DESCRIPTORS.len());
     let mut num = 0;
@@ -635,5 +652,115 @@ pub fn read_field_paths(br: &mut BitReader, buf: &mut Vec<FieldPath>) -> Result<
         } else {
             next
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── FieldPath basics ──
+
+    #[test]
+    fn default_values() {
+        let fp = FieldPath::default();
+        assert_eq!(fp.data[0], 255);
+        assert_eq!(fp.last, 0);
+        assert!(!fp.finished);
+    }
+
+    #[test]
+    fn get_returns_data() {
+        let fp = FieldPath::default();
+        assert_eq!(fp.get(0), 255);
+        assert_eq!(fp.get(1), 0);
+    }
+
+    #[test]
+    fn pack_unpack_default_roundtrip() {
+        let fp = FieldPath::default();
+        let key = fp.pack();
+        let fp2 = FieldPath::unpack(key);
+        assert_eq!(fp.data, fp2.data);
+        assert_eq!(fp.last, fp2.last);
+    }
+
+    #[test]
+    fn pack_unpack_custom_roundtrip() {
+        let fp = FieldPath {
+            data: [1, 2, 3, 4, 5, 6, 7],
+            last: 3,
+            ..Default::default()
+        };
+        let key = fp.pack();
+        let fp2 = FieldPath::unpack(key);
+        assert_eq!(fp.data, fp2.data);
+        assert_eq!(fp.last, fp2.last);
+    }
+
+    #[test]
+    fn pack_unpack_max_last() {
+        let fp = FieldPath {
+            last: 6,
+            ..Default::default()
+        };
+        let key = fp.pack();
+        let fp2 = FieldPath::unpack(key);
+        assert_eq!(fp2.last, 6);
+    }
+
+    // ── Private operations ──
+
+    #[test]
+    fn inc_at_wraps() {
+        let mut fp = FieldPath::default();
+        // data[0] is 255, incrementing by 1 should wrap to 0
+        fp.inc_at(0, 1);
+        assert_eq!(fp.data[0], 0);
+    }
+
+    #[test]
+    fn push_pop_sequence() {
+        let mut fp = FieldPath::default();
+        assert_eq!(fp.last, 0);
+        fp.push(42);
+        assert_eq!(fp.last, 1);
+        assert_eq!(fp.data[1], 42);
+        fp.pop(1);
+        assert_eq!(fp.last, 0);
+        assert_eq!(fp.data[1], 0);
+    }
+
+    #[test]
+    fn inc_last_modifies_current() {
+        let mut fp = FieldPath {
+            data: [10, 0, 0, 0, 0, 0, 0],
+            last: 0,
+            finished: false,
+        };
+        fp.inc_last(5);
+        assert_eq!(fp.data[0], 15);
+    }
+
+    #[test]
+    fn plus_one_field_op() {
+        let mut fp = FieldPath {
+            data: [10, 0, 0, 0, 0, 0, 0],
+            last: 0,
+            finished: false,
+        };
+        let data = [0u8; 1];
+        let mut br = BitReader::new(&data);
+        plus_one(&mut fp, &mut br).unwrap();
+        assert_eq!(fp.data[0], 11);
+    }
+
+    #[test]
+    fn field_path_encode_finish_sets_finished() {
+        let mut fp = FieldPath::default();
+        let data = [0u8; 1];
+        let mut br = BitReader::new(&data);
+        field_path_encode_finish(&mut fp, &mut br).unwrap();
+        assert!(fp.finished);
     }
 }

@@ -2,21 +2,33 @@
 
 ## Unreleased
 
-### boon (parser)
-
-_No changes yet._
-
 ### boon-cli
 
-_No changes yet._
+- `ability-upgrades` command for tracking hero ability point spending (skill tier upgrades).
+- `shop-events` command for item shop transactions (purchased, upgraded, sold, swapped, failure).
+- `chat` command for in-game chat messages (all chat and team chat).
+- `objectives` command for per-tick objective entity health (walkers, titans, barracks, mid boss).
+- `boss-kills` command for objective destruction events.
+- `mid-boss` command for mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire).
+- `troopers` command for per-tick alive lane trooper state (position, health, lane).
+- `neutrals` command for neutral creep state changes with change detection.
+- All new commands support `--filter`, `--summary`, `--limit`, and `--json` flags.
 
 ### boon-python
 
-_No changes yet._
+- `Demo.ability_upgrades` property for hero ability point spending events.
+- `Demo.shop_events` property for item shop transactions.
+- `Demo.chat` property for in-game chat messages.
+- `Demo.objectives` property for per-tick objective entity health.
+- `Demo.boss_kills` property for objective destruction events.
+- `Demo.mid_boss` property for mid boss lifecycle events.
+- `Demo.troopers` property for per-tick alive lane trooper state (opt-in, large dataset).
+- `Demo.neutrals` property for neutral creep state changes with change detection (opt-in).
+- All new datasets are lazy-loaded on first access and can be batch-loaded via `load()`.
 
 ---
 
-## boon-python 0.1.0
+## boon-python 0.0.1
 
 - Ability name resolution for item purchases using MurmurHash2 lookup
   from `abilities.vdata`. The `purchases` DataFrame now has an `ability`

@@ -12,8 +12,26 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  ci-gate:
+    name: Verify CI passed
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check CI status on tagged commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA="${{ github.sha }}"
+          RESULT=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-runs" \
+            --jq '.check_runs[] | select(.name == "CI Check") | .conclusion')
+          if [ "$RESULT" != "success" ]; then
+            echo "CI Check has not passed on ${SHA} (got: ${RESULT:-not found})"
+            echo "Push to main and wait for CI before tagging a release."
+            exit 1
+          fi
+
   verify:
     name: Verify tag version
+    needs: ci-gate
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}

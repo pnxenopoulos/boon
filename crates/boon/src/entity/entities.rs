@@ -14,11 +14,14 @@ use super::string_tables::StringTableContainer;
 
 use boon_proto::proto::CsvcMsgPacketEntities;
 
+// Entity handle bit layout (32 bits total):
+// - Lower 15 bits: entity index (up to 2^14 edicts + 1 bit)
+// - Upper 17 bits: serial number (disambiguates reused indices)
 const MAX_EDICT_BITS: u32 = 14;
 const NUM_ENT_ENTRY_BITS: u32 = MAX_EDICT_BITS + 1;
 const NUM_SERIAL_NUM_BITS: u32 = 32 - NUM_ENT_ENTRY_BITS;
 
-/// Delta header values indicating entity state changes.
+/// Delta header values (2-bit codes) indicating entity state changes.
 const DELTA_UPDATE: u8 = 0b00;
 const DELTA_CREATE: u8 = 0b10;
 const DELTA_LEAVE: u8 = 0b01;
@@ -27,10 +30,15 @@ const DELTA_DELETE: u8 = 0b11;
 /// A single entity with its class, fields, and current state.
 #[derive(Debug, Clone)]
 pub struct Entity {
+    /// Slot index in the entity array (0–16383).
     pub index: i32,
+    /// Serial number for this slot (increments on reuse).
     pub serial: u32,
+    /// Numeric class ID (indexes into [`ClassInfo`]).
     pub class_id: i32,
+    /// Network class name (e.g. `"CCitadelPlayerController"`).
     pub class_name: String,
+    /// Current field values, keyed by packed [`FieldPath`] (see [`FieldPath::pack`]).
     pub fields: FxHashMap<u64, FieldValue>,
 }
 
@@ -474,19 +482,72 @@ impl EntityContainer {
         Ok(())
     }
 
+    /// Look up an entity by its slot index.
     pub fn get(&self, index: i32) -> Option<&Entity> {
         self.entities.get(&index)
     }
 
+    /// Iterate over all active entities as `(index, entity)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&i32, &Entity)> {
         self.entities.iter()
     }
 
+    /// Number of currently active entities.
     pub fn len(&self) -> usize {
         self.entities.len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.entities.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn container_new_is_empty() {
+        let c = EntityContainer::new();
+        assert!(c.is_empty());
+        assert_eq!(c.len(), 0);
+        assert!(c.get(0).is_none());
+    }
+
+    #[test]
+    fn entity_fields_insert_and_get() {
+        let mut e = Entity::new(1, 10, "TestClass".to_string());
+        e.fields.insert(42, FieldValue::I32(100));
+        assert!(matches!(e.fields.get(&42), Some(FieldValue::I32(100))));
+    }
+
+    #[test]
+    fn container_insert_and_iter() {
+        let mut c = EntityContainer::new();
+        let e = Entity::new(5, 10, "Hero".to_string());
+        c.entities.insert(5, e);
+        assert_eq!(c.len(), 1);
+        assert!(!c.is_empty());
+        assert!(c.get(5).is_some());
+        assert_eq!(c.get(5).unwrap().class_name, "Hero");
+    }
+
+    #[test]
+    fn container_iter_yields_entries() {
+        let mut c = EntityContainer::new();
+        c.entities.insert(1, Entity::new(1, 1, "A".to_string()));
+        c.entities.insert(2, Entity::new(2, 2, "B".to_string()));
+        let keys: Vec<i32> = c.iter().map(|(&k, _)| k).collect();
+        assert_eq!(keys.len(), 2);
+    }
+
+    #[test]
+    fn entity_basic_fields() {
+        let e = Entity::new(7, 42, "NPC".to_string());
+        assert_eq!(e.index, 7);
+        assert_eq!(e.class_id, 42);
+        assert_eq!(e.class_name, "NPC");
+        assert_eq!(e.serial, 0);
+        assert!(e.fields.is_empty());
     }
 }

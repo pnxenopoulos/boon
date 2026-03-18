@@ -47,7 +47,9 @@ demo.load("kills", "player_ticks", "world_ticks")
 Load one or more datasets from the demo file in a single pass.
 
 Valid dataset names: `"player_ticks"`, `"world_ticks"`, `"kills"`, `"damage"`,
-`"flex_slots"`, `"respawns"`, `"purchases"`.
+`"flex_slots"`, `"respawns"`, `"purchases"`, `"abilities"`, `"ability_upgrades"`,
+`"shop_events"`, `"chat"`, `"objectives"`, `"boss_kills"`, `"mid_boss"`,
+`"troopers"`, `"neutrals"`.
 
 Already-loaded datasets are skipped. Multiple datasets requested together share
 a single parse pass over the file for efficiency.
@@ -439,6 +441,185 @@ Flex slot unlock events. Auto-loads on first access if not already loaded via `l
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the flex slot was unlocked |
 | `team_num` | `int` | The team number that unlocked the flex slot |
+
+---
+
+#### `abilities`
+
+```python
+demo.abilities  # polars.DataFrame
+```
+
+Important ability usage events. Auto-loads on first access if not already loaded via `load()`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the ability was used |
+| `hero_id` | `int` | The hero ID of the player |
+| `ability` | `str` | The ability name |
+
+---
+
+#### `ability_upgrades`
+
+```python
+demo.ability_upgrades  # polars.DataFrame
+```
+
+Hero ability point spending events (skill tier upgrades). Emits a row each time a
+player upgrades one of their abilities. Auto-loads on first access.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the upgrade occurred |
+| `hero_id` | `int` | The hero ID of the player |
+| `ability_id` | `int` | The raw MurmurHash2 ability ID |
+| `ability` | `str` | The ability name |
+| `upgrade_bits` | `int` | Cumulative upgrade bitmask (1=T1, 3=T1+T2, 7=T1+T2+T3, 15=T1+T2+T3+T4) |
+
+---
+
+#### `shop_events`
+
+```python
+demo.shop_events  # polars.DataFrame
+```
+
+Item shop transactions. Includes purchases, upgrades, sells, swaps, and failures.
+Auto-loads on first access.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the transaction occurred |
+| `hero_id` | `int` | The hero ID of the player |
+| `ability_id` | `int` | The raw MurmurHash2 item/ability ID |
+| `ability` | `str` | The item name |
+| `change` | `str` | Transaction type: `"purchased"`, `"upgraded"`, `"sold"`, `"swapped"`, `"failure"` |
+
+---
+
+#### `chat`
+
+```python
+demo.chat  # polars.DataFrame
+```
+
+In-game chat messages. Auto-loads on first access.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the message was sent |
+| `hero_id` | `int` | The hero ID of the sender |
+| `text` | `str` | The message text |
+| `chat_type` | `str` | `"all"` or `"team"` |
+
+---
+
+#### `objectives`
+
+```python
+demo.objectives  # polars.DataFrame
+```
+
+Per-tick objective entity health. Tracks walkers, titans, barracks, and mid boss.
+Auto-loads on first access.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick |
+| `objective_type` | `str` | `"walker"`, `"titan"`, `"barracks"`, or `"mid_boss"` |
+| `team_num` | `int` | The team that owns the objective |
+| `lane` | `int` | Lane assignment (1, 4, or 6) |
+| `health` | `int` | Current health |
+| `max_health` | `int` | Maximum health |
+
+---
+
+#### `boss_kills`
+
+```python
+demo.boss_kills  # polars.DataFrame
+```
+
+Objective destruction events. Auto-loads on first access.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the objective was destroyed |
+| `objective_team` | `int` | The team that owned the destroyed objective |
+| `objective_id` | `int` | Objective mask change ID |
+| `entity_class` | `str` | `"walker"`, `"mid_boss"`, `"titan_shield_generator"`, `"barracks"`, `"titan"`, `"core"` |
+| `gametime` | `float` | The game time when the objective was destroyed |
+| `bosses_remaining` | `int` | Number of bosses remaining for the team |
+
+---
+
+#### `mid_boss`
+
+```python
+demo.mid_boss  # polars.DataFrame
+```
+
+Mid boss lifecycle events including spawn, kill, and rejuvenator buff tracking.
+Auto-loads on first access.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick |
+| `hero_id` | `int` | The hero involved (0 for spawn/kill events) |
+| `team_num` | `int` | The team involved |
+| `event` | `str` | `"spawned"`, `"killed"`, `"picked_up"`, `"used"`, `"expired"` |
+
+---
+
+#### `troopers`
+
+```python
+demo.troopers  # polars.DataFrame
+```
+
+Per-tick alive lane trooper state. Tracks `CNPC_Trooper` and `CNPC_TrooperBoss` entities.
+Emits a row for every alive trooper at every tick.
+
+**Warning:** This is a large dataset (~5M+ rows). Not loaded by default.
+Access this property or call `load("troopers")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick |
+| `trooper_type` | `str` | `"trooper"` or `"trooper_boss"` |
+| `team_num` | `int` | The trooper's team |
+| `lane` | `int` | Lane assignment (1, 4, or 6) |
+| `health` | `int` | Current health |
+| `max_health` | `int` | Maximum health |
+| `x` | `float` | X position |
+| `y` | `float` | Y position |
+| `z` | `float` | Z position |
+
+---
+
+#### `neutrals`
+
+```python
+demo.neutrals  # polars.DataFrame
+```
+
+Neutral creep state changes. Tracks `CNPC_TrooperNeutral` and `CNPC_TrooperNeutralNodeMover`.
+Only emits a row when an alive neutral's state changes (health, position), significantly
+reducing data volume compared to per-tick tracking.
+
+Not loaded by default. Access this property or call `load("neutrals")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the state changed |
+| `neutral_type` | `str` | `"neutral"` or `"neutral_node_mover"` |
+| `team_num` | `int` | The neutral's team |
+| `health` | `int` | Current health |
+| `max_health` | `int` | Maximum health |
+| `x` | `float` | X position |
+| `y` | `float` | Y position |
+| `z` | `float` | Z position |
 
 ## Exceptions
 

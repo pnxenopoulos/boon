@@ -1,8 +1,23 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use serde::Serialize;
+
+#[derive(Serialize)]
+struct EntityOutput {
+    index: i32,
+    class_name: String,
+    class_id: i32,
+    fields: HashMap<String, boon::FieldValue>,
+}
+
+#[derive(Serialize)]
+struct EntitySummaryOutput {
+    class_name: String,
+    count: usize,
+}
 
 pub fn run(
     file: &Path,
@@ -11,8 +26,10 @@ pub fn run(
     summary: bool,
     fields: usize,
     limit: Option<usize>,
+    json: bool,
 ) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let ctx = parser.parse_to_tick(tick)?;
 
     let mut entities: Vec<_> = ctx.entities.entities.iter().collect();
@@ -33,6 +50,19 @@ pub fn run(
         counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(b.0)));
 
         let limit = limit.unwrap_or(counts.len());
+
+        if json {
+            let output: Vec<EntitySummaryOutput> = counts
+                .iter()
+                .take(limit)
+                .map(|(class_name, count)| EntitySummaryOutput {
+                    class_name: class_name.to_string(),
+                    count: *count,
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&output)?);
+            return Ok(());
+        }
 
         println!("{:<50} {:>6}", "Class".bold(), "Count".bold(),);
         println!("{}", "-".repeat(58));
@@ -55,6 +85,35 @@ pub fn run(
     } else {
         // Detailed mode: show entity fields
         let limit = limit.unwrap_or(entities.len());
+
+        if json {
+            let output: Vec<EntityOutput> = entities
+                .iter()
+                .take(limit)
+                .map(|(idx, entity)| {
+                    let serializer = ctx.serializers.get(&entity.class_name);
+                    let resolved_fields: HashMap<String, boon::FieldValue> = entity
+                        .fields
+                        .iter()
+                        .map(|(&key, value)| {
+                            let name = serializer
+                                .as_ref()
+                                .and_then(|s| s.field_name_for_key(key))
+                                .unwrap_or_else(|| format!("{:#x}", key));
+                            (name, value.clone())
+                        })
+                        .collect();
+                    EntityOutput {
+                        index: **idx,
+                        class_name: entity.class_name.clone(),
+                        class_id: entity.class_id,
+                        fields: resolved_fields,
+                    }
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&output)?);
+            return Ok(());
+        }
 
         for (idx, entity) in entities.iter().take(limit) {
             println!(

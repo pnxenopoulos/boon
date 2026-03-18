@@ -42,6 +42,24 @@ jobs:
       - name: clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
+      - name: rustdoc
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --no-deps --all-features
+
+  deny:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: cargo deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
   test-rust:
     name: Build & Test (${{ matrix.os }} / ${{ matrix.rust }})
     runs-on: ${{ matrix.os }}
@@ -130,17 +148,38 @@ jobs:
         working-directory: crates/boon-python
         run: uv run pytest tests/ -v
 
+  docs:
+    name: Sphinx Docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Sphinx dependencies
+        run: pip install -r crates/boon-python/docs/requirements.txt
+
+      - name: Build docs
+        working-directory: crates/boon-python/docs
+        run: sphinx-build -W -b html . _build/html
+
   check:
     name: CI Check
     if: always()
-    needs: [lint, test-rust, test-python]
+    needs: [lint, deny, test-rust, test-python, docs]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
         run: |
           if [[ "${{ needs.lint.result }}" != "success" ||
+                "${{ needs.deny.result }}" != "success" ||
                 "${{ needs.test-rust.result }}" != "success" ||
-                "${{ needs.test-python.result }}" != "success" ]]; then
+                "${{ needs.test-python.result }}" != "success" ||
+                "${{ needs.docs.result }}" != "success" ]]; then
             echo "One or more required jobs failed"
             exit 1
           fi

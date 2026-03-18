@@ -1,13 +1,33 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use serde::Serialize;
 
-pub fn run(file: &Path) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+#[derive(Serialize)]
+struct InfoOutput {
+    header: boon_proto::proto::CDemoFileHeader,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    info: Option<boon_proto::proto::CDemoFileInfo>,
+}
+
+pub fn run(file: &Path, json: bool) -> Result<()> {
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
 
     // File header
     let header = parser.file_header()?;
+
+    if json {
+        let info = parser.file_info().ok();
+        let output = InfoOutput {
+            header,
+            info,
+        };
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
+
     println!("{}", "File Header".green().bold());
     println!("  demo_file_stamp:  {}", header.demo_file_stamp);
     if let Some(v) = header.patch_version {

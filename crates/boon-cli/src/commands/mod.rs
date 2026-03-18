@@ -1,21 +1,43 @@
 //! CLI command implementations.
 
+mod abilities;
+mod ability_upgrades;
+mod active_modifiers;
+mod boss_kills;
+mod chat;
 mod classes;
 mod entities;
 mod events;
 mod info;
 mod messages;
+mod mid_boss;
+mod neutrals;
+mod objectives;
 mod send_tables;
+mod shop_events;
 mod string_tables;
 mod summary;
+mod troopers;
+mod stat_modifiers;
 mod verify;
 
+pub use abilities::run as abilities;
+pub use ability_upgrades::run as ability_upgrades;
+pub use active_modifiers::run as active_modifiers;
+pub use boss_kills::run as boss_kills;
+pub use chat::run as chat;
 pub use classes::run as classes;
 pub use entities::run as entities;
 pub use events::run as events;
 pub use info::run as info;
 pub use messages::run as messages;
+pub use mid_boss::run as mid_boss;
+pub use neutrals::run as neutrals;
+pub use objectives::run as objectives;
 pub use send_tables::run as send_tables;
+pub use shop_events::run as shop_events;
 pub use string_tables::run as string_tables;
 pub use summary::run as summary;
+pub use troopers::run as troopers;
+pub use stat_modifiers::run as stat_modifiers;
 pub use verify::run as verify;

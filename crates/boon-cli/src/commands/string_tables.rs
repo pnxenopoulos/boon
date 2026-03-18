@@ -1,10 +1,27 @@
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use colored::Colorize;
+use serde::Serialize;
 
-pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usize>) -> Result<()> {
-    let parser = boon::Parser::from_file(file)?;
+#[derive(Serialize)]
+struct StringTableEntryOutput {
+    index: usize,
+    key: String,
+    data_size: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct StringTableOutput {
+    name: String,
+    entry_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    entries: Option<Vec<StringTableEntryOutput>>,
+}
+
+pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usize>, json: bool) -> Result<()> {
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
     let ctx = parser.parse_init()?;
 
     let mut tables: Vec<_> = ctx.string_tables.tables().iter().collect();
@@ -14,6 +31,35 @@ pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usi
     }
 
     let limit = limit.unwrap_or(tables.len());
+
+    if json {
+        let output: Vec<StringTableOutput> = tables
+            .iter()
+            .take(limit)
+            .map(|table| StringTableOutput {
+                name: table.name.clone(),
+                entry_count: table.entries.len(),
+                entries: if summary {
+                    None
+                } else {
+                    Some(
+                        table
+                            .entries
+                            .iter()
+                            .enumerate()
+                            .map(|(i, entry)| StringTableEntryOutput {
+                                index: i,
+                                key: entry.string.clone().unwrap_or_default(),
+                                data_size: entry.user_data.as_ref().map(|d| d.len()),
+                            })
+                            .collect(),
+                    )
+                },
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
+    }
 
     if summary {
         // Summary mode: just names and entry counts

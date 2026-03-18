@@ -12,11 +12,11 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.0.1"
 
 [workspace.dependencies]
-boon = { path = "crates/boon", package = "boon-deadlock", version = "0.1.0" }
-boon-proto = { path = "crates/boon-proto", version = "0.1.0" }
+boon = { path = "crates/boon", package = "boon-deadlock", version = "0.0.1" }
+boon-proto = { path = "crates/boon-proto", version = "0.0.1" }
 
 [profile.release]
 lto = true          # Link-time optimization
