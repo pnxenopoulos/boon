@@ -49,7 +49,7 @@ Load one or more datasets from the demo file in a single pass.
 Valid dataset names: `"player_ticks"`, `"world_ticks"`, `"kills"`, `"damage"`,
 `"flex_slots"`, `"respawns"`, `"purchases"`, `"abilities"`, `"ability_upgrades"`,
 `"shop_events"`, `"chat"`, `"objectives"`, `"boss_kills"`, `"mid_boss"`,
-`"troopers"`, `"neutrals"`.
+`"troopers"`, `"neutrals"`, `"stat_modifiers"`, `"active_modifiers"`.
 
 Already-loaded datasets are skipped. Multiple datasets requested together share
 a single parse pass over the file for efficiency.
@@ -201,17 +201,6 @@ Scans for the `k_EUserMsg_GameOver` event on first access.
 
 ---
 
-#### `winning_team`
-
-```python
-demo.winning_team  # str | None
-```
-
-The name of the winning team (e.g., `"Archmother"`), or `None` if no game-over
-event was found.
-
----
-
 #### `banned_hero_ids`
 
 ```python
@@ -221,32 +210,7 @@ demo.banned_hero_ids  # list[int]
 List of banned hero IDs. Returns an empty list if no banned heroes event was found.
 Scans for the `k_EUserMsg_BannedHeroes` event on first access.
 
----
-
-#### `banned_heroes`
-
-```python
-demo.banned_heroes  # list[str]
-```
-
-List of banned hero names. Returns an empty list if no banned heroes event was found.
-
 ### DataFrame Properties
-
-#### `teams`
-
-```python
-demo.teams  # polars.DataFrame
-```
-
-Team number to team name mapping.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `team_num` | `int` | Raw team number (1=Spectator, 2=Hidden King, 3=Archmother) |
-| `team_name` | `str` | The team name |
-
----
 
 #### `players`
 
@@ -260,10 +224,8 @@ Player information. Computed from the final tick.
 |--------|------|-------------|
 | `player_name` | `str` | The player's display name |
 | `steam_id` | `int` | The player's Steam ID |
-| `hero` | `str` | The player's hero name |
-| `hero_id` | `int` | The player's hero ID |
-| `team` | `str` | `"Archmother"`, `"Hidden King"`, or `"Spectator"` |
-| `team_num` | `int` | Raw team number |
+| `hero_id` | `int` | The player's hero ID (use `hero_names()` to resolve) |
+| `team_num` | `int` | Raw team number (use `team_names()` to resolve) |
 | `start_lane` | `int` | Original lane (1=left, 4=center, 6=right) |
 
 ---
@@ -550,7 +512,6 @@ Objective destruction events. Auto-loads on first access.
 | `objective_id` | `int` | Objective mask change ID |
 | `entity_class` | `str` | `"walker"`, `"mid_boss"`, `"titan_shield_generator"`, `"barracks"`, `"titan"`, `"core"` |
 | `gametime` | `float` | The game time when the objective was destroyed |
-| `bosses_remaining` | `int` | Number of bosses remaining for the team |
 
 ---
 
@@ -620,6 +581,117 @@ Not loaded by default. Access this property or call `load("neutrals")` explicitl
 | `x` | `float` | X position |
 | `y` | `float` | Y position |
 | `z` | `float` | Z position |
+
+---
+
+#### `stat_modifiers`
+
+```python
+demo.stat_modifiers  # polars.DataFrame
+```
+
+Per-player cumulative permanent stat bonuses from idol and breakable pickups,
+tracked per tick.
+
+Not loaded by default. Access this property or call `load("stat_modifiers")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick |
+| `hero_id` | `int` | The player's hero ID |
+| `health` | `float` | Cumulative bonus health |
+| `spirit_power` | `float` | Cumulative bonus spirit power |
+| `fire_rate` | `float` | Cumulative bonus fire rate |
+| `weapon_damage` | `float` | Cumulative bonus weapon damage |
+| `cooldown_reduction` | `float` | Cumulative cooldown reduction |
+| `ammo` | `float` | Cumulative bonus ammo |
+
+---
+
+#### `active_modifiers`
+
+```python
+demo.active_modifiers  # polars.DataFrame
+```
+
+Active buff/debuff modifiers on players. Tracks applied and removed events
+for each modifier.
+
+Not loaded by default. Access this property or call `load("active_modifiers")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the modifier event occurred |
+| `hero_id` | `int` | The affected player's hero ID |
+| `event` | `str` | `"applied"` or `"removed"` |
+| `modifier_id` | `int` | Raw modifier subclass hash ID |
+| `ability_id` | `int` | Raw ability subclass hash ID |
+| `modifier` | `str` | Modifier name |
+| `ability` | `str` | Source ability name |
+| `duration` | `float` | Modifier duration |
+| `caster_hero_id` | `int` | Hero ID of the caster |
+| `stacks` | `int` | Number of stacks |
+
+## Name Lookup Functions
+
+Module-level functions for resolving IDs to human-readable names. These do not
+require a parsed demo.
+
+### `hero_names()`
+
+```python
+from boon import hero_names
+
+hero_names()  # -> dict[int, str]
+```
+
+Return a mapping of hero ID to hero name.
+
+**Returns:** `dict[int, str]` -- Hero ID to hero name mapping (e.g., `{1: "Infernus", 2: "Seven", ...}`).
+
+---
+
+### `team_names()`
+
+```python
+from boon import team_names
+
+team_names()  # -> dict[int, str]
+```
+
+Return a mapping of team number to team name.
+
+**Returns:** `dict[int, str]` -- `{1: "Spectator", 2: "Hidden King", 3: "Archmother"}`.
+
+---
+
+### `ability_names()`
+
+```python
+from boon import ability_names
+
+ability_names()  # -> dict[int, str]
+```
+
+Return a mapping of MurmurHash2 ability ID to ability name.
+
+**Returns:** `dict[int, str]` -- Ability hash to name mapping.
+
+---
+
+### `modifier_names()`
+
+```python
+from boon import modifier_names
+
+modifier_names()  # -> dict[int, str]
+```
+
+Return a mapping of MurmurHash2 modifier ID to modifier name.
+
+**Returns:** `dict[int, str]` -- Modifier hash to name mapping.
+
+---
 
 ## Exceptions
 

@@ -20,7 +20,7 @@ boon/
 ├── scripts/
 │   ├── sync-protos.sh                  # Fetch latest Deadlock .proto files
 │   ├── build-protos/                   # Regenerate Rust code from .proto files
-│   └── compute-abilities-hash-table/   # Regenerate ability name lookup table
+│   └── generate-name-tables/           # Regenerate ability and modifier name lookup tables
 └── .github/workflows/ci.yml    # CI pipeline
 ```
 
@@ -83,16 +83,16 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 
 This updates the files under `crates/boon-proto/proto/` and regenerates `crates/boon-proto/src/proto.rs`.
 
-## Updating the Abilities Hash Table
+## Updating the Name Lookup Tables
 
-Ability/item IDs in demo events are MurmurHash2 hashes of their string names. The lookup table at `crates/boon/src/abilities.rs` is generated from Deadlock's `abilities.vdata` (extracted from the game's VPK data using [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)):
+Ability/item and modifier IDs in demo events are MurmurHash2 hashes of their string names. The lookup tables at `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs` are generated from Deadlock's `abilities.vdata` and `modifiers.vdata` (extracted from the game's VPK data using [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)):
 
 ```bash
-# Run from the repo root with abilities.vdata in the working directory
-cargo run --manifest-path scripts/compute-abilities-hash-table/Cargo.toml
+# Run from the repo root with abilities.vdata and modifiers.vdata in the working directory
+cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 ```
 
-This regenerates `crates/boon/src/abilities.rs`.
+This regenerates `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs`.
 
 ## Release Strategy
 

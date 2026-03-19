@@ -29,16 +29,24 @@ demo = Demo("match.dem")
 
 # Match metadata
 print(demo.match_id)         # 28309863
-print(demo.map_name)         # "street_test"
+print(demo.map_name)         # "dl_midtown"
 print(demo.total_ticks)      # 54000
 print(demo.total_clock_time) # "30:00"
-print(demo.winner)           # "Team1"
+print(demo.winning_team_num) # 2
+
+# Name lookups (module-level — no demo required)
+from boon import hero_names, team_names, ability_names, modifier_names
+
+print(hero_names())      # {0: "Base", 1: "Infernus", ...}
+print(team_names())      # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
+print(ability_names())   # {46922526: "inherent_base", ...}
+print(modifier_names())  # {2059539911: "timer", ...}
 
 # Player info
 print(demo.players)
-# shape: (12, 7)
-# ┌─────────────┬──────────────┬──────────┬─────────┬─────────────┬──────────┬────────────┐
-# │ player_name ┆ steam_id     ┆ hero     ┆ hero_id ┆ team        ┆ team_num ┆ start_lane │
+# shape: (12, 5)
+# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┐
+# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane │
 # ...
 
 # Datasets (Polars DataFrames — all lazy-loaded on first access)
@@ -56,12 +64,16 @@ chat             = demo.chat              # chat messages
 objectives       = demo.objectives        # objective health per tick
 boss_kills       = demo.boss_kills        # objective destruction events
 mid_boss         = demo.mid_boss          # mid boss lifecycle events
+troopers         = demo.troopers          # lane trooper state per tick
+neutrals         = demo.neutrals          # neutral creep state changes
+stat_modifiers   = demo.stat_modifiers    # permanent stat bonuses per tick
+active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 ```
 
 ## Features
 
 - Parse Deadlock `.dem` demo files at native speed via Rust
-- 16 built-in datasets covering players, combat, economy, objectives, and map state
+- 18 built-in datasets covering players, combat, economy, objectives, and map state
 - Access to match metadata, player info, entity state, game events, and post-match summaries
 - All data returned as [Polars](https://pola.rs) DataFrames
 

@@ -3,6 +3,7 @@ name = "boon-python"
 version = "0.1.0"
 rust-version.workspace = true
 edition = "2024"
+license = "MIT"
 
 [lib]
 name = "_boon"
@@ -12,6 +13,6 @@ crate-type = ["cdylib"]
 boon_parser = { path = "../boon", package = "boon-deadlock" }
 boon-proto = { workspace = true }
 prost = "0.14"
-pyo3 = { version = "0.23", features = ["extension-module"] }
-pyo3-polars = "0.20"
-polars = "0.46"
+pyo3 = { version = "0.27", features = ["extension-module"] }
+pyo3-polars = "0.26"
+polars = "0.53"

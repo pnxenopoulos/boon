@@ -27,10 +27,10 @@ from boon import Demo
 demo = Demo("match.dem")
 
 # Inspect metadata
-print(demo.map_name)        # "street_test"
-print(demo.total_ticks)     # 54000
+print(demo.map_name)         # "dl_midtown"
+print(demo.total_ticks)      # 54000
 print(demo.total_clock_time) # "30:00"
-print(demo.match_id)        # 28309863
+print(demo.match_id)         # 28309863
 
 # Get player info
 players = demo.players

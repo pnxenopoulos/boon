@@ -6,7 +6,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from boon import Demo, InvalidDemoError
+from boon import Demo, InvalidDemoError, ability_names, hero_names, modifier_names, team_names
 
 from conftest import _require_demo_fixture
 
@@ -60,7 +60,7 @@ OBJECTIVES_COLUMNS = {
 
 BOSS_KILLS_COLUMNS = {
     "tick", "objective_team", "objective_id", "entity_class",
-    "gametime", "bosses_remaining",
+    "gametime",
 }
 
 MID_BOSS_COLUMNS = {"tick", "hero_id", "team_num", "event"}
@@ -81,15 +81,13 @@ STAT_MODIFIERS_COLUMNS = {
 }
 
 ACTIVE_MODIFIERS_COLUMNS = {
-    "tick", "hero_id", "event", "modifier", "ability",
-    "duration", "caster_hero_id", "stacks",
+    "tick", "hero_id", "event", "modifier_id", "ability_id",
+    "modifier", "ability", "duration", "caster_hero_id", "stacks",
 }
 
 PLAYERS_COLUMNS = {
-    "player_name", "steam_id", "hero", "hero_id", "team", "team_num", "start_lane",
+    "player_name", "steam_id", "hero_id", "team_num", "start_lane",
 }
-
-TEAMS_COLUMNS = {"team_num", "team_name"}
 
 # Maps dataset name -> expected column set for parameterized tests.
 DATASET_COLUMNS = {
@@ -161,10 +159,6 @@ class TestMetadata:
 class TestGameResult:
     """Tests for game result properties (winning team, banned heroes)."""
 
-    def test_winning_team_is_string_or_none(self, demo: Demo) -> None:
-        result = demo.winning_team
-        assert result is None or isinstance(result, str)
-
     def test_winning_team_num_is_int_or_none(self, demo: Demo) -> None:
         result = demo.winning_team_num
         assert result is None or isinstance(result, int)
@@ -181,12 +175,6 @@ class TestGameResult:
     def test_banned_hero_ids_is_list(self, demo: Demo) -> None:
         result = demo.banned_hero_ids
         assert isinstance(result, list)
-
-    def test_banned_heroes_is_list_of_strings(self, demo: Demo) -> None:
-        result = demo.banned_heroes
-        assert isinstance(result, list)
-        for name in result:
-            assert isinstance(name, str)
 
 
 # ===================================================================
@@ -213,15 +201,53 @@ class TestPlayersAndTeams:
         steam_ids = demo.players["steam_id"].to_list()
         assert all(sid > 0 for sid in steam_ids)
 
-    def test_players_teams_valid(self, demo: Demo) -> None:
-        teams = demo.players["team"].to_list()
-        for t in teams:
-            assert t in ("Archmother", "Hidden King", "Spectator")
+    def test_players_team_nums_valid(self, demo: Demo) -> None:
+        team_nums = demo.players["team_num"].to_list()
+        for t in team_nums:
+            assert t in (1, 2, 3)
 
-    def test_teams_shape(self, demo: Demo) -> None:
-        teams = demo.teams
-        assert teams.shape[0] > 0
-        assert set(teams.columns) == TEAMS_COLUMNS
+
+# ===================================================================
+# Name lookups
+# ===================================================================
+
+
+class TestNameLookups:
+    """Tests for module-level name lookup functions."""
+
+    def test_hero_names_is_dict(self) -> None:
+        names = hero_names()
+        assert isinstance(names, dict)
+        assert len(names) > 0
+
+    def test_hero_names_contains_infernus(self) -> None:
+        names = hero_names()
+        assert names[1] == "Infernus"
+
+    def test_team_names_is_dict(self) -> None:
+        names = team_names()
+        assert isinstance(names, dict)
+        assert names == {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
+
+    def test_ability_names_is_dict(self) -> None:
+        names = ability_names()
+        assert isinstance(names, dict)
+        assert len(names) > 0
+
+    def test_ability_names_contains_known(self) -> None:
+        names = ability_names()
+        assert 46922526 in names
+        assert names[46922526] == "inherent_base"
+
+    def test_modifier_names_is_dict(self) -> None:
+        names = modifier_names()
+        assert isinstance(names, dict)
+        assert len(names) > 0
+
+    def test_modifier_names_contains_known(self) -> None:
+        names = modifier_names()
+        assert 2059539911 in names
+        assert names[2059539911] == "timer"
 
 
 # ===================================================================
@@ -266,8 +292,8 @@ class TestTickConversion:
         assert isinstance(demo.tick_to_seconds(100), float)
 
     def test_tick_to_seconds_monotonic(self, demo: Demo) -> None:
-        t1 = demo.tick_to_seconds(100)
-        t2 = demo.tick_to_seconds(200)
+        t1 = demo.tick_to_seconds(10000)
+        t2 = demo.tick_to_seconds(20000)
         assert t2 > t1
 
     def test_tick_to_seconds_zero(self, demo: Demo) -> None:

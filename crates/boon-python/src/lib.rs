@@ -12,72 +12,10 @@ pyo3::create_exception!(_boon, DemoHeaderError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoInfoError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoMessageError, pyo3::exceptions::PyException);
 
-fn hero_name(id: i64) -> &'static str {
-    match id {
-        0 => "Base",
-        1 => "Infernus",
-        2 => "Seven",
-        3 => "Vindicta",
-        4 => "Lady Geist",
-        6 => "Abrams",
-        7 => "Wraith",
-        8 => "McGinnis",
-        10 => "Paradox",
-        11 => "Dynamo",
-        12 => "Kelvin",
-        13 => "Haze",
-        14 => "Holliday",
-        15 => "Bebop",
-        16 => "Calico",
-        17 => "Grey Talon",
-        18 => "Mo and Krill",
-        19 => "Shiv",
-        20 => "Ivy",
-        21 => "Kali",
-        25 => "Warden",
-        27 => "Yamato",
-        31 => "Lash",
-        35 => "Viscous",
-        38 => "Gunslinger",
-        39 => "The Boss",
-        46 => "Generic Person",
-        47 => "Tokamak",
-        48 => "Wrecker",
-        49 => "Rutger",
-        50 => "Pocket",
-        51 => "Thumper",
-        52 => "Mirage",
-        53 => "Fathom",
-        54 => "Cadence",
-        55 => "Target Dummy",
-        56 => "Bomber",
-        57 => "Shield Guy",
-        58 => "Vyper",
-        59 => "Vandal",
-        60 => "Sinclair",
-        61 => "Trapper",
-        63 => "Mina",
-        64 => "Drifter",
-        65 => "Venator",
-        66 => "Victor",
-        67 => "Paige",
-        68 => "Boho",
-        69 => "The Doorman",
-        70 => "Skyrunner",
-        71 => "Swan",
-        72 => "Billy",
-        73 => "Druid",
-        74 => "Graf",
-        75 => "Fortuna",
-        76 => "Graves",
-        77 => "Apollo",
-        78 => "Airheart",
-        79 => "Rem",
-        80 => "Silver",
-        81 => "Celeste",
-        82 => "Raven",
-        _ => "NAME_NOT_FOUND",
-    }
+/// Build a `DataFrame` from columns, inferring row count from the first column.
+fn df_from_columns(columns: Vec<Column>) -> PolarsResult<DataFrame> {
+    let height = columns.first().map_or(0, |c| c.len());
+    DataFrame::new(height, columns)
 }
 
 /// Helper to convert boon errors to Python exceptions.
@@ -185,7 +123,6 @@ struct Demo {
     tick_rate: i32,
     // Cached info from first tick entities
     match_id: u64,
-    teams: DataFrame,
     // Sorted ticks where the game was paused (lazily built from world_ticks)
     paused_ticks: Option<Vec<i32>>,
     // Cached dataset DataFrames
@@ -276,15 +213,6 @@ impl Demo {
                 DemoMessageError::new_err("could not resolve match ID from CCitadelGameRulesProxy")
             })?;
 
-        let teams = DataFrame::new(vec![
-            Column::new("team_num".into(), vec![1i64, 2, 3]),
-            Column::new(
-                "team_name".into(),
-                vec!["Spectator", "Hidden King", "Archmother"],
-            ),
-        ])
-        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-
         let tick_rate = if playback_time > 0.0 {
             (total_ticks as f32 / playback_time).round() as i32
         } else {
@@ -300,7 +228,6 @@ impl Demo {
             playback_time,
             tick_rate,
             match_id,
-            teams,
             paused_ticks: None,
             cached_player_ticks: None,
             cached_world_ticks: None,
@@ -343,12 +270,12 @@ impl Demo {
 
     /// The path to the demo file.
     #[getter]
-    fn path(&self, py: Python<'_>) -> PyResult<PyObject> {
+    fn path(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let pathlib = py.import("pathlib")?;
         let path = pathlib
             .getattr("Path")?
             .call1((self.path.to_string_lossy().to_string(),))?;
-        Ok(path.into())
+        Ok(path.unbind())
     }
 
     /// The total number of ticks in the demo.
@@ -420,24 +347,12 @@ impl Demo {
         Ok(format!("{minutes}:{seconds:02}"))
     }
 
-    /// Team number to team name mapping as a Polars DataFrame.
-    ///
-    /// Returns a DataFrame with columns:
-    /// - team_num: The raw team number (1=Spectator, 2=Hidden King, 3=Archmother)
-    /// - team_name: The team name
-    #[getter]
-    fn teams(&self) -> PyDataFrame {
-        PyDataFrame(self.teams.clone())
-    }
-
     /// Get player information as a Polars DataFrame.
     ///
     /// Returns a DataFrame with columns:
     /// - player_name: The player's display name
     /// - steam_id: The player's Steam ID
-    /// - hero: The player's hero name
     /// - hero_id: The player's hero ID
-    /// - team: The player's team ("Archmother", "Hidden King", or "Spectator")
     /// - team_num: The player's raw team number
     /// - start_lane: The player's original lane (1=left, 4=center, 6=right)
     #[getter]
@@ -453,9 +368,7 @@ impl Demo {
         let mut player_names: Vec<String> = Vec::new();
         let mut steam_ids: Vec<u64> = Vec::new();
         let mut hero_ids: Vec<i64> = Vec::new();
-        let mut heroes: Vec<String> = Vec::new();
         let mut team_nums: Vec<i64> = Vec::new();
-        let mut teams: Vec<String> = Vec::new();
         let mut start_lanes: Vec<i64> = Vec::new();
 
         // Resolve field keys once for CCitadelPlayerController
@@ -513,9 +426,7 @@ impl Demo {
                         _ => None,
                     })
                     .unwrap_or(0);
-                let hero = hero_name(hero_id).to_string();
-
-                // Extract team number and map to team name
+                // Extract team number
                 let team_num = key_team_num
                     .and_then(|k| entity.fields.get(&k))
                     .and_then(|v| match v {
@@ -524,12 +435,6 @@ impl Demo {
                         _ => None,
                     })
                     .unwrap_or(0);
-                let team = match team_num {
-                    1 => "Spectator".to_string(),
-                    2 => "Hidden King".to_string(),
-                    3 => "Archmother".to_string(),
-                    _ => "TEAM_NOT_FOUND".to_string(),
-                };
 
                 // Extract original lane assignment (I64)
                 // Lane mapping (assuming Hidden King is at the bottom of the map):
@@ -546,20 +451,16 @@ impl Demo {
                 player_names.push(player_name);
                 steam_ids.push(steam_id);
                 hero_ids.push(hero_id);
-                heroes.push(hero);
                 team_nums.push(team_num);
-                teams.push(team);
                 start_lanes.push(start_lane);
             }
         }
 
         // Build DataFrame
-        let df = DataFrame::new(vec![
+        let df = df_from_columns(vec![
             Column::new("player_name".into(), player_names),
             Column::new("steam_id".into(), steam_ids),
-            Column::new("hero".into(), heroes),
             Column::new("hero_id".into(), hero_ids),
-            Column::new("team".into(), teams),
             Column::new("team_num".into(), team_nums),
             Column::new("start_lane".into(), start_lanes),
         ])
@@ -571,8 +472,11 @@ impl Demo {
 
     /// Load one or more datasets from the demo file in a single pass.
     ///
-    /// Valid dataset names: ``"abilities"``, ``"player_ticks"``, ``"world_ticks"``,
-    /// ``"kills"``, ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``.
+    /// Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
+    /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``,
+    /// ``"abilities"``, ``"ability_upgrades"``, ``"shop_events"``, ``"chat"``,
+    /// ``"objectives"``, ``"boss_kills"``, ``"mid_boss"``, ``"troopers"``,
+    /// ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``.
     /// Already-loaded datasets are skipped. Multiple datasets requested together
     /// share a single parse pass over the file for efficiency.
     ///
@@ -834,7 +738,6 @@ impl Demo {
         let mut bk_objective_ids: Vec<i32> = Vec::new();
         let mut bk_entity_classes: Vec<String> = Vec::new();
         let mut bk_gametimes: Vec<f32> = Vec::new();
-        let mut bk_bosses_remaining: Vec<i32> = Vec::new();
 
         // ── Column vectors for shop_events ──
         let mut se_ticks: Vec<i32> = Vec::new();
@@ -885,6 +788,8 @@ impl Demo {
         let mut am_tick: Vec<i32> = Vec::new();
         let mut am_hero_id: Vec<i64> = Vec::new();
         let mut am_event: Vec<String> = Vec::new();
+        let mut am_modifier_id: Vec<u32> = Vec::new();
+        let mut am_ability_id: Vec<u32> = Vec::new();
         let mut am_modifier: Vec<String> = Vec::new();
         let mut am_ability: Vec<String> = Vec::new();
         let mut am_duration: Vec<f32> = Vec::new();
@@ -893,6 +798,8 @@ impl Demo {
         // Track active modifiers by serial_number for change detection
         struct CachedMod {
             hero_id: i64,
+            modifier_id: u32,
+            ability_id: u32,
             modifier: String,
             ability: String,
             duration: f32,
@@ -1089,7 +996,7 @@ impl Demo {
                                 s.resolve_field_key("m_PlayerDataGlobal.m_iPlayerAssists");
                         }
                     }
-                    if load_purchases || load_shop_events {
+                    if load_purchases || load_shop_events || load_chat {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
@@ -1311,7 +1218,9 @@ impl Demo {
                             }
                         }
                     }
-                    slot_to_hero_built = true;
+                    if !slot_to_hero.is_empty() {
+                        slot_to_hero_built = true;
+                    }
                 }
 
                 // ── Collect ability_upgrades (entity change detection) ──
@@ -1519,6 +1428,8 @@ impl Demo {
                                     am_tick.push($ctx.tick);
                                     am_hero_id.push(cached.hero_id);
                                     am_event.push("removed".to_string());
+                                    am_modifier_id.push(cached.modifier_id);
+                                    am_ability_id.push(cached.ability_id);
                                     am_modifier.push(cached.modifier);
                                     am_ability.push(cached.ability);
                                     am_duration.push(cached.duration);
@@ -1531,12 +1442,10 @@ impl Demo {
                             current_serials.insert(serial);
 
                             if let std::collections::hash_map::Entry::Vacant(e) = am_prev.entry(serial) {
-                                let mod_name = boon_parser::modifier_name(
-                                    modifier.modifier_subclass.unwrap_or(0),
-                                ).to_string();
-                                let abil_name = boon_parser::ability_name(
-                                    modifier.ability_subclass.unwrap_or(0),
-                                ).to_string();
+                                let mod_id = modifier.modifier_subclass.unwrap_or(0);
+                                let abil_id = modifier.ability_subclass.unwrap_or(0);
+                                let mod_name = boon_parser::modifier_name(mod_id).to_string();
+                                let abil_name = boon_parser::ability_name(abil_id).to_string();
                                 let duration = modifier.duration.unwrap_or(-1.0);
                                 let caster_handle = modifier.caster.unwrap_or(16777215);
                                 let caster_hero_id = if caster_handle != 16777215 {
@@ -1550,6 +1459,8 @@ impl Demo {
                                 am_tick.push($ctx.tick);
                                 am_hero_id.push(hero_id);
                                 am_event.push("applied".to_string());
+                                am_modifier_id.push(mod_id);
+                                am_ability_id.push(abil_id);
                                 am_modifier.push(mod_name.clone());
                                 am_ability.push(abil_name.clone());
                                 am_duration.push(duration);
@@ -1558,6 +1469,8 @@ impl Demo {
 
                                 e.insert(CachedMod {
                                     hero_id,
+                                    modifier_id: mod_id,
+                                    ability_id: abil_id,
                                     modifier: mod_name,
                                     ability: abil_name,
                                     duration,
@@ -1578,6 +1491,8 @@ impl Demo {
                                 am_tick.push($ctx.tick);
                                 am_hero_id.push(cached.hero_id);
                                 am_event.push("removed".to_string());
+                                am_modifier_id.push(cached.modifier_id);
+                                am_ability_id.push(cached.ability_id);
                                 am_modifier.push(cached.modifier);
                                 am_ability.push(cached.ability);
                                 am_duration.push(cached.duration);
@@ -1819,7 +1734,6 @@ impl Demo {
                             bk_objective_ids.push(msg.objective_mask_change.unwrap_or(0));
                             bk_entity_classes.push(entity_class.to_string());
                             bk_gametimes.push(msg.gametime.unwrap_or(0.0));
-                            bk_bosses_remaining.push(msg.bosses_remaining.unwrap_or(0));
                         }
                         // Collect mid_boss lifecycle events
                         if load_mid_boss {
@@ -1893,7 +1807,7 @@ impl Demo {
         // ── Build and cache DataFrames ──
 
         if load_player_ticks {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), pt_tick),
                 Column::new("hero_id".into(), pt_hero_id),
                 Column::new("x".into(), pt_x),
@@ -1954,7 +1868,7 @@ impl Demo {
         }
 
         if load_world_ticks {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), wt_tick),
                 Column::new("is_paused".into(), wt_is_paused),
                 Column::new("next_midboss".into(), wt_next_midboss),
@@ -2008,7 +1922,7 @@ impl Demo {
             }
 
             let assister_series = assister_builder.finish().into_column();
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), kill_tick),
                 Column::new("victim_hero_id".into(), victim_hero_id),
                 Column::new("attacker_hero_id".into(), attacker_hero_id),
@@ -2061,7 +1975,7 @@ impl Demo {
                 dmg_victim_class.push(msg.victim_class.unwrap_or(0));
             }
 
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), dmg_tick),
                 Column::new("damage".into(), dmg_damage),
                 Column::new("pre_damage".into(), dmg_pre_damage),
@@ -2078,7 +1992,7 @@ impl Demo {
         }
 
         if load_abilities {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), ability_ticks),
                 Column::new("hero_id".into(), ability_hero_ids),
                 Column::new("ability".into(), ability_names),
@@ -2088,7 +2002,7 @@ impl Demo {
         }
 
         if load_flex_slots {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), flex_ticks),
                 Column::new("team_num".into(), flex_team_nums),
             ])
@@ -2097,7 +2011,7 @@ impl Demo {
         }
 
         if load_respawns {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), respawn_ticks),
                 Column::new("hero_id".into(), respawn_hero_ids),
             ])
@@ -2106,7 +2020,7 @@ impl Demo {
         }
 
         if load_purchases {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), purchase_ticks),
                 Column::new("hero_id".into(), purchase_hero_ids),
                 Column::new("ability_id".into(), purchase_ability_ids),
@@ -2119,7 +2033,7 @@ impl Demo {
         }
 
         if load_ability_upgrades {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), au_ticks),
                 Column::new("hero_id".into(), au_hero_ids),
                 Column::new("ability_id".into(), au_ability_ids),
@@ -2131,7 +2045,7 @@ impl Demo {
         }
 
         if load_shop_events {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), se_ticks),
                 Column::new("hero_id".into(), se_hero_ids),
                 Column::new("ability_id".into(), se_ability_ids),
@@ -2143,7 +2057,7 @@ impl Demo {
         }
 
         if load_chat {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), chat_ticks),
                 Column::new("hero_id".into(), chat_hero_ids),
                 Column::new("text".into(), chat_texts),
@@ -2154,7 +2068,7 @@ impl Demo {
         }
 
         if load_objectives {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), obj_tick),
                 Column::new("objective_type".into(), obj_type),
                 Column::new("team_num".into(), obj_team_num),
@@ -2167,20 +2081,19 @@ impl Demo {
         }
 
         if load_boss_kills {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), bk_ticks),
                 Column::new("objective_team".into(), bk_objective_teams),
                 Column::new("objective_id".into(), bk_objective_ids),
                 Column::new("entity_class".into(), bk_entity_classes),
                 Column::new("gametime".into(), bk_gametimes),
-                Column::new("bosses_remaining".into(), bk_bosses_remaining),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_boss_kills = Some(df);
         }
 
         if load_mid_boss {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), mb_ticks),
                 Column::new("hero_id".into(), mb_hero_ids),
                 Column::new("team_num".into(), mb_team_nums),
@@ -2191,7 +2104,7 @@ impl Demo {
         }
 
         if load_troopers {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), tr_tick),
                 Column::new("trooper_type".into(), tr_type),
                 Column::new("team_num".into(), tr_team_num),
@@ -2207,7 +2120,7 @@ impl Demo {
         }
 
         if load_neutrals {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), nt_tick),
                 Column::new("neutral_type".into(), nt_type),
                 Column::new("team_num".into(), nt_team_num),
@@ -2222,7 +2135,7 @@ impl Demo {
         }
 
         if load_stat_modifiers {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), sm_tick),
                 Column::new("hero_id".into(), sm_hero_id),
                 Column::new("health".into(), sm_health),
@@ -2237,10 +2150,12 @@ impl Demo {
         }
 
         if load_active_modifiers {
-            let df = DataFrame::new(vec![
+            let df = df_from_columns(vec![
                 Column::new("tick".into(), am_tick),
                 Column::new("hero_id".into(), am_hero_id),
                 Column::new("event".into(), am_event),
+                Column::new("modifier_id".into(), am_modifier_id),
+                Column::new("ability_id".into(), am_ability_id),
                 Column::new("modifier".into(), am_modifier),
                 Column::new("ability".into(), am_ability),
                 Column::new("duration".into(), am_duration),
@@ -2256,7 +2171,7 @@ impl Demo {
 
     /// Per-tick, per-player state as a Polars DataFrame.
     ///
-    /// Returns a DataFrame with 50 columns covering position, health, combat
+    /// Returns a DataFrame with 48 columns covering position, health, combat
     /// timers, kills, deaths, net worth, and more for every player at every tick.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
@@ -2431,7 +2346,7 @@ impl Demo {
     /// Objective destruction events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``objective_team``, ``objective_id``, ``entity_class``,
-    /// ``gametime``, ``bosses_remaining``.
+    /// ``gametime``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn boss_kills(&mut self) -> PyResult<PyDataFrame> {
@@ -2530,21 +2445,6 @@ impl Demo {
         Ok(self.game_over.map(|(_, tick)| tick))
     }
 
-    /// The name of the winning team.
-    ///
-    /// Scans for the ``k_EUserMsg_GameOver`` event on first access.
-    /// Returns ``None`` if no game over event was found.
-    #[getter]
-    fn winning_team(&mut self) -> PyResult<Option<String>> {
-        self.ensure_always_events_scanned()?;
-        Ok(self.game_over.map(|(team, _)| match team {
-            1 => "Spectator".to_string(),
-            2 => "Hidden King".to_string(),
-            3 => "Archmother".to_string(),
-            _ => "TEAM_NOT_FOUND".to_string(),
-        }))
-    }
-
     /// List of banned hero IDs.
     ///
     /// Scans for the ``k_EUserMsg_BannedHeroes`` event on first access.
@@ -2553,24 +2453,6 @@ impl Demo {
     fn banned_hero_ids(&mut self) -> PyResult<Vec<u32>> {
         self.ensure_always_events_scanned()?;
         Ok(self.banned_hero_ids.clone().unwrap_or_default())
-    }
-
-    /// List of banned hero names.
-    ///
-    /// Scans for the ``k_EUserMsg_BannedHeroes`` event on first access.
-    /// Returns an empty list if no banned heroes event was found.
-    #[getter]
-    fn banned_heroes(&mut self) -> PyResult<Vec<String>> {
-        self.ensure_always_events_scanned()?;
-        Ok(self
-            .banned_hero_ids
-            .as_ref()
-            .map(|ids| {
-                ids.iter()
-                    .map(|&id| hero_name(id as i64).to_string())
-                    .collect()
-            })
-            .unwrap_or_default())
     }
 
     fn __repr__(&self) -> String {
@@ -2659,10 +2541,62 @@ impl Demo {
     }
 }
 
+/// Return a mapping of hero ID to hero name.
+///
+/// Returns:
+///     A dict mapping hero IDs (int) to hero names (str).
+#[pyfunction]
+fn hero_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_heroes()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
+/// Return a mapping of team number to team name.
+///
+/// Returns:
+///     A dict mapping team numbers (int) to team names (str).
+#[pyfunction]
+fn team_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_teams()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
+/// Return a mapping of ability hash ID to ability name.
+///
+/// Returns:
+///     A dict mapping MurmurHash2 ability IDs (int) to ability names (str).
+#[pyfunction]
+fn ability_names() -> HashMap<u32, &'static str> {
+    boon_parser::all_abilities()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
+/// Return a mapping of modifier hash ID to modifier name.
+///
+/// Returns:
+///     A dict mapping MurmurHash2 modifier IDs (int) to modifier names (str).
+#[pyfunction]
+fn modifier_names() -> HashMap<u32, &'static str> {
+    boon_parser::all_modifiers()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
 /// Python bindings for the boon Deadlock demo parser.
 #[pymodule]
 fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Demo>()?;
+    m.add_function(wrap_pyfunction!(hero_names, m)?)?;
+    m.add_function(wrap_pyfunction!(team_names, m)?)?;
+    m.add_function(wrap_pyfunction!(ability_names, m)?)?;
+    m.add_function(wrap_pyfunction!(modifier_names, m)?)?;
     m.add("InvalidDemoError", m.py().get_type::<InvalidDemoError>())?;
     m.add("DemoHeaderError", m.py().get_type::<DemoHeaderError>())?;
     m.add("DemoInfoError", m.py().get_type::<DemoInfoError>())?;

@@ -1,7 +1,7 @@
 [workspace]
 exclude = [
   "scripts/build-protos",
-  "scripts/compute-abilities-hash-table",
+  "scripts/generate-name-tables",
 ]
 members = [
   "crates/boon",

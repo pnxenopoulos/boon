@@ -24,7 +24,6 @@ struct BossKillOutput {
     objective_id: i32,
     entity_class: String,
     gametime: f32,
-    bosses_remaining: i32,
 }
 
 #[derive(Serialize)]
@@ -63,7 +62,6 @@ pub fn run(
                 objective_id: msg.objective_mask_change.unwrap_or(0),
                 entity_class: entity_class_name(class_id).to_string(),
                 gametime: msg.gametime.unwrap_or(0.0),
-                bosses_remaining: msg.bosses_remaining.unwrap_or(0),
             });
         }
     }
@@ -131,25 +129,23 @@ pub fn run(
         }
 
         println!(
-            "{:<8} {:>6} {:>6} {:<24} {:>10} {:>10}",
+            "{:<8} {:>6} {:>6} {:<24} {:>10}",
             "Tick".bold(),
             "Team".bold(),
             "ObjID".bold(),
             "Class".bold(),
-            "GameTime".bold(),
-            "Remaining".bold()
+            "GameTime".bold()
         );
-        println!("{}", "-".repeat(72));
+        println!("{}", "-".repeat(60));
 
         for k in kills.iter().take(limit) {
             println!(
-                "{:<8} {:>6} {:>6} {:<24} {:>10.1} {:>10}",
+                "{:<8} {:>6} {:>6} {:<24} {:>10.1}",
                 k.tick,
                 k.objective_team,
                 k.objective_id,
                 k.entity_class.green(),
-                k.gametime,
-                k.bosses_remaining
+                k.gametime
             );
         }
 

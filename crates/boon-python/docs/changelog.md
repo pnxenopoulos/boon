@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### boon-python (breaking)
+
+- **Breaking:** Removed `hero` and `team` string columns from `players` DataFrame. Use `hero_names()` and `team_names()` to resolve IDs to names.
+- **Breaking:** Removed `teams` DataFrame property. Use `team_names()` module-level function instead.
+- **Breaking:** Removed `winning_team` property. Use `winning_team_num` with `team_names()`.
+- **Breaking:** Removed `banned_heroes` property. Use `banned_hero_ids` with `hero_names()`.
+- **Breaking:** Moved `Demo.hero_names()` and `Demo.team_names()` from static methods to module-level functions `hero_names()` and `team_names()`. Import directly from `boon`.
+- Added `hero_names()` module-level function returning `dict[int, str]` of hero ID to name.
+- Added `team_names()` module-level function returning `dict[int, str]` of team number to name.
+- Added `ability_names()` module-level function returning `dict[int, str]` of ability hash ID to name.
+- Added `modifier_names()` module-level function returning `dict[int, str]` of modifier hash ID to name.
+- Added `modifier_id` and `ability_id` columns to `active_modifiers` DataFrame (raw `u32` hash values).
+
 ### boon-cli
 
 - `ability-upgrades` command for tracking hero ability point spending (skill tier upgrades).
@@ -12,6 +25,8 @@
 - `mid-boss` command for mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire).
 - `troopers` command for per-tick alive lane trooper state (position, health, lane).
 - `neutrals` command for neutral creep state changes with change detection.
+- `stat-modifiers` command for per-player cumulative permanent stat bonuses.
+- `active-modifiers` command for active buff/debuff modifier events.
 - All new commands support `--filter`, `--summary`, `--limit`, and `--json` flags.
 
 ### boon-python
@@ -24,6 +39,8 @@
 - `Demo.mid_boss` property for mid boss lifecycle events.
 - `Demo.troopers` property for per-tick alive lane trooper state (opt-in, large dataset).
 - `Demo.neutrals` property for neutral creep state changes with change detection (opt-in).
+- `Demo.stat_modifiers` property for per-player cumulative permanent stat bonuses (opt-in).
+- `Demo.active_modifiers` property for active buff/debuff modifier events (opt-in).
 - All new datasets are lazy-loaded on first access and can be batch-loaded via `load()`.
 
 ---
@@ -49,7 +66,7 @@
 - `Demo` class with metadata properties: `path`, `total_ticks`, `total_seconds`,
   `total_clock_time`, `build`, `map_name`, `match_id`, `tick_rate`.
 - `Demo.players` property returning a Polars DataFrame of player info.
-- `Demo.player_ticks` property returning per-tick, per-player state (50 columns).
+- `Demo.player_ticks` property returning per-tick, per-player state (48 columns).
 - `Demo.world_ticks` property returning per-tick world state.
 - Custom exceptions: `InvalidDemoError`, `DemoHeaderError`, `DemoInfoError`,
   `DemoMessageError`.

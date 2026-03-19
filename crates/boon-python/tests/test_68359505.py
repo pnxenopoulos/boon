@@ -57,9 +57,6 @@ class TestMatchMetadata:
 
 
 class TestGameResult:
-    def test_winning_team(self, demo: Demo) -> None:
-        assert demo.winning_team == "Hidden King"
-
     def test_winning_team_num(self, demo: Demo) -> None:
         assert demo.winning_team_num == 2
 
@@ -68,7 +65,6 @@ class TestGameResult:
 
     def test_no_bans(self, demo: Demo) -> None:
         assert demo.banned_hero_ids == []
-        assert demo.banned_heroes == []
 
 
 # ===================================================================
@@ -77,29 +73,24 @@ class TestGameResult:
 
 
 EXPECTED_PLAYERS = [
-    {"hero_id": 20, "hero": "Ivy", "team_num": 2, "start_lane": 6},
-    {"hero_id": 27, "hero": "Yamato", "team_num": 2, "start_lane": 6},
-    {"hero_id": 19, "hero": "Shiv", "team_num": 3, "start_lane": 4},
-    {"hero_id": 81, "hero": "Celeste", "team_num": 2, "start_lane": 1},
-    {"hero_id": 16, "hero": "Calico", "team_num": 2, "start_lane": 4},
-    {"hero_id": 79, "hero": "Rem", "team_num": 3, "start_lane": 4},
-    {"hero_id": 25, "hero": "Warden", "team_num": 2, "start_lane": 4},
-    {"hero_id": 12, "hero": "Kelvin", "team_num": 2, "start_lane": 1},
-    {"hero_id": 76, "hero": "Graves", "team_num": 3, "start_lane": 6},
-    {"hero_id": 18, "hero": "Mo and Krill", "team_num": 3, "start_lane": 1},
-    {"hero_id": 64, "hero": "Drifter", "team_num": 3, "start_lane": 6},
-    {"hero_id": 17, "hero": "Grey Talon", "team_num": 3, "start_lane": 1},
+    {"hero_id": 20, "team_num": 2, "start_lane": 6},
+    {"hero_id": 27, "team_num": 2, "start_lane": 6},
+    {"hero_id": 19, "team_num": 3, "start_lane": 4},
+    {"hero_id": 81, "team_num": 2, "start_lane": 1},
+    {"hero_id": 16, "team_num": 2, "start_lane": 4},
+    {"hero_id": 79, "team_num": 3, "start_lane": 4},
+    {"hero_id": 25, "team_num": 2, "start_lane": 4},
+    {"hero_id": 12, "team_num": 2, "start_lane": 1},
+    {"hero_id": 76, "team_num": 3, "start_lane": 6},
+    {"hero_id": 18, "team_num": 3, "start_lane": 1},
+    {"hero_id": 64, "team_num": 3, "start_lane": 6},
+    {"hero_id": 17, "team_num": 3, "start_lane": 1},
 ]
 
 
 class TestPlayers:
     def test_player_count(self, demo: Demo) -> None:
         assert demo.players.shape[0] == 12
-
-    def test_hero_roster(self, demo: Demo) -> None:
-        heroes = sorted(demo.players["hero"].to_list())
-        expected = sorted(p["hero"] for p in EXPECTED_PLAYERS)
-        assert heroes == expected
 
     def test_hero_ids(self, demo: Demo) -> None:
         hero_ids = set(demo.players["hero_id"].to_list())
@@ -119,12 +110,6 @@ class TestPlayers:
             row = players.filter(pl.col("hero_id") == expected["hero_id"])
             assert row.shape[0] == 1, f"hero_id {expected['hero_id']} not found"
             assert row["start_lane"][0] == expected["start_lane"]
-
-    def test_teams(self, demo: Demo) -> None:
-        teams = demo.teams.sort("team_num")
-        assert teams.shape[0] == 3
-        names = teams["team_name"].to_list()
-        assert names == ["Spectator", "Hidden King", "Archmother"]
 
 
 # ===================================================================
