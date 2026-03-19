@@ -105,8 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Space-separated list of public URLs for demo fixture files.
-      # TODO: Replace with real demo file URLs once hosted.
-      DEMO_URLS: ""
+      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/68359505/68359505.dem"
 
     steps:
       - name: Checkout

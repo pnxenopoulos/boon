@@ -25,3 +25,11 @@ def demo_paths() -> list[Path]:
 def demo(request: pytest.FixtureRequest) -> Demo:
     """Yield a Demo instance for each fixture file."""
     return Demo(str(request.param))
+
+
+def _require_demo_fixture() -> Path:
+    """Return the first fixture path, or skip the test if none available."""
+    dems = _demo_files()
+    if not dems:
+        pytest.skip("No demo fixtures available")
+    return dems[0]

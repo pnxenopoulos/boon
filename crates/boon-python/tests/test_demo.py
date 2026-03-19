@@ -8,7 +8,11 @@ import polars as pl
 import pytest
 from boon import Demo, InvalidDemoError
 
-# ── Expected columns per dataset ──
+from conftest import _require_demo_fixture
+
+# ---------------------------------------------------------------------------
+# Expected columns per dataset
+# ---------------------------------------------------------------------------
 
 PLAYER_TICKS_COLUMNS = {
     "tick", "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
@@ -42,12 +46,52 @@ RESPAWNS_COLUMNS = {"tick", "hero_id"}
 
 PURCHASES_COLUMNS = {"tick", "hero_id", "ability_id", "ability", "sell", "quickbuy"}
 
+ABILITIES_COLUMNS = {"tick", "hero_id", "ability"}
+
+ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "ability", "upgrade_bits"}
+
+SHOP_EVENTS_COLUMNS = {"tick", "hero_id", "ability_id", "ability", "change"}
+
+CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
+
+OBJECTIVES_COLUMNS = {
+    "tick", "objective_type", "team_num", "lane", "health", "max_health",
+}
+
+BOSS_KILLS_COLUMNS = {
+    "tick", "objective_team", "objective_id", "entity_class",
+    "gametime", "bosses_remaining",
+}
+
+MID_BOSS_COLUMNS = {"tick", "hero_id", "team_num", "event"}
+
+TROOPERS_COLUMNS = {
+    "tick", "trooper_type", "team_num", "lane", "health", "max_health",
+    "x", "y", "z",
+}
+
+NEUTRALS_COLUMNS = {
+    "tick", "neutral_type", "team_num", "health", "max_health",
+    "x", "y", "z",
+}
+
+STAT_MODIFIERS_COLUMNS = {
+    "tick", "hero_id", "health", "spirit_power", "fire_rate",
+    "weapon_damage", "cooldown_reduction", "ammo",
+}
+
+ACTIVE_MODIFIERS_COLUMNS = {
+    "tick", "hero_id", "event", "modifier", "ability",
+    "duration", "caster_hero_id", "stacks",
+}
+
 PLAYERS_COLUMNS = {
     "player_name", "steam_id", "hero", "hero_id", "team", "team_num", "start_lane",
 }
 
 TEAMS_COLUMNS = {"team_num", "team_name"}
 
+# Maps dataset name -> expected column set for parameterized tests.
 DATASET_COLUMNS = {
     "player_ticks": PLAYER_TICKS_COLUMNS,
     "world_ticks": WORLD_TICKS_COLUMNS,
@@ -56,128 +100,231 @@ DATASET_COLUMNS = {
     "flex_slots": FLEX_SLOTS_COLUMNS,
     "respawns": RESPAWNS_COLUMNS,
     "purchases": PURCHASES_COLUMNS,
+    "abilities": ABILITIES_COLUMNS,
+    "ability_upgrades": ABILITY_UPGRADES_COLUMNS,
+    "shop_events": SHOP_EVENTS_COLUMNS,
+    "chat": CHAT_COLUMNS,
+    "objectives": OBJECTIVES_COLUMNS,
+    "boss_kills": BOSS_KILLS_COLUMNS,
+    "mid_boss": MID_BOSS_COLUMNS,
+    "troopers": TROOPERS_COLUMNS,
+    "neutrals": NEUTRALS_COLUMNS,
+    "stat_modifiers": STAT_MODIFIERS_COLUMNS,
+    "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
 }
 
 ALL_DATASETS = list(DATASET_COLUMNS.keys())
 
 
-# ── Metadata tests ──
+# ===================================================================
+# Metadata
+# ===================================================================
 
 
-def test_total_ticks_positive(demo: Demo) -> None:
-    assert demo.total_ticks > 0
+class TestMetadata:
+    """Tests for scalar metadata properties."""
+
+    def test_total_ticks_positive(self, demo: Demo) -> None:
+        assert demo.total_ticks > 0
+
+    def test_map_name_nonempty(self, demo: Demo) -> None:
+        assert isinstance(demo.map_name, str)
+        assert len(demo.map_name) > 0
+
+    def test_match_id_positive(self, demo: Demo) -> None:
+        assert demo.match_id > 0
+
+    def test_tick_rate_positive(self, demo: Demo) -> None:
+        assert demo.tick_rate > 0
+
+    def test_total_seconds_positive(self, demo: Demo) -> None:
+        assert demo.total_seconds > 0
+
+    def test_total_clock_time_format(self, demo: Demo) -> None:
+        assert re.match(r"\d+:\d{2}", demo.total_clock_time)
+
+    def test_build_positive(self, demo: Demo) -> None:
+        assert demo.build > 0
+
+    def test_path_is_pathlib(self, demo: Demo) -> None:
+        assert isinstance(demo.path, Path)
+
+    def test_verify(self, demo: Demo) -> None:
+        assert demo.verify() is True
 
 
-def test_map_name_nonempty(demo: Demo) -> None:
-    assert isinstance(demo.map_name, str)
-    assert len(demo.map_name) > 0
+# ===================================================================
+# Game result
+# ===================================================================
 
 
-def test_match_id_positive(demo: Demo) -> None:
-    assert demo.match_id > 0
+class TestGameResult:
+    """Tests for game result properties (winning team, banned heroes)."""
+
+    def test_winning_team_is_string_or_none(self, demo: Demo) -> None:
+        result = demo.winning_team
+        assert result is None or isinstance(result, str)
+
+    def test_winning_team_num_is_int_or_none(self, demo: Demo) -> None:
+        result = demo.winning_team_num
+        assert result is None or isinstance(result, int)
+
+    def test_game_over_tick_is_int_or_none(self, demo: Demo) -> None:
+        result = demo.game_over_tick
+        assert result is None or isinstance(result, int)
+
+    def test_game_over_tick_within_range(self, demo: Demo) -> None:
+        tick = demo.game_over_tick
+        if tick is not None:
+            assert 0 < tick <= demo.total_ticks
+
+    def test_banned_hero_ids_is_list(self, demo: Demo) -> None:
+        result = demo.banned_hero_ids
+        assert isinstance(result, list)
+
+    def test_banned_heroes_is_list_of_strings(self, demo: Demo) -> None:
+        result = demo.banned_heroes
+        assert isinstance(result, list)
+        for name in result:
+            assert isinstance(name, str)
 
 
-def test_tick_rate(demo: Demo) -> None:
-    assert demo.tick_rate > 0
+# ===================================================================
+# Players and teams
+# ===================================================================
 
 
-def test_total_seconds(demo: Demo) -> None:
-    assert demo.total_seconds > 0
+class TestPlayersAndTeams:
+    """Tests for player and team DataFrames."""
+
+    def test_players_shape(self, demo: Demo) -> None:
+        players = demo.players
+        assert players.shape[0] == 12
+        assert players.shape[1] == len(PLAYERS_COLUMNS)
+
+    def test_players_columns(self, demo: Demo) -> None:
+        assert set(demo.players.columns) == PLAYERS_COLUMNS
+
+    def test_players_hero_ids_unique(self, demo: Demo) -> None:
+        hero_ids = demo.players["hero_id"].to_list()
+        assert len(hero_ids) == len(set(hero_ids))
+
+    def test_players_steam_ids_nonzero(self, demo: Demo) -> None:
+        steam_ids = demo.players["steam_id"].to_list()
+        assert all(sid > 0 for sid in steam_ids)
+
+    def test_players_teams_valid(self, demo: Demo) -> None:
+        teams = demo.players["team"].to_list()
+        for t in teams:
+            assert t in ("Archmother", "Hidden King", "Spectator")
+
+    def test_teams_shape(self, demo: Demo) -> None:
+        teams = demo.teams
+        assert teams.shape[0] > 0
+        assert set(teams.columns) == TEAMS_COLUMNS
 
 
-def test_total_clock_time_format(demo: Demo) -> None:
-    assert re.match(r"\d+:\d{2}", demo.total_clock_time)
+# ===================================================================
+# Datasets (parameterized)
+# ===================================================================
 
 
-def test_build_positive(demo: Demo) -> None:
-    assert demo.build > 0
+class TestDatasets:
+    """Parameterized tests for all dataset properties."""
+
+    @pytest.mark.parametrize("dataset", ALL_DATASETS)
+    def test_loads_as_dataframe(self, demo: Demo, dataset: str) -> None:
+        df = getattr(demo, dataset)
+        assert isinstance(df, pl.DataFrame)
+
+    @pytest.mark.parametrize("dataset", ALL_DATASETS)
+    def test_nonempty(self, demo: Demo, dataset: str) -> None:
+        df = getattr(demo, dataset)
+        assert len(df) > 0
+
+    @pytest.mark.parametrize("dataset", ALL_DATASETS)
+    def test_columns(self, demo: Demo, dataset: str) -> None:
+        df = getattr(demo, dataset)
+        assert set(df.columns) == DATASET_COLUMNS[dataset]
+
+    @pytest.mark.parametrize("dataset", ALL_DATASETS)
+    def test_tick_column_nonnegative(self, demo: Demo, dataset: str) -> None:
+        df = getattr(demo, dataset)
+        if "tick" in df.columns:
+            assert df["tick"].min() >= 0  # type: ignore[operator]
 
 
-# ── Player / team tests ──
+# ===================================================================
+# Tick conversion
+# ===================================================================
 
 
-def test_players_shape(demo: Demo) -> None:
-    players = demo.players
-    assert players.shape[0] == 12
-    assert players.shape[1] == 7
+class TestTickConversion:
+    """Tests for tick_to_seconds and tick_to_clock_time."""
+
+    def test_tick_to_seconds_type(self, demo: Demo) -> None:
+        assert isinstance(demo.tick_to_seconds(100), float)
+
+    def test_tick_to_seconds_monotonic(self, demo: Demo) -> None:
+        t1 = demo.tick_to_seconds(100)
+        t2 = demo.tick_to_seconds(200)
+        assert t2 > t1
+
+    def test_tick_to_seconds_zero(self, demo: Demo) -> None:
+        assert demo.tick_to_seconds(0) == 0.0
+
+    def test_tick_to_clock_time_type(self, demo: Demo) -> None:
+        assert isinstance(demo.tick_to_clock_time(100), str)
+
+    def test_tick_to_clock_time_format(self, demo: Demo) -> None:
+        result = demo.tick_to_clock_time(100)
+        assert re.match(r"\d+:\d{2}", result)
 
 
-def test_players_columns(demo: Demo) -> None:
-    players = demo.players
-    assert set(players.columns) == PLAYERS_COLUMNS
+# ===================================================================
+# Bulk loading
+# ===================================================================
 
 
-def test_teams_shape(demo: Demo) -> None:
-    teams = demo.teams
-    assert teams.shape[0] > 0
-    assert set(teams.columns) == TEAMS_COLUMNS
+class TestBulkLoad:
+    """Tests for the load() method."""
+
+    def test_load_multiple_datasets(self, demo: Demo) -> None:
+        demo.load("kills", "damage")
+        assert isinstance(demo.kills, pl.DataFrame)
+        assert isinstance(demo.damage, pl.DataFrame)
+
+    def test_load_invalid_dataset_raises(self) -> None:
+        path = _require_demo_fixture()
+        d = Demo(str(path))
+        with pytest.raises(ValueError):
+            d.load("not_a_real_dataset")
+
+    def test_load_idempotent(self, demo: Demo) -> None:
+        """Loading the same dataset twice should not error."""
+        demo.load("kills")
+        demo.load("kills")
+        assert isinstance(demo.kills, pl.DataFrame)
 
 
-# ── Dataset tests (parametrized over all 7 datasets) ──
+# ===================================================================
+# Error handling (no demo fixture needed)
+# ===================================================================
 
 
-@pytest.mark.parametrize("dataset", ALL_DATASETS)
-def test_dataset_loads(demo: Demo, dataset: str) -> None:
-    df = getattr(demo, dataset)
-    assert isinstance(df, pl.DataFrame)
+class TestErrors:
+    """Tests for error handling with invalid inputs."""
 
+    def test_file_not_found(self) -> None:
+        with pytest.raises(FileNotFoundError):
+            Demo("/nonexistent/path/to/demo.dem")
 
-@pytest.mark.parametrize("dataset", ALL_DATASETS)
-def test_dataset_nonempty(demo: Demo, dataset: str) -> None:
-    df = getattr(demo, dataset)
-    assert len(df) > 0
+    def test_invalid_demo(self) -> None:
+        with tempfile.NamedTemporaryFile(suffix=".dem", delete=False) as f:
+            f.write(b"\x00" * 128)
+            f.flush()
+            with pytest.raises(InvalidDemoError):
+                Demo(f.name)
 
-
-@pytest.mark.parametrize("dataset", ALL_DATASETS)
-def test_dataset_columns(demo: Demo, dataset: str) -> None:
-    df = getattr(demo, dataset)
-    assert set(df.columns) == DATASET_COLUMNS[dataset]
-
-
-# ── Functional tests ──
-
-
-def test_tick_to_seconds(demo: Demo) -> None:
-    t1 = demo.tick_to_seconds(100)
-    t2 = demo.tick_to_seconds(200)
-    assert isinstance(t1, float)
-    assert t2 > t1
-
-
-def test_tick_to_clock_time(demo: Demo) -> None:
-    result = demo.tick_to_clock_time(100)
-    assert isinstance(result, str)
-    assert re.match(r"\d+:\d{2}", result)
-
-
-def test_verify(demo: Demo) -> None:
-    assert demo.verify() is True
-
-
-# ── Error handling tests (no demo fixture needed) ──
-
-
-def test_file_not_found() -> None:
-    with pytest.raises(FileNotFoundError):
-        Demo("/nonexistent/path/to/demo.dem")
-
-
-def test_invalid_demo() -> None:
-    with tempfile.NamedTemporaryFile(suffix=".dem", delete=False) as f:
-        f.write(b"\x00" * 128)
-        f.flush()
-        with pytest.raises(InvalidDemoError):
-            Demo(f.name)
-
-
-def test_load_invalid_dataset() -> None:
-    """Calling load() with a bogus dataset name should raise ValueError."""
-    # We need a real Demo instance for this, but the test is about the
-    # validation before any parsing happens. If no fixtures exist, skip.
-    fixtures_dir = Path(__file__).parent / "fixtures"
-    dems = sorted(fixtures_dir.glob("*.dem")) if fixtures_dir.is_dir() else []
-    if not dems:
-        pytest.skip("No demo fixtures available")
-    demo = Demo(str(dems[0]))
-    with pytest.raises(ValueError):
-        demo.load("not_a_real_dataset")
+    def test_all_error_types_importable(self) -> None:
+        from boon import DemoHeaderError, DemoInfoError, DemoMessageError, InvalidDemoError  # noqa: F401
