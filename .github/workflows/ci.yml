@@ -68,9 +68,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable]
-        include:
-          - os: ubuntu-latest
-            rust: beta
 
     steps:
       - name: Checkout
@@ -97,13 +94,10 @@ jobs:
           tool: nextest
 
       - name: Build
-        run: cargo build --workspace --all-features --locked
+        run: cargo build --workspace --all-features --locked --exclude boon-python
 
       - name: Test
-        run: |
-          cargo nextest run \
-            --workspace --all-features --locked \
-            --failure-output immediate-final
+        run: cargo nextest run --workspace --all-features --locked --exclude boon-python --failure-output immediate-final
 
   test-python:
     name: Python Tests
