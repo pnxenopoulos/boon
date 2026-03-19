@@ -11,7 +11,7 @@ import polars as pl
 import pytest
 from boon import Demo
 
-from conftest import FIXTURES_DIR
+from conftest import ALL_DATASETS, FIXTURES_DIR
 
 FIXTURE_PATH = FIXTURES_DIR / "68359505.dem"
 
@@ -20,7 +20,9 @@ FIXTURE_PATH = FIXTURES_DIR / "68359505.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("68359505.dem fixture not available")
-    return Demo(str(FIXTURE_PATH))
+    d = Demo(str(FIXTURE_PATH))
+    d.load(*ALL_DATASETS)
+    return d
 
 
 # ===================================================================

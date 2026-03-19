@@ -7,6 +7,27 @@ from boon import Demo
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
+ALL_DATASETS = [
+    "abilities",
+    "ability_upgrades",
+    "active_modifiers",
+    "boss_kills",
+    "chat",
+    "damage",
+    "flex_slots",
+    "kills",
+    "mid_boss",
+    "neutrals",
+    "objectives",
+    "player_ticks",
+    "purchases",
+    "respawns",
+    "shop_events",
+    "stat_modifiers",
+    "troopers",
+    "world_ticks",
+]
+
 
 def _demo_files() -> list[Path]:
     """Return all .dem files in the fixtures directory."""
@@ -23,8 +44,14 @@ def demo_paths() -> list[Path]:
 
 @pytest.fixture(scope="session", params=_demo_files(), ids=lambda p: p.name)
 def demo(request: pytest.FixtureRequest) -> Demo:
-    """Yield a Demo instance for each fixture file."""
-    return Demo(str(request.param))
+    """Yield a fully-loaded Demo instance for each fixture file.
+
+    All datasets are loaded eagerly in a single parse pass so that
+    individual tests only check cached DataFrames.
+    """
+    d = Demo(str(request.param))
+    d.load(*ALL_DATASETS)
+    return d
 
 
 def _require_demo_fixture() -> Path:
