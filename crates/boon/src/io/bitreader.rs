@@ -93,7 +93,8 @@ impl<'a> BitReader<'a> {
         if remaining_bytes >= 8 {
             buf.copy_from_slice(&self.data[byte_pos..byte_pos + 8]);
         } else {
-            buf[..remaining_bytes].copy_from_slice(&self.data[byte_pos..byte_pos + remaining_bytes]);
+            buf[..remaining_bytes]
+                .copy_from_slice(&self.data[byte_pos..byte_pos + remaining_bytes]);
         }
         let raw = u64::from_le_bytes(buf);
         (raw >> bit_offset) & mask(n)

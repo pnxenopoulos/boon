@@ -478,8 +478,8 @@ pub fn parse_type(s: &str) -> FieldType {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::field_decoder::{Decoder, FieldMetadata};
+    use super::*;
 
     // ── parse_type ──
 
@@ -598,10 +598,7 @@ mod tests {
     fn field_name_roundtrip() {
         let ser = Serializer {
             name: "test".to_string(),
-            fields: vec![
-                make_field("m_iHealth", None),
-                make_field("m_iMana", None),
-            ],
+            fields: vec![make_field("m_iHealth", None), make_field("m_iMana", None)],
         };
         let key = ser.resolve_field_key("m_iMana").unwrap();
         let name = ser.field_name_for_key(key).unwrap();

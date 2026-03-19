@@ -10,17 +10,18 @@ use std::path::Path;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let path = args.get(1).expect("usage: entities <demo.dem> [tick]");
-    let target_tick: i32 = args
-        .get(2)
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(1000);
+    let target_tick: i32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1000);
 
     let parser = boon::Parser::from_file(Path::new(path)).expect("failed to open demo");
     let ctx = parser
         .parse_to_tick(target_tick)
         .expect("failed to parse to tick");
 
-    println!("Parsed to tick {}  ({} active entities)", ctx.tick, ctx.entities.len());
+    println!(
+        "Parsed to tick {}  ({} active entities)",
+        ctx.tick,
+        ctx.entities.len()
+    );
     println!();
 
     // Find all CCitadelPlayerPawn entities
@@ -63,10 +64,7 @@ fn main() {
         );
 
         // Show first ability slot as an example of ability_name() lookup
-        let ability_field = entity.get_by_name(
-            "m_vecAbilities.0000",
-            ser,
-        );
+        let ability_field = entity.get_by_name("m_vecAbilities.0000", ser);
         if let Some(boon::FieldValue::U32(ability_id)) = ability_field {
             let name = boon::ability_name(*ability_id);
             println!("    ability[0]: {} (id={})", name, ability_id);

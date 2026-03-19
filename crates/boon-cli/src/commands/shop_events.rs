@@ -91,10 +91,9 @@ pub fn run(
             // Collect AbilitiesChanged events (msg_type 309)
             for event in events {
                 if event.msg_type == 309
-                    && let Ok(msg) =
-                        boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
-                            event.payload.as_slice(),
-                        )
+                    && let Ok(msg) = boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
+                        event.payload.as_slice(),
+                    )
                 {
                     let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
                     let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);

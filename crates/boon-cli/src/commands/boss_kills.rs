@@ -45,15 +45,16 @@ pub fn run(
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
 
-    let events = parser.events(None).with_context(|| "failed to parse demo")?;
+    let events = parser
+        .events(None)
+        .with_context(|| "failed to parse demo")?;
 
     let mut kills: Vec<BossKillOutput> = Vec::new();
 
     for event in &events {
         if event.msg_type == 347
-            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBossKilled::decode(
-                event.payload.as_slice(),
-            )
+            && let Ok(msg) =
+                boon_proto::proto::CCitadelUserMsgBossKilled::decode(event.payload.as_slice())
         {
             let class_id = msg.entity_killed_class.unwrap_or(0);
             kills.push(BossKillOutput {

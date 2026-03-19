@@ -199,7 +199,10 @@ pub fn run(
         for r in rows.iter().take(limit) {
             println!(
                 "{:<8} {:>8} {:>6} {}",
-                r.tick, r.hero_id, r.team_num, r.event.green()
+                r.tick,
+                r.hero_id,
+                r.team_num,
+                r.event.green()
             );
         }
 

@@ -75,9 +75,7 @@ pub fn run(
             for event in events {
                 if event.msg_type == 314
                     && let Ok(msg) =
-                        boon_proto::proto::CCitadelUserMsgChatMsg::decode(
-                            event.payload.as_slice(),
-                        )
+                        boon_proto::proto::CCitadelUserMsgChatMsg::decode(event.payload.as_slice())
                 {
                     let player_slot = msg.player_slot.unwrap_or(-1);
                     let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
@@ -175,7 +173,10 @@ pub fn run(
         for m in messages.iter().take(limit) {
             println!(
                 "{:<8} {:>8} {:<6} {}",
-                m.tick, m.hero_id, m.chat_type, m.text.green()
+                m.tick,
+                m.hero_id,
+                m.chat_type,
+                m.text.green()
             );
         }
 

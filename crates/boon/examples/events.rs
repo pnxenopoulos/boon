@@ -17,10 +17,10 @@ fn main() {
     let mut count = 0;
     for event in &events {
         // If a filter is given, skip events whose name doesn't contain it
-        if let Some(f) = filter {
-            if !event.name.contains(f.as_str()) {
-                continue;
-            }
+        if let Some(f) = filter
+            && !event.name.contains(f.as_str())
+        {
+            continue;
         }
 
         print!("[tick {:>6}] {}", event.tick, event.name);
@@ -47,9 +47,5 @@ fn main() {
         count += 1;
     }
 
-    eprintln!(
-        "\n{} events printed (of {} total)",
-        count,
-        events.len()
-    );
+    eprintln!("\n{} events printed (of {} total)", count, events.len());
 }

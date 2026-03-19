@@ -46,7 +46,10 @@ fn bench_run_to_end(c: &mut Criterion) {
 fn bench_run_to_end_filtered(c: &mut Criterion) {
     let path = Path::new(DEMO_PATH);
     if !path.exists() {
-        eprintln!("skipping bench_run_to_end_filtered: {} not found", DEMO_PATH);
+        eprintln!(
+            "skipping bench_run_to_end_filtered: {} not found",
+            DEMO_PATH
+        );
         return;
     }
 

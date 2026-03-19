@@ -607,12 +607,11 @@ impl Demo {
             datasets.iter().any(|s| s == "respawns") && self.cached_respawns.is_none();
         let load_purchases =
             datasets.iter().any(|s| s == "purchases") && self.cached_purchases.is_none();
-        let load_ability_upgrades =
-            datasets.iter().any(|s| s == "ability_upgrades") && self.cached_ability_upgrades.is_none();
+        let load_ability_upgrades = datasets.iter().any(|s| s == "ability_upgrades")
+            && self.cached_ability_upgrades.is_none();
         let load_shop_events =
             datasets.iter().any(|s| s == "shop_events") && self.cached_shop_events.is_none();
-        let load_chat =
-            datasets.iter().any(|s| s == "chat") && self.cached_chat.is_none();
+        let load_chat = datasets.iter().any(|s| s == "chat") && self.cached_chat.is_none();
         let load_objectives =
             datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
         let load_boss_kills =
@@ -625,8 +624,8 @@ impl Demo {
             datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
         let load_stat_modifiers =
             datasets.iter().any(|s| s == "stat_modifiers") && self.cached_stat_modifiers.is_none();
-        let load_active_modifiers =
-            datasets.iter().any(|s| s == "active_modifiers") && self.cached_active_modifiers.is_none();
+        let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
+            && self.cached_active_modifiers.is_none();
 
         if !load_abilities
             && !load_player_ticks
@@ -650,8 +649,16 @@ impl Demo {
             return Ok(());
         }
 
-        let need_events =
-            load_abilities || load_kills || load_damage || load_flex_slots || load_respawns || load_purchases || load_shop_events || load_chat || load_boss_kills || load_mid_boss;
+        let need_events = load_abilities
+            || load_kills
+            || load_damage
+            || load_flex_slots
+            || load_respawns
+            || load_purchases
+            || load_shop_events
+            || load_chat
+            || load_boss_kills
+            || load_mid_boss;
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
@@ -662,10 +669,21 @@ impl Demo {
         if load_world_ticks {
             class_names.push("CCitadelGameRulesProxy");
         }
-        if load_abilities || load_kills || load_damage || load_respawns || load_mid_boss || load_active_modifiers {
+        if load_abilities
+            || load_kills
+            || load_damage
+            || load_respawns
+            || load_mid_boss
+            || load_active_modifiers
+        {
             class_names.push("CCitadelPlayerPawn");
         }
-        if load_purchases || load_ability_upgrades || load_shop_events || load_chat || load_stat_modifiers {
+        if load_purchases
+            || load_ability_upgrades
+            || load_shop_events
+            || load_chat
+            || load_stat_modifiers
+        {
             class_names.push("CCitadelPlayerController");
         }
         if load_objectives {

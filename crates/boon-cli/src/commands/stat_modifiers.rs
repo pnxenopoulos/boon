@@ -97,8 +97,8 @@ pub fn run(
     max_tick: Option<i32>,
     json: bool,
 ) -> Result<()> {
-    let parser =
-        boon::Parser::from_file(file).with_context(|| format!("failed to open {}", file.display()))?;
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerController"].into_iter().collect();
 

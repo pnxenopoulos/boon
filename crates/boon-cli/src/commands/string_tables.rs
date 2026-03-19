@@ -19,7 +19,13 @@ struct StringTableOutput {
     entries: Option<Vec<StringTableEntryOutput>>,
 }
 
-pub fn run(file: &Path, filter: Option<String>, summary: bool, limit: Option<usize>, json: bool) -> Result<()> {
+pub fn run(
+    file: &Path,
+    filter: Option<String>,
+    summary: bool,
+    limit: Option<usize>,
+    json: bool,
+) -> Result<()> {
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
     let ctx = parser.parse_init()?;

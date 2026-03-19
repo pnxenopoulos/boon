@@ -160,10 +160,10 @@ pub fn run(
 
         let mut sorted: Vec<_> = counts.into_iter().collect();
         sorted.sort_by(|a, b| {
-            a.0 .0
-                .cmp(b.0 .0)
-                .then_with(|| a.0 .1.cmp(&b.0 .1))
-                .then_with(|| a.0 .2.cmp(&b.0 .2))
+            a.0.0
+                .cmp(b.0.0)
+                .then_with(|| a.0.1.cmp(&b.0.1))
+                .then_with(|| a.0.2.cmp(&b.0.2))
         });
 
         let limit = limit.unwrap_or(sorted.len());

@@ -20,10 +20,7 @@ pub fn run(file: &Path, json: bool) -> Result<()> {
 
     if json {
         let info = parser.file_info().ok();
-        let output = InfoOutput {
-            header,
-            info,
-        };
+        let output = InfoOutput { header, info };
         println!("{}", serde_json::to_string_pretty(&output)?);
         return Ok(());
     }

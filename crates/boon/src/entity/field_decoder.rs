@@ -676,7 +676,16 @@ mod tests {
         var_encoder: Option<&str>,
         has_fs: bool,
     ) -> FieldMetadata {
-        get_field_metadata(var_type, var_name, bit_count, low, high, encode_flags, var_encoder, has_fs)
+        get_field_metadata(
+            var_type,
+            var_name,
+            bit_count,
+            low,
+            high,
+            encode_flags,
+            var_encoder,
+            has_fs,
+        )
     }
 
     // ── get_field_metadata dispatch ──
@@ -715,13 +724,31 @@ mod tests {
 
     #[test]
     fn coord_encoder() {
-        let m = meta_full("float32", "m_x", None, None, None, None, Some("coord"), false);
+        let m = meta_full(
+            "float32",
+            "m_x",
+            None,
+            None,
+            None,
+            None,
+            Some("coord"),
+            false,
+        );
         assert!(matches!(m.decoder, Decoder::F32Coord));
     }
 
     #[test]
     fn quantized_float() {
-        let m = meta_full("float32", "m_val", Some(8), Some(0.0), Some(255.0), None, None, false);
+        let m = meta_full(
+            "float32",
+            "m_val",
+            Some(8),
+            Some(0.0),
+            Some(255.0),
+            None,
+            None,
+            false,
+        );
         assert!(matches!(m.decoder, Decoder::F32Quantized(_)));
     }
 
@@ -754,7 +781,16 @@ mod tests {
 
     #[test]
     fn dynamic_serializer_array() {
-        let m = meta_full("CNetworkUtlVectorBase< SomeType >", "m_items", None, None, None, None, None, true);
+        let m = meta_full(
+            "CNetworkUtlVectorBase< SomeType >",
+            "m_items",
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+        );
         assert!(m.is_dynamic_serializer_array());
     }
 
@@ -767,13 +803,28 @@ mod tests {
     #[test]
     fn qangle_with_bitcount() {
         let m = meta_full("QAngle", "m_angle", Some(16), None, None, None, None, false);
-        assert!(matches!(m.decoder, Decoder::QAngleBitCount { bit_count: 16 }));
+        assert!(matches!(
+            m.decoder,
+            Decoder::QAngleBitCount { bit_count: 16 }
+        ));
     }
 
     #[test]
     fn qangle_pitch_yaw() {
-        let m = meta_full("QAngle", "m_angle", Some(10), None, None, None, Some("qangle_pitch_yaw"), false);
-        assert!(matches!(m.decoder, Decoder::QAnglePitchYaw { bit_count: 10 }));
+        let m = meta_full(
+            "QAngle",
+            "m_angle",
+            Some(10),
+            None,
+            None,
+            None,
+            Some("qangle_pitch_yaw"),
+            false,
+        );
+        assert!(matches!(
+            m.decoder,
+            Decoder::QAnglePitchYaw { bit_count: 10 }
+        ));
     }
 
     // ── Decoder::decode with BitReader ──

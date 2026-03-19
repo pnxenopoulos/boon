@@ -183,13 +183,11 @@ pub fn run(
         let mut counts: std::collections::HashMap<(&str, i64), usize> =
             std::collections::HashMap::new();
         for r in &rows {
-            *counts
-                .entry((r.neutral_type, r.team_num))
-                .or_insert(0) += 1;
+            *counts.entry((r.neutral_type, r.team_num)).or_insert(0) += 1;
         }
 
         let mut sorted: Vec<_> = counts.into_iter().collect();
-        sorted.sort_by(|a, b| a.0 .0.cmp(b.0 .0).then_with(|| a.0 .1.cmp(&b.0 .1)));
+        sorted.sort_by(|a, b| a.0.0.cmp(b.0.0).then_with(|| a.0.1.cmp(&b.0.1)));
 
         let limit = limit.unwrap_or(sorted.len());
 

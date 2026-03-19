@@ -50,7 +50,10 @@ impl fmt::Display for FieldValue {
 }
 
 impl serde::Serialize for FieldValue {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+    fn serialize<S: serde::Serializer>(
+        &self,
+        serializer: S,
+    ) -> std::result::Result<S::Ok, S::Error> {
         match self {
             Self::Bool(v) => serializer.serialize_bool(*v),
             Self::I32(v) => serializer.serialize_i32(*v),

@@ -23,13 +23,12 @@ pub mod modifiers;
 
 // Re-export commonly used types at the crate root for convenience
 pub use abilities::ability_name;
-pub use modifiers::modifier_name;
 pub use demo::{
-    CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name,
-    decode_event_payload,
+    CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name, decode_event_payload,
 };
 pub use entity::{
     ClassEntry, ClassInfo, Entity, EntityContainer, FieldValue, Serializer, SerializerContainer,
     SerializerField, StringTable, StringTableContainer, StringTableEntry,
 };
 pub use error::{Error, Result};
+pub use modifiers::modifier_name;

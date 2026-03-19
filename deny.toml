@@ -1,16 +1,8 @@
 # https://embarkstudios.github.io/cargo-deny/
 
 [advisories]
-# Deny any dependency with a known security vulnerability.
-vulnerability = "deny"
-# Warn on unmaintained crates.
-unmaintained = "warn"
-# Warn on advisories with "unsound" status.
-unsound = "warn"
-# Warn on advisories that have been withdrawn.
-yanked = "warn"
-# Warn on advisories with "notice" status.
-notice = "warn"
+# Check all crates (workspace + transitive) for advisories.
+version = 2
 
 [licenses]
 # Deny unlicensed crates.

@@ -53,7 +53,6 @@ pub struct MessageInfo {
     pub offset: usize,
 }
 
-
 /// Full parser context after initialization.
 ///
 /// Holds all decoded game state: serializers, class definitions, string
@@ -305,8 +304,12 @@ impl Parser {
         self.verify()?;
 
         // Bytes 8..12 of the file header contain the absolute offset to DEM_FileInfo.
-        let fileinfo_offset =
-            u32::from_le_bytes([self.data()[8], self.data()[9], self.data()[10], self.data()[11]]) as usize;
+        let fileinfo_offset = u32::from_le_bytes([
+            self.data()[8],
+            self.data()[9],
+            self.data()[10],
+            self.data()[11],
+        ]) as usize;
 
         let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);

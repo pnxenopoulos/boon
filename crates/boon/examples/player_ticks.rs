@@ -30,15 +30,12 @@ fn main() {
             if !keys_resolved {
                 if let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
                     nk_health = s.resolve_field_key("m_iHealth");
-                    nk_vec_x = s.resolve_field_key(
-                        "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
-                    );
-                    nk_vec_y = s.resolve_field_key(
-                        "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
-                    );
-                    nk_vec_z = s.resolve_field_key(
-                        "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
-                    );
+                    nk_vec_x =
+                        s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
+                    nk_vec_y =
+                        s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
+                    nk_vec_z =
+                        s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
                 }
                 keys_resolved = true;
             }

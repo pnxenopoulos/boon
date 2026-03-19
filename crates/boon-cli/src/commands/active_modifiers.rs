@@ -44,8 +44,8 @@ pub fn run(
     max_tick: Option<i32>,
     json: bool,
 ) -> Result<()> {
-    let parser =
-        boon::Parser::from_file(file).with_context(|| format!("failed to open {}", file.display()))?;
+    let parser = boon::Parser::from_file(file)
+        .with_context(|| format!("failed to open {}", file.display()))?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
 
@@ -62,12 +62,8 @@ pub fn run(
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
             // Resolve pawn hero_id key once (retry until serializers available)
-            if !keys_resolved
-                && let Some(s) = ctx.serializers.get("CCitadelPlayerPawn")
-            {
-                pk_hero_id = s.resolve_field_key(
-                    "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
-                );
+            if !keys_resolved && let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
+                pk_hero_id = s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID");
                 keys_resolved = true;
             }
 
@@ -150,15 +146,14 @@ pub fn run(
                     current_serials.insert(serial);
 
                     // New modifier (not seen before)
-                    if let std::collections::hash_map::Entry::Vacant(e) = prev_modifiers.entry(serial) {
-                        let modifier_name = boon::modifier_name(
-                            modifier.modifier_subclass.unwrap_or(0),
-                        )
-                        .to_string();
-                        let ability_name = boon::ability_name(
-                            modifier.ability_subclass.unwrap_or(0),
-                        )
-                        .to_string();
+                    if let std::collections::hash_map::Entry::Vacant(e) =
+                        prev_modifiers.entry(serial)
+                    {
+                        let modifier_name =
+                            boon::modifier_name(modifier.modifier_subclass.unwrap_or(0))
+                                .to_string();
+                        let ability_name =
+                            boon::ability_name(modifier.ability_subclass.unwrap_or(0)).to_string();
                         let duration = modifier.duration.unwrap_or(-1.0);
                         let caster_handle = modifier.caster.unwrap_or(16777215);
                         let caster_hero_id = if caster_handle != 16777215 {
@@ -234,9 +229,7 @@ pub fn run(
         let mut counts: HashMap<(i64, &str), usize> = HashMap::new();
         for e in &events_out {
             if e.event == "applied" {
-                *counts
-                    .entry((e.hero_id, e.ability.as_str()))
-                    .or_insert(0) += 1;
+                *counts.entry((e.hero_id, e.ability.as_str())).or_insert(0) += 1;
             }
         }
 

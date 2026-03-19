@@ -5,9 +5,7 @@
 use std::path::Path;
 
 fn main() {
-    let path = std::env::args()
-        .nth(1)
-        .expect("usage: info <demo.dem>");
+    let path = std::env::args().nth(1).expect("usage: info <demo.dem>");
     let parser = boon::Parser::from_file(Path::new(&path)).expect("failed to open demo");
     parser.verify().expect("invalid demo file");
 
@@ -38,26 +36,26 @@ fn main() {
         println!("Playback ticks: {}", v);
     }
 
-    if let Some(ref gi) = info.game_info {
-        if let Some(ref dota) = gi.dota {
-            if let Some(match_id) = dota.match_id {
-                println!("Match ID:       {}", match_id);
-            }
-            if let Some(game_mode) = dota.game_mode {
-                println!("Game mode:      {}", game_mode);
-            }
-            if let Some(winner) = dota.game_winner {
-                println!("Game winner:    {}", winner);
-            }
+    if let Some(ref gi) = info.game_info
+        && let Some(ref dota) = gi.dota
+    {
+        if let Some(match_id) = dota.match_id {
+            println!("Match ID:       {}", match_id);
+        }
+        if let Some(game_mode) = dota.game_mode {
+            println!("Game mode:      {}", game_mode);
+        }
+        if let Some(winner) = dota.game_winner {
+            println!("Game winner:    {}", winner);
+        }
 
-            if !dota.player_info.is_empty() {
-                println!("\nPlayers ({}):", dota.player_info.len());
-                for p in &dota.player_info {
-                    let name = p.player_name.as_deref().unwrap_or("?");
-                    let hero = p.hero_name.as_deref().unwrap_or("?");
-                    let team = p.game_team.unwrap_or(-1);
-                    println!("  [team {}] {} (hero: {})", team, name, hero);
-                }
+        if !dota.player_info.is_empty() {
+            println!("\nPlayers ({}):", dota.player_info.len());
+            for p in &dota.player_info {
+                let name = p.player_name.as_deref().unwrap_or("?");
+                let hero = p.hero_name.as_deref().unwrap_or("?");
+                let team = p.game_team.unwrap_or(-1);
+                println!("  [team {}] {} (hero: {})", team, name, hero);
             }
         }
     }
