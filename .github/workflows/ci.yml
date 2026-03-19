@@ -142,7 +142,7 @@ jobs:
         working-directory: crates/boon-python
         run: |
           uv sync
-          uv run maturin develop --release
+          uv run maturin develop
 
       - name: Run pytest
         working-directory: crates/boon-python
