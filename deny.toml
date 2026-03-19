@@ -5,9 +5,8 @@
 version = 2
 
 [licenses]
-# Deny unlicensed crates.
-unlicensed = "deny"
 # Boon is MIT-licensed. Allow permissive licenses compatible with MIT.
+# Unlisted licenses are denied by default.
 allow = [
     "MIT",
     "Apache-2.0",
@@ -18,8 +17,6 @@ allow = [
     "Unicode-DFS-2016",
     "Zlib",
 ]
-# Deny copyleft licenses that would conflict with MIT distribution.
-default = "deny"
 
 [bans]
 # Warn on multiple versions of the same crate in the dependency tree.
