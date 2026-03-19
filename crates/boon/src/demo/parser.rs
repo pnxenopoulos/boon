@@ -87,7 +87,7 @@ pub struct GameEvent {
     pub msg_type: u32,
     /// Key-value pairs for Source 1 legacy game events; empty for user messages.
     pub keys: Vec<(String, String)>,
-    /// Raw protobuf bytes of the event. Use [`decode_event_payload`] to decode.
+    /// Raw protobuf bytes of the event. Use [`crate::decode_event_payload`] to decode.
     #[serde(skip)]
     pub payload: Vec<u8>,
 }

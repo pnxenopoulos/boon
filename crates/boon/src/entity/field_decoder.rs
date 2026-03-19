@@ -6,7 +6,7 @@ use super::quantized_float::QuantizedFloat;
 
 /// Mutable state shared across field decoders during a single parse pass.
 pub struct FieldDecodeContext {
-    /// Current tick interval; used by [`Decoder::F32SimulationTime`].
+    /// Current tick interval; used by the simulation-time decoder.
     pub tick_interval: f32,
     /// Reusable buffer for string decoding (avoids per-field allocations).
     pub string_buf: Vec<u8>,

@@ -5,8 +5,7 @@ use crate::error::FieldValueConversionError;
 /// Represents a decoded entity field value from the demo's entity system.
 ///
 /// Each variant corresponds to a Source 2 network field type. The variant
-/// chosen at runtime depends on the field's serializer metadata (see
-/// [`Decoder`](crate::entity::field_decoder::Decoder)).
+/// chosen at runtime depends on the field's serializer metadata.
 #[derive(Clone)]
 pub enum FieldValue {
     Bool(bool),

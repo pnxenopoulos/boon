@@ -38,7 +38,7 @@ pub struct Entity {
     pub class_id: i32,
     /// Network class name (e.g. `"CCitadelPlayerController"`).
     pub class_name: String,
-    /// Current field values, keyed by packed [`FieldPath`] (see [`FieldPath::pack`]).
+    /// Current field values, keyed by packed field path keys.
     pub fields: FxHashMap<u64, FieldValue>,
 }
 
