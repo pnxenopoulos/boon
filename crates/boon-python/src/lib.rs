@@ -94,8 +94,7 @@ const VALID_DATASETS: &[&str] = &[
     "damage",
     "flex_slots",
     "respawns",
-    "purchases",
-    "shop_events",
+    "item_purchases",
     "troopers",
     "neutrals",
     "stat_modifiers",
@@ -140,9 +139,8 @@ struct Demo {
     cached_flex_slots: Option<DataFrame>,
     cached_abilities: Option<DataFrame>,
     cached_respawns: Option<DataFrame>,
-    cached_purchases: Option<DataFrame>,
     cached_ability_upgrades: Option<DataFrame>,
-    cached_shop_events: Option<DataFrame>,
+    cached_item_purchases: Option<DataFrame>,
     cached_chat: Option<DataFrame>,
     cached_objectives: Option<DataFrame>,
     cached_boss_kills: Option<DataFrame>,
@@ -240,9 +238,8 @@ impl Demo {
             cached_abilities: None,
             cached_flex_slots: None,
             cached_respawns: None,
-            cached_purchases: None,
             cached_ability_upgrades: None,
-            cached_shop_events: None,
+            cached_item_purchases: None,
             cached_chat: None,
             cached_objectives: None,
             cached_boss_kills: None,
@@ -473,8 +470,8 @@ impl Demo {
     /// Load one or more datasets from the demo file in a single pass.
     ///
     /// Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
-    /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``,
-    /// ``"abilities"``, ``"ability_upgrades"``, ``"shop_events"``, ``"chat"``,
+    /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"item_purchases"``,
+    /// ``"abilities"``, ``"ability_upgrades"``, ``"chat"``,
     /// ``"objectives"``, ``"boss_kills"``, ``"mid_boss"``, ``"troopers"``,
     /// ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``.
     /// Already-loaded datasets are skipped. Multiple datasets requested together
@@ -509,12 +506,10 @@ impl Demo {
             datasets.iter().any(|s| s == "flex_slots") && self.cached_flex_slots.is_none();
         let load_respawns =
             datasets.iter().any(|s| s == "respawns") && self.cached_respawns.is_none();
-        let load_purchases =
-            datasets.iter().any(|s| s == "purchases") && self.cached_purchases.is_none();
         let load_ability_upgrades = datasets.iter().any(|s| s == "ability_upgrades")
             && self.cached_ability_upgrades.is_none();
-        let load_shop_events =
-            datasets.iter().any(|s| s == "shop_events") && self.cached_shop_events.is_none();
+        let load_item_purchases =
+            datasets.iter().any(|s| s == "item_purchases") && self.cached_item_purchases.is_none();
         let load_chat = datasets.iter().any(|s| s == "chat") && self.cached_chat.is_none();
         let load_objectives =
             datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
@@ -538,9 +533,8 @@ impl Demo {
             && !load_damage
             && !load_flex_slots
             && !load_respawns
-            && !load_purchases
             && !load_ability_upgrades
-            && !load_shop_events
+            && !load_item_purchases
             && !load_chat
             && !load_objectives
             && !load_boss_kills
@@ -558,8 +552,7 @@ impl Demo {
             || load_damage
             || load_flex_slots
             || load_respawns
-            || load_purchases
-            || load_shop_events
+            || load_item_purchases
             || load_chat
             || load_boss_kills
             || load_mid_boss;
@@ -582,12 +575,7 @@ impl Demo {
         {
             class_names.push("CCitadelPlayerPawn");
         }
-        if load_purchases
-            || load_ability_upgrades
-            || load_shop_events
-            || load_chat
-            || load_stat_modifiers
-        {
+        if load_ability_upgrades || load_item_purchases || load_chat || load_stat_modifiers {
             class_names.push("CCitadelPlayerController");
         }
         if load_objectives {
@@ -686,12 +674,6 @@ impl Demo {
         let mut flex_team_nums: Vec<i32> = Vec::new();
         let mut respawn_ticks: Vec<i32> = Vec::new();
         let mut respawn_hero_ids: Vec<i64> = Vec::new();
-        let mut purchase_ticks: Vec<i32> = Vec::new();
-        let mut purchase_hero_ids: Vec<i64> = Vec::new();
-        let mut purchase_ability_ids: Vec<u32> = Vec::new();
-        let mut purchase_abilities: Vec<String> = Vec::new();
-        let mut purchase_sell: Vec<bool> = Vec::new();
-        let mut purchase_quickbuy: Vec<bool> = Vec::new();
         let mut ability_ticks: Vec<i32> = Vec::new();
         let mut ability_hero_ids: Vec<i64> = Vec::new();
         let mut ability_names: Vec<String> = Vec::new();
@@ -702,7 +684,6 @@ impl Demo {
         let mut au_ticks: Vec<i32> = Vec::new();
         let mut au_hero_ids: Vec<i64> = Vec::new();
         let mut au_ability_ids: Vec<u32> = Vec::new();
-        let mut au_abilities: Vec<String> = Vec::new();
         let mut au_upgrade_bits: Vec<i32> = Vec::new();
         // Change detection: (controller_entity_index, slot_index) → previous upgrade_bits
         let mut au_prev_bits: HashMap<(i32, usize), i32> = HashMap::new();
@@ -739,12 +720,11 @@ impl Demo {
         let mut bk_entity_classes: Vec<String> = Vec::new();
         let mut bk_gametimes: Vec<f32> = Vec::new();
 
-        // ── Column vectors for shop_events ──
-        let mut se_ticks: Vec<i32> = Vec::new();
-        let mut se_hero_ids: Vec<i64> = Vec::new();
-        let mut se_ability_ids: Vec<u32> = Vec::new();
-        let mut se_abilities: Vec<String> = Vec::new();
-        let mut se_changes: Vec<String> = Vec::new();
+        // ── Column vectors for item_purchases ──
+        let mut ip_ticks: Vec<i32> = Vec::new();
+        let mut ip_hero_ids: Vec<i64> = Vec::new();
+        let mut ip_ability_ids: Vec<u32> = Vec::new();
+        let mut ip_changes: Vec<String> = Vec::new();
 
         // ── Column vectors for troopers (lane only) ──
         let mut tr_tick: Vec<i32> = Vec::new();
@@ -790,8 +770,6 @@ impl Demo {
         let mut am_event: Vec<String> = Vec::new();
         let mut am_modifier_id: Vec<u32> = Vec::new();
         let mut am_ability_id: Vec<u32> = Vec::new();
-        let mut am_modifier: Vec<String> = Vec::new();
-        let mut am_ability: Vec<String> = Vec::new();
         let mut am_duration: Vec<f32> = Vec::new();
         let mut am_caster_hero_id: Vec<i64> = Vec::new();
         let mut am_stacks: Vec<i32> = Vec::new();
@@ -800,8 +778,6 @@ impl Demo {
             hero_id: i64,
             modifier_id: u32,
             ability_id: u32,
-            modifier: String,
-            ability: String,
             duration: f32,
             caster_hero_id: i64,
             stacks: i32,
@@ -996,7 +972,7 @@ impl Demo {
                                 s.resolve_field_key("m_PlayerDataGlobal.m_iPlayerAssists");
                         }
                     }
-                    if load_purchases || load_shop_events || load_chat {
+                    if load_item_purchases || load_chat {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
@@ -1207,8 +1183,8 @@ impl Demo {
                     entity_to_hero_built = true;
                 }
 
-                // ── Build slot_to_hero map (for purchases/shop_events/chat: userid → hero_id) ──
-                if (load_purchases || load_shop_events || load_chat) && !slot_to_hero_built {
+                // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
+                if (load_item_purchases || load_chat) && !slot_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerController" {
                             let hid = get_i64(entity, ck_hero_id);
@@ -1265,9 +1241,6 @@ impl Demo {
                                     au_ticks.push($ctx.tick);
                                     au_hero_ids.push(hero_id);
                                     au_ability_ids.push(ability_id);
-                                    au_abilities.push(
-                                        boon_parser::ability_name(ability_id).to_string(),
-                                    );
                                     au_upgrade_bits.push(upgrade_bits);
                                 }
                             }
@@ -1430,8 +1403,6 @@ impl Demo {
                                     am_event.push("removed".to_string());
                                     am_modifier_id.push(cached.modifier_id);
                                     am_ability_id.push(cached.ability_id);
-                                    am_modifier.push(cached.modifier);
-                                    am_ability.push(cached.ability);
                                     am_duration.push(cached.duration);
                                     am_caster_hero_id.push(cached.caster_hero_id);
                                     am_stacks.push(cached.stacks);
@@ -1444,8 +1415,6 @@ impl Demo {
                             if let std::collections::hash_map::Entry::Vacant(e) = am_prev.entry(serial) {
                                 let mod_id = modifier.modifier_subclass.unwrap_or(0);
                                 let abil_id = modifier.ability_subclass.unwrap_or(0);
-                                let mod_name = boon_parser::modifier_name(mod_id).to_string();
-                                let abil_name = boon_parser::ability_name(abil_id).to_string();
                                 let duration = modifier.duration.unwrap_or(-1.0);
                                 let caster_handle = modifier.caster.unwrap_or(16777215);
                                 let caster_hero_id = if caster_handle != 16777215 {
@@ -1461,8 +1430,6 @@ impl Demo {
                                 am_event.push("applied".to_string());
                                 am_modifier_id.push(mod_id);
                                 am_ability_id.push(abil_id);
-                                am_modifier.push(mod_name.clone());
-                                am_ability.push(abil_name.clone());
                                 am_duration.push(duration);
                                 am_caster_hero_id.push(caster_hero_id);
                                 am_stacks.push(stacks);
@@ -1471,8 +1438,6 @@ impl Demo {
                                     hero_id,
                                     modifier_id: mod_id,
                                     ability_id: abil_id,
-                                    modifier: mod_name,
-                                    ability: abil_name,
                                     duration,
                                     caster_hero_id,
                                     stacks,
@@ -1493,8 +1458,6 @@ impl Demo {
                                 am_event.push("removed".to_string());
                                 am_modifier_id.push(cached.modifier_id);
                                 am_ability_id.push(cached.ability_id);
-                                am_modifier.push(cached.modifier);
-                                am_ability.push(cached.ability);
                                 am_duration.push(cached.duration);
                                 am_caster_hero_id.push(cached.caster_hero_id);
                                 am_stacks.push(cached.stacks);
@@ -1571,21 +1534,18 @@ impl Demo {
                         // Always capture GameOver (msg_type 346)
                         if found_game_over.is_none()
                             && event.msg_type == 346
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMessageGameOver::decode(
-                                    event.payload.as_slice(),
-                                )
+                            && let Ok(msg) = boon_proto::proto::CCitadelUserMessageGameOver::decode(
+                                event.payload.as_slice(),
+                            )
                         {
-                            found_game_over =
-                                Some((msg.winning_team.unwrap_or(0), event.tick));
+                            found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
                         }
                         // Always capture BannedHeroes (msg_type 366)
                         if found_banned_hero_ids.is_none()
                             && event.msg_type == 366
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
-                                    event.payload.as_slice(),
-                                )
+                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
+                                event.payload.as_slice(),
+                            )
                         {
                             found_banned_hero_ids = Some(msg.banned_hero_ids);
                         }
@@ -1609,10 +1569,7 @@ impl Demo {
                                 )
                         {
                             let pawn_idx = (msg.player_pawn.unwrap_or(0) & 0x7FFF) as i32;
-                            let hero_id = entity_to_hero
-                                .get(&pawn_idx)
-                                .copied()
-                                .unwrap_or(0);
+                            let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
                             if hero_id != 0 {
                                 respawn_ticks.push(event.tick);
                                 respawn_hero_ids.push(hero_id);
@@ -1627,39 +1584,13 @@ impl Demo {
                                 )
                         {
                             let pawn_idx = (msg.player.unwrap_or(0) & 0x3FFF) as i32;
-                            let hero_id = entity_to_hero
-                                .get(&pawn_idx)
-                                .copied()
-                                .unwrap_or(0);
+                            let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
                             ability_ticks.push(event.tick);
                             ability_hero_ids.push(hero_id);
                             ability_names.push(msg.ability_name.unwrap_or_default());
                         }
-                        // Collect ItemPurchaseNotification events (msg_type 360)
-                        if load_purchases
-                            && event.msg_type == 360
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMessageItemPurchaseNotification::decode(
-                                    event.payload.as_slice(),
-                                )
-                        {
-                            let userid = msg.userid.unwrap_or(-1);
-                            let hero_id = slot_to_hero
-                                .get(&userid)
-                                .copied()
-                                .unwrap_or(0);
-                            let ability_id = msg.ability_id.unwrap_or(0);
-                            purchase_ticks.push(event.tick);
-                            purchase_hero_ids.push(hero_id);
-                            purchase_ability_ids.push(ability_id);
-                            purchase_abilities.push(
-                                boon_parser::ability_name(ability_id).to_string(),
-                            );
-                            purchase_sell.push(msg.sell.unwrap_or(false));
-                            purchase_quickbuy.push(msg.quickbuy.unwrap_or(false));
-                        }
-                        // Collect AbilitiesChanged events (msg_type 309)
-                        if load_shop_events
+                        // Collect AbilitiesChanged events (msg_type 309) for item_purchases
+                        if load_item_purchases
                             && event.msg_type == 309
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
@@ -1667,10 +1598,7 @@ impl Demo {
                                 )
                         {
                             let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
-                            let hero_id = slot_to_hero
-                                .get(&player_slot)
-                                .copied()
-                                .unwrap_or(0);
+                            let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
                             let ability_id = msg.ability_id.unwrap_or(0);
                             let change = match msg.change.unwrap_or(-1) {
                                 0 => "purchased",
@@ -1680,27 +1608,20 @@ impl Demo {
                                 4 => "failure",
                                 _ => "unknown",
                             };
-                            se_ticks.push(event.tick);
-                            se_hero_ids.push(hero_id);
-                            se_ability_ids.push(ability_id);
-                            se_abilities.push(
-                                boon_parser::ability_name(ability_id).to_string(),
-                            );
-                            se_changes.push(change.to_string());
+                            ip_ticks.push(event.tick);
+                            ip_hero_ids.push(hero_id);
+                            ip_ability_ids.push(ability_id);
+                            ip_changes.push(change.to_string());
                         }
                         // Collect ChatMsg events (msg_type 314)
                         if load_chat
                             && event.msg_type == 314
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgChatMsg::decode(
-                                    event.payload.as_slice(),
-                                )
+                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgChatMsg::decode(
+                                event.payload.as_slice(),
+                            )
                         {
                             let player_slot = msg.player_slot.unwrap_or(-1);
-                            let hero_id = slot_to_hero
-                                .get(&player_slot)
-                                .copied()
-                                .unwrap_or(0);
+                            let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
                             let chat_type = if msg.all_chat.unwrap_or(false) {
                                 "all"
                             } else {
@@ -1714,10 +1635,9 @@ impl Demo {
                         // Collect BossKilled events (msg_type 347)
                         if load_boss_kills
                             && event.msg_type == 347
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgBossKilled::decode(
-                                    event.payload.as_slice(),
-                                )
+                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBossKilled::decode(
+                                event.payload.as_slice(),
+                            )
                         {
                             let class_id = msg.entity_killed_class.unwrap_or(0);
                             let entity_class = match class_id {
@@ -1765,10 +1685,7 @@ impl Demo {
                                     )
                             {
                                 let pawn_idx = (msg.player_pawn.unwrap_or(0) & 0x3FFF) as i32;
-                                let hero_id = entity_to_hero
-                                    .get(&pawn_idx)
-                                    .copied()
-                                    .unwrap_or(0);
+                                let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
                                 let event_name = match msg.event_type.unwrap_or(0) {
                                     6 => "picked_up",
                                     7 => "used",
@@ -2019,41 +1936,26 @@ impl Demo {
             self.cached_respawns = Some(df);
         }
 
-        if load_purchases {
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), purchase_ticks),
-                Column::new("hero_id".into(), purchase_hero_ids),
-                Column::new("ability_id".into(), purchase_ability_ids),
-                Column::new("ability".into(), purchase_abilities),
-                Column::new("sell".into(), purchase_sell),
-                Column::new("quickbuy".into(), purchase_quickbuy),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_purchases = Some(df);
-        }
-
         if load_ability_upgrades {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), au_ticks),
                 Column::new("hero_id".into(), au_hero_ids),
                 Column::new("ability_id".into(), au_ability_ids),
-                Column::new("ability".into(), au_abilities),
                 Column::new("upgrade_bits".into(), au_upgrade_bits),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_ability_upgrades = Some(df);
         }
 
-        if load_shop_events {
+        if load_item_purchases {
             let df = df_from_columns(vec![
-                Column::new("tick".into(), se_ticks),
-                Column::new("hero_id".into(), se_hero_ids),
-                Column::new("ability_id".into(), se_ability_ids),
-                Column::new("ability".into(), se_abilities),
-                Column::new("change".into(), se_changes),
+                Column::new("tick".into(), ip_ticks),
+                Column::new("hero_id".into(), ip_hero_ids),
+                Column::new("ability_id".into(), ip_ability_ids),
+                Column::new("change".into(), ip_changes),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_shop_events = Some(df);
+            self.cached_item_purchases = Some(df);
         }
 
         if load_chat {
@@ -2156,8 +2058,6 @@ impl Demo {
                 Column::new("event".into(), am_event),
                 Column::new("modifier_id".into(), am_modifier_id),
                 Column::new("ability_id".into(), am_ability_id),
-                Column::new("modifier".into(), am_modifier),
-                Column::new("ability".into(), am_ability),
                 Column::new("duration".into(), am_duration),
                 Column::new("caster_hero_id".into(), am_caster_hero_id),
                 Column::new("stacks".into(), am_stacks),
@@ -2270,21 +2170,9 @@ impl Demo {
         Ok(PyDataFrame(self.cached_abilities.clone().unwrap()))
     }
 
-    /// Item purchase events as a Polars DataFrame.
-    ///
-    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``ability``, ``sell``, ``quickbuy``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
-    #[getter]
-    fn purchases(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_purchases.is_none() {
-            self.load(vec!["purchases".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_purchases.clone().unwrap()))
-    }
-
     /// Hero ability upgrade events (skill point spending) as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``ability``, ``upgrade_bits``.
+    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``upgrade_bits``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn ability_upgrades(&mut self) -> PyResult<PyDataFrame> {
@@ -2294,16 +2182,16 @@ impl Demo {
         Ok(PyDataFrame(self.cached_ability_upgrades.clone().unwrap()))
     }
 
-    /// Item shop transaction events as a Polars DataFrame.
+    /// Item purchase/sell/upgrade events as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``ability``, ``change``.
+    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``change``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn shop_events(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_shop_events.is_none() {
-            self.load(vec!["shop_events".to_string()])?;
+    fn item_purchases(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_item_purchases.is_none() {
+            self.load(vec!["item_purchases".to_string()])?;
         }
-        Ok(PyDataFrame(self.cached_shop_events.clone().unwrap()))
+        Ok(PyDataFrame(self.cached_item_purchases.clone().unwrap()))
     }
 
     /// Chat messages as a Polars DataFrame.
@@ -2411,7 +2299,7 @@ impl Demo {
 
     /// Active buff/debuff modifier events as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``event``, ``modifier``, ``ability``,
+    /// Columns: ``tick``, ``hero_id``, ``event``, ``modifier_id``, ``ability_id``,
     /// ``duration``, ``caster_hero_id``, ``stacks``.
     ///
     /// Events: ``"applied"`` when a modifier is first seen on a player,

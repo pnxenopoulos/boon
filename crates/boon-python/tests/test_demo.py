@@ -44,13 +44,11 @@ FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
 
 RESPAWNS_COLUMNS = {"tick", "hero_id"}
 
-PURCHASES_COLUMNS = {"tick", "hero_id", "ability_id", "ability", "sell", "quickbuy"}
-
 ABILITIES_COLUMNS = {"tick", "hero_id", "ability"}
 
-ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "ability", "upgrade_bits"}
+ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "upgrade_bits"}
 
-SHOP_EVENTS_COLUMNS = {"tick", "hero_id", "ability_id", "ability", "change"}
+ITEM_PURCHASES_COLUMNS = {"tick", "hero_id", "ability_id", "change"}
 
 CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
 
@@ -82,7 +80,7 @@ STAT_MODIFIERS_COLUMNS = {
 
 ACTIVE_MODIFIERS_COLUMNS = {
     "tick", "hero_id", "event", "modifier_id", "ability_id",
-    "modifier", "ability", "duration", "caster_hero_id", "stacks",
+    "duration", "caster_hero_id", "stacks",
 }
 
 PLAYERS_COLUMNS = {
@@ -97,10 +95,9 @@ DATASET_COLUMNS = {
     "damage": DAMAGE_COLUMNS,
     "flex_slots": FLEX_SLOTS_COLUMNS,
     "respawns": RESPAWNS_COLUMNS,
-    "purchases": PURCHASES_COLUMNS,
     "abilities": ABILITIES_COLUMNS,
     "ability_upgrades": ABILITY_UPGRADES_COLUMNS,
-    "shop_events": SHOP_EVENTS_COLUMNS,
+    "item_purchases": ITEM_PURCHASES_COLUMNS,
     "chat": CHAT_COLUMNS,
     "objectives": OBJECTIVES_COLUMNS,
     "boss_kills": BOSS_KILLS_COLUMNS,

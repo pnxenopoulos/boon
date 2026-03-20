@@ -14,6 +14,9 @@
 - Added `ability_names()` module-level function returning `dict[int, str]` of ability hash ID to name.
 - Added `modifier_names()` module-level function returning `dict[int, str]` of modifier hash ID to name.
 - Added `modifier_id` and `ability_id` columns to `active_modifiers` DataFrame (raw `u32` hash values).
+- **Breaking:** `purchases` and `shop_events` datasets merged into `item_purchases`. Columns: `tick`, `hero_id`, `ability_id`, `change`.
+- **Breaking:** `ability` column removed from `ability_upgrades`. Use `ability_names()` to resolve `ability_id`.
+- **Breaking:** `modifier` and `ability` columns removed from `active_modifiers`. Use `modifier_names()` and `ability_names()` to resolve IDs.
 
 ### boon-cli
 

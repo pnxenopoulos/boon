@@ -47,8 +47,8 @@ demo.load("kills", "player_ticks", "world_ticks")
 Load one or more datasets from the demo file in a single pass.
 
 Valid dataset names: `"player_ticks"`, `"world_ticks"`, `"kills"`, `"damage"`,
-`"flex_slots"`, `"respawns"`, `"purchases"`, `"abilities"`, `"ability_upgrades"`,
-`"shop_events"`, `"chat"`, `"objectives"`, `"boss_kills"`, `"mid_boss"`,
+`"flex_slots"`, `"respawns"`, `"item_purchases"`, `"abilities"`, `"ability_upgrades"`,
+`"chat"`, `"objectives"`, `"boss_kills"`, `"mid_boss"`,
 `"troopers"`, `"neutrals"`, `"stat_modifiers"`, `"active_modifiers"`.
 
 Already-loaded datasets are skipped. Multiple datasets requested together share
@@ -357,23 +357,6 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 
 ---
 
-#### `purchases`
-
-```python
-demo.purchases  # polars.DataFrame
-```
-
-Item purchase events. Auto-loads on first access if not already loaded via `load()`.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tick` | `int` | The game tick when the purchase occurred |
-| `hero_id` | `int` | The hero ID of the purchasing player |
-| `ability_id` | `int` | The raw ability/item hash ID |
-| `ability` | `str` | The ability/item name purchased |
-| `sell` | `bool` | Whether this was a sell event |
-| `quickbuy` | `bool` | Whether this was a quickbuy purchase |
-
 ---
 
 #### `respawns`
@@ -435,16 +418,15 @@ player upgrades one of their abilities. Auto-loads on first access.
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the upgrade occurred |
 | `hero_id` | `int` | The hero ID of the player |
-| `ability_id` | `int` | The raw MurmurHash2 ability ID |
-| `ability` | `str` | The ability name |
+| `ability_id` | `int` | The raw MurmurHash2 ability ID (use `ability_names()` to resolve) |
 | `upgrade_bits` | `int` | Cumulative upgrade bitmask (1=T1, 3=T1+T2, 7=T1+T2+T3, 15=T1+T2+T3+T4) |
 
 ---
 
-#### `shop_events`
+#### `item_purchases`
 
 ```python
-demo.shop_events  # polars.DataFrame
+demo.item_purchases  # polars.DataFrame
 ```
 
 Item shop transactions. Includes purchases, upgrades, sells, swaps, and failures.
@@ -454,8 +436,7 @@ Auto-loads on first access.
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the transaction occurred |
 | `hero_id` | `int` | The hero ID of the player |
-| `ability_id` | `int` | The raw MurmurHash2 item/ability ID |
-| `ability` | `str` | The item name |
+| `ability_id` | `int` | The raw MurmurHash2 item/ability ID (use `ability_names()` to resolve) |
 | `change` | `str` | Transaction type: `"purchased"`, `"upgraded"`, `"sold"`, `"swapped"`, `"failure"` |
 
 ---
@@ -624,10 +605,8 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 | `tick` | `int` | The game tick when the modifier event occurred |
 | `hero_id` | `int` | The affected player's hero ID |
 | `event` | `str` | `"applied"` or `"removed"` |
-| `modifier_id` | `int` | Raw modifier subclass hash ID |
-| `ability_id` | `int` | Raw ability subclass hash ID |
-| `modifier` | `str` | Modifier name |
-| `ability` | `str` | Source ability name |
+| `modifier_id` | `int` | Raw modifier subclass hash ID (use `modifier_names()` to resolve) |
+| `ability_id` | `int` | Raw ability subclass hash ID (use `ability_names()` to resolve) |
 | `duration` | `float` | Modifier duration |
 | `caster_hero_id` | `int` | Hero ID of the caster |
 | `stacks` | `int` | Number of stacks |
