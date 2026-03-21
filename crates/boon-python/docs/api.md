@@ -357,8 +357,6 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 
 ---
 
----
-
 #### `respawns`
 
 ```python
