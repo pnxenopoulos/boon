@@ -104,7 +104,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       # Space-separated list of public URLs for demo fixture files.
-      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/68359505/68359505.dem"
+      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/68359505/68359505.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/68611977/68611977.dem"
 
     steps:
       - name: Checkout

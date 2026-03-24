@@ -49,7 +49,8 @@ Load one or more datasets from the demo file in a single pass.
 Valid dataset names: `"player_ticks"`, `"world_ticks"`, `"kills"`, `"damage"`,
 `"flex_slots"`, `"respawns"`, `"item_purchases"`, `"abilities"`, `"ability_upgrades"`,
 `"chat"`, `"objectives"`, `"boss_kills"`, `"mid_boss"`,
-`"troopers"`, `"neutrals"`, `"stat_modifiers"`, `"active_modifiers"`.
+`"troopers"`, `"neutrals"`, `"stat_modifiers"`, `"active_modifiers"`, `"urn"`,
+`"street_brawl_ticks"`, `"street_brawl_rounds"`.
 
 Already-loaded datasets are skipped. Multiple datasets requested together share
 a single parse pass over the file for efficiency.
@@ -61,6 +62,7 @@ a single parse pass over the file for efficiency.
 **Raises:**
 
 - `ValueError` -- If an unknown dataset name is provided.
+- `NotStreetBrawlError` -- If a street brawl dataset is requested on a non-street-brawl demo.
 
 ---
 
@@ -166,6 +168,16 @@ demo.match_id  # int
 ```
 
 The match ID for this demo.
+
+---
+
+#### `game_mode`
+
+```python
+demo.game_mode  # int
+```
+
+The game mode ID for this demo (use `game_mode_names()` to resolve).
 
 ---
 
@@ -609,6 +621,76 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 | `caster_hero_id` | `int` | Hero ID of the caster |
 | `stacks` | `int` | Number of stacks |
 
+---
+
+#### `urn`
+
+```python
+demo.urn  # polars.DataFrame
+```
+
+Urn (idol) lifecycle events. Tracks when the urn is picked up, dropped, or returned
+by filtering idol-related modifiers from the `ActiveModifiers` string table.
+Also tracks delivery point activation/deactivation via `CCitadelIdolReturnTrigger` entities.
+
+Not loaded by default. Access this property or call `load("urn")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick when the event occurred |
+| `event` | `str` | `"picked_up"`, `"dropped"`, `"returned"`, `"delivery_active"`, or `"delivery_inactive"` |
+| `hero_id` | `int` | The hero involved (0 for delivery events) |
+| `team_num` | `int` | Team of the delivery point (0 for modifier events) |
+| `x` | `float` | Delivery point X position (0.0 for modifier events) |
+| `y` | `float` | Delivery point Y position (0.0 for modifier events) |
+| `z` | `float` | Delivery point Z position (0.0 for modifier events) |
+
+---
+
+#### `street_brawl_ticks`
+
+```python
+demo.street_brawl_ticks  # polars.DataFrame
+```
+
+Per-tick street brawl state. Only available for street brawl demos (game_mode=4).
+Auto-loads on first access if not already loaded via `load()`.
+
+**Raises:** `NotStreetBrawlError` if the demo is not a street brawl game.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick |
+| `round` | `int` | Current round number |
+| `state` | `int` | Street brawl state enum value |
+| `amber_score` | `int` | Team Amber score |
+| `sapphire_score` | `int` | Team Sapphire score |
+| `buy_countdown` | `int` | Last buy phase countdown value |
+| `next_state_time` | `float` | Time of next state transition |
+| `state_start_time` | `float` | Time the current state started |
+| `non_combat_time` | `float` | Total non-combat time elapsed |
+
+---
+
+#### `street_brawl_rounds`
+
+```python
+demo.street_brawl_rounds  # polars.DataFrame
+```
+
+Street brawl round scoring events. Only available for street brawl demos (game_mode=4).
+Auto-loads on first access if not already loaded via `load()`.
+
+**Raises:** `NotStreetBrawlError` if the demo is not a street brawl game.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `round` | `int` | Sequential round number (1-indexed) |
+| `tick` | `int` | The game tick when the round ended |
+| `scoring_team` | `int` | The team that scored |
+| `amber_score` | `int` | Team Amber cumulative score |
+| `sapphire_score` | `int` | Team Sapphire cumulative score |
+
 ## Name Lookup Functions
 
 Module-level functions for resolving IDs to human-readable names. These do not
@@ -653,6 +735,20 @@ ability_names()  # -> dict[int, str]
 Return a mapping of MurmurHash2 ability ID to ability name.
 
 **Returns:** `dict[int, str]` -- Ability hash to name mapping.
+
+---
+
+### `game_mode_names()`
+
+```python
+from boon import game_mode_names
+
+game_mode_names()  # -> dict[int, str]
+```
+
+Return a mapping of game mode ID to game mode name.
+
+**Returns:** `dict[int, str]` -- Game mode ID to name mapping (e.g., `{1: "6v6", 4: "street_brawl"}`).
 
 ---
 
@@ -709,3 +805,13 @@ from boon import DemoMessageError
 ```
 
 Raised when required data could not be resolved from demo messages (e.g., match ID from `CCitadelGameRulesProxy`).
+
+---
+
+### `NotStreetBrawlError`
+
+```python
+from boon import NotStreetBrawlError
+```
+
+Raised when accessing street brawl datasets (`street_brawl_ticks`, `street_brawl_rounds`) on a demo that is not a street brawl game (game_mode != 4).

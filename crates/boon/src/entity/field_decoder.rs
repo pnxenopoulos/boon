@@ -361,12 +361,15 @@ fn build_f32_decoder(
     }
 
     // Quantized float
-    Decoder::F32Quantized(QuantizedFloat::new(
+    match QuantizedFloat::new(
         bc,
         encode_flags.unwrap_or(0),
         low_value.unwrap_or(0.0),
         high_value.unwrap_or(0.0),
-    ))
+    ) {
+        Ok(qf) => Decoder::F32Quantized(qf),
+        Err(_) => Decoder::F32NoScale,
+    }
 }
 
 /// Determine the [`FieldMetadata`] (decoder + special descriptor) for a serializer field.

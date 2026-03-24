@@ -104,8 +104,12 @@ pub struct QuantizedFloat {
 
 impl QuantizedFloat {
     /// Build a quantized float decoder for the given bit width and value range.
-    pub fn new(bit_count: i32, encode_flags: i32, low_value: f32, high_value: f32) -> Self {
-        assert!(bit_count > 0 && bit_count < 32);
+    pub fn new(bit_count: i32, encode_flags: i32, low_value: f32, high_value: f32) -> Result<Self> {
+        if bit_count <= 0 || bit_count >= 32 {
+            return Err(crate::error::Error::Parse {
+                context: format!("quantized float bit_count out of range: {bit_count}"),
+            });
+        }
 
         let mut qf = Self {
             bit_count,
@@ -159,7 +163,7 @@ impl QuantizedFloat {
             qf.encode_flags &= !QFE_ENCODE_ZERO_EXACTLY;
         }
 
-        qf
+        Ok(qf)
     }
 
     fn quantize(&self, value: f32) -> f32 {
@@ -253,12 +257,22 @@ mod tests {
 
     #[test]
     fn new_does_not_panic() {
-        let _qf = QuantizedFloat::new(8, 0, 0.0, 255.0);
+        let _qf = QuantizedFloat::new(8, 0, 0.0, 255.0).unwrap();
+    }
+
+    #[test]
+    fn new_rejects_zero_bit_count() {
+        assert!(QuantizedFloat::new(0, 0, 0.0, 255.0).is_err());
+    }
+
+    #[test]
+    fn new_rejects_32_bit_count() {
+        assert!(QuantizedFloat::new(32, 0, 0.0, 255.0).is_err());
     }
 
     #[test]
     fn decode_produces_value_in_range() {
-        let qf = QuantizedFloat::new(8, 0, 0.0, 100.0);
+        let qf = QuantizedFloat::new(8, 0, 0.0, 100.0).unwrap();
         // 8 bits of value 128 (half range)
         let data = [128u8, 0];
         let mut br = BitReader::new(&data);
@@ -268,7 +282,7 @@ mod tests {
 
     #[test]
     fn rounddown_flag_path() {
-        let qf = QuantizedFloat::new(8, QFE_ROUNDDOWN, 0.0, 100.0);
+        let qf = QuantizedFloat::new(8, QFE_ROUNDDOWN, 0.0, 100.0).unwrap();
         // If rounddown flag is active and first bit is 1, returns low_value
         let data = [0b1000_0000, 0, 0];
         let mut br = BitReader::new(&data);
@@ -279,7 +293,7 @@ mod tests {
 
     #[test]
     fn roundup_flag_path() {
-        let qf = QuantizedFloat::new(8, QFE_ROUNDUP, 0.0, 100.0);
+        let qf = QuantizedFloat::new(8, QFE_ROUNDUP, 0.0, 100.0).unwrap();
         let data = [0b1000_0000, 0, 0];
         let mut br = BitReader::new(&data);
         let val = qf.decode(&mut br).unwrap();
@@ -288,7 +302,7 @@ mod tests {
 
     #[test]
     fn skip_advances_position() {
-        let qf = QuantizedFloat::new(8, 0, 0.0, 255.0);
+        let qf = QuantizedFloat::new(8, 0, 0.0, 255.0).unwrap();
         let data = [0xAB, 0xCD];
         let mut br = BitReader::new(&data);
         let before = br.position();

@@ -22,6 +22,31 @@ class DemoMessageError(Exception):
 
     ...
 
+class NotStreetBrawlError(Exception):
+    """Raised when accessing street brawl datasets on a non-street-brawl demo."""
+
+    ...
+
+def hero_names() -> dict[int, str]:
+    """Return a mapping of hero ID to hero name."""
+    ...
+
+def team_names() -> dict[int, str]:
+    """Return a mapping of team number to team name."""
+    ...
+
+def ability_names() -> dict[int, str]:
+    """Return a mapping of MurmurHash2 ability ID to ability name."""
+    ...
+
+def modifier_names() -> dict[int, str]:
+    """Return a mapping of MurmurHash2 modifier ID to modifier name."""
+    ...
+
+def game_mode_names() -> dict[int, str]:
+    """Return a mapping of game mode ID to game mode name."""
+    ...
+
 class Demo:
     """A Deadlock demo file.
 
@@ -40,7 +65,7 @@ class Demo:
         >>> demo.total_ticks
         54000
         >>> demo.players
-        shape: (12, 7)
+        shape: (12, 5)
         ...
     """
 
@@ -60,7 +85,13 @@ class Demo:
     def load(self, *datasets: str) -> None:
         """Load one or more datasets from the demo file in a single pass.
 
-        Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``, ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"purchases"``.
+        Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
+        ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"abilities"``,
+        ``"ability_upgrades"``, ``"item_purchases"``, ``"chat"``,
+        ``"objectives"``, ``"boss_kills"``, ``"mid_boss"``, ``"troopers"``,
+        ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``, ``"urn"``,
+        ``"street_brawl_ticks"``, ``"street_brawl_rounds"``.
+
         Already-loaded datasets are skipped. Multiple datasets requested together
         share a single parse pass over the file for efficiency.
 
@@ -69,6 +100,8 @@ class Demo:
 
         Raises:
             ValueError: If an unknown dataset name is provided.
+            NotStreetBrawlError: If a street brawl dataset is requested on a
+                non-street-brawl demo.
 
         Example:
             >>> demo = Demo("match.dem")
@@ -114,6 +147,14 @@ class Demo:
         ...
 
     @property
+    def game_mode(self) -> int:
+        """The game mode ID for this demo.
+
+        Use ``game_mode_names()`` to resolve IDs to names.
+        """
+        ...
+
+    @property
     def tick_rate(self) -> int:
         """The tick rate of the demo (ticks per second)."""
         ...
@@ -132,7 +173,7 @@ class Demo:
         ...
 
     def tick_to_clock_time(self, tick: int) -> str:
-        """Convert a tick number to a clock time string (e.g., ``"03:14"``), excluding paused time.
+        """Convert a tick number to a clock time string (e.g., ``"3:14"``), excluding paused time.
 
         Automatically loads ``world_ticks`` on first call to determine pauses.
 
@@ -155,28 +196,8 @@ class Demo:
         ...
 
     @property
-    def winning_team(self) -> str | None:
-        """The name of the winning team (e.g., ``"Archmother"``), or ``None`` if no game-over event was found."""
-        ...
-
-    @property
     def banned_hero_ids(self) -> list[int]:
         """List of banned hero IDs. Returns an empty list if no banned heroes event was found."""
-        ...
-
-    @property
-    def banned_heroes(self) -> list[str]:
-        """List of banned hero names. Returns an empty list if no banned heroes event was found."""
-        ...
-
-    @property
-    def teams(self) -> pl.DataFrame:
-        """Team number to team name mapping as a Polars DataFrame.
-
-        Columns:
-            - **team_num** (*int*) -- The raw team number (1=Spectator, 2=Hidden King, 3=Archmother).
-            - **team_name** (*str*) -- The team name.
-        """
         ...
 
     @property
@@ -186,98 +207,9 @@ class Demo:
         Columns:
             - **player_name** (*str*) -- The player's display name.
             - **steam_id** (*int*) -- The player's Steam ID.
-            - **hero** (*str*) -- The player's hero name.
             - **hero_id** (*int*) -- The player's hero ID.
-            - **team** (*str*) -- The player's team (``"Archmother"``, ``"Hidden King"``, or ``"Spectator"``).
             - **team_num** (*int*) -- The player's raw team number.
             - **start_lane** (*int*) -- The player's original lane (1=left, 4=center, 6=right).
-        """
-        ...
-
-    @property
-    def kills(self) -> pl.DataFrame:
-        """Hero kill events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the kill occurred.
-            - **victim_hero_id** (*int*) -- The hero ID of the killed player.
-            - **attacker_hero_id** (*int*) -- The hero ID of the attacker.
-            - **assister_hero_ids** (*list[int]*) -- List of hero IDs of players who assisted.
-        """
-        ...
-
-    @property
-    def damage(self) -> pl.DataFrame:
-        """Damage events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the damage occurred.
-            - **damage** (*int*) -- The damage dealt.
-            - **pre_damage** (*float*) -- The damage before mitigation.
-            - **victim_hero_id** (*int*) -- The hero ID of the victim (0 if not a hero).
-            - **attacker_hero_id** (*int*) -- The hero ID of the attacker (0 if not a hero).
-            - **victim_health_new** (*int*) -- The victim's health after damage.
-            - **hitgroup_id** (*int*) -- The hitgroup that was hit.
-            - **crit_damage** (*float*) -- Critical damage amount.
-            - **attacker_class** (*int*) -- The attacker's entity class ID.
-            - **victim_class** (*int*) -- The victim's entity class ID.
-        """
-        ...
-
-    @property
-    def purchases(self) -> pl.DataFrame:
-        """Item purchase events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the purchase occurred.
-            - **hero_id** (*int*) -- The hero ID of the purchasing player.
-            - **ability_id** (*int*) -- The raw ability/item hash ID.
-            - **ability** (*str*) -- The ability/item name purchased.
-            - **sell** (*bool*) -- Whether this was a sell event.
-            - **quickbuy** (*bool*) -- Whether this was a quickbuy purchase.
-        """
-        ...
-
-    @property
-    def respawns(self) -> pl.DataFrame:
-        """Player respawn events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the player respawned.
-            - **hero_id** (*int*) -- The hero ID of the respawned player.
-        """
-        ...
-
-    @property
-    def flex_slots(self) -> pl.DataFrame:
-        """Flex slot unlock events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the flex slot was unlocked.
-            - **team_num** (*int*) -- The team number that unlocked the flex slot.
-        """
-        ...
-
-    @property
-    def world_ticks(self) -> pl.DataFrame:
-        """World state at every tick as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick.
-            - **is_paused** (*bool*) -- Whether the game is paused.
-            - **next_midboss** (*float*) -- Time until next midboss spawn.
         """
         ...
 
@@ -339,5 +271,309 @@ class Demo:
             - **kills** (*int*) -- Total kills.
             - **deaths** (*int*) -- Total deaths.
             - **assists** (*int*) -- Total assists.
+        """
+        ...
+
+    @property
+    def world_ticks(self) -> pl.DataFrame:
+        """World state at every tick as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick.
+            - **is_paused** (*bool*) -- Whether the game is paused.
+            - **next_midboss** (*float*) -- Time until next midboss spawn.
+        """
+        ...
+
+    @property
+    def kills(self) -> pl.DataFrame:
+        """Hero kill events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the kill occurred.
+            - **victim_hero_id** (*int*) -- The hero ID of the killed player.
+            - **attacker_hero_id** (*int*) -- The hero ID of the attacker.
+            - **assister_hero_ids** (*list[int]*) -- List of hero IDs of players who assisted.
+        """
+        ...
+
+    @property
+    def damage(self) -> pl.DataFrame:
+        """Damage events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the damage occurred.
+            - **damage** (*int*) -- The damage dealt.
+            - **pre_damage** (*float*) -- The damage before mitigation.
+            - **victim_hero_id** (*int*) -- The hero ID of the victim (0 if not a hero).
+            - **attacker_hero_id** (*int*) -- The hero ID of the attacker (0 if not a hero).
+            - **victim_health_new** (*int*) -- The victim's health after damage.
+            - **hitgroup_id** (*int*) -- The hitgroup that was hit.
+            - **crit_damage** (*float*) -- Critical damage amount.
+            - **attacker_class** (*int*) -- The attacker's entity class ID.
+            - **victim_class** (*int*) -- The victim's entity class ID.
+        """
+        ...
+
+    @property
+    def flex_slots(self) -> pl.DataFrame:
+        """Flex slot unlock events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the flex slot was unlocked.
+            - **team_num** (*int*) -- The team number that unlocked the flex slot.
+        """
+        ...
+
+    @property
+    def respawns(self) -> pl.DataFrame:
+        """Player respawn events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the player respawned.
+            - **hero_id** (*int*) -- The hero ID of the respawned player.
+        """
+        ...
+
+    @property
+    def abilities(self) -> pl.DataFrame:
+        """Important ability usage events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the ability was used.
+            - **hero_id** (*int*) -- The hero ID of the player.
+            - **ability** (*str*) -- The ability name.
+        """
+        ...
+
+    @property
+    def ability_upgrades(self) -> pl.DataFrame:
+        """Hero ability point spending events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the upgrade occurred.
+            - **hero_id** (*int*) -- The hero ID of the player.
+            - **ability_id** (*int*) -- The raw MurmurHash2 ability ID.
+            - **upgrade_bits** (*int*) -- Cumulative upgrade bitmask.
+        """
+        ...
+
+    @property
+    def item_purchases(self) -> pl.DataFrame:
+        """Item shop transactions as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the transaction occurred.
+            - **hero_id** (*int*) -- The hero ID of the player.
+            - **ability_id** (*int*) -- The raw MurmurHash2 item/ability ID.
+            - **change** (*str*) -- Transaction type: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"failure"``.
+        """
+        ...
+
+    @property
+    def chat(self) -> pl.DataFrame:
+        """In-game chat messages as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the message was sent.
+            - **hero_id** (*int*) -- The hero ID of the sender.
+            - **text** (*str*) -- The message text.
+            - **chat_type** (*str*) -- ``"all"`` or ``"team"``.
+        """
+        ...
+
+    @property
+    def objectives(self) -> pl.DataFrame:
+        """Per-tick objective entity health as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick.
+            - **objective_type** (*str*) -- ``"walker"``, ``"titan"``, ``"barracks"``, or ``"mid_boss"``.
+            - **team_num** (*int*) -- The team that owns the objective.
+            - **lane** (*int*) -- Lane assignment (1, 4, or 6).
+            - **health** (*int*) -- Current health.
+            - **max_health** (*int*) -- Maximum health.
+        """
+        ...
+
+    @property
+    def boss_kills(self) -> pl.DataFrame:
+        """Objective destruction events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the objective was destroyed.
+            - **objective_team** (*int*) -- The team that owned the destroyed objective.
+            - **objective_id** (*int*) -- Objective mask change ID.
+            - **entity_class** (*str*) -- ``"walker"``, ``"mid_boss"``, ``"titan_shield_generator"``, ``"barracks"``, ``"titan"``, ``"core"``.
+            - **gametime** (*float*) -- The game time when the objective was destroyed.
+        """
+        ...
+
+    @property
+    def mid_boss(self) -> pl.DataFrame:
+        """Mid boss lifecycle events as a Polars DataFrame.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **tick** (*int*) -- The game tick.
+            - **hero_id** (*int*) -- The hero involved (0 for spawn/kill events).
+            - **team_num** (*int*) -- The team involved.
+            - **event** (*str*) -- ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
+        """
+        ...
+
+    @property
+    def troopers(self) -> pl.DataFrame:
+        """Per-tick alive lane trooper state as a Polars DataFrame.
+
+        **Warning:** This is a large dataset (~5M+ rows). Not loaded by default.
+        Access this property or call ``load("troopers")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick.
+            - **trooper_type** (*str*) -- ``"trooper"`` or ``"trooper_boss"``.
+            - **team_num** (*int*) -- The trooper's team.
+            - **lane** (*int*) -- Lane assignment (1, 4, or 6).
+            - **health** (*int*) -- Current health.
+            - **max_health** (*int*) -- Maximum health.
+            - **x** (*float*) -- X position.
+            - **y** (*float*) -- Y position.
+            - **z** (*float*) -- Z position.
+        """
+        ...
+
+    @property
+    def neutrals(self) -> pl.DataFrame:
+        """Neutral creep state changes as a Polars DataFrame.
+
+        Not loaded by default. Access this property or call ``load("neutrals")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the state changed.
+            - **neutral_type** (*str*) -- ``"neutral"`` or ``"neutral_node_mover"``.
+            - **team_num** (*int*) -- The neutral's team.
+            - **health** (*int*) -- Current health.
+            - **max_health** (*int*) -- Maximum health.
+            - **x** (*float*) -- X position.
+            - **y** (*float*) -- Y position.
+            - **z** (*float*) -- Z position.
+        """
+        ...
+
+    @property
+    def stat_modifiers(self) -> pl.DataFrame:
+        """Per-player cumulative permanent stat bonuses as a Polars DataFrame.
+
+        Not loaded by default. Access this property or call ``load("stat_modifiers")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick.
+            - **hero_id** (*int*) -- The player's hero ID.
+            - **health** (*float*) -- Cumulative bonus health.
+            - **spirit_power** (*float*) -- Cumulative bonus spirit power.
+            - **fire_rate** (*float*) -- Cumulative bonus fire rate.
+            - **weapon_damage** (*float*) -- Cumulative bonus weapon damage.
+            - **cooldown_reduction** (*float*) -- Cumulative cooldown reduction.
+            - **ammo** (*float*) -- Cumulative bonus ammo.
+        """
+        ...
+
+    @property
+    def active_modifiers(self) -> pl.DataFrame:
+        """Active buff/debuff modifier events as a Polars DataFrame.
+
+        Not loaded by default. Access this property or call ``load("active_modifiers")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the modifier event occurred.
+            - **hero_id** (*int*) -- The affected player's hero ID.
+            - **event** (*str*) -- ``"applied"`` or ``"removed"``.
+            - **modifier_id** (*int*) -- Raw modifier subclass hash ID.
+            - **ability_id** (*int*) -- Raw ability subclass hash ID.
+            - **duration** (*float*) -- Modifier duration.
+            - **caster_hero_id** (*int*) -- Hero ID of the caster.
+            - **stacks** (*int*) -- Number of stacks.
+        """
+        ...
+
+    @property
+    def urn(self) -> pl.DataFrame:
+        """Urn (idol) lifecycle events as a Polars DataFrame.
+
+        Not loaded by default. Access this property or call ``load("urn")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the event occurred.
+            - **event** (*str*) -- ``"picked_up"``, ``"dropped"``, ``"returned"``, ``"delivery_active"``, or ``"delivery_inactive"``.
+            - **hero_id** (*int*) -- The hero involved (0 for delivery events).
+            - **team_num** (*int*) -- Team of the delivery point (0 for modifier events).
+            - **x** (*float*) -- Delivery point X position (0.0 for modifier events).
+            - **y** (*float*) -- Delivery point Y position (0.0 for modifier events).
+            - **z** (*float*) -- Delivery point Z position (0.0 for modifier events).
+        """
+        ...
+
+    @property
+    def street_brawl_ticks(self) -> pl.DataFrame:
+        """Per-tick street brawl state as a Polars DataFrame.
+
+        Only available for street brawl demos (game_mode=4).
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Raises:
+            NotStreetBrawlError: If the demo is not a street brawl game.
+
+        Columns:
+            - **tick** (*int*) -- The game tick.
+            - **round** (*int*) -- Current round number.
+            - **state** (*int*) -- Street brawl state enum value.
+            - **amber_score** (*int*) -- Team Amber score.
+            - **sapphire_score** (*int*) -- Team Sapphire score.
+            - **buy_countdown** (*int*) -- Last buy phase countdown value.
+            - **next_state_time** (*float*) -- Time of next state transition.
+            - **state_start_time** (*float*) -- Time the current state started.
+            - **non_combat_time** (*float*) -- Total non-combat time elapsed.
+        """
+        ...
+
+    @property
+    def street_brawl_rounds(self) -> pl.DataFrame:
+        """Street brawl round scoring events as a Polars DataFrame.
+
+        Only available for street brawl demos (game_mode=4).
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Raises:
+            NotStreetBrawlError: If the demo is not a street brawl game.
+
+        Columns:
+            - **round** (*int*) -- Sequential round number (1-indexed).
+            - **tick** (*int*) -- The game tick when the round ended.
+            - **scoring_team** (*int*) -- The team that scored.
+            - **amber_score** (*int*) -- Team Amber cumulative score.
+            - **sapphire_score** (*int*) -- Team Sapphire cumulative score.
         """
         ...

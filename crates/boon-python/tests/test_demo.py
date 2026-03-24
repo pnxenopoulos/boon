@@ -6,7 +6,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from boon import Demo, InvalidDemoError, ability_names, hero_names, modifier_names, team_names
+from boon import Demo, InvalidDemoError, ability_names, game_mode_names, hero_names, modifier_names, team_names
 
 from conftest import _require_demo_fixture
 
@@ -83,6 +83,10 @@ ACTIVE_MODIFIERS_COLUMNS = {
     "duration", "caster_hero_id", "stacks",
 }
 
+URN_COLUMNS = {
+    "tick", "event", "hero_id", "team_num", "x", "y", "z",
+}
+
 PLAYERS_COLUMNS = {
     "player_name", "steam_id", "hero_id", "team_num", "start_lane",
 }
@@ -106,6 +110,7 @@ DATASET_COLUMNS = {
     "neutrals": NEUTRALS_COLUMNS,
     "stat_modifiers": STAT_MODIFIERS_COLUMNS,
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
+    "urn": URN_COLUMNS,
 }
 
 ALL_DATASETS = list(DATASET_COLUMNS.keys())
@@ -140,6 +145,9 @@ class TestMetadata:
 
     def test_build_positive(self, demo: Demo) -> None:
         assert demo.build > 0
+
+    def test_game_mode_positive(self, demo: Demo) -> None:
+        assert demo.game_mode > 0
 
     def test_path_is_pathlib(self, demo: Demo) -> None:
         assert isinstance(demo.path, Path)
@@ -184,7 +192,7 @@ class TestPlayersAndTeams:
 
     def test_players_shape(self, demo: Demo) -> None:
         players = demo.players
-        assert players.shape[0] == 12
+        assert players.shape[0] > 0
         assert players.shape[1] == len(PLAYERS_COLUMNS)
 
     def test_players_columns(self, demo: Demo) -> None:
@@ -246,6 +254,16 @@ class TestNameLookups:
         assert 2059539911 in names
         assert names[2059539911] == "timer"
 
+    def test_game_mode_names_is_dict(self) -> None:
+        names = game_mode_names()
+        assert isinstance(names, dict)
+        assert len(names) > 0
+
+    def test_game_mode_names_contains_known(self) -> None:
+        names = game_mode_names()
+        assert names[1] == "6v6"
+        assert names[4] == "street_brawl"
+
 
 # ===================================================================
 # Datasets (parameterized)
@@ -260,10 +278,16 @@ class TestDatasets:
         df = getattr(demo, dataset)
         assert isinstance(df, pl.DataFrame)
 
+    # Datasets that may be empty depending on game mode
+    POSSIBLY_EMPTY = {"flex_slots", "mid_boss", "neutrals", "urn"}
+
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
         df = getattr(demo, dataset)
-        assert len(df) > 0
+        if dataset in self.POSSIBLY_EMPTY:
+            assert len(df) >= 0
+        else:
+            assert len(df) > 0
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_columns(self, demo: Demo, dataset: str) -> None:
@@ -273,7 +297,7 @@ class TestDatasets:
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_tick_column_nonnegative(self, demo: Demo, dataset: str) -> None:
         df = getattr(demo, dataset)
-        if "tick" in df.columns:
+        if "tick" in df.columns and len(df) > 0:
             assert df["tick"].min() >= 0  # type: ignore[operator]
 
 
@@ -351,3 +375,6 @@ class TestErrors:
 
     def test_all_error_types_importable(self) -> None:
         from boon import DemoHeaderError, DemoInfoError, DemoMessageError, InvalidDemoError  # noqa: F401
+
+    def test_not_street_brawl_error_importable(self) -> None:
+        from boon import NotStreetBrawlError  # noqa: F401

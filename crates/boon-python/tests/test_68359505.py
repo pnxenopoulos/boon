@@ -9,7 +9,7 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from boon import Demo
+from boon import Demo, NotStreetBrawlError
 
 from conftest import ALL_DATASETS, FIXTURES_DIR
 
@@ -36,6 +36,9 @@ class TestMatchMetadata:
 
     def test_map_name(self, demo: Demo) -> None:
         assert demo.map_name == "start"
+
+    def test_game_mode(self, demo: Demo) -> None:
+        assert demo.game_mode == 1
 
     def test_total_ticks(self, demo: Demo) -> None:
         assert demo.total_ticks == 148382
@@ -245,3 +248,61 @@ class TestTickConversion:
     def test_tick_50000(self, demo: Demo) -> None:
         assert demo.tick_to_seconds(50000) == pytest.approx(765.765625)
         assert demo.tick_to_clock_time(50000) == "12:45"
+
+
+# ===================================================================
+# Urn
+# ===================================================================
+
+
+class TestUrn:
+    def test_loads_as_dataframe(self, demo: Demo) -> None:
+        assert isinstance(demo.urn, pl.DataFrame)
+
+    def test_nonempty(self, demo: Demo) -> None:
+        assert len(demo.urn) > 0
+
+    def test_columns(self, demo: Demo) -> None:
+        assert set(demo.urn.columns) == {"tick", "event", "hero_id", "team_num", "x", "y", "z"}
+
+    def test_event_types(self, demo: Demo) -> None:
+        events = set(demo.urn["event"].to_list())
+        assert "picked_up" in events
+        assert "delivery_active" in events
+
+    def test_ticks_nonnegative(self, demo: Demo) -> None:
+        assert demo.urn["tick"].min() >= 0  # type: ignore[operator]
+
+    def test_delivery_has_position(self, demo: Demo) -> None:
+        active = demo.urn.filter(pl.col("event") == "delivery_active")
+        assert len(active) > 0
+        assert (active["x"] != 0.0).all()
+        assert (active["y"] != 0.0).all()
+
+    def test_delivery_has_team(self, demo: Demo) -> None:
+        active = demo.urn.filter(pl.col("event") == "delivery_active")
+        teams = set(active["team_num"].to_list())
+        assert teams <= {2, 3}
+
+
+# ===================================================================
+# NotStreetBrawlError
+# ===================================================================
+
+
+class TestNotStreetBrawlError:
+    def test_getter_street_brawl_ticks_raises(self, demo: Demo) -> None:
+        with pytest.raises(NotStreetBrawlError):
+            _ = demo.street_brawl_ticks
+
+    def test_getter_street_brawl_rounds_raises(self, demo: Demo) -> None:
+        with pytest.raises(NotStreetBrawlError):
+            _ = demo.street_brawl_rounds
+
+    def test_load_street_brawl_ticks_raises(self, demo: Demo) -> None:
+        with pytest.raises(NotStreetBrawlError):
+            demo.load("street_brawl_ticks")
+
+    def test_load_street_brawl_rounds_raises(self, demo: Demo) -> None:
+        with pytest.raises(NotStreetBrawlError):
+            demo.load("street_brawl_rounds")

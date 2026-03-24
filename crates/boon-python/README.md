@@ -54,8 +54,7 @@ player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
 kills            = demo.kills             # kill events
 damage           = demo.damage            # damage events
-purchases        = demo.purchases         # item purchase notifications
-shop_events      = demo.shop_events       # full shop transactions
+item_purchases   = demo.item_purchases    # item shop transactions
 ability_upgrades = demo.ability_upgrades  # skill point spending
 abilities        = demo.abilities         # ability usage events
 respawns         = demo.respawns          # respawn events
@@ -68,6 +67,7 @@ troopers         = demo.troopers          # lane trooper state per tick
 neutrals         = demo.neutrals          # neutral creep state changes
 stat_modifiers   = demo.stat_modifiers    # permanent stat bonuses per tick
 active_modifiers = demo.active_modifiers  # buff/debuff modifier events
+urn              = demo.urn               # urn lifecycle and delivery events
 ```
 
 ## Features

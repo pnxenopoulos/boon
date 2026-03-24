@@ -11,6 +11,7 @@ pyo3::create_exception!(_boon, InvalidDemoError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoHeaderError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoInfoError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoMessageError, pyo3::exceptions::PyException);
+pyo3::create_exception!(_boon, NotStreetBrawlError, pyo3::exceptions::PyException);
 
 /// Build a `DataFrame` from columns, inferring row count from the first column.
 fn df_from_columns(columns: Vec<Column>) -> PolarsResult<DataFrame> {
@@ -99,7 +100,10 @@ const VALID_DATASETS: &[&str] = &[
     "neutrals",
     "stat_modifiers",
     "active_modifiers",
+    "urn",
 ];
+
+const VALID_STREET_BRAWL_DATASETS: &[&str] = &["street_brawl_ticks", "street_brawl_rounds"];
 
 /// A Deadlock demo file.
 ///
@@ -122,6 +126,7 @@ struct Demo {
     tick_rate: i32,
     // Cached info from first tick entities
     match_id: u64,
+    game_mode: i64,
     // Sorted ticks where the game was paused (lazily built from world_ticks)
     paused_ticks: Option<Vec<i32>>,
     // Cached dataset DataFrames
@@ -150,6 +155,9 @@ struct Demo {
     cached_stat_modifiers: Option<DataFrame>,
     cached_active_modifiers: Option<DataFrame>,
     cached_players: Option<DataFrame>,
+    cached_street_brawl_ticks: Option<DataFrame>,
+    cached_street_brawl_rounds: Option<DataFrame>,
+    cached_urn: Option<DataFrame>,
 }
 
 #[pymethods]
@@ -192,20 +200,32 @@ impl Demo {
         // Parse first tick to get match_id from CCitadelGameRulesProxy
         let ctx = parser.parse_to_tick(1).map_err(to_py_err)?;
 
-        // Resolve the field key for m_pGameRules.m_unMatchID
-        let match_id = ctx
+        // Resolve match_id and game_mode from CCitadelGameRulesProxy
+        let game_rules = ctx
             .entities
             .iter()
-            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy");
+        let (match_id, game_mode) = game_rules
             .and_then(|(_, e)| {
                 let serializer = ctx.serializers.get(&e.class_name)?;
-                let key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
-                e.fields.get(&key)
-            })
-            .and_then(|v| match v {
-                boon_parser::FieldValue::U64(id) => Some(*id),
-                boon_parser::FieldValue::I64(id) => Some(*id as u64),
-                _ => None,
+                let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
+                let mid = match e.fields.get(&mid_key)? {
+                    boon_parser::FieldValue::U64(id) => *id,
+                    boon_parser::FieldValue::I64(id) => *id as u64,
+                    _ => return None,
+                };
+                let gm = serializer
+                    .resolve_field_key("m_pGameRules.m_eGameMode")
+                    .and_then(|k| e.fields.get(&k))
+                    .and_then(|v| match v {
+                        boon_parser::FieldValue::U64(n) => Some(*n as i64),
+                        boon_parser::FieldValue::I64(n) => Some(*n),
+                        boon_parser::FieldValue::U32(n) => Some(*n as i64),
+                        boon_parser::FieldValue::I32(n) => Some(*n as i64),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+                Some((mid, gm))
             })
             .ok_or_else(|| {
                 DemoMessageError::new_err("could not resolve match ID from CCitadelGameRulesProxy")
@@ -226,6 +246,7 @@ impl Demo {
             playback_time,
             tick_rate,
             match_id,
+            game_mode,
             paused_ticks: None,
             cached_player_ticks: None,
             cached_world_ticks: None,
@@ -249,6 +270,9 @@ impl Demo {
             cached_stat_modifiers: None,
             cached_active_modifiers: None,
             cached_players: None,
+            cached_street_brawl_ticks: None,
+            cached_street_brawl_rounds: None,
+            cached_urn: None,
         })
     }
 
@@ -312,6 +336,14 @@ impl Demo {
     #[getter]
     fn match_id(&self) -> u64 {
         self.match_id
+    }
+
+    /// The game mode ID for this demo.
+    ///
+    /// Use ``game_mode_names()`` to resolve IDs to names.
+    #[getter]
+    fn game_mode(&self) -> i64 {
+        self.game_mode
     }
 
     /// The tick rate of the demo (ticks per second).
@@ -473,7 +505,8 @@ impl Demo {
     /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"item_purchases"``,
     /// ``"abilities"``, ``"ability_upgrades"``, ``"chat"``,
     /// ``"objectives"``, ``"boss_kills"``, ``"mid_boss"``, ``"troopers"``,
-    /// ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``.
+    /// ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``, ``"urn"``,
+    /// ``"street_brawl_ticks"``, ``"street_brawl_rounds"``.
     /// Already-loaded datasets are skipped. Multiple datasets requested together
     /// share a single parse pass over the file for efficiency.
     ///
@@ -482,15 +515,29 @@ impl Demo {
     ///
     /// Raises:
     ///     ValueError: If an unknown dataset name is provided.
+    ///     NotStreetBrawlError: If a street brawl dataset is requested on a non-street-brawl demo.
     #[pyo3(signature = (*datasets))]
     fn load(&mut self, datasets: Vec<String>) -> PyResult<()> {
         // Validate dataset names
         for name in &datasets {
-            if !VALID_DATASETS.contains(&name.as_str()) {
+            if !VALID_DATASETS.contains(&name.as_str())
+                && !VALID_STREET_BRAWL_DATASETS.contains(&name.as_str())
+            {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
                     "Unknown dataset: {name:?}. Valid datasets: {VALID_DATASETS:?}"
                 )));
             }
+        }
+
+        // Check game mode for street brawl datasets
+        if datasets
+            .iter()
+            .any(|s| VALID_STREET_BRAWL_DATASETS.contains(&s.as_str()))
+            && self.game_mode != 4
+        {
+            return Err(NotStreetBrawlError::new_err(
+                "Street brawl datasets are only available for street brawl demos (game_mode=4)",
+            ));
         }
 
         // Determine what to load (skip already cached)
@@ -525,6 +572,11 @@ impl Demo {
             datasets.iter().any(|s| s == "stat_modifiers") && self.cached_stat_modifiers.is_none();
         let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
             && self.cached_active_modifiers.is_none();
+        let load_urn = datasets.iter().any(|s| s == "urn") && self.cached_urn.is_none();
+        let load_street_brawl_ticks = datasets.iter().any(|s| s == "street_brawl_ticks")
+            && self.cached_street_brawl_ticks.is_none();
+        let load_street_brawl_rounds = datasets.iter().any(|s| s == "street_brawl_rounds")
+            && self.cached_street_brawl_rounds.is_none();
 
         if !load_abilities
             && !load_player_ticks
@@ -543,6 +595,9 @@ impl Demo {
             && !load_neutrals
             && !load_stat_modifiers
             && !load_active_modifiers
+            && !load_urn
+            && !load_street_brawl_ticks
+            && !load_street_brawl_rounds
         {
             return Ok(());
         }
@@ -555,7 +610,8 @@ impl Demo {
             || load_item_purchases
             || load_chat
             || load_boss_kills
-            || load_mid_boss;
+            || load_mid_boss
+            || load_street_brawl_rounds;
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
@@ -563,7 +619,7 @@ impl Demo {
             class_names.push("CCitadelPlayerPawn");
             class_names.push("CCitadelPlayerController");
         }
-        if load_world_ticks {
+        if load_world_ticks || load_street_brawl_ticks {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
@@ -572,6 +628,7 @@ impl Demo {
             || load_respawns
             || load_mid_boss
             || load_active_modifiers
+            || load_urn
         {
             class_names.push("CCitadelPlayerPawn");
         }
@@ -591,6 +648,9 @@ impl Demo {
         if load_neutrals {
             class_names.push("CNPC_TrooperNeutral");
             class_names.push("CNPC_TrooperNeutralNodeMover");
+        }
+        if load_urn {
+            class_names.push("CCitadelIdolReturnTrigger");
         }
         let class_filter: std::collections::HashSet<&str> = class_names.into_iter().collect();
 
@@ -773,6 +833,39 @@ impl Demo {
         let mut am_duration: Vec<f32> = Vec::new();
         let mut am_caster_hero_id: Vec<i64> = Vec::new();
         let mut am_stacks: Vec<i32> = Vec::new();
+        // ── Column vectors for street_brawl_ticks ──
+        let sbt_capacity = if load_street_brawl_ticks {
+            self.total_ticks as usize
+        } else {
+            0
+        };
+        let mut sbt_tick: Vec<i32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_round: Vec<i32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_state: Vec<i32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_amber_score: Vec<i32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_sapphire_score: Vec<i32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_buy_countdown: Vec<i32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_next_state_time: Vec<f32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_state_start_time: Vec<f32> = Vec::with_capacity(sbt_capacity);
+        let mut sbt_non_combat_time: Vec<f32> = Vec::with_capacity(sbt_capacity);
+
+        // ── Column vectors for street_brawl_rounds ──
+        let mut sbr_round: Vec<i32> = Vec::new();
+        let mut sbr_tick: Vec<i32> = Vec::new();
+        let mut sbr_scoring_team: Vec<i32> = Vec::new();
+        let mut sbr_amber_score: Vec<i32> = Vec::new();
+        let mut sbr_sapphire_score: Vec<i32> = Vec::new();
+        let mut sbr_round_counter: i32 = 0;
+
+        // ── Column vectors for urn ──
+        let mut urn_tick: Vec<i32> = Vec::new();
+        let mut urn_event: Vec<String> = Vec::new();
+        let mut urn_hero_id: Vec<i64> = Vec::new();
+        let mut urn_team_num: Vec<i64> = Vec::new();
+        let mut urn_x: Vec<f32> = Vec::new();
+        let mut urn_y: Vec<f32> = Vec::new();
+        let mut urn_z: Vec<f32> = Vec::new();
+
         // Track active modifiers by serial_number for change detection
         struct CachedMod {
             hero_id: i64,
@@ -783,6 +876,21 @@ impl Demo {
             stacks: i32,
         }
         let mut am_prev: HashMap<u32, CachedMod> = HashMap::new();
+
+        // Track idol modifiers for urn lifecycle
+        const GOLDEN_IDOL_ABILITY: u32 = 2521299219;
+        const IDOL_RETURN: u32 = 3388847715;
+
+        // serial -> hero_id for golden_idol modifiers (carrying state)
+        let mut urn_idol_serials: HashMap<u32, i64> = HashMap::new();
+        // hero_id -> number of active golden_idol modifiers
+        let mut urn_hero_count: HashMap<i64, i32> = HashMap::new();
+        // serials for idol_return modifiers already emitted
+        let mut urn_return_seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+        // hero_id -> last tick a "returned" event was emitted (dedup flicker)
+        let mut urn_last_return_tick: HashMap<i64, i32> = HashMap::new();
+        // entity_idx -> (disabled, team_num) for delivery trigger change detection
+        let mut urn_trigger_prev: HashMap<i32, (bool, i64)> = HashMap::new();
 
         // ── Field keys ──
         let mut keys_resolved = false;
@@ -875,6 +983,23 @@ impl Demo {
         let mut wk_is_paused: Option<u64> = None;
         let mut wk_next_midboss: Option<u64> = None;
 
+        // Urn delivery trigger keys (CCitadelIdolReturnTrigger)
+        let mut urnk_disabled: Option<u64> = None;
+        let mut urnk_team_num: Option<u64> = None;
+        let mut urnk_vec_x: Option<u64> = None;
+        let mut urnk_vec_y: Option<u64> = None;
+        let mut urnk_vec_z: Option<u64> = None;
+
+        // Street brawl keys
+        let mut sbk_round: Option<u64> = None;
+        let mut sbk_state: Option<u64> = None;
+        let mut sbk_amber_score: Option<u64> = None;
+        let mut sbk_sapphire_score: Option<u64> = None;
+        let mut sbk_buy_countdown: Option<u64> = None;
+        let mut sbk_next_state_time: Option<u64> = None;
+        let mut sbk_state_start_time: Option<u64> = None;
+        let mut sbk_non_combat_time: Option<u64> = None;
+
         // ── Single-pass callback logic (shared between both code paths) ──
         //
         // We use a macro to avoid duplicating the entity extraction code across
@@ -882,7 +1007,7 @@ impl Demo {
         macro_rules! collect_entity_data {
             ($ctx:expr) => {
                 if !keys_resolved {
-                    if load_abilities || load_player_ticks || load_kills || load_damage || load_respawns || load_active_modifiers {
+                    if load_abilities || load_player_ticks || load_kills || load_damage || load_respawns || load_active_modifiers || load_urn {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
@@ -1076,6 +1201,33 @@ impl Demo {
                                 s.resolve_field_key("m_pGameRules.m_tNextMidBossSpawnTime");
                         }
                     }
+                    if load_urn {
+                        if let Some(s) = $ctx.serializers.get("CCitadelIdolReturnTrigger") {
+                            urnk_disabled = s.resolve_field_key("m_bDisabled");
+                            urnk_team_num = s.resolve_field_key("m_iTeamNum");
+                            urnk_vec_x = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
+                            );
+                            urnk_vec_y = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
+                            );
+                            urnk_vec_z = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                            );
+                        }
+                    }
+                    if load_street_brawl_ticks {
+                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                            sbk_round = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iRound");
+                            sbk_state = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_eStreetBrawlState");
+                            sbk_amber_score = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iTeamAmberScore");
+                            sbk_sapphire_score = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iTeamSapphireScore");
+                            sbk_buy_countdown = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iLastBuyCountDown");
+                            sbk_next_state_time = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_flNextStateTime");
+                            sbk_state_start_time = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_flStreetBrawlStateStartTime");
+                            sbk_non_combat_time = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_flStreetBrawlTotalNonCombatTime");
+                        }
+                    }
                     keys_resolved = true;
                 }
 
@@ -1157,21 +1309,34 @@ impl Demo {
                     }
                 }
 
-                // ── Collect world_ticks ──
-                if load_world_ticks {
+                // ── Collect world_ticks / street_brawl_ticks ──
+                if load_world_ticks || load_street_brawl_ticks {
                     if let Some((_, entity)) = $ctx
                         .entities
                         .iter()
                         .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
                     {
-                        wt_tick.push($ctx.tick);
-                        wt_is_paused.push(get_bool(entity, wk_is_paused));
-                        wt_next_midboss.push(get_f32(entity, wk_next_midboss));
+                        if load_world_ticks {
+                            wt_tick.push($ctx.tick);
+                            wt_is_paused.push(get_bool(entity, wk_is_paused));
+                            wt_next_midboss.push(get_f32(entity, wk_next_midboss));
+                        }
+                        if load_street_brawl_ticks {
+                            sbt_tick.push($ctx.tick);
+                            sbt_round.push(get_i64(entity, sbk_round) as i32);
+                            sbt_state.push(get_i64(entity, sbk_state) as i32);
+                            sbt_amber_score.push(get_i64(entity, sbk_amber_score) as i32);
+                            sbt_sapphire_score.push(get_i64(entity, sbk_sapphire_score) as i32);
+                            sbt_buy_countdown.push(get_i64(entity, sbk_buy_countdown) as i32);
+                            sbt_next_state_time.push(get_f32(entity, sbk_next_state_time));
+                            sbt_state_start_time.push(get_f32(entity, sbk_state_start_time));
+                            sbt_non_combat_time.push(get_f32(entity, sbk_non_combat_time));
+                        }
                     }
                 }
 
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
-                if (load_abilities || load_kills || load_damage || load_respawns || load_mid_boss || load_active_modifiers) && !entity_to_hero_built {
+                if (load_abilities || load_kills || load_damage || load_respawns || load_mid_boss || load_active_modifiers || load_urn) && !entity_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerPawn" {
                             let hid = get_i64(entity, pk_hero_id);
@@ -1466,6 +1631,181 @@ impl Demo {
                     }
                 }
 
+                // ── Collect urn (idol lifecycle tracking) ──
+                if load_urn {
+                    if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
+                        let mut current_urn_serials: std::collections::HashSet<u32> =
+                            std::collections::HashSet::new();
+
+                        for entry in &table.entries {
+                            let data = match &entry.user_data {
+                                Some(d) if !d.is_empty() => d,
+                                _ => continue,
+                            };
+
+                            let Ok(modifier) =
+                                boon_proto::proto::CModifierTableEntry::decode(data.as_slice())
+                            else {
+                                continue;
+                            };
+
+                            let serial = match modifier.serial_number {
+                                Some(s) => s,
+                                None => continue,
+                            };
+
+                            let mod_entry_type = modifier.entry_type.unwrap_or(1);
+
+                            // Handle explicit removal (entry_type == 2)
+                            if mod_entry_type == 2 {
+                                if let Some(hero_id) = urn_idol_serials.remove(&serial) {
+                                    let count =
+                                        urn_hero_count.entry(hero_id).or_insert(0);
+                                    *count -= 1;
+                                    if *count <= 0 {
+                                        urn_hero_count.remove(&hero_id);
+                                        urn_tick.push($ctx.tick);
+                                        urn_event.push("dropped".to_string());
+                                        urn_hero_id.push(hero_id);
+                                        urn_team_num.push(0);
+                                        urn_x.push(0.0);
+                                        urn_y.push(0.0);
+                                        urn_z.push(0.0);
+                                    }
+                                }
+                                urn_return_seen.remove(&serial);
+                                continue;
+                            }
+
+                            let mod_id = modifier.modifier_subclass.unwrap_or(0);
+                            let abil_id = modifier.ability_subclass.unwrap_or(0);
+                            let is_golden_idol = abil_id == GOLDEN_IDOL_ABILITY;
+                            let is_idol_return = mod_id == IDOL_RETURN;
+
+                            if !is_golden_idol && !is_idol_return {
+                                continue;
+                            }
+
+                            let parent_handle = modifier.parent.unwrap_or(16777215);
+                            if parent_handle == 16777215 {
+                                continue;
+                            }
+                            let parent_idx = (parent_handle & 0x3FFF) as i32;
+
+                            let hero_id = match entity_to_hero.get(&parent_idx) {
+                                Some(&hid) => hid,
+                                None => continue,
+                            };
+
+                            current_urn_serials.insert(serial);
+
+                            if is_golden_idol
+                                && !urn_idol_serials.contains_key(&serial)
+                            {
+                                let count =
+                                    urn_hero_count.entry(hero_id).or_insert(0);
+                                if *count == 0 {
+                                    urn_tick.push($ctx.tick);
+                                    urn_event.push("picked_up".to_string());
+                                    urn_hero_id.push(hero_id);
+                                    urn_team_num.push(0);
+                                    urn_x.push(0.0);
+                                    urn_y.push(0.0);
+                                    urn_z.push(0.0);
+                                }
+                                *count += 1;
+                                urn_idol_serials.insert(serial, hero_id);
+                            }
+
+                            if is_idol_return && urn_return_seen.insert(serial) {
+                                let last = urn_last_return_tick
+                                    .get(&hero_id)
+                                    .copied()
+                                    .unwrap_or(-999);
+                                if $ctx.tick - last > 64 {
+                                    urn_tick.push($ctx.tick);
+                                    urn_event.push("returned".to_string());
+                                    urn_hero_id.push(hero_id);
+                                    urn_team_num.push(0);
+                                    urn_x.push(0.0);
+                                    urn_y.push(0.0);
+                                    urn_z.push(0.0);
+                                    urn_last_return_tick.insert(hero_id, $ctx.tick);
+                                }
+                            }
+                        }
+
+                        // Detect disappeared golden_idol modifiers
+                        let removed: Vec<u32> = urn_idol_serials
+                            .keys()
+                            .filter(|s| !current_urn_serials.contains(s))
+                            .copied()
+                            .collect();
+                        for serial in removed {
+                            if let Some(hero_id) = urn_idol_serials.remove(&serial) {
+                                let count =
+                                    urn_hero_count.entry(hero_id).or_insert(0);
+                                *count -= 1;
+                                if *count <= 0 {
+                                    urn_hero_count.remove(&hero_id);
+                                    urn_tick.push($ctx.tick);
+                                    urn_event.push("dropped".to_string());
+                                    urn_hero_id.push(hero_id);
+                                    urn_team_num.push(0);
+                                    urn_x.push(0.0);
+                                    urn_y.push(0.0);
+                                    urn_z.push(0.0);
+                                }
+                            }
+                        }
+                        // Clean up disappeared return serials
+                        urn_return_seen
+                            .retain(|s| current_urn_serials.contains(s));
+                    }
+                }
+
+                // ── Collect urn delivery triggers ──
+                if load_urn {
+                    for (&idx, entity) in $ctx.entities.iter() {
+                        if entity.class_name != "CCitadelIdolReturnTrigger" {
+                            continue;
+                        }
+                        let disabled = get_bool(entity, urnk_disabled);
+                        let team = get_i64(entity, urnk_team_num);
+                        let cur = (disabled, team);
+                        let prev = urn_trigger_prev.get(&idx).copied();
+                        let changed = match prev {
+                            None => true,
+                            Some(p) => p != cur,
+                        };
+                        if changed {
+                            urn_trigger_prev.insert(idx, cur);
+                            if !disabled && team != 0 {
+                                urn_tick.push($ctx.tick);
+                                urn_event.push("delivery_active".to_string());
+                                urn_hero_id.push(0);
+                                urn_team_num.push(team);
+                                urn_x.push(get_f32(entity, urnk_vec_x));
+                                urn_y.push(get_f32(entity, urnk_vec_y));
+                                urn_z.push(get_f32(entity, urnk_vec_z));
+                            } else if disabled {
+                                // Only emit inactive when transitioning from active
+                                if let Some((prev_disabled, _)) = prev {
+                                    if !prev_disabled {
+                                        urn_tick.push($ctx.tick);
+                                        urn_event.push("delivery_inactive".to_string());
+                                        urn_hero_id.push(0);
+                                        urn_team_num.push(team);
+                                        urn_x.push(get_f32(entity, urnk_vec_x));
+                                        urn_y.push(get_f32(entity, urnk_vec_y));
+                                        urn_z.push(get_f32(entity, urnk_vec_z));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // ── Collect neutrals (change-detected, only emit on state change) ──
                 if load_neutrals {
                     for (&idx, entity) in $ctx.entities.iter() {
@@ -1697,6 +2037,21 @@ impl Demo {
                                 mb_team_nums.push(msg.user_team.unwrap_or(0));
                                 mb_events.push(event_name.to_string());
                             }
+                        }
+                        // Collect StreetBrawlScoring events (msg_type 362)
+                        if load_street_brawl_rounds
+                            && event.msg_type == 362
+                            && let Ok(msg) =
+                                boon_proto::proto::CCitadelUserMsgStreetBrawlScoring::decode(
+                                    event.payload.as_slice(),
+                                )
+                        {
+                            sbr_round_counter += 1;
+                            sbr_round.push(sbr_round_counter);
+                            sbr_tick.push(event.tick);
+                            sbr_scoring_team.push(msg.scoring_team.unwrap_or(0));
+                            sbr_amber_score.push(msg.amber_score.unwrap_or(0));
+                            sbr_sapphire_score.push(msg.sapphire_score.unwrap_or(0));
                         }
                     }
                 })
@@ -2066,6 +2421,48 @@ impl Demo {
             self.cached_active_modifiers = Some(df);
         }
 
+        if load_urn {
+            let df = df_from_columns(vec![
+                Column::new("tick".into(), urn_tick),
+                Column::new("event".into(), urn_event),
+                Column::new("hero_id".into(), urn_hero_id),
+                Column::new("team_num".into(), urn_team_num),
+                Column::new("x".into(), urn_x),
+                Column::new("y".into(), urn_y),
+                Column::new("z".into(), urn_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_urn = Some(df);
+        }
+
+        if load_street_brawl_ticks {
+            let df = df_from_columns(vec![
+                Column::new("tick".into(), sbt_tick),
+                Column::new("round".into(), sbt_round),
+                Column::new("state".into(), sbt_state),
+                Column::new("amber_score".into(), sbt_amber_score),
+                Column::new("sapphire_score".into(), sbt_sapphire_score),
+                Column::new("buy_countdown".into(), sbt_buy_countdown),
+                Column::new("next_state_time".into(), sbt_next_state_time),
+                Column::new("state_start_time".into(), sbt_state_start_time),
+                Column::new("non_combat_time".into(), sbt_non_combat_time),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_street_brawl_ticks = Some(df);
+        }
+
+        if load_street_brawl_rounds {
+            let df = df_from_columns(vec![
+                Column::new("round".into(), sbr_round),
+                Column::new("tick".into(), sbr_tick),
+                Column::new("scoring_team".into(), sbr_scoring_team),
+                Column::new("amber_score".into(), sbr_amber_score),
+                Column::new("sapphire_score".into(), sbr_sapphire_score),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_street_brawl_rounds = Some(df);
+        }
+
         Ok(())
     }
 
@@ -2313,6 +2710,75 @@ impl Demo {
         Ok(PyDataFrame(self.cached_active_modifiers.clone().unwrap()))
     }
 
+    /// Urn (idol) lifecycle events as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``event``, ``hero_id``, ``team_num``, ``x``, ``y``, ``z``.
+    ///
+    /// Events: ``"picked_up"`` when a player grabs it, ``"dropped"`` when
+    /// the carrier loses it, ``"returned"`` when the urn is delivered,
+    /// ``"delivery_active"`` when a delivery point activates,
+    /// ``"delivery_inactive"`` when a delivery point deactivates.
+    ///
+    /// For modifier events (``picked_up``, ``dropped``, ``returned``),
+    /// ``team_num``/``x``/``y``/``z`` are 0. For delivery events, ``hero_id`` is 0.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn urn(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_urn.is_none() {
+            self.load(vec!["urn".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_urn.clone().unwrap()))
+    }
+
+    /// Per-tick street brawl state as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``round``, ``state``, ``amber_score``,
+    /// ``sapphire_score``, ``buy_countdown``, ``next_state_time``,
+    /// ``state_start_time``, ``non_combat_time``.
+    ///
+    /// Only available for street brawl demos (game_mode=4).
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    ///
+    /// Raises:
+    ///     NotStreetBrawlError: If the demo is not a street brawl game.
+    #[getter]
+    fn street_brawl_ticks(&mut self) -> PyResult<PyDataFrame> {
+        if self.game_mode != 4 {
+            return Err(NotStreetBrawlError::new_err(
+                "Street brawl datasets are only available for street brawl demos (game_mode=4)",
+            ));
+        }
+        if self.cached_street_brawl_ticks.is_none() {
+            self.load(vec!["street_brawl_ticks".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_street_brawl_ticks.clone().unwrap()))
+    }
+
+    /// Street brawl round scoring events as a Polars DataFrame.
+    ///
+    /// Columns: ``round``, ``tick``, ``scoring_team``, ``amber_score``,
+    /// ``sapphire_score``.
+    ///
+    /// Only available for street brawl demos (game_mode=4).
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    ///
+    /// Raises:
+    ///     NotStreetBrawlError: If the demo is not a street brawl game.
+    #[getter]
+    fn street_brawl_rounds(&mut self) -> PyResult<PyDataFrame> {
+        if self.game_mode != 4 {
+            return Err(NotStreetBrawlError::new_err(
+                "Street brawl datasets are only available for street brawl demos (game_mode=4)",
+            ));
+        }
+        if self.cached_street_brawl_rounds.is_none() {
+            self.load(vec!["street_brawl_rounds".to_string()])?;
+        }
+        Ok(PyDataFrame(
+            self.cached_street_brawl_rounds.clone().unwrap(),
+        ))
+    }
+
     /// The team number of the winning team.
     ///
     /// Scans for the ``k_EUserMsg_GameOver`` event on first access.
@@ -2465,6 +2931,18 @@ fn ability_names() -> HashMap<u32, &'static str> {
         .collect()
 }
 
+/// Return a mapping of game mode ID to game mode name.
+///
+/// Returns:
+///     A dict mapping game mode IDs (int) to game mode names (str).
+#[pyfunction]
+fn game_mode_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_game_modes()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
 /// Return a mapping of modifier hash ID to modifier name.
 ///
 /// Returns:
@@ -2485,9 +2963,14 @@ fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(team_names, m)?)?;
     m.add_function(wrap_pyfunction!(ability_names, m)?)?;
     m.add_function(wrap_pyfunction!(modifier_names, m)?)?;
+    m.add_function(wrap_pyfunction!(game_mode_names, m)?)?;
     m.add("InvalidDemoError", m.py().get_type::<InvalidDemoError>())?;
     m.add("DemoHeaderError", m.py().get_type::<DemoHeaderError>())?;
     m.add("DemoInfoError", m.py().get_type::<DemoInfoError>())?;
     m.add("DemoMessageError", m.py().get_type::<DemoMessageError>())?;
+    m.add(
+        "NotStreetBrawlError",
+        m.py().get_type::<NotStreetBrawlError>(),
+    )?;
     Ok(())
 }

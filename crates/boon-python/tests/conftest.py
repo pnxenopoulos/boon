@@ -24,6 +24,7 @@ ALL_DATASETS = [
     "respawns",
     "stat_modifiers",
     "troopers",
+    "urn",
     "world_ticks",
 ]
 

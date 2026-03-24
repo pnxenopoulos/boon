@@ -18,6 +18,7 @@ pub mod abilities;
 pub mod demo;
 pub mod entity;
 pub mod error;
+pub mod game_modes;
 pub mod heroes;
 pub mod io;
 pub mod modifiers;
@@ -33,6 +34,7 @@ pub use entity::{
     SerializerField, StringTable, StringTableContainer, StringTableEntry,
 };
 pub use error::{Error, Result};
+pub use game_modes::{all_game_modes, game_mode_name};
 pub use heroes::{all_heroes, hero_name};
 pub use modifiers::{all_modifiers, modifier_name};
 pub use teams::{all_teams, team_name};

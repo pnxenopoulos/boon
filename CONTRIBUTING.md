@@ -148,6 +148,62 @@ git push origin main --tags
 - Tracks are independent &mdash; you can release the parser without releasing the CLI or Python package.
 - If the CLI or Python crate depends on a new parser feature, publish the parser first.
 
+## Test Fixtures
+
+Demo files (`.dem`) are not checked into this repository (they are gitignored). They are hosted as GitHub releases in [pnxenopoulos/boon-fixtures](https://github.com/pnxenopoulos/boon-fixtures).
+
+### Downloading fixtures
+
+Each fixture is a named release whose tag is the match ID:
+
+```bash
+gh release download 68359505 \
+  --repo pnxenopoulos/boon-fixtures \
+  --dir crates/boon-python/tests/fixtures/
+
+gh release download 68611977 \
+  --repo pnxenopoulos/boon-fixtures \
+  --dir crates/boon-python/tests/fixtures/
+```
+
+Tests that require a missing fixture are skipped automatically.
+
+### Adding a new fixture
+
+1. Place the `.dem` file in `crates/boon-python/tests/fixtures/` locally.
+2. Create a release in [boon-fixtures](https://github.com/pnxenopoulos/boon-fixtures):
+
+```bash
+gh release create <match_id> \
+  crates/boon-python/tests/fixtures/<match_id>.dem \
+  --repo pnxenopoulos/boon-fixtures \
+  --title "<match_id>.dem" \
+  --notes "Description of the fixture (e.g., game mode, notable properties)"
+```
+
+3. Add fixture-specific tests in `crates/boon-python/tests/test_<match_id>.py` with a skip guard:
+
+```python
+FIXTURE_PATH = FIXTURES_DIR / "<match_id>.dem"
+
+@pytest.fixture(scope="module")
+def demo() -> Demo:
+    if not FIXTURE_PATH.exists():
+        pytest.skip("<match_id>.dem fixture not available")
+    d = Demo(str(FIXTURE_PATH))
+    d.load(*ALL_DATASETS)
+    return d
+```
+
+4. Update CI to download the new fixture.
+
+### Current fixtures
+
+| Match ID | Game Mode | Description |
+|----------|-----------|-------------|
+| 68359505 | 6v6 | Standard 6v6 match |
+| 68611977 | Street Brawl | Street brawl (game_mode=4) match |
+
 ## Submitting Changes
 
 1. Fork the repository and create a feature branch from `main`

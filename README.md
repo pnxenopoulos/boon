@@ -30,8 +30,7 @@ The following data can be extracted from demo files:
 - **World ticks** -- world state every tick (pause state, next mid boss spawn time)
 - **Kills** -- hero kill events with attacker, victim, and assisters
 - **Damage** -- damage events with pre/post mitigation, hitgroups, and crit damage
-- **Purchases** -- item purchase/sell notifications
-- **Shop events** -- full item shop transactions (purchased, upgraded, sold, swapped, failure)
+- **Item purchases** -- item shop transactions (purchased, upgraded, sold, swapped, failure)
 - **Ability upgrades** -- hero ability point spending (skill tier upgrades T1-T4)
 - **Abilities** -- important ability usage events
 - **Respawns** -- player respawn events
@@ -42,9 +41,12 @@ The following data can be extracted from demo files:
 - **Mid boss** -- mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire)
 - **Troopers** -- per-tick alive lane trooper state (position, health, lane) *(opt-in, large dataset)*
 - **Neutrals** -- neutral creep state changes with change detection *(opt-in)*
-- **Players** -- player info (name, Steam ID, hero, team, starting lane)
-- **Match metadata** -- match ID, map name, build number, tick rate, total ticks/time
-- **Game result** -- winning team, game over tick, banned heroes
+- **Stat modifiers** -- per-player cumulative permanent stat bonuses from pickups *(opt-in)*
+- **Active modifiers** -- active buff/debuff modifier events *(opt-in)*
+- **Urn** -- urn (idol) lifecycle and delivery point events *(opt-in)*
+- **Players** -- player info (name, Steam ID, hero ID, team, starting lane)
+- **Match metadata** -- match ID, map name, build number, game mode, tick rate, total ticks/time
+- **Game result** -- winning team number, game over tick, banned hero IDs
 
 ## Installation
 
@@ -102,13 +104,13 @@ print(demo.match_id)         # 28309863
 print(demo.map_name)         # "dl_midtown"
 print(demo.total_ticks)      # 54000
 print(demo.total_clock_time) # "30:00"
-print(demo.winner)           # "Team1"
+print(demo.winning_team_num) # 2
 
 # Player info
 print(demo.players)
-# shape: (12, 7)
-# ┌─────────────┬──────────────┬──────────┬─────────┬─────────────┬──────────┬────────────┐
-# │ player_name ┆ steam_id     ┆ hero     ┆ hero_id ┆ team        ┆ team_num ┆ start_lane │
+# shape: (12, 5)
+# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┐
+# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane │
 # ...
 
 # Datasets (Polars DataFrames — all lazy-loaded on first access)
@@ -116,8 +118,7 @@ player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
 kills            = demo.kills             # kill events
 damage           = demo.damage            # damage events
-purchases        = demo.purchases         # item purchase notifications
-shop_events      = demo.shop_events       # full shop transactions
+item_purchases   = demo.item_purchases    # item shop transactions
 ability_upgrades = demo.ability_upgrades  # skill point spending
 abilities        = demo.abilities         # ability usage events
 respawns         = demo.respawns          # respawn events
@@ -127,9 +128,12 @@ objectives       = demo.objectives        # objective health per tick
 boss_kills       = demo.boss_kills        # objective destruction events
 mid_boss         = demo.mid_boss          # mid boss lifecycle events
 
-# Large datasets (opt-in, not loaded by default)
+# Opt-in datasets (not loaded by default)
 troopers         = demo.troopers          # lane trooper state per tick
 neutrals         = demo.neutrals          # neutral creep state changes
+stat_modifiers   = demo.stat_modifiers    # permanent stat bonuses per tick
+active_modifiers = demo.active_modifiers  # buff/debuff modifier events
+urn              = demo.urn               # urn lifecycle and delivery events
 ```
 
 ### CLI
