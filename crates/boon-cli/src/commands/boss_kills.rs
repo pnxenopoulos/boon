@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon_proto::proto::CitadelUserMessageIds as Msg;
 use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
@@ -51,7 +52,7 @@ pub fn run(
     let mut kills: Vec<BossKillOutput> = Vec::new();
 
     for event in &events {
-        if event.msg_type == 347
+        if event.msg_type == Msg::KEUserMsgBossKilled as u32
             && let Ok(msg) =
                 boon_proto::proto::CCitadelUserMsgBossKilled::decode(event.payload.as_slice())
         {

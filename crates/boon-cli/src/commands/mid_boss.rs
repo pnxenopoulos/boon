@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon_proto::proto::CitadelUserMessageIds as Msg;
 use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
@@ -74,8 +75,7 @@ pub fn run(
             }
 
             for event in events {
-                // MidBossSpawned (msg_type 349)
-                if event.msg_type == 349 {
+                if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
                     rows.push(MidBossOutput {
                         tick: event.tick,
                         hero_id: 0,
@@ -83,8 +83,7 @@ pub fn run(
                         event: "spawned".to_string(),
                     });
                 }
-                // BossKilled for mid_boss (msg_type 347, entity_killed_class == 8)
-                if event.msg_type == 347
+                if event.msg_type == Msg::KEUserMsgBossKilled as u32
                     && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBossKilled::decode(
                         event.payload.as_slice(),
                     )
@@ -97,8 +96,7 @@ pub fn run(
                         event: "killed".to_string(),
                     });
                 }
-                // RejuvStatus (msg_type 350)
-                if event.msg_type == 350
+                if event.msg_type == Msg::KEUserMsgRejuvStatus as u32
                     && let Ok(msg) = boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
                         event.payload.as_slice(),
                     )

@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon_proto::proto::CitadelUserMessageIds as Msg;
 use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
@@ -88,9 +89,8 @@ pub fn run(
                 slot_to_hero_built = true;
             }
 
-            // Collect AbilitiesChanged events (msg_type 309)
             for event in events {
-                if event.msg_type == 309
+                if event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
                     && let Ok(msg) = boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
                         event.payload.as_slice(),
                     )

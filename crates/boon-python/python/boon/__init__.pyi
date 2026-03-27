@@ -82,15 +82,23 @@ class Demo:
         """
         ...
 
+    @staticmethod
+    def available_datasets() -> list[str]:
+        """Return the list of dataset names that can be passed to ``load()`` or accessed as properties.
+
+        Returns:
+            A list of valid dataset name strings.
+
+        Example:
+            >>> Demo.available_datasets()
+            ['abilities', 'ability_upgrades', 'boss_kills', ...]
+        """
+        ...
+
     def load(self, *datasets: str) -> None:
         """Load one or more datasets from the demo file in a single pass.
 
-        Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
-        ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"abilities"``,
-        ``"ability_upgrades"``, ``"item_purchases"``, ``"chat"``,
-        ``"objectives"``, ``"boss_kills"``, ``"mid_boss"``, ``"troopers"``,
-        ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``, ``"urn"``,
-        ``"street_brawl_ticks"``, ``"street_brawl_rounds"``.
+        Valid dataset names: see :meth:`available_datasets`.
 
         Already-loaded datasets are skipped. Multiple datasets requested together
         share a single parse pass over the file for efficiency.
@@ -195,10 +203,6 @@ class Demo:
         """The tick when the game ended, or ``None`` if no game-over event was found."""
         ...
 
-    @property
-    def banned_hero_ids(self) -> list[int]:
-        """List of banned hero IDs. Returns an empty list if no banned heroes event was found."""
-        ...
 
     @property
     def players(self) -> pl.DataFrame:

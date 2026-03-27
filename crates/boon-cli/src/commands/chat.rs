@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon_proto::proto::CitadelUserMessageIds as Msg;
 use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
@@ -73,7 +74,7 @@ pub fn run(
             }
 
             for event in events {
-                if event.msg_type == 314
+                if event.msg_type == Msg::KEUserMsgChatMsg as u32
                     && let Ok(msg) =
                         boon_proto::proto::CCitadelUserMsgChatMsg::decode(event.payload.as_slice())
                 {

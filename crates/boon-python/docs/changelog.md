@@ -7,7 +7,7 @@
 - **Breaking:** Removed `hero` and `team` string columns from `players` DataFrame. Use `hero_names()` and `team_names()` to resolve IDs to names.
 - **Breaking:** Removed `teams` DataFrame property. Use `team_names()` module-level function instead.
 - **Breaking:** Removed `winning_team` property. Use `winning_team_num` with `team_names()`.
-- **Breaking:** Removed `banned_heroes` property. Use `banned_hero_ids` with `hero_names()`.
+- **Breaking:** Removed `banned_heroes` property. The `k_EUserMsg_BannedHeroes` event is no longer reliably present in GOTV demo recordings (see Known Limitations).
 - **Breaking:** Moved `Demo.hero_names()` and `Demo.team_names()` from static methods to module-level functions `hero_names()` and `team_names()`. Import directly from `boon`.
 - **Breaking:** `purchases` and `shop_events` datasets merged into `item_purchases`. Columns: `tick`, `hero_id`, `ability_id`, `change`.
 - **Breaking:** `ability` column removed from `ability_upgrades`. Use `ability_names()` to resolve `ability_id`.
@@ -39,7 +39,7 @@
 - `Demo.street_brawl_rounds` property for street brawl round scoring events.
 - `NotStreetBrawlError` exception raised when accessing street brawl datasets on non-street-brawl demos.
 - `Demo.winning_team_num`, `Demo.game_over_tick` properties for game-over state (lazy-scanned on first access).
-- `Demo.banned_hero_ids` property for hero bans.
+- `Demo.available_datasets()` static method returning the list of valid dataset names.
 - `Demo.load()` method to batch-load multiple datasets in a single parse pass.
 - All DataFrame properties auto-load on first access and can be batch-loaded via `load()`.
 - `hero_names()` module-level function returning `dict[int, str]` of hero ID to name.
@@ -63,3 +63,7 @@
 - `stat-modifiers` command for per-player cumulative permanent stat bonuses.
 - `active-modifiers` command for active buff/debuff modifier events.
 - All commands support `--filter`, `--summary`, `--limit`, and `--json` flags.
+
+### Known Limitations
+
+- **Banned heroes:** The `k_EUserMsg_BannedHeroes` (msg_type 366) event is not reliably present in GOTV demo recordings. It appeared in older builds but is absent in newer ones. If Valve restores this event, banned hero support will be re-added.

@@ -38,19 +38,23 @@ for an existing `Demo` instance.
 
 ---
 
+#### `available_datasets()`
+
+```python
+Demo.available_datasets()  # -> list[str]
+```
+
+Static method. Returns the list of dataset names that can be passed to `load()` or accessed as properties.
+
+---
+
 #### `load()`
 
 ```python
 demo.load("kills", "player_ticks", "world_ticks")
 ```
 
-Load one or more datasets from the demo file in a single pass.
-
-Valid dataset names: `"player_ticks"`, `"world_ticks"`, `"kills"`, `"damage"`,
-`"flex_slots"`, `"respawns"`, `"item_purchases"`, `"abilities"`, `"ability_upgrades"`,
-`"chat"`, `"objectives"`, `"boss_kills"`, `"mid_boss"`,
-`"troopers"`, `"neutrals"`, `"stat_modifiers"`, `"active_modifiers"`, `"urn"`,
-`"street_brawl_ticks"`, `"street_brawl_rounds"`.
+Load one or more datasets from the demo file in a single pass. See `available_datasets()` for valid names.
 
 Already-loaded datasets are skipped. Multiple datasets requested together share
 a single parse pass over the file for efficiency.
@@ -210,17 +214,6 @@ demo.game_over_tick  # int | None
 
 The tick when the game ended, or `None` if no game-over event was found.
 Scans for the `k_EUserMsg_GameOver` event on first access.
-
----
-
-#### `banned_hero_ids`
-
-```python
-demo.banned_hero_ids  # list[int]
-```
-
-List of banned hero IDs. Returns an empty list if no banned heroes event was found.
-Scans for the `k_EUserMsg_BannedHeroes` event on first access.
 
 ### DataFrame Properties
 
@@ -766,6 +759,7 @@ Return a mapping of MurmurHash2 modifier ID to modifier name.
 
 ---
 
+(exceptions)=
 ## Exceptions
 
 ### `InvalidDemoError`

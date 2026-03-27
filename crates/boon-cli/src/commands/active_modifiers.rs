@@ -7,6 +7,9 @@ use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
 
+/// Source 2 null entity handle (0x00FFFFFF).
+const INVALID_ENTITY_HANDLE: u32 = 0x00FF_FFFF;
+
 struct CachedModifier {
     hero_id: i64,
     modifier: String,
@@ -112,8 +115,8 @@ pub fn run(
                         None => continue,
                     };
 
-                    let parent_handle = modifier.parent.unwrap_or(16777215);
-                    if parent_handle == 16777215 {
+                    let parent_handle = modifier.parent.unwrap_or(INVALID_ENTITY_HANDLE);
+                    if parent_handle == INVALID_ENTITY_HANDLE {
                         continue;
                     }
                     let parent_idx = (parent_handle & 0x3FFF) as i32;
@@ -155,8 +158,8 @@ pub fn run(
                         let ability_name =
                             boon::ability_name(modifier.ability_subclass.unwrap_or(0)).to_string();
                         let duration = modifier.duration.unwrap_or(-1.0);
-                        let caster_handle = modifier.caster.unwrap_or(16777215);
-                        let caster_hero_id = if caster_handle != 16777215 {
+                        let caster_handle = modifier.caster.unwrap_or(INVALID_ENTITY_HANDLE);
+                        let caster_hero_id = if caster_handle != INVALID_ENTITY_HANDLE {
                             let caster_idx = (caster_handle & 0x3FFF) as i32;
                             entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
                         } else {

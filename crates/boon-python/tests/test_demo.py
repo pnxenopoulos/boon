@@ -162,7 +162,7 @@ class TestMetadata:
 
 
 class TestGameResult:
-    """Tests for game result properties (winning team, banned heroes)."""
+    """Tests for game result properties (winning team, game over tick)."""
 
     def test_winning_team_num_is_int_or_none(self, demo: Demo) -> None:
         result = demo.winning_team_num
@@ -177,9 +177,6 @@ class TestGameResult:
         if tick is not None:
             assert 0 < tick <= demo.total_ticks
 
-    def test_banned_hero_ids_is_list(self, demo: Demo) -> None:
-        result = demo.banned_hero_ids
-        assert isinstance(result, list)
 
 
 # ===================================================================

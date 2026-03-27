@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-project = "boon"
+project = "Boon"
 author = "Peter Xenopoulos"
 
 # Read version from Cargo.toml (single source of truth)
@@ -21,3 +21,5 @@ source_suffix = {
 
 # Theme
 html_theme = "sphinx_rtd_theme"
+html_static_path = ["_static"]
+html_favicon = "_static/favicon.ico"

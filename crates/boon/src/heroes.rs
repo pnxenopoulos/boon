@@ -68,13 +68,13 @@ const HEROES: &[(i64, &str)] = &[
     (82, "Raven"),
 ];
 
-/// Look up a hero name by ID. Returns `"NAME_NOT_FOUND"` for unknown IDs.
+/// Look up a hero name by ID. Returns `"HERO_NOT_FOUND"` for unknown IDs.
 pub fn hero_name(id: i64) -> &'static str {
     HEROES
         .iter()
         .find(|&&(k, _)| k == id)
         .map(|&(_, v)| v)
-        .unwrap_or("NAME_NOT_FOUND")
+        .unwrap_or("HERO_NOT_FOUND")
 }
 
 /// Return all known (hero ID, hero name) pairs.
@@ -103,7 +103,7 @@ mod tests {
 
     #[test]
     fn unknown_hero() {
-        assert_eq!(hero_name(999), "NAME_NOT_FOUND");
+        assert_eq!(hero_name(999), "HERO_NOT_FOUND");
     }
 
     #[test]

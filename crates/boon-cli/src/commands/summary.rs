@@ -5,7 +5,7 @@ use colored::Colorize;
 use prost::Message;
 
 use boon_proto::proto::{
-    CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents,
+    CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents, CitadelUserMessageIds as Msg,
     c_msg_match_meta_data_contents::{self, MatchInfo},
 };
 
@@ -16,8 +16,8 @@ pub fn run(file: &Path, json: bool) -> Result<()> {
 
     let event = events
         .iter()
-        .find(|e| e.msg_type == 316)
-        .context("no PostMatchDetails event (msg_type 316) found in demo")?;
+        .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
+        .context("no PostMatchDetails event found in demo")?;
 
     let outer = CCitadelUserMsgPostMatchDetails::decode(event.payload.as_slice())
         .context("failed to decode CCitadelUserMsgPostMatchDetails")?;

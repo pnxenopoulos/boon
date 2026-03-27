@@ -100,8 +100,12 @@ jobs:
         run: cargo nextest run --workspace --all-features --locked --exclude boon-python --failure-output immediate-final
 
   test-python:
-    name: Python Tests
+    name: Python Tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     env:
       # Space-separated list of public URLs for demo fixture files.
       DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/68359505/68359505.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/68611977/68611977.dem"
@@ -118,12 +122,12 @@ jobs:
       - name: Cache cargo/target
         uses: Swatinem/rust-cache@v2
         with:
-          key: python-${{ runner.os }}-stable
+          key: python-${{ runner.os }}-${{ matrix.python-version }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
-          python-version: 3.13
+          python-version: ${{ matrix.python-version }}
 
       - name: Download demo fixtures
         working-directory: crates/boon-python
@@ -148,6 +152,50 @@ jobs:
         working-directory: crates/boon-python
         run: uv run pytest tests/ -v
 
+  dry-run-publish-parser:
+    name: Dry Run (crates.io)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo/target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: dry-run-parser-${{ runner.os }}
+
+      - name: cargo publish --dry-run (boon-proto)
+        run: cargo publish --dry-run -p boon-proto
+
+      - name: cargo publish --dry-run (boon-deadlock)
+        run: cargo publish --dry-run -p boon-deadlock
+
+  dry-run-publish-python:
+    name: Dry Run (PyPI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist -m crates/boon-python/Cargo.toml
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist -m crates/boon-python/Cargo.toml
+
+      - name: Verify dist contents
+        run: ls -lh dist/
+
   docs:
     name: Sphinx Docs
     runs-on: ubuntu-latest
@@ -170,7 +218,7 @@ jobs:
   check:
     name: CI Check
     if: always()
-    needs: [lint, deny, test-rust, test-python, docs]
+    needs: [lint, deny, test-rust, test-python, docs, dry-run-publish-parser, dry-run-publish-python]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
@@ -179,7 +227,9 @@ jobs:
                 "${{ needs.deny.result }}" != "success" ||
                 "${{ needs.test-rust.result }}" != "success" ||
                 "${{ needs.test-python.result }}" != "success" ||
-                "${{ needs.docs.result }}" != "success" ]]; then
+                "${{ needs.docs.result }}" != "success" ||
+                "${{ needs.dry-run-publish-parser.result }}" != "success" ||
+                "${{ needs.dry-run-publish-python.result }}" != "success" ]]; then
             echo "One or more required jobs failed"
             exit 1
           fi

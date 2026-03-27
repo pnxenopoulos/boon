@@ -7,32 +7,38 @@
 
 ## Installation
 
-Boon is a Rust library with Python bindings built using [PyO3](https://pyo3.rs) and
-[maturin](https://www.maturin.rs). Install it using [uv](https://docs.astral.sh/uv/guides/install-python/) or pip:
+We recommend using [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv add boon-deadlock
+```
 
-# or
+If you don't use uv, pip works too:
 
+```bash
 pip install boon-deadlock
 ```
 
+Boon is a Rust library with Python bindings built using [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs).
+
 ## Quick Start
+
+The `Demo` class is the entrypoint for all parsing. Pass it a path to a `.dem` file, then access the datasets you need as properties. Each property is parsed on first access, so you only pay for what you use. If you need several datasets at once, `load()` parses them in a single pass. Call `Demo.available_datasets()` to see all dataset names.
+
+Most properties return [Polars](https://pola.rs) DataFrames, so you get the full Polars API for filtering, grouping, and analysis out of the box.
 
 ```python
 from boon import Demo
 
-# Open a demo file
 demo = Demo("match.dem")
 
-# Inspect metadata
+# Metadata properties (not DataFrames)
 print(demo.map_name)         # "dl_midtown"
 print(demo.total_ticks)      # 54000
 print(demo.total_clock_time) # "30:00"
 print(demo.match_id)         # 28309863
 
-# Get player info
+# Dataset properties return Polars DataFrames
 players = demo.players
 print(players)
 # shape: (12, 5)
@@ -44,6 +50,13 @@ print(players)
 # │ Player1     ┆ 7656119...    ┆ 13      ┆ 2        ┆ 1          │
 # │ ...         ┆ ...           ┆ ...     ┆ ...      ┆ ...        │
 # └─────────────┴───────────────┴─────────┴──────────┴────────────┘
+
+# Batch-load multiple datasets in a single parse pass
+demo.load("kills", "damage", "item_purchases", "ability_upgrades")
+
+# Cached — no additional parsing needed
+print(f"Kills: {len(demo.kills)}")
+print(f"Damage events: {len(demo.damage)}")
 ```
 
 ## Working with Tick Data
@@ -112,19 +125,4 @@ final_tick.select("hero_id", "gold_net_worth", "ap_net_worth", "kills", "deaths"
 
 ## Error Handling
 
-```python
-from boon import Demo, InvalidDemoError, DemoHeaderError, DemoInfoError, DemoMessageError
-
-try:
-    demo = Demo("match.dem")
-except FileNotFoundError:
-    print("File does not exist")
-except InvalidDemoError:
-    print("Not a valid demo file")
-except DemoHeaderError:
-    print("Demo header is missing required fields")
-except DemoInfoError:
-    print("Demo file info is missing required fields")
-except DemoMessageError:
-    print("Could not resolve match data from demo")
-```
+Boon raises its own exceptions for invalid or malformed demo files. See the {ref}`Exceptions <exceptions>` section of the API reference for the full list.

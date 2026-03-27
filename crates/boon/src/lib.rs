@@ -3,15 +3,53 @@
 //! This crate provides functionality for parsing Deadlock demo files (.dem),
 //! extracting game state, entity information, and metadata.
 //!
-//! # Example
+//! # Quick start
 //!
 //! ```no_run
 //! use std::path::Path;
 //! use boon::Parser;
 //!
-//! let parser = Parser::from_file(Path::new("demo.dem")).unwrap();
+//! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
 //! let header = parser.file_header().unwrap();
 //! println!("Map: {:?}", header.map_name);
+//! ```
+//!
+//! # Reading game events
+//!
+//! ```no_run
+//! use std::path::Path;
+//! use boon::Parser;
+//!
+//! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
+//! let events = parser.events(None).unwrap();
+//! for event in &events {
+//!     println!("[tick {}] {} (msg_type {})", event.tick, event.name, event.msg_type);
+//! }
+//! ```
+//!
+//! # Iterating entities per tick
+//!
+//! ```no_run
+//! use std::path::Path;
+//! use boon::Parser;
+//!
+//! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
+//! parser.run_to_end(|ctx| {
+//!     for (&idx, entity) in ctx.entities.iter() {
+//!         if entity.class_name == "CCitadelPlayerPawn" {
+//!             // Access entity fields by resolved key
+//!         }
+//!     }
+//! }).unwrap();
+//! ```
+//!
+//! # Name lookups
+//!
+//! ```
+//! // Resolve numeric IDs to human-readable names
+//! assert_eq!(boon::hero_name(1), "Infernus");
+//! assert_eq!(boon::team_name(2), "Hidden King");
+//! assert_eq!(boon::team_name(3), "Archmother");
 //! ```
 
 pub mod abilities;

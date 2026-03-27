@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon_proto::proto::CitadelUserMessageIds as Msg;
 use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
@@ -75,9 +76,8 @@ pub fn run(
                 entity_to_hero_built = true;
             }
 
-            // Collect ability usage events (msg_type 365)
             for event in events {
-                if event.msg_type == 365
+                if event.msg_type == Msg::KEUserMsgImportantAbilityUsed as u32
                     && let Ok(msg) =
                         boon_proto::proto::CCitadelUserMessageImportantAbilityUsed::decode(
                             event.payload.as_slice(),

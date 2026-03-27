@@ -1,11 +1,15 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use boon_proto::proto::CitadelUserMessageIds as Msg;
 use polars::prelude::*;
 use prost::Message;
 use pyo3::exceptions::PyFileNotFoundError;
 use pyo3::prelude::*;
 use pyo3_polars::PyDataFrame;
+
+/// Source 2 null entity handle (0x00FFFFFF).
+const INVALID_ENTITY_HANDLE: u32 = 0x00FF_FFFF;
 
 pyo3::create_exception!(_boon, InvalidDemoError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoHeaderError, pyo3::exceptions::PyException);
@@ -137,9 +141,6 @@ struct Demo {
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
     game_over_scanned: bool,
-    // Banned heroes: list of hero IDs, None if not yet scanned
-    banned_hero_ids: Option<Vec<u32>>,
-    banned_heroes_scanned: bool,
     // Flex slot unlock events
     cached_flex_slots: Option<DataFrame>,
     cached_abilities: Option<DataFrame>,
@@ -254,8 +255,6 @@ impl Demo {
             cached_damage: None,
             game_over: None,
             game_over_scanned: false,
-            banned_hero_ids: None,
-            banned_heroes_scanned: false,
             cached_abilities: None,
             cached_flex_slots: None,
             cached_respawns: None,
@@ -499,14 +498,20 @@ impl Demo {
         Ok(PyDataFrame(df))
     }
 
+    /// Return the list of dataset names that can be passed to ``load()`` or accessed as properties.
+    ///
+    /// Returns:
+    ///     A list of valid dataset name strings.
+    #[staticmethod]
+    fn available_datasets() -> Vec<&'static str> {
+        let mut all = VALID_DATASETS.to_vec();
+        all.extend_from_slice(VALID_STREET_BRAWL_DATASETS);
+        all
+    }
+
     /// Load one or more datasets from the demo file in a single pass.
     ///
-    /// Valid dataset names: ``"player_ticks"``, ``"world_ticks"``, ``"kills"``,
-    /// ``"damage"``, ``"flex_slots"``, ``"respawns"``, ``"item_purchases"``,
-    /// ``"abilities"``, ``"ability_upgrades"``, ``"chat"``,
-    /// ``"objectives"``, ``"boss_kills"``, ``"mid_boss"``, ``"troopers"``,
-    /// ``"neutrals"``, ``"stat_modifiers"``, ``"active_modifiers"``, ``"urn"``,
-    /// ``"street_brawl_ticks"``, ``"street_brawl_rounds"``.
+    /// Valid dataset names: see ``available_datasets()``.
     /// Already-loaded datasets are skipped. Multiple datasets requested together
     /// share a single parse pass over the file for efficiency.
     ///
@@ -729,7 +734,6 @@ impl Demo {
         let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut entity_to_hero_built = false;
         let mut found_game_over: Option<(i32, i32)> = None;
-        let mut found_banned_hero_ids: Option<Vec<u32>> = None;
         let mut flex_ticks: Vec<i32> = Vec::new();
         let mut flex_team_nums: Vec<i32> = Vec::new();
         let mut respawn_ticks: Vec<i32> = Vec::new();
@@ -1548,8 +1552,8 @@ impl Demo {
                                 None => continue,
                             };
 
-                            let parent_handle = modifier.parent.unwrap_or(16777215);
-                            if parent_handle == 16777215 {
+                            let parent_handle = modifier.parent.unwrap_or(INVALID_ENTITY_HANDLE);
+                            if parent_handle == INVALID_ENTITY_HANDLE {
                                 continue;
                             }
                             let parent_idx = (parent_handle & 0x3FFF) as i32;
@@ -1581,8 +1585,8 @@ impl Demo {
                                 let mod_id = modifier.modifier_subclass.unwrap_or(0);
                                 let abil_id = modifier.ability_subclass.unwrap_or(0);
                                 let duration = modifier.duration.unwrap_or(-1.0);
-                                let caster_handle = modifier.caster.unwrap_or(16777215);
-                                let caster_hero_id = if caster_handle != 16777215 {
+                                let caster_handle = modifier.caster.unwrap_or(INVALID_ENTITY_HANDLE);
+                                let caster_hero_id = if caster_handle != INVALID_ENTITY_HANDLE {
                                     let caster_idx = (caster_handle & 0x3FFF) as i32;
                                     entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
                                 } else {
@@ -1686,8 +1690,8 @@ impl Demo {
                                 continue;
                             }
 
-                            let parent_handle = modifier.parent.unwrap_or(16777215);
-                            if parent_handle == 16777215 {
+                            let parent_handle = modifier.parent.unwrap_or(INVALID_ENTITY_HANDLE);
+                            if parent_handle == INVALID_ENTITY_HANDLE {
                                 continue;
                             }
                             let parent_idx = (parent_handle & 0x3FFF) as i32;
@@ -1859,39 +1863,29 @@ impl Demo {
                     collect_entity_data!(ctx);
 
                     for event in events {
-                        if load_kills && event.msg_type == 319 {
+                        if load_kills && event.msg_type == Msg::KEUserMsgHeroKilled as u32 {
                             raw_kill_events.push(RawEvent {
                                 tick: event.tick,
                                 payload: event.payload.clone(),
                             });
                         }
-                        if load_damage && event.msg_type == 300 {
+                        if load_damage && event.msg_type == Msg::KEUserMsgDamage as u32 {
                             raw_damage_events.push(RawEvent {
                                 tick: event.tick,
                                 payload: event.payload.clone(),
                             });
                         }
-                        // Always capture GameOver (msg_type 346)
                         if found_game_over.is_none()
-                            && event.msg_type == 346
+                            && event.msg_type == Msg::KEUserMsgGameOver as u32
                             && let Ok(msg) = boon_proto::proto::CCitadelUserMessageGameOver::decode(
                                 event.payload.as_slice(),
                             )
                         {
                             found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
                         }
-                        // Always capture BannedHeroes (msg_type 366)
-                        if found_banned_hero_ids.is_none()
-                            && event.msg_type == 366
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            found_banned_hero_ids = Some(msg.banned_hero_ids);
-                        }
                         // Collect FlexSlotUnlocked events (msg_type 356)
                         if load_flex_slots
-                            && event.msg_type == 356
+                            && event.msg_type == Msg::KEUserMsgFlexSlotUnlocked as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMsgFlexSlotUnlocked::decode(
                                     event.payload.as_slice(),
@@ -1902,7 +1896,7 @@ impl Demo {
                         }
                         // Collect PlayerRespawned events (msg_type 353)
                         if load_respawns
-                            && event.msg_type == 353
+                            && event.msg_type == Msg::KEUserMsgPlayerRespawned as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMsgPlayerRespawned::decode(
                                     event.payload.as_slice(),
@@ -1917,7 +1911,7 @@ impl Demo {
                         }
                         // Collect ImportantAbilityUsed events (msg_type 365)
                         if load_abilities
-                            && event.msg_type == 365
+                            && event.msg_type == Msg::KEUserMsgImportantAbilityUsed as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMessageImportantAbilityUsed::decode(
                                     event.payload.as_slice(),
@@ -1931,7 +1925,7 @@ impl Demo {
                         }
                         // Collect AbilitiesChanged events (msg_type 309) for item_purchases
                         if load_item_purchases
-                            && event.msg_type == 309
+                            && event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
                                     event.payload.as_slice(),
@@ -1955,7 +1949,7 @@ impl Demo {
                         }
                         // Collect ChatMsg events (msg_type 314)
                         if load_chat
-                            && event.msg_type == 314
+                            && event.msg_type == Msg::KEUserMsgChatMsg as u32
                             && let Ok(msg) = boon_proto::proto::CCitadelUserMsgChatMsg::decode(
                                 event.payload.as_slice(),
                             )
@@ -1974,7 +1968,7 @@ impl Demo {
                         }
                         // Collect BossKilled events (msg_type 347)
                         if load_boss_kills
-                            && event.msg_type == 347
+                            && event.msg_type == Msg::KEUserMsgBossKilled as u32
                             && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBossKilled::decode(
                                 event.payload.as_slice(),
                             )
@@ -1997,15 +1991,13 @@ impl Demo {
                         }
                         // Collect mid_boss lifecycle events
                         if load_mid_boss {
-                            // MidBossSpawned (msg_type 349)
-                            if event.msg_type == 349 {
+                            if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
                                 mb_ticks.push(event.tick);
                                 mb_hero_ids.push(0);
                                 mb_team_nums.push(0);
                                 mb_events.push("spawned".to_string());
                             }
-                            // BossKilled for mid_boss (msg_type 347, entity_killed_class == 8)
-                            if event.msg_type == 347
+                            if event.msg_type == Msg::KEUserMsgBossKilled as u32
                                 && let Ok(msg) =
                                     boon_proto::proto::CCitadelUserMsgBossKilled::decode(
                                         event.payload.as_slice(),
@@ -2017,8 +2009,7 @@ impl Demo {
                                 mb_team_nums.push(msg.objective_team.unwrap_or(0));
                                 mb_events.push("killed".to_string());
                             }
-                            // RejuvStatus (msg_type 350)
-                            if event.msg_type == 350
+                            if event.msg_type == Msg::KEUserMsgRejuvStatus as u32
                                 && let Ok(msg) =
                                     boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
                                         event.payload.as_slice(),
@@ -2040,7 +2031,7 @@ impl Demo {
                         }
                         // Collect StreetBrawlScoring events (msg_type 362)
                         if load_street_brawl_rounds
-                            && event.msg_type == 362
+                            && event.msg_type == Msg::KEUserMsgStreetBrawlScoring as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMsgStreetBrawlScoring::decode(
                                     event.payload.as_slice(),
@@ -2065,15 +2056,9 @@ impl Demo {
         }
 
         // ── Store always-scanned events if found during events pass ──
-        if need_events {
-            if !self.game_over_scanned {
-                self.game_over = found_game_over;
-                self.game_over_scanned = true;
-            }
-            if !self.banned_heroes_scanned {
-                self.banned_hero_ids = found_banned_hero_ids;
-                self.banned_heroes_scanned = true;
-            }
+        if need_events && !self.game_over_scanned {
+            self.game_over = found_game_over;
+            self.game_over_scanned = true;
         }
 
         // ── Build and cache DataFrames ──
@@ -2799,16 +2784,6 @@ impl Demo {
         Ok(self.game_over.map(|(_, tick)| tick))
     }
 
-    /// List of banned hero IDs.
-    ///
-    /// Scans for the ``k_EUserMsg_BannedHeroes`` event on first access.
-    /// Returns an empty list if no banned heroes event was found.
-    #[getter]
-    fn banned_hero_ids(&mut self) -> PyResult<Vec<u32>> {
-        self.ensure_always_events_scanned()?;
-        Ok(self.banned_hero_ids.clone().unwrap_or_default())
-    }
-
     fn __repr__(&self) -> String {
         let ticks = self.total_ticks;
         let abs_path = self
@@ -2864,33 +2839,22 @@ impl Demo {
         (tick - paused).max(0)
     }
 
-    /// Scan for always-needed events (GameOver, BannedHeroes) if not already done.
+    /// Scan for the GameOver event if not already done.
     /// Uses the lightweight events-only parser pass.
     fn ensure_always_events_scanned(&mut self) -> PyResult<()> {
-        let need_game_over = !self.game_over_scanned;
-        let need_banned = !self.banned_heroes_scanned;
-        if !need_game_over && !need_banned {
+        if self.game_over_scanned {
             return Ok(());
         }
         let events = self.parser.events(None).map_err(to_py_err)?;
         for event in &events {
-            if need_game_over
-                && event.msg_type == 346
+            if event.msg_type == Msg::KEUserMsgGameOver as u32
                 && let Ok(msg) =
                     boon_proto::proto::CCitadelUserMessageGameOver::decode(event.payload.as_slice())
             {
                 self.game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
             }
-            if need_banned
-                && event.msg_type == 366
-                && let Ok(msg) =
-                    boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(event.payload.as_slice())
-            {
-                self.banned_hero_ids = Some(msg.banned_hero_ids);
-            }
         }
         self.game_over_scanned = true;
-        self.banned_heroes_scanned = true;
         Ok(())
     }
 }
