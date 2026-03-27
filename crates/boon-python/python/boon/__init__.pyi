@@ -488,20 +488,18 @@ class Demo:
         ...
 
     @property
-    def stat_modifiers(self) -> pl.DataFrame:
-        """Per-player cumulative permanent stat bonuses as a Polars DataFrame.
+    def stat_modifier_events(self) -> pl.DataFrame:
+        """Permanent stat bonus change events as a Polars DataFrame.
 
-        Not loaded by default. Access this property or call ``load("stat_modifiers")`` explicitly.
+        Not loaded by default. Access this property or call ``load("stat_modifier_events")`` explicitly.
+
+        Emits a row whenever a stat total changes (idol/breakable pickups).
 
         Columns:
-            - **tick** (*int*) -- The game tick.
+            - **tick** (*int*) -- The game tick when the stat changed.
             - **hero_id** (*int*) -- The player's hero ID.
-            - **health** (*float*) -- Cumulative bonus health.
-            - **spirit_power** (*float*) -- Cumulative bonus spirit power.
-            - **fire_rate** (*float*) -- Cumulative bonus fire rate.
-            - **weapon_damage** (*float*) -- Cumulative bonus weapon damage.
-            - **cooldown_reduction** (*float*) -- Cumulative cooldown reduction.
-            - **ammo** (*float*) -- Cumulative bonus ammo.
+            - **stat_type** (*str*) -- ``"health"``, ``"spirit_power"``, ``"fire_rate"``, ``"weapon_damage"``, ``"cooldown_reduction"``, or ``"ammo"``.
+            - **amount** (*float*) -- The increase from this event.
         """
         ...
 
@@ -554,8 +552,8 @@ class Demo:
             - **tick** (*int*) -- The game tick.
             - **round** (*int*) -- Current round number.
             - **state** (*int*) -- Street brawl state enum value.
-            - **amber_score** (*int*) -- Team Amber score.
-            - **sapphire_score** (*int*) -- Team Sapphire score.
+            - **amber_score** (*int*) -- The Hidden King (old name: Amber Hand) score.
+            - **sapphire_score** (*int*) -- The Archmother (old name: Sapphire Flame) score.
             - **buy_countdown** (*int*) -- Last buy phase countdown value.
             - **next_state_time** (*float*) -- Time of next state transition.
             - **state_start_time** (*float*) -- Time the current state started.
@@ -577,7 +575,7 @@ class Demo:
             - **round** (*int*) -- Sequential round number (1-indexed).
             - **tick** (*int*) -- The game tick when the round ended.
             - **scoring_team** (*int*) -- The team that scored.
-            - **amber_score** (*int*) -- Team Amber cumulative score.
-            - **sapphire_score** (*int*) -- Team Sapphire cumulative score.
+            - **amber_score** (*int*) -- The Hidden King (old name: Amber Hand) cumulative score.
+            - **sapphire_score** (*int*) -- The Archmother (old name: Sapphire Flame) cumulative score.
         """
         ...

@@ -73,10 +73,7 @@ NEUTRALS_COLUMNS = {
     "x", "y", "z",
 }
 
-STAT_MODIFIERS_COLUMNS = {
-    "tick", "hero_id", "health", "spirit_power", "fire_rate",
-    "weapon_damage", "cooldown_reduction", "ammo",
-}
+STAT_MODIFIER_EVENTS_COLUMNS = {"tick", "hero_id", "stat_type", "amount"}
 
 ACTIVE_MODIFIERS_COLUMNS = {
     "tick", "hero_id", "event", "modifier_id", "ability_id",
@@ -108,7 +105,7 @@ DATASET_COLUMNS = {
     "mid_boss": MID_BOSS_COLUMNS,
     "troopers": TROOPERS_COLUMNS,
     "neutrals": NEUTRALS_COLUMNS,
-    "stat_modifiers": STAT_MODIFIERS_COLUMNS,
+    "stat_modifier_events": STAT_MODIFIER_EVENTS_COLUMNS,
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
     "urn": URN_COLUMNS,
 }
@@ -276,7 +273,7 @@ class TestDatasets:
         assert isinstance(df, pl.DataFrame)
 
     # Datasets that may be empty depending on game mode
-    POSSIBLY_EMPTY = {"flex_slots", "mid_boss", "neutrals", "urn"}
+    POSSIBLY_EMPTY = {"ability_upgrades", "flex_slots", "mid_boss", "neutrals", "stat_modifier_events", "urn"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:

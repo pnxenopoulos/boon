@@ -165,6 +165,7 @@ enum ECitadelNewPlayerProgressFlag {
 	k_eNewPlayerProgress_GettingStarted = 1;
 	k_eNewPlayerProgress_HeroTraining = 2;
 	k_eNewPlayerProgress_LaneTraining = 3;
+	k_eNewPlayerProgress_CombinedTutorial2026 = 4;
 }
 
 enum EProfileCardSlotType {
@@ -283,6 +284,7 @@ message CSOGameAccountClient {
 	optional uint32 brawl_wins = 18;
 	optional uint32 brawl_losses = 19;
 	optional uint32 brawl_kills = 20;
+	optional uint32 last_mm_match_time = 21;
 }
 
 message CSOAccountSyncStorage {
@@ -301,10 +303,8 @@ message CSOAccountHeroInfo {
 	optional uint32 hero_id = 2;
 	optional .CSOAccountHeroInfo.EHeroStatus status = 3 [default = k_eLocked];
 	optional uint32 wins = 4;
-	optional uint32 kills = 5;
 	optional uint32 hero_xp = 6;
 	optional uint32 brawl_wins = 7;
-	optional uint32 brawl_kills = 8;
 }
 
 message CSOAccountChallenge {
@@ -333,6 +333,8 @@ message CSOAccountChallenge {
 }
 
 message CMsgCitadelClientHello {
+	optional bytes pgi_hash = 1;
+	optional bytes pgi_version = 2;
 }
 
 message CMsgClientToGCStartMatchmaking {
@@ -341,6 +343,7 @@ message CMsgClientToGCStartMatchmaking {
 	optional .CMsgStartFindingMatchInfo match_info = 3;
 	optional .CMsgRegionPingTimesClient ping_times = 4;
 	optional .CMsgHeroSelectionMatchInfo heroes = 5;
+	optional bool pgi_verified = 6;
 }
 
 message CMsgClientToGCStartMatchmakingResponse {
@@ -371,6 +374,7 @@ message CMsgClientToGCStartMatchmakingResponse {
 		k_EResult_NoHeroLabsWhileInLowPri = 23;
 		k_EResult_AccountLocked = 24;
 		k_EResult_TooManyLimitedHeroes = 25;
+		k_EResult_UnverifiedPGI = 26;
 	}
 
 	optional .CMsgClientToGCStartMatchmakingResponse.EResultCode result = 1 [default = k_EResult_OK];
@@ -408,6 +412,7 @@ message CMsgClientWelcomeCitadel {
 	repeated .CExtraMsgBlock extra_messages = 2;
 	optional uint32 compatibility_version = 3;
 	optional .ECitadelRegionMode region_mode = 4 [default = k_ECitadelRegionMode_ROW];
+	optional bool pgi_verified = 5;
 }
 
 message CMsgClientToGCIsInMatchmaking {
@@ -527,6 +532,7 @@ message CMsgPartyMMInfo {
 	optional .CMsgRegionPingTimesClient ping_times = 2;
 	optional uint32 client_version = 3;
 	optional .ECitadelRegionMode region_mode = 4 [default = k_ECitadelRegionMode_ROW];
+	optional bool pgi_verified = 5;
 }
 
 message CMsgClientToGCPartyCreate {
@@ -741,6 +747,7 @@ message CMsgClientToGCPartyStartMatchResponse {
 		k_eHeroLabsMMNotOpen = 29;
 		k_eHeroLabsNotUnlocked = 30;
 		k_eNoHeroLabsWhileInLowPri = 31;
+		k_eUnverifiedPGI = 32;
 	}
 
 	optional .CMsgClientToGCPartyStartMatchResponse.EResponse result = 1 [default = k_eInternalError];
@@ -987,6 +994,9 @@ message CMsgClientToGCUpdateRosterResponse {
 		k_eMMBusy = 5;
 		k_eInvalidHeroSelection = 6;
 		k_eHeroesNotUnlocked = 7;
+		k_eNotInMatchmaking = 8;
+		k_eInvalidPartyRoster = 9;
+		k_eInvalidMode = 10;
 	}
 
 	optional .CMsgClientToGCUpdateRosterResponse.EResponse result = 1 [default = k_eInternalError];
@@ -1318,7 +1328,6 @@ message CMsgClientToGCFindHeroBuildsResponse {
 
 	optional .CMsgClientToGCFindHeroBuildsResponse.EResponse response = 1 [default = k_eInternalError];
 	repeated .CMsgClientToGCFindHeroBuildsResponse.HeroBuildResult results = 2;
-	optional uint32 build_window_start_time_override = 3;
 }
 
 message CMsgClientToGCUpdateHeroBuildPreference {
@@ -1668,6 +1677,7 @@ message CMsgSurveyQuestion {
 		k_eHeroPlayAgainst = 3;
 		k_eMoreFunHero = 4;
 		k_eHeroPower = 5;
+		k_eHeroPlayAs = 6;
 	}
 
 	optional uint32 question_id = 1;
@@ -1678,6 +1688,7 @@ message CMsgSurveyQuestion {
 }
 
 message CMsgClientToGCGetSurveyQuestion {
+	optional .CMsgSurveyQuestion.EQuestionType dev_force_new_question_type = 1 [default = k_eInvalid];
 }
 
 message CMsgClientToGCGetSurveyQuestionResponse {
@@ -1695,6 +1706,7 @@ message CMsgClientToGCSubmitSurvey {
 	optional uint32 question_id = 1;
 	optional bool is_skip = 2;
 	optional uint32 response_value = 3;
+	optional .CMsgSurveyQuestion.EQuestionType dev_force_new_question_type = 4 [default = k_eInvalid];
 }
 
 message CMsgClientToGCSubmitSurveyResponse {
@@ -1784,7 +1796,6 @@ message CMsgPostGameProgressData {
 	}
 
 	message PlayerAward {
-		optional uint32 award_column = 1;
 		optional uint32 award_id = 2;
 		optional int32 award_value = 3;
 		optional uint32 award_rank = 4;

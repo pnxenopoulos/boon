@@ -22,7 +22,7 @@ ALL_DATASETS = [
     "objectives",
     "player_ticks",
     "respawns",
-    "stat_modifiers",
+    "stat_modifier_events",
     "troopers",
     "urn",
     "world_ticks",

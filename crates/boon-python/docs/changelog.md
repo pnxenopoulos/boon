@@ -32,7 +32,7 @@
 - `Demo.mid_boss` property for mid boss lifecycle events.
 - `Demo.troopers` property for per-tick alive lane trooper state (opt-in, large dataset).
 - `Demo.neutrals` property for neutral creep state changes with change detection (opt-in).
-- `Demo.stat_modifiers` property for per-player cumulative permanent stat bonuses (opt-in).
+- `Demo.stat_modifier_events` property for permanent stat bonus change events (opt-in).
 - `Demo.active_modifiers` property for active buff/debuff modifier events (opt-in).
 - `Demo.urn` property for urn (idol) lifecycle events (picked up, dropped, returned) and delivery point tracking (active, inactive with position and team).
 - `Demo.street_brawl_ticks` property for per-tick street brawl state (round, scores, state transitions).
@@ -63,7 +63,3 @@
 - `stat-modifiers` command for per-player cumulative permanent stat bonuses.
 - `active-modifiers` command for active buff/debuff modifier events.
 - All commands support `--filter`, `--summary`, `--limit`, and `--json` flags.
-
-### Known Limitations
-
-- **Banned heroes:** The `k_EUserMsg_BannedHeroes` (msg_type 366) event is not reliably present in GOTV demo recordings. It appeared in older builds but is absent in newer ones. If Valve restores this event, banned hero support will be re-added.

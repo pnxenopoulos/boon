@@ -102,7 +102,7 @@ const VALID_DATASETS: &[&str] = &[
     "item_purchases",
     "troopers",
     "neutrals",
-    "stat_modifiers",
+    "stat_modifier_events",
     "active_modifiers",
     "urn",
 ];
@@ -153,7 +153,7 @@ struct Demo {
     cached_mid_boss: Option<DataFrame>,
     cached_troopers: Option<DataFrame>,
     cached_neutrals: Option<DataFrame>,
-    cached_stat_modifiers: Option<DataFrame>,
+    cached_stat_modifier_events: Option<DataFrame>,
     cached_active_modifiers: Option<DataFrame>,
     cached_players: Option<DataFrame>,
     cached_street_brawl_ticks: Option<DataFrame>,
@@ -266,7 +266,7 @@ impl Demo {
             cached_mid_boss: None,
             cached_troopers: None,
             cached_neutrals: None,
-            cached_stat_modifiers: None,
+            cached_stat_modifier_events: None,
             cached_active_modifiers: None,
             cached_players: None,
             cached_street_brawl_ticks: None,
@@ -573,8 +573,8 @@ impl Demo {
             datasets.iter().any(|s| s == "troopers") && self.cached_troopers.is_none();
         let load_neutrals =
             datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
-        let load_stat_modifiers =
-            datasets.iter().any(|s| s == "stat_modifiers") && self.cached_stat_modifiers.is_none();
+        let load_stat_modifier_events = datasets.iter().any(|s| s == "stat_modifier_events")
+            && self.cached_stat_modifier_events.is_none();
         let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
             && self.cached_active_modifiers.is_none();
         let load_urn = datasets.iter().any(|s| s == "urn") && self.cached_urn.is_none();
@@ -598,7 +598,7 @@ impl Demo {
             && !load_mid_boss
             && !load_troopers
             && !load_neutrals
-            && !load_stat_modifiers
+            && !load_stat_modifier_events
             && !load_active_modifiers
             && !load_urn
             && !load_street_brawl_ticks
@@ -637,7 +637,7 @@ impl Demo {
         {
             class_names.push("CCitadelPlayerPawn");
         }
-        if load_ability_upgrades || load_item_purchases || load_chat || load_stat_modifiers {
+        if load_ability_upgrades || load_item_purchases || load_chat || load_stat_modifier_events {
             class_names.push("CCitadelPlayerController");
         }
         if load_objectives {
@@ -813,20 +813,13 @@ impl Demo {
         // Change detection: entity_index → (was_alive, health, max_health, x_bits, y_bits, z_bits)
         let mut nt_prev: HashMap<i32, (bool, i64, i64, u32, u32, u32)> = HashMap::new();
 
-        // ── Column vectors for stat_modifiers ──
-        let sm_capacity = if load_stat_modifiers {
-            self.total_ticks as usize * 12
-        } else {
-            0
-        };
-        let mut sm_tick: Vec<i32> = Vec::with_capacity(sm_capacity);
-        let mut sm_hero_id: Vec<i64> = Vec::with_capacity(sm_capacity);
-        let mut sm_health: Vec<f32> = Vec::with_capacity(sm_capacity);
-        let mut sm_spirit_power: Vec<f32> = Vec::with_capacity(sm_capacity);
-        let mut sm_fire_rate: Vec<f32> = Vec::with_capacity(sm_capacity);
-        let mut sm_weapon_damage: Vec<f32> = Vec::with_capacity(sm_capacity);
-        let mut sm_cooldown_reduction: Vec<f32> = Vec::with_capacity(sm_capacity);
-        let mut sm_ammo: Vec<f32> = Vec::with_capacity(sm_capacity);
+        // ── Column vectors for stat_modifiers (event-based change detection) ──
+        let mut sm_tick: Vec<i32> = Vec::new();
+        let mut sm_hero_id: Vec<i64> = Vec::new();
+        let mut sm_stat_type: Vec<String> = Vec::new();
+        let mut sm_amount: Vec<f32> = Vec::new();
+        // Change detection: (controller_entity_index, eValType) → previous summed value
+        let mut sm_prev: HashMap<(i32, u32), f32> = HashMap::new();
 
         // ── Column vectors for active_modifiers ──
         let mut am_tick: Vec<i32> = Vec::new();
@@ -1016,7 +1009,7 @@ impl Demo {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
-                            if load_player_ticks {
+                            if load_player_ticks || load_urn {
                                 pk_vec_x = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
                                 );
@@ -1118,13 +1111,13 @@ impl Demo {
                                     "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_ItemID"
                                 ));
                                 let bits_key = s.resolve_field_key(&format!(
-                                    "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_nUpgradeBits"
+                                    "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_nUpgradeInfo"
                                 ));
                                 au_slot_keys.push((item_key, bits_key));
                             }
                         }
                     }
-                    if load_stat_modifiers {
+                    if load_stat_modifier_events {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
                             if ck_hero_id.is_none() {
                                 ck_hero_id =
@@ -1392,13 +1385,14 @@ impl Demo {
                             if ability_id == 0 {
                                 continue;
                             }
+                            // m_nUpgradeInfo packs upgrade bits in bits 17+
                             let upgrade_bits = bits_key
                                 .and_then(|k| entity.fields.get(&k))
                                 .and_then(|v| match v {
-                                    boon_parser::FieldValue::I32(n) => Some(*n),
-                                    boon_parser::FieldValue::I64(n) => Some(*n as i32),
-                                    boon_parser::FieldValue::U32(n) => Some(*n as i32),
-                                    boon_parser::FieldValue::U64(n) => Some(*n as i32),
+                                    boon_parser::FieldValue::I32(n) => Some((*n >> 17) as i32),
+                                    boon_parser::FieldValue::I64(n) => Some((*n >> 17) as i32),
+                                    boon_parser::FieldValue::U32(n) => Some((*n >> 17) as i32),
+                                    boon_parser::FieldValue::U64(n) => Some((*n >> 17) as i32),
                                     _ => None,
                                 })
                                 .unwrap_or(0);
@@ -1469,9 +1463,9 @@ impl Demo {
                     }
                 }
 
-                // ── Collect stat_modifiers (per tick per controller) ──
-                if load_stat_modifiers {
-                    for (_, entity) in $ctx.entities.iter() {
+                // ── Collect stat_modifiers (event-based change detection) ──
+                if load_stat_modifier_events {
+                    for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name != "CCitadelPlayerController" {
                             continue;
                         }
@@ -1480,19 +1474,9 @@ impl Demo {
                             continue;
                         }
 
-                        // Sum values by eValType into 6 stat slots
-                        let mut sums = [0.0f32; 6];
-                        for (mid_key, vt_key, val_key) in &smk_keys {
-                            let mid_val = mid_key
-                                .and_then(|k| entity.fields.get(&k))
-                                .and_then(|v| match v {
-                                    boon_parser::FieldValue::U32(n) => Some(*n),
-                                    boon_parser::FieldValue::I32(n) => Some(*n as u32),
-                                    boon_parser::FieldValue::U64(n) => Some(*n as u32),
-                                    boon_parser::FieldValue::I64(n) => Some(*n as u32),
-                                    _ => None,
-                                })
-                                .unwrap_or(0);
+                        // Sum values by eValType
+                        let mut by_type: HashMap<u32, f32> = HashMap::new();
+                        for (_mid_key, vt_key, val_key) in &smk_keys {
                             let vt_val = vt_key
                                 .and_then(|k| entity.fields.get(&k))
                                 .and_then(|v| match v {
@@ -1503,30 +1487,34 @@ impl Demo {
                                     _ => None,
                                 })
                                 .unwrap_or(0);
-                            let fl_val = get_f32(entity, *val_key);
-                            if mid_val == 0 && vt_val == 0 && fl_val == 0.0 {
+                            if vt_val == 0 {
                                 continue;
                             }
-                            let idx = match vt_val {
-                                28 => 0,  // health
-                                48 => 1,  // spirit_power
-                                76 => 2,  // fire_rate
-                                15 => 3,  // weapon_damage
-                                106 => 4, // cooldown_reduction
-                                169 => 5, // ammo
-                                _ => continue,
-                            };
-                            sums[idx] += fl_val;
+                            let fl_val = get_f32(entity, *val_key);
+                            *by_type.entry(vt_val).or_insert(0.0) += fl_val;
                         }
 
-                        sm_tick.push($ctx.tick);
-                        sm_hero_id.push(hero_id);
-                        sm_health.push(sums[0]);
-                        sm_spirit_power.push(sums[1]);
-                        sm_fire_rate.push(sums[2]);
-                        sm_weapon_damage.push(sums[3]);
-                        sm_cooldown_reduction.push(sums[4]);
-                        sm_ammo.push(sums[5]);
+                        // Emit events for changed stat types
+                        for (vt_val, total) in &by_type {
+                            let key = (idx, *vt_val);
+                            let prev = sm_prev.get(&key).copied().unwrap_or(0.0);
+                            if (*total - prev).abs() > f32::EPSILON {
+                                sm_prev.insert(key, *total);
+                                let stat_name = match *vt_val {
+                                    31 => "health",
+                                    51 => "spirit_power",
+                                    79 => "fire_rate",
+                                    18 => "weapon_damage",
+                                    109 => "cooldown_reduction",
+                                    172 => "ammo",
+                                    _ => continue,
+                                };
+                                sm_tick.push($ctx.tick);
+                                sm_hero_id.push(hero_id);
+                                sm_stat_type.push(stat_name.to_string());
+                                sm_amount.push(*total - prev);
+                            }
+                        }
                     }
                 }
 
@@ -1668,13 +1656,16 @@ impl Demo {
                                     *count -= 1;
                                     if *count <= 0 {
                                         urn_hero_count.remove(&hero_id);
+                                        let pawn = entity_to_hero.iter()
+                                            .find(|(_, hid)| **hid == hero_id)
+                                            .and_then(|(idx, _)| $ctx.entities.get(*idx));
                                         urn_tick.push($ctx.tick);
                                         urn_event.push("dropped".to_string());
                                         urn_hero_id.push(hero_id);
                                         urn_team_num.push(0);
-                                        urn_x.push(0.0);
-                                        urn_y.push(0.0);
-                                        urn_z.push(0.0);
+                                        urn_x.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_x)));
+                                        urn_y.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_y)));
+                                        urn_z.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_z)));
                                     }
                                 }
                                 urn_return_seen.remove(&serial);
@@ -1701,6 +1692,12 @@ impl Demo {
                                 None => continue,
                             };
 
+                            // Look up pawn position for hero events
+                            let pawn = $ctx.entities.get(parent_idx);
+                            let hero_x = pawn.map_or(0.0, |e| get_f32(e, pk_vec_x));
+                            let hero_y = pawn.map_or(0.0, |e| get_f32(e, pk_vec_y));
+                            let hero_z = pawn.map_or(0.0, |e| get_f32(e, pk_vec_z));
+
                             current_urn_serials.insert(serial);
 
                             if is_golden_idol
@@ -1713,9 +1710,9 @@ impl Demo {
                                     urn_event.push("picked_up".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
-                                    urn_x.push(0.0);
-                                    urn_y.push(0.0);
-                                    urn_z.push(0.0);
+                                    urn_x.push(hero_x);
+                                    urn_y.push(hero_y);
+                                    urn_z.push(hero_z);
                                 }
                                 *count += 1;
                                 urn_idol_serials.insert(serial, hero_id);
@@ -1731,9 +1728,9 @@ impl Demo {
                                     urn_event.push("returned".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
-                                    urn_x.push(0.0);
-                                    urn_y.push(0.0);
-                                    urn_z.push(0.0);
+                                    urn_x.push(hero_x);
+                                    urn_y.push(hero_y);
+                                    urn_z.push(hero_z);
                                     urn_last_return_tick.insert(hero_id, $ctx.tick);
                                 }
                             }
@@ -1752,13 +1749,16 @@ impl Demo {
                                 *count -= 1;
                                 if *count <= 0 {
                                     urn_hero_count.remove(&hero_id);
+                                    let pawn = entity_to_hero.iter()
+                                        .find(|(_, hid)| **hid == hero_id)
+                                        .and_then(|(idx, _)| $ctx.entities.get(*idx));
                                     urn_tick.push($ctx.tick);
                                     urn_event.push("dropped".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
-                                    urn_x.push(0.0);
-                                    urn_y.push(0.0);
-                                    urn_z.push(0.0);
+                                    urn_x.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_x)));
+                                    urn_y.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_y)));
+                                    urn_z.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_z)));
                                 }
                             }
                         }
@@ -2376,19 +2376,15 @@ impl Demo {
             self.cached_neutrals = Some(df);
         }
 
-        if load_stat_modifiers {
+        if load_stat_modifier_events {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), sm_tick),
                 Column::new("hero_id".into(), sm_hero_id),
-                Column::new("health".into(), sm_health),
-                Column::new("spirit_power".into(), sm_spirit_power),
-                Column::new("fire_rate".into(), sm_fire_rate),
-                Column::new("weapon_damage".into(), sm_weapon_damage),
-                Column::new("cooldown_reduction".into(), sm_cooldown_reduction),
-                Column::new("ammo".into(), sm_ammo),
+                Column::new("stat_type".into(), sm_stat_type),
+                Column::new("amount".into(), sm_amount),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_stat_modifiers = Some(df);
+            self.cached_stat_modifier_events = Some(df);
         }
 
         if load_active_modifiers {
@@ -2663,20 +2659,24 @@ impl Demo {
         Ok(PyDataFrame(self.cached_neutrals.clone().unwrap()))
     }
 
-    /// Per-tick, per-player cumulative permanent stat bonuses as a Polars DataFrame.
+    /// Permanent stat bonus change events as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``health``, ``spirit_power``,
-    /// ``fire_rate``, ``weapon_damage``, ``cooldown_reduction``, ``ammo``.
+    /// Columns: ``tick``, ``hero_id``, ``stat_type``, ``amount``.
     ///
-    /// Tracks idol and breakable pickup bonuses from
-    /// ``StatViewerModifierValues`` on ``CCitadelPlayerController``.
+    /// ``stat_type`` is one of: ``"health"``, ``"spirit_power"``, ``"fire_rate"``,
+    /// ``"weapon_damage"``, ``"cooldown_reduction"``, ``"ammo"``.
+    /// ``amount`` is the increase from this event.
+    ///
+    /// Emits a row whenever a stat total changes (idol/breakable pickups).
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn stat_modifiers(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_stat_modifiers.is_none() {
-            self.load(vec!["stat_modifiers".to_string()])?;
+    fn stat_modifier_events(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_stat_modifier_events.is_none() {
+            self.load(vec!["stat_modifier_events".to_string()])?;
         }
-        Ok(PyDataFrame(self.cached_stat_modifiers.clone().unwrap()))
+        Ok(PyDataFrame(
+            self.cached_stat_modifier_events.clone().unwrap(),
+        ))
     }
 
     /// Active buff/debuff modifier events as a Polars DataFrame.

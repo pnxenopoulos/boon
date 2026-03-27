@@ -12,7 +12,7 @@ When you need human-readable names, boon provides module-level mapping functions
 from boon import hero_names, team_names, ability_names, modifier_names, game_mode_names
 
 hero_names()       # {1: "Infernus", 2: "Seven", 3: "Vindicta", ...}
-team_names()       # {2: "Team Amber", 3: "Team Sapphire"}
+team_names()       # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
 ability_names()    # {123456: "Spectral Wall", ...}  (MurmurHash2 IDs)
 modifier_names()   # {789012: "modifier_tentacle_debuff", ...}  (MurmurHash2 IDs)
 game_mode_names()  # {1: "Unranked", 2: "Ranked", 4: "StreetBrawl", ...}

@@ -108,7 +108,7 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     env:
       # Space-separated list of public URLs for demo fixture files.
-      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/68359505/68359505.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/68611977/68611977.dem"
+      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/70555151/70555151.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem"
 
     steps:
       - name: Checkout
@@ -172,8 +172,11 @@ jobs:
       - name: cargo publish --dry-run (boon-proto)
         run: cargo publish --dry-run -p boon-proto
 
-      - name: cargo publish --dry-run (boon-deadlock)
-        run: cargo publish --dry-run -p boon-deadlock
+      # boon-deadlock depends on boon-proto, which cargo publish --dry-run
+      # tries to resolve from crates.io. We use cargo package instead to
+      # validate metadata and file inclusion without registry resolution.
+      - name: cargo package (boon-deadlock)
+        run: cargo package -p boon-deadlock
 
   dry-run-publish-python:
     name: Dry Run (PyPI)

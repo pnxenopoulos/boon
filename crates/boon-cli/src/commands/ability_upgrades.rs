@@ -56,7 +56,7 @@ pub fn run(
                             "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_ItemID"
                         ));
                         let bits_key = s.resolve_field_key(&format!(
-                            "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_nUpgradeBits"
+                            "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_nUpgradeInfo"
                         ));
                         slot_keys.push((item_key, bits_key));
                     }
@@ -100,13 +100,14 @@ pub fn run(
                         continue;
                     }
 
+                    // m_nUpgradeInfo packs upgrade bits in bits 17+
                     let upgrade_bits = bits_key
                         .and_then(|k| entity.fields.get(&k))
                         .and_then(|v| match v {
-                            boon::FieldValue::I32(n) => Some(*n),
-                            boon::FieldValue::I64(n) => Some(*n as i32),
-                            boon::FieldValue::U32(n) => Some(*n as i32),
-                            boon::FieldValue::U64(n) => Some(*n as i32),
+                            boon::FieldValue::I32(n) => Some(*n >> 17),
+                            boon::FieldValue::I64(n) => Some((*n >> 17) as i32),
+                            boon::FieldValue::U32(n) => Some((*n >> 17) as i32),
+                            boon::FieldValue::U64(n) => Some((*n >> 17) as i32),
                             _ => None,
                         })
                         .unwrap_or(0);

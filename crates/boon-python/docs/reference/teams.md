@@ -18,6 +18,6 @@ map.
 
 | start_lane | Lane |
 |------------|------|
-| 1 | Left (Yellow) |
-| 4 | Center (Blue) |
-| 6 | Right (Purple) |
+| 1 | York (Yellow) |
+| 4 | Broadway (Blue) |
+| 6 | Park (Green) |

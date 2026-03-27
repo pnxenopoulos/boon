@@ -125,7 +125,11 @@ extract_version_in_section() {
       if (in_section) exit
     }
     in_section && $0 ~ /^[[:space:]]*version[[:space:]]*=/ {
-      if (match($0, /"([^"]+)"/, m)) { print m[1]; exit }
+      if (match($0, /"[^"]+"/)) {
+        s = substr($0, RSTART+1, RLENGTH-2)
+        print s
+        exit
+      }
     }
   ' "$toml"
 }
@@ -218,10 +222,13 @@ upsert_metadata_version() {
 update_cargo_toml() {
   local client="$1" server="$2" rev="$3"
 
-  local section current_version
-  section="package"
-  current_version="$(extract_version_in_section "$section" "$CARGO_TOML")"
-  [[ -n "$current_version" ]] || die "Could not find quoted version in [$section] in $CARGO_TOML"
+  # boon-proto uses version.workspace = true, so read from the workspace root
+  local workspace_toml="$SCRIPT_DIR/../Cargo.toml"
+  need_file "$workspace_toml"
+
+  local current_version
+  current_version="$(extract_version_in_section "workspace.package" "$workspace_toml")"
+  [[ -n "$current_version" ]] || die "Could not find quoted version in [workspace.package] in $workspace_toml"
 
   if [[ ! "$current_version" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
     die "Existing version '$current_version' does not contain MAJOR.MINOR.PATCH"
@@ -231,13 +238,10 @@ update_cargo_toml() {
   local minor="${BASH_REMATCH[2]}"
   local patch="${BASH_REMATCH[3]}"
 
-  local pkg_version="${major}.${minor}.${patch}"
   local full_version="${major}.${minor}.${patch}.${client}.${server}.${rev}"
 
-  update_version_in_section "package" "$CARGO_TOML" "$pkg_version"
   upsert_metadata_version "$CARGO_TOML" "$full_version"
 
-  echo "Updated $CARGO_TOML ([package].version): $current_version -> $pkg_version"
   echo "Updated $CARGO_TOML ([package.metadata.boon-proto].version): -> $full_version"
 }
 

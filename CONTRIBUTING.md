@@ -157,11 +157,11 @@ Demo files (`.dem`) are not checked into this repository (they are gitignored). 
 Each fixture is a named release whose tag is the match ID:
 
 ```bash
-gh release download 68359505 \
+gh release download 70555151 \
   --repo pnxenopoulos/boon-fixtures \
   --dir crates/boon-python/tests/fixtures/
 
-gh release download 68611977 \
+gh release download 70537442 \
   --repo pnxenopoulos/boon-fixtures \
   --dir crates/boon-python/tests/fixtures/
 ```
@@ -201,8 +201,8 @@ def demo() -> Demo:
 
 | Match ID | Game Mode | Description |
 |----------|-----------|-------------|
-| 68359505 | 6v6 | Standard 6v6 match |
-| 68611977 | Street Brawl | Street brawl (game_mode=4) match |
+| 70555151 | 6v6 | Standard 6v6 match |
+| 70537442 | Street Brawl | Street brawl (game_mode=4) match |
 
 ## Submitting Changes
 

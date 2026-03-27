@@ -11,7 +11,7 @@ keywords = ["deadlock", "protobuf", "demo"]
 categories = ["game-development", "encoding"]
 
 [package.metadata.boon-proto]
-version = "0.1.0.6217.6217.10417637"
+version = "0.1.0.6416.6416.10556490"
 
 [dependencies]
 bytes = "1.11"
