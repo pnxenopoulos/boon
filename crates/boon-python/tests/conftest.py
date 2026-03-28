@@ -21,12 +21,13 @@ ALL_DATASETS = [
     "neutrals",
     "objectives",
     "player_ticks",
-    "respawns",
     "stat_modifier_events",
     "troopers",
     "urn",
     "world_ticks",
 ]
+
+STREET_BRAWL_DATASETS = ["street_brawl_ticks", "street_brawl_rounds"]
 
 
 def _demo_files() -> list[Path]:
@@ -34,6 +35,23 @@ def _demo_files() -> list[Path]:
     if not FIXTURES_DIR.is_dir():
         return []
     return sorted(FIXTURES_DIR.glob("*.dem"))
+
+
+# Session-scoped cache: filename → Demo instance (parsed once, reused everywhere)
+_demo_cache: dict[str, Demo] = {}
+
+
+def get_demo(path: Path) -> Demo:
+    """Get or create a fully-loaded Demo instance, cached for the session."""
+    key = path.name
+    if key not in _demo_cache:
+        d = Demo(str(path))
+        datasets = list(ALL_DATASETS)
+        if d.game_mode == 4:
+            datasets.extend(STREET_BRAWL_DATASETS)
+        d.load(*datasets)
+        _demo_cache[key] = d
+    return _demo_cache[key]
 
 
 @pytest.fixture(scope="session")
@@ -49,9 +67,7 @@ def demo(request: pytest.FixtureRequest) -> Demo:
     All datasets are loaded eagerly in a single parse pass so that
     individual tests only check cached DataFrames.
     """
-    d = Demo(str(request.param))
-    d.load(*ALL_DATASETS)
-    return d
+    return get_demo(request.param)
 
 
 def _require_demo_fixture() -> Path:

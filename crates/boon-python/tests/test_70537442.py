@@ -9,7 +9,7 @@ import polars as pl
 import pytest
 from boon import Demo
 
-from conftest import ALL_DATASETS, FIXTURES_DIR
+from conftest import FIXTURES_DIR, get_demo
 
 FIXTURE_PATH = FIXTURES_DIR / "70537442.dem"
 
@@ -18,9 +18,7 @@ FIXTURE_PATH = FIXTURES_DIR / "70537442.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("70537442.dem fixture not available")
-    d = Demo(str(FIXTURE_PATH))
-    d.load(*ALL_DATASETS, "street_brawl_ticks", "street_brawl_rounds")
-    return d
+    return get_demo(FIXTURE_PATH)
 
 
 # ===================================================================
@@ -198,16 +196,6 @@ class TestDamage:
 
 
 # ===================================================================
-# Respawns
-# ===================================================================
-
-
-class TestRespawns:
-    def test_total_count(self, demo: Demo) -> None:
-        assert len(demo.respawns) == 2
-
-
-# ===================================================================
 # Item purchases
 # ===================================================================
 
@@ -246,11 +234,11 @@ class TestAbilityUpgrades:
 
 class TestObjectives:
     def test_row_count(self, demo: Demo) -> None:
-        assert len(demo.objectives) == 266_824
+        assert len(demo.objectives) == 446
 
     def test_objective_types(self, demo: Demo) -> None:
         types = set(demo.objectives["objective_type"].to_list())
-        assert types == {"barracks", "titan", "walker"}
+        assert types == {"barracks", "patron", "shrine", "walker"}
 
     def test_team_nums(self, demo: Demo) -> None:
         teams = set(demo.objectives["team_num"].to_list())

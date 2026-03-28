@@ -1,4 +1,4 @@
-# API Reference
+# 📚 API Reference
 
 ## `Demo`
 
@@ -362,21 +362,6 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 
 ---
 
-#### `respawns`
-
-```python
-demo.respawns  # polars.DataFrame
-```
-
-Player respawn events. Auto-loads on first access if not already loaded via `load()`.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tick` | `int` | The game tick when the player respawned |
-| `hero_id` | `int` | The hero ID of the respawned player |
-
----
-
 #### `flex_slots`
 
 ```python
@@ -422,7 +407,7 @@ player upgrades one of their abilities. Auto-loads on first access.
 | `tick` | `int` | The game tick when the upgrade occurred |
 | `hero_id` | `int` | The hero ID of the player |
 | `ability_id` | `int` | The raw MurmurHash2 ability ID (use `ability_names()` to resolve) |
-| `upgrade_bits` | `int` | Cumulative upgrade bitmask (1=T1, 3=T1+T2, 7=T1+T2+T3, 15=T1+T2+T3+T4) |
+| `tier` | `int` | Upgrade tier (1, 2, or 3) |
 
 ---
 
@@ -467,17 +452,21 @@ In-game chat messages. Auto-loads on first access.
 demo.objectives  # polars.DataFrame
 ```
 
-Per-tick objective entity health. Tracks walkers, titans, barracks, and mid boss.
+Objective health state changes. Tracks walkers, barracks, shrines, patrons, and mid boss. Emits a row when an objective's health or max_health changes.
 Auto-loads on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `tick` | `int` | The game tick |
-| `objective_type` | `str` | `"walker"`, `"titan"`, `"barracks"`, or `"mid_boss"` |
+| `objective_type` | `str` | `"walker"`, `"barracks"`, `"shrine"`, `"patron"`, or `"mid_boss"` |
 | `team_num` | `int` | The team that owns the objective |
-| `lane` | `int` | Lane assignment (1, 4, or 6) |
+| `lane` | `int` | Lane assignment (1, 4, or 6; 0 for patron/shrine/mid_boss) |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
+| `phase` | `int` | Patron phase (0=normal, 2=shields down, 1=final phase; 0 for non-patron) |
+| `x` | `float` | X position |
+| `y` | `float` | Y position |
+| `z` | `float` | Z position |
 
 ---
 
@@ -494,7 +483,7 @@ Objective destruction events. Auto-loads on first access.
 | `tick` | `int` | The game tick when the objective was destroyed |
 | `objective_team` | `int` | The team that owned the destroyed objective |
 | `objective_id` | `int` | Objective mask change ID |
-| `entity_class` | `str` | `"walker"`, `"mid_boss"`, `"titan_shield_generator"`, `"barracks"`, `"titan"`, `"core"` |
+| `entity_class` | `str` | `"walker"`, `"barracks"`, `"shrine"`, `"mid_boss"`, `"patron_shields_down"`, `"patron"` |
 | `gametime` | `float` | The game time when the objective was destroyed |
 
 ---

@@ -42,18 +42,17 @@ DAMAGE_COLUMNS = {
 
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
 
-RESPAWNS_COLUMNS = {"tick", "hero_id"}
-
 ABILITIES_COLUMNS = {"tick", "hero_id", "ability"}
 
-ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "upgrade_bits"}
+ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "tier"}
 
 ITEM_PURCHASES_COLUMNS = {"tick", "hero_id", "ability_id", "change"}
 
 CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
 
 OBJECTIVES_COLUMNS = {
-    "tick", "objective_type", "team_num", "lane", "health", "max_health",
+    "tick", "objective_type", "team_num", "lane", "health", "max_health", "phase",
+    "x", "y", "z",
 }
 
 BOSS_KILLS_COLUMNS = {
@@ -95,7 +94,6 @@ DATASET_COLUMNS = {
     "kills": KILLS_COLUMNS,
     "damage": DAMAGE_COLUMNS,
     "flex_slots": FLEX_SLOTS_COLUMNS,
-    "respawns": RESPAWNS_COLUMNS,
     "abilities": ABILITIES_COLUMNS,
     "ability_upgrades": ABILITY_UPGRADES_COLUMNS,
     "item_purchases": ITEM_PURCHASES_COLUMNS,

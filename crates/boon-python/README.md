@@ -57,7 +57,6 @@ damage           = demo.damage            # damage events
 item_purchases   = demo.item_purchases    # item shop transactions
 ability_upgrades = demo.ability_upgrades  # skill point spending
 abilities        = demo.abilities         # ability usage events
-respawns         = demo.respawns          # respawn events
 flex_slots       = demo.flex_slots        # flex slot unlocks
 chat             = demo.chat              # chat messages
 objectives       = demo.objectives        # objective health per tick

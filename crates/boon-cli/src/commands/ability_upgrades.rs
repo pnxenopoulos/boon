@@ -12,7 +12,7 @@ struct AbilityUpgradeOutput {
     hero_id: i64,
     ability_id: u32,
     ability: String,
-    upgrade_bits: i32,
+    tier: i32,
 }
 
 #[derive(Serialize)]
@@ -123,7 +123,7 @@ pub fn run(
                                 hero_id,
                                 ability_id,
                                 ability: boon::ability_name(ability_id).to_string(),
-                                upgrade_bits,
+                                tier: upgrade_bits.count_ones() as i32 - 1,
                             });
                         }
                     }
@@ -211,7 +211,7 @@ pub fn run(
                 a.hero_id,
                 a.ability_id,
                 a.ability.green(),
-                a.upgrade_bits
+                a.tier
             );
         }
 

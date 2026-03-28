@@ -338,18 +338,6 @@ class Demo:
         ...
 
     @property
-    def respawns(self) -> pl.DataFrame:
-        """Player respawn events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the player respawned.
-            - **hero_id** (*int*) -- The hero ID of the respawned player.
-        """
-        ...
-
-    @property
     def abilities(self) -> pl.DataFrame:
         """Important ability usage events as a Polars DataFrame.
 
@@ -372,7 +360,7 @@ class Demo:
             - **tick** (*int*) -- The game tick when the upgrade occurred.
             - **hero_id** (*int*) -- The hero ID of the player.
             - **ability_id** (*int*) -- The raw MurmurHash2 ability ID.
-            - **upgrade_bits** (*int*) -- Cumulative upgrade bitmask.
+            - **tier** (*int*) -- Upgrade tier (1, 2, or 3).
         """
         ...
 
@@ -406,17 +394,22 @@ class Demo:
 
     @property
     def objectives(self) -> pl.DataFrame:
-        """Per-tick objective entity health as a Polars DataFrame.
+        """Objective health state changes as a Polars DataFrame.
 
+        Emits a row when an objective's health, max_health, or phase changes.
         Auto-loads on first access if not already loaded via :meth:`load`.
 
         Columns:
-            - **tick** (*int*) -- The game tick.
-            - **objective_type** (*str*) -- ``"walker"``, ``"titan"``, ``"barracks"``, or ``"mid_boss"``.
+            - **tick** (*int*) -- The game tick when the change occurred.
+            - **objective_type** (*str*) -- ``"walker"``, ``"barracks"``, ``"shrine"``, ``"patron"``, or ``"mid_boss"``.
             - **team_num** (*int*) -- The team that owns the objective.
-            - **lane** (*int*) -- Lane assignment (1, 4, or 6).
+            - **lane** (*int*) -- Lane assignment (1, 4, or 6; 0 for patron/shrine/mid_boss).
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Maximum health.
+            - **phase** (*int*) -- Patron phase (0=normal, 2=shields down, 1=final phase; 0 for non-patron).
+            - **x** (*float*) -- X position.
+            - **y** (*float*) -- Y position.
+            - **z** (*float*) -- Z position.
         """
         ...
 
@@ -430,7 +423,7 @@ class Demo:
             - **tick** (*int*) -- The game tick when the objective was destroyed.
             - **objective_team** (*int*) -- The team that owned the destroyed objective.
             - **objective_id** (*int*) -- Objective mask change ID.
-            - **entity_class** (*str*) -- ``"walker"``, ``"mid_boss"``, ``"titan_shield_generator"``, ``"barracks"``, ``"titan"``, ``"core"``.
+            - **entity_class** (*str*) -- ``"walker"``, ``"barracks"``, ``"shrine"``, ``"mid_boss"``, ``"patron_shields_down"``, ``"patron"``.
             - **gametime** (*float*) -- The game time when the objective was destroyed.
         """
         ...

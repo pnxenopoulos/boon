@@ -1,4 +1,4 @@
-# CLI
+# 💻 CLI
 
 Boon includes a command-line tool for inspecting demo files. It is built from the
 `boon` crate.

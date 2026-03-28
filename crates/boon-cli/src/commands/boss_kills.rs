@@ -10,10 +10,10 @@ fn entity_class_name(class: i32) -> &'static str {
     match class {
         5 => "walker",
         8 => "mid_boss",
-        28 => "titan_shield_generator",
+        28 => "shrine",
         29 => "barracks",
-        30 => "titan",
-        31 => "core",
+        30 => "barracks",
+        31 => "patron",
         _ => "unknown",
     }
 }

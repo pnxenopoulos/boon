@@ -1,4 +1,4 @@
-# Reference
+# 🔧 Reference
 
 Reference tables for IDs, enums, and entity classes used in Deadlock demo files.
 

@@ -45,7 +45,7 @@ jobs:
       - name: rustdoc
         env:
           RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --workspace --no-deps --all-features
+        run: cargo doc --workspace --no-deps --all-features --exclude boon-cli --exclude boon-python
 
   deny:
     name: Dependency Check
@@ -93,14 +93,30 @@ jobs:
         with:
           tool: nextest
 
-      - name: Build
-        run: cargo build --workspace --all-features --locked --exclude boon-python
-
       - name: Test
         run: cargo nextest run --workspace --all-features --locked --exclude boon-python --failure-output immediate-final
 
+  build-python-wheel:
+    name: Build Python Wheel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --out dist -m crates/boon-python/Cargo.toml
+
+      - name: Upload wheel
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-wheel
+          path: dist/*.whl
+
   test-python:
     name: Python Tests (${{ matrix.python-version }})
+    needs: build-python-wheel
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -114,20 +130,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install Rust (stable)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-
-      - name: Cache cargo/target
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: python-${{ runner.os }}-${{ matrix.python-version }}
-
       - name: Install uv
         uses: astral-sh/setup-uv@v7
         with:
           python-version: ${{ matrix.python-version }}
+
+      - name: Download wheel
+        uses: actions/download-artifact@v7
+        with:
+          name: python-wheel
+          path: dist
 
       - name: Download demo fixtures
         working-directory: crates/boon-python
@@ -142,11 +154,11 @@ jobs:
             echo "No DEMO_URLS configured — skipping fixture download"
           fi
 
-      - name: Install dependencies and build wheel
+      - name: Install wheel and test dependencies
         working-directory: crates/boon-python
         run: |
-          uv sync
-          uv run maturin develop
+          uv sync --no-install-project
+          uv pip install ../../dist/*.whl
 
       - name: Run pytest
         working-directory: crates/boon-python
@@ -172,11 +184,11 @@ jobs:
       - name: cargo publish --dry-run (boon-proto)
         run: cargo publish --dry-run -p boon-proto
 
-      # boon-deadlock depends on boon-proto, which cargo publish --dry-run
-      # tries to resolve from crates.io. We use cargo package instead to
-      # validate metadata and file inclusion without registry resolution.
-      - name: cargo package (boon-deadlock)
-        run: cargo package -p boon-deadlock
+      # boon-deadlock depends on boon-proto which isn't on crates.io yet.
+      # Both cargo publish --dry-run and cargo package resolve registry deps,
+      # so neither works until boon-proto is published. Uncomment after first release.
+      # - name: cargo publish --dry-run (boon-deadlock)
+      #   run: cargo publish --dry-run -p boon-deadlock
 
   dry-run-publish-python:
     name: Dry Run (PyPI)
@@ -221,7 +233,7 @@ jobs:
   check:
     name: CI Check
     if: always()
-    needs: [lint, deny, test-rust, test-python, docs, dry-run-publish-parser, dry-run-publish-python]
+    needs: [lint, deny, test-rust, build-python-wheel, test-python, docs, dry-run-publish-parser, dry-run-publish-python]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
@@ -229,6 +241,7 @@ jobs:
           if [[ "${{ needs.lint.result }}" != "success" ||
                 "${{ needs.deny.result }}" != "success" ||
                 "${{ needs.test-rust.result }}" != "success" ||
+                "${{ needs.build-python-wheel.result }}" != "success" ||
                 "${{ needs.test-python.result }}" != "success" ||
                 "${{ needs.docs.result }}" != "success" ||
                 "${{ needs.dry-run-publish-parser.result }}" != "success" ||

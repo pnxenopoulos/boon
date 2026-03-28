@@ -1,4 +1,4 @@
-# Changelog
+# 📝 Changelog
 
 ## 0.1.0
 
@@ -21,13 +21,12 @@
 - `Demo.world_ticks` property returning per-tick world state.
 - `Demo.kills` property for hero kill events with attacker, victim, and assisters.
 - `Demo.damage` property for damage events with pre/post mitigation, hitgroups, and crit damage.
-- `Demo.respawns` property for player respawn events.
 - `Demo.flex_slots` property for flex slot unlock events.
 - `Demo.abilities` property for important ability usage events.
 - `Demo.ability_upgrades` property for hero ability point spending events.
 - `Demo.item_purchases` property for item shop transactions.
 - `Demo.chat` property for in-game chat messages.
-- `Demo.objectives` property for per-tick objective entity health.
+- `Demo.objectives` property for objective health state changes.
 - `Demo.boss_kills` property for objective destruction events.
 - `Demo.mid_boss` property for mid boss lifecycle events.
 - `Demo.troopers` property for per-tick alive lane trooper state (opt-in, large dataset).

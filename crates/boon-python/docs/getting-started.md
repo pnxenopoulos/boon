@@ -1,4 +1,4 @@
-# Getting Started
+# 🚀 Getting Started
 
 ## Requirements
 
@@ -94,7 +94,7 @@ chat = demo.chat
 ## Objectives and Map State
 
 ```python
-# Objective health per tick (walkers, titans, barracks, mid boss)
+# Objective health state changes (walkers, titans, barracks, mid boss)
 objectives = demo.objectives
 
 # Objective destruction events
@@ -102,6 +102,10 @@ boss_kills = demo.boss_kills
 
 # Mid boss lifecycle (spawn, kill, rejuv buffs)
 mid_boss = demo.mid_boss
+
+# Lane troopers and guardians (opt-in, large dataset)
+troopers = demo.troopers
+# trooper_type is "trooper" (lane creeps) or "trooper_boss" (lane guardian)
 ```
 
 ## Filtering with Polars

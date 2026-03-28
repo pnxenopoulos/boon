@@ -98,7 +98,6 @@ const VALID_DATASETS: &[&str] = &[
     "kills",
     "damage",
     "flex_slots",
-    "respawns",
     "item_purchases",
     "troopers",
     "neutrals",
@@ -144,7 +143,6 @@ struct Demo {
     // Flex slot unlock events
     cached_flex_slots: Option<DataFrame>,
     cached_abilities: Option<DataFrame>,
-    cached_respawns: Option<DataFrame>,
     cached_ability_upgrades: Option<DataFrame>,
     cached_item_purchases: Option<DataFrame>,
     cached_chat: Option<DataFrame>,
@@ -257,7 +255,6 @@ impl Demo {
             game_over_scanned: false,
             cached_abilities: None,
             cached_flex_slots: None,
-            cached_respawns: None,
             cached_ability_upgrades: None,
             cached_item_purchases: None,
             cached_chat: None,
@@ -556,8 +553,6 @@ impl Demo {
         let load_damage = datasets.iter().any(|s| s == "damage") && self.cached_damage.is_none();
         let load_flex_slots =
             datasets.iter().any(|s| s == "flex_slots") && self.cached_flex_slots.is_none();
-        let load_respawns =
-            datasets.iter().any(|s| s == "respawns") && self.cached_respawns.is_none();
         let load_ability_upgrades = datasets.iter().any(|s| s == "ability_upgrades")
             && self.cached_ability_upgrades.is_none();
         let load_item_purchases =
@@ -589,7 +584,6 @@ impl Demo {
             && !load_kills
             && !load_damage
             && !load_flex_slots
-            && !load_respawns
             && !load_ability_upgrades
             && !load_item_purchases
             && !load_chat
@@ -611,7 +605,6 @@ impl Demo {
             || load_kills
             || load_damage
             || load_flex_slots
-            || load_respawns
             || load_item_purchases
             || load_chat
             || load_boss_kills
@@ -630,7 +623,6 @@ impl Demo {
         if load_abilities
             || load_kills
             || load_damage
-            || load_respawns
             || load_mid_boss
             || load_active_modifiers
             || load_urn
@@ -645,6 +637,7 @@ impl Demo {
             class_names.push("CNPC_Boss_Tier3");
             class_names.push("CNPC_BarrackBoss");
             class_names.push("CNPC_MidBoss");
+            class_names.push("CCitadel_Destroyable_Building");
         }
         if load_troopers {
             class_names.push("CNPC_Trooper");
@@ -736,8 +729,6 @@ impl Demo {
         let mut found_game_over: Option<(i32, i32)> = None;
         let mut flex_ticks: Vec<i32> = Vec::new();
         let mut flex_team_nums: Vec<i32> = Vec::new();
-        let mut respawn_ticks: Vec<i32> = Vec::new();
-        let mut respawn_hero_ids: Vec<i64> = Vec::new();
         let mut ability_ticks: Vec<i32> = Vec::new();
         let mut ability_hero_ids: Vec<i64> = Vec::new();
         let mut ability_names: Vec<String> = Vec::new();
@@ -748,7 +739,7 @@ impl Demo {
         let mut au_ticks: Vec<i32> = Vec::new();
         let mut au_hero_ids: Vec<i64> = Vec::new();
         let mut au_ability_ids: Vec<u32> = Vec::new();
-        let mut au_upgrade_bits: Vec<i32> = Vec::new();
+        let mut au_tier: Vec<i32> = Vec::new();
         // Change detection: (controller_entity_index, slot_index) → previous upgrade_bits
         let mut au_prev_bits: HashMap<(i32, usize), i32> = HashMap::new();
 
@@ -758,18 +749,23 @@ impl Demo {
         let mut chat_texts: Vec<String> = Vec::new();
         let mut chat_types: Vec<String> = Vec::new();
 
-        // ── Column vectors for objectives ──
-        let obj_capacity = if load_objectives {
-            self.total_ticks as usize * 21
-        } else {
-            0
-        };
-        let mut obj_tick: Vec<i32> = Vec::with_capacity(obj_capacity);
-        let mut obj_type: Vec<String> = Vec::with_capacity(obj_capacity);
-        let mut obj_team_num: Vec<i64> = Vec::with_capacity(obj_capacity);
-        let mut obj_lane: Vec<i64> = Vec::with_capacity(obj_capacity);
-        let mut obj_health: Vec<i64> = Vec::with_capacity(obj_capacity);
-        let mut obj_max_health: Vec<i64> = Vec::with_capacity(obj_capacity);
+        // ── Column vectors for objectives (change detection) ──
+        let mut obj_tick: Vec<i32> = Vec::new();
+        let mut obj_type: Vec<String> = Vec::new();
+        let mut obj_team_num: Vec<i64> = Vec::new();
+        let mut obj_lane: Vec<i64> = Vec::new();
+        let mut obj_health: Vec<i64> = Vec::new();
+        let mut obj_max_health: Vec<i64> = Vec::new();
+        let mut obj_phase: Vec<i64> = Vec::new();
+        let mut obj_x: Vec<f32> = Vec::new();
+        let mut obj_y: Vec<f32> = Vec::new();
+        let mut obj_z: Vec<f32> = Vec::new();
+        // Change detection: entity_index → (health, max_health, phase)
+        let mut obj_prev: HashMap<i32, (i64, i64, i64)> = HashMap::new();
+        // Patron phase key
+        let mut patron_phase_key: Option<u64> = None;
+        // Patron phase change detection for boss_kills: entity_index → prev phase
+        let mut patron_phase_prev: HashMap<i32, i64> = HashMap::new();
 
         // ── Column vectors for boss_kills ──
         // ── Column vectors for mid_boss ──
@@ -953,6 +949,16 @@ impl Demo {
         let mut nk_max_health: Option<u64> = None;
         let mut nk_team_num: Option<u64> = None;
         let mut nk_lane: Option<u64> = None;
+        let mut nk_vec_x: Option<u64> = None;
+        let mut nk_vec_y: Option<u64> = None;
+        let mut nk_vec_z: Option<u64> = None;
+        // Shrine (CCitadel_Destroyable_Building) has different field keys
+        let mut shrine_health: Option<u64> = None;
+        let mut shrine_max_health: Option<u64> = None;
+        let mut shrine_vec_x: Option<u64> = None;
+        let mut shrine_vec_y: Option<u64> = None;
+        let mut shrine_vec_z: Option<u64> = None;
+        let mut shrine_team_num: Option<u64> = None;
 
         // Trooper NPC keys (lane troopers)
         let mut tk_health: Option<u64> = None;
@@ -1004,7 +1010,7 @@ impl Demo {
         macro_rules! collect_entity_data {
             ($ctx:expr) => {
                 if !keys_resolved {
-                    if load_abilities || load_player_ticks || load_kills || load_damage || load_respawns || load_active_modifiers || load_urn {
+                    if load_abilities || load_player_ticks || load_kills || load_damage || load_active_modifiers || load_urn {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
@@ -1138,15 +1144,31 @@ impl Demo {
                         }
                     }
                     if load_objectives {
-                        // All objective NPCs share the same base fields; resolve from first found
+                        // NPC objective classes share field names; resolve from first found
                         for obj_class in &["CNPC_Boss_Tier2", "CNPC_Boss_Tier3", "CNPC_BarrackBoss", "CNPC_MidBoss"] {
                             if let Some(s) = $ctx.serializers.get(*obj_class) {
                                 nk_health = s.resolve_field_key("m_iHealth");
                                 nk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 nk_team_num = s.resolve_field_key("m_iTeamNum");
                                 nk_lane = s.resolve_field_key("m_iLane");
+                                nk_vec_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
+                                nk_vec_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
+                                nk_vec_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
                                 break;
                             }
+                        }
+                        // Patron phase key
+                        if let Some(s) = $ctx.serializers.get("CNPC_Boss_Tier3") {
+                            patron_phase_key = s.resolve_field_key("m_ePhase");
+                        }
+                        // Shrine has a different serializer with different field keys
+                        if let Some(s) = $ctx.serializers.get("CCitadel_Destroyable_Building") {
+                            shrine_health = s.resolve_field_key("m_iHealth");
+                            shrine_max_health = s.resolve_field_key("m_iMaxHealth");
+                            shrine_team_num = s.resolve_field_key("m_iTeamNum");
+                            shrine_vec_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
+                            shrine_vec_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
+                            shrine_vec_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
                         }
                     }
                     if load_troopers {
@@ -1333,7 +1355,7 @@ impl Demo {
                 }
 
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
-                if (load_abilities || load_kills || load_damage || load_respawns || load_mid_boss || load_active_modifiers || load_urn) && !entity_to_hero_built {
+                if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn) && !entity_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerPawn" {
                             let hid = get_i64(entity, pk_hero_id);
@@ -1404,34 +1426,66 @@ impl Demo {
                                     au_ticks.push($ctx.tick);
                                     au_hero_ids.push(hero_id);
                                     au_ability_ids.push(ability_id);
-                                    au_upgrade_bits.push(upgrade_bits);
+                                    au_tier.push(upgrade_bits.count_ones() as i32 - 1);
                                 }
                             }
                         }
                     }
                 }
 
-                // ── Collect objectives (per-tick entity health) ──
+                // ── Collect objectives (change detection on health/max_health/phase) ──
                 if load_objectives {
-                    for (_, entity) in $ctx.entities.iter() {
+                    for (&idx, entity) in $ctx.entities.iter() {
                         let obj_class = entity.class_name.as_str();
-                        let otype = match obj_class {
-                            "CNPC_Boss_Tier2" => "walker",
-                            "CNPC_Boss_Tier3" => "titan",
-                            "CNPC_BarrackBoss" => "barracks",
-                            "CNPC_MidBoss" => "mid_boss",
+                        let is_patron = obj_class == "CNPC_Boss_Tier3";
+                        let (otype, hp_key, max_hp_key, team_key, lane_key, vx_key, vy_key, vz_key) = match obj_class {
+                            "CNPC_Boss_Tier2" => ("walker", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
+                            "CNPC_Boss_Tier3" => ("patron", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
+                            "CNPC_BarrackBoss" => ("barracks", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
+                            "CNPC_MidBoss" => ("mid_boss", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
+                            "CCitadel_Destroyable_Building" => ("shrine", shrine_health, shrine_max_health, shrine_team_num, None, shrine_vec_x, shrine_vec_y, shrine_vec_z),
                             _ => continue,
                         };
-                        let max_hp = get_i64(entity, nk_max_health);
+                        let max_hp = get_i64(entity, max_hp_key);
                         if max_hp == 0 {
                             continue;
                         }
-                        obj_tick.push($ctx.tick);
-                        obj_type.push(otype.to_string());
-                        obj_team_num.push(get_i64(entity, nk_team_num));
-                        obj_lane.push(get_i64(entity, nk_lane));
-                        obj_health.push(get_i64(entity, nk_health));
-                        obj_max_health.push(max_hp);
+                        let hp = get_i64(entity, hp_key);
+                        let phase = if is_patron { get_i64(entity, patron_phase_key) } else { 0 };
+                        let cur = (hp, max_hp, phase);
+                        let changed = match obj_prev.get(&idx) {
+                            None => true,
+                            Some(prev) => *prev != cur,
+                        };
+                        if changed {
+                            obj_prev.insert(idx, cur);
+                            obj_tick.push($ctx.tick);
+                            obj_type.push(otype.to_string());
+                            obj_team_num.push(get_i64(entity, team_key));
+                            obj_lane.push(get_i64(entity, lane_key));
+                            obj_health.push(hp);
+                            obj_max_health.push(max_hp);
+                            obj_phase.push(phase);
+                            obj_x.push(get_f32(entity, vx_key));
+                            obj_y.push(get_f32(entity, vy_key));
+                            obj_z.push(get_f32(entity, vz_key));
+                        }
+
+                        // Detect patron phase changes for boss_kills
+                        if is_patron && load_boss_kills {
+                            let prev_phase = patron_phase_prev.get(&idx).copied().unwrap_or(0);
+                            if phase != prev_phase {
+                                patron_phase_prev.insert(idx, phase);
+                                if phase == 2 {
+                                    // Shrines destroyed → patron shields down
+                                    bk_ticks.push($ctx.tick);
+                                    bk_objective_teams.push(get_i64(entity, team_key) as i32);
+                                    bk_objective_ids.push(0);
+                                    bk_entity_classes.push("patron_shields_down".to_string());
+                                    bk_gametimes.push(0.0);
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1894,21 +1948,6 @@ impl Demo {
                             flex_ticks.push(event.tick);
                             flex_team_nums.push(msg.team_number.unwrap_or(0));
                         }
-                        // Collect PlayerRespawned events (msg_type 353)
-                        if load_respawns
-                            && event.msg_type == Msg::KEUserMsgPlayerRespawned as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgPlayerRespawned::decode(
-                                    event.payload.as_slice(),
-                                )
-                        {
-                            let pawn_idx = (msg.player_pawn.unwrap_or(0) & 0x7FFF) as i32;
-                            let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
-                            if hero_id != 0 {
-                                respawn_ticks.push(event.tick);
-                                respawn_hero_ids.push(hero_id);
-                            }
-                        }
                         // Collect ImportantAbilityUsed events (msg_type 365)
                         if load_abilities
                             && event.msg_type == Msg::KEUserMsgImportantAbilityUsed as u32
@@ -1977,10 +2016,10 @@ impl Demo {
                             let entity_class = match class_id {
                                 5 => "walker",
                                 8 => "mid_boss",
-                                28 => "titan_shield_generator",
+                                28 => "shrine",
                                 29 => "barracks",
-                                30 => "titan",
-                                31 => "core",
+                                30 => "barracks",
+                                31 => "patron",
                                 _ => "unknown",
                             };
                             bk_ticks.push(event.tick);
@@ -2267,21 +2306,12 @@ impl Demo {
             self.cached_flex_slots = Some(df);
         }
 
-        if load_respawns {
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), respawn_ticks),
-                Column::new("hero_id".into(), respawn_hero_ids),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_respawns = Some(df);
-        }
-
         if load_ability_upgrades {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), au_ticks),
                 Column::new("hero_id".into(), au_hero_ids),
                 Column::new("ability_id".into(), au_ability_ids),
-                Column::new("upgrade_bits".into(), au_upgrade_bits),
+                Column::new("tier".into(), au_tier),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_ability_upgrades = Some(df);
@@ -2317,6 +2347,10 @@ impl Demo {
                 Column::new("lane".into(), obj_lane),
                 Column::new("health".into(), obj_health),
                 Column::new("max_health".into(), obj_max_health),
+                Column::new("phase".into(), obj_phase),
+                Column::new("x".into(), obj_x),
+                Column::new("y".into(), obj_y),
+                Column::new("z".into(), obj_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_objectives = Some(df);
@@ -2524,18 +2558,6 @@ impl Demo {
         Ok(PyDataFrame(self.cached_flex_slots.clone().unwrap()))
     }
 
-    /// Player respawn events as a Polars DataFrame.
-    ///
-    /// Columns: ``tick``, ``hero_id``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
-    #[getter]
-    fn respawns(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_respawns.is_none() {
-            self.load(vec!["respawns".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_respawns.clone().unwrap()))
-    }
-
     /// Ability usage events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability``.
@@ -2550,7 +2572,7 @@ impl Demo {
 
     /// Hero ability upgrade events (skill point spending) as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``upgrade_bits``.
+    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``tier``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn ability_upgrades(&mut self) -> PyResult<PyDataFrame> {
@@ -2584,9 +2606,10 @@ impl Demo {
         Ok(PyDataFrame(self.cached_chat.clone().unwrap()))
     }
 
-    /// Per-tick objective entity health as a Polars DataFrame.
+    /// Objective health state changes as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``.
+    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``, ``phase``, ``x``, ``y``, ``z``.
+    /// Emits a row when an objective's health or max_health changes.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn objectives(&mut self) -> PyResult<PyDataFrame> {

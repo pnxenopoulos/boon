@@ -1,4 +1,4 @@
-# Examples
+# 📖 Examples
 
 Practical examples showing how to use boon for common Deadlock replay analysis tasks.
 
@@ -114,7 +114,9 @@ print(nw)
 
 ## Damage breakdown
 
-Summarize total damage dealt by each hero, split by attacker class.
+The `damage` dataset includes all damage events in the game — hero vs hero, hero vs objectives, troopers, neutrals, and more. Filtering by `attacker_hero_id` or `victim_hero_id` is usually a good idea to focus on what you care about.
+
+This example summarizes total damage dealt by each hero, split by attacker class.
 
 ```python
 import polars as pl

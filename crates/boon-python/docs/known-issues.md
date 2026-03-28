@@ -1,4 +1,4 @@
-# Known Issues
+# ⚠️ Known Issues
 
 Deadlock is in active development, and Valve frequently changes the demo file format. This page documents known issues and limitations in boon that stem from these changes.
 

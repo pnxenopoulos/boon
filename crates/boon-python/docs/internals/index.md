@@ -1,4 +1,4 @@
-# Demo File Internals
+# 🔬 Demo File Internals
 
 This section documents how Deadlock demo files (`.dem`) are structured internally.
 Deadlock uses Valve's **Source 2** demo format, a binary streaming format built on

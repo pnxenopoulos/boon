@@ -10,7 +10,7 @@ import polars as pl
 import pytest
 from boon import Demo, NotStreetBrawlError
 
-from conftest import ALL_DATASETS, FIXTURES_DIR
+from conftest import FIXTURES_DIR, get_demo
 
 FIXTURE_PATH = FIXTURES_DIR / "70555151.dem"
 
@@ -19,9 +19,7 @@ FIXTURE_PATH = FIXTURES_DIR / "70555151.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("70555151.dem fixture not available")
-    d = Demo(str(FIXTURE_PATH))
-    d.load(*ALL_DATASETS)
-    return d
+    return get_demo(FIXTURE_PATH)
 
 
 # ===================================================================
@@ -177,11 +175,11 @@ class TestChat:
 
 class TestBossKills:
     def test_total_boss_kills(self, demo: Demo) -> None:
-        assert len(demo.boss_kills) == 18
+        assert len(demo.boss_kills) == 19
 
     def test_entity_classes(self, demo: Demo) -> None:
         classes = set(demo.boss_kills["entity_class"].to_list())
-        assert classes == {"walker", "titan", "titan_shield_generator", "core", "mid_boss", "barracks"}
+        assert classes == {"walker", "barracks", "shrine", "mid_boss", "patron", "patron_shields_down"}
 
     def test_first_boss_kill(self, demo: Demo) -> None:
         first = demo.boss_kills.sort("tick").head(1)
@@ -190,7 +188,7 @@ class TestBossKills:
 
     def test_last_boss_kill(self, demo: Demo) -> None:
         last = demo.boss_kills.sort("tick").tail(1)
-        assert last["entity_class"][0] == "core"
+        assert last["entity_class"][0] == "patron"
         assert last["tick"][0] == 140217
 
 
@@ -240,16 +238,6 @@ class TestFlexSlots:
 class TestDamage:
     def test_total_count(self, demo: Demo) -> None:
         assert len(demo.damage) == 67082
-
-
-# ===================================================================
-# Respawns
-# ===================================================================
-
-
-class TestRespawns:
-    def test_total_count(self, demo: Demo) -> None:
-        assert len(demo.respawns) == 35
 
 
 # ===================================================================
@@ -327,11 +315,11 @@ class TestStatModifierEvents:
 
 class TestObjectives:
     def test_row_count(self, demo: Demo) -> None:
-        assert len(demo.objectives) == 2_616_146
+        assert len(demo.objectives) == 3_063
 
     def test_objective_types(self, demo: Demo) -> None:
         types = set(demo.objectives["objective_type"].to_list())
-        assert types == {"barracks", "mid_boss", "titan", "walker"}
+        assert types == {"barracks", "mid_boss", "patron", "shrine", "walker"}
 
     def test_team_nums(self, demo: Demo) -> None:
         teams = set(demo.objectives["team_num"].to_list())
