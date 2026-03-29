@@ -1,10 +1,20 @@
+<div align="center">
+
 # Boon
 
 [![Discord](https://img.shields.io/discord/868146581419999232?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/tWCwmHDy2u)
 [![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pnxenopoulos/boon/blob/main/LICENSE)
+
+[![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+[![PyPI Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
-[![Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+
+[![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+[![crates.io Downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+[![GitHub Release](https://img.shields.io/github/v/release/pnxenopoulos/boon?label=CLI)](https://github.com/pnxenopoulos/boon/releases)
+
+</div>
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It returns [Polars](https://pola.rs) DataFrames for easy analysis.
 

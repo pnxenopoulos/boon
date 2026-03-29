@@ -1,8 +1,13 @@
+<div align="center">
+
 # boon-deadlock
 
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+[![crates.io Downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 [![docs.rs](https://docs.rs/boon-deadlock/badge.svg)](https://docs.rs/boon-deadlock)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pnxenopoulos/boon/blob/main/LICENSE)
+
+</div>
 
 A fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo file (`.dem`) parser for Rust.
 
@@ -138,4 +143,4 @@ parser.run_to_end_filtered(&filter, |ctx| {
 
 ## License
 
-MIT &mdash; see [LICENSE](../../LICENSE) for details.
+MIT &mdash; see [LICENSE](https://github.com/pnxenopoulos/boon/blob/main/LICENSE) for details.

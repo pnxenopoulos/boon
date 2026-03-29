@@ -254,7 +254,6 @@ jobs:
 
   coverage:
     name: Coverage
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     needs: check
     runs-on: ubuntu-latest
 
