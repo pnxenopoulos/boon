@@ -52,24 +52,19 @@ CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
 
 OBJECTIVES_COLUMNS = {
     "tick", "objective_type", "team_num", "lane", "health", "max_health", "phase",
-    "x", "y", "z",
+    "x", "y", "z", "entity_id",
 }
 
-BOSS_KILLS_COLUMNS = {
-    "tick", "objective_team", "objective_id", "entity_class",
-    "gametime",
-}
-
-MID_BOSS_COLUMNS = {"tick", "hero_id", "team_num", "event"}
+MID_BOSS_COLUMNS = {"tick", "team_num", "event"}
 
 TROOPERS_COLUMNS = {
     "tick", "trooper_type", "team_num", "lane", "health", "max_health",
-    "x", "y", "z",
+    "x", "y", "z", "entity_id",
 }
 
 NEUTRALS_COLUMNS = {
-    "tick", "neutral_type", "team_num", "health", "max_health",
-    "x", "y", "z",
+    "tick", "team_num", "health", "max_health",
+    "x", "y", "z", "entity_id",
 }
 
 STAT_MODIFIER_EVENTS_COLUMNS = {"tick", "hero_id", "stat_type", "amount"}
@@ -99,7 +94,6 @@ DATASET_COLUMNS = {
     "item_purchases": ITEM_PURCHASES_COLUMNS,
     "chat": CHAT_COLUMNS,
     "objectives": OBJECTIVES_COLUMNS,
-    "boss_kills": BOSS_KILLS_COLUMNS,
     "mid_boss": MID_BOSS_COLUMNS,
     "troopers": TROOPERS_COLUMNS,
     "neutrals": NEUTRALS_COLUMNS,

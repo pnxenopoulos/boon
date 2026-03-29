@@ -145,25 +145,6 @@ class TestChat:
 
 
 # ===================================================================
-# Boss kills
-# ===================================================================
-
-
-class TestBossKills:
-    def test_total_boss_kills(self, demo: Demo) -> None:
-        assert len(demo.boss_kills) == 3
-
-    def test_entity_classes(self, demo: Demo) -> None:
-        classes = set(demo.boss_kills["entity_class"].to_list())
-        assert classes == {"barracks", "walker"}
-
-    def test_first_boss_kill(self, demo: Demo) -> None:
-        first = demo.boss_kills.sort("tick").head(1)
-        assert first["entity_class"][0] == "walker"
-        assert first["tick"][0] == 12102
-
-
-# ===================================================================
 # Mid boss / flex slots (empty in street brawl)
 # ===================================================================
 

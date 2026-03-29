@@ -11,7 +11,6 @@ ALL_DATASETS = [
     "abilities",
     "ability_upgrades",
     "active_modifiers",
-    "boss_kills",
     "chat",
     "damage",
     "flex_slots",

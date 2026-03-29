@@ -334,27 +334,6 @@ boon objectives match.dem --summary
 
 ---
 
-### `boss-kills`
-
-List objective destruction events.
-
-```bash
-boon boss-kills match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <CLASS>` | Filter by entity class (substring) |
-| `--summary` | Show only entity class counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
 ### `mid-boss`
 
 List mid boss lifecycle events (spawn, kill, rejuvenator buff pickup/use/expire).
@@ -411,7 +390,7 @@ boon neutrals match.dem --summary
 
 | Flag | Description |
 |------|-------------|
-| `--filter <TYPE>` | Filter by neutral type (substring: neutral, neutral_node_mover) |
+| `--filter <TYPE>` | Filter by neutral fields (substring) |
 | `--summary` | Show only neutral type/team counts |
 | `--limit <N>` | Maximum entries to display |
 | `--tick <TICK>` | Filter by exact tick |

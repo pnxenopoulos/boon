@@ -60,7 +60,6 @@ abilities        = demo.abilities         # ability usage events
 flex_slots       = demo.flex_slots        # flex slot unlocks
 chat             = demo.chat              # chat messages
 objectives       = demo.objectives        # objective health per tick
-boss_kills       = demo.boss_kills        # objective destruction events
 mid_boss         = demo.mid_boss          # mid boss lifecycle events
 troopers         = demo.troopers          # lane trooper state per tick
 neutrals         = demo.neutrals          # neutral creep state changes
@@ -72,7 +71,7 @@ urn              = demo.urn               # urn lifecycle and delivery events
 ## Features
 
 - Parse Deadlock `.dem` demo files at native speed via Rust
-- 18 built-in datasets covering players, combat, economy, objectives, and map state
+- 17 built-in datasets covering players, combat, economy, objectives, and map state
 - Access to match metadata, player info, entity state, game events, and post-match summaries
 - All data returned as [Polars](https://pola.rs) DataFrames
 

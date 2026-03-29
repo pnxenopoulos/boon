@@ -229,29 +229,6 @@ enum Commands {
         #[arg(long, value_name = "TICK")]
         max_tick: Option<i32>,
     },
-    /// List objective destruction events
-    BossKills {
-        /// Path to the demo file
-        file: PathBuf,
-        /// Filter by entity class substring
-        #[arg(long)]
-        filter: Option<String>,
-        /// Show only entity class counts
-        #[arg(long)]
-        summary: bool,
-        /// Maximum number of entries to display
-        #[arg(long)]
-        limit: Option<usize>,
-        /// Filter by exact tick (equivalent to --min-tick N --max-tick N)
-        #[arg(long)]
-        tick: Option<i32>,
-        /// Filter by minimum tick
-        #[arg(long, value_name = "TICK")]
-        min_tick: Option<i32>,
-        /// Filter by maximum tick
-        #[arg(long, value_name = "TICK")]
-        max_tick: Option<i32>,
-    },
     /// Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire)
     MidBoss {
         /// Path to the demo file
@@ -509,19 +486,6 @@ fn main() -> Result<()> {
             let min_tick = tick.or(min_tick);
             let max_tick = tick.or(max_tick);
             commands::mid_boss(&file, filter, summary, limit, min_tick, max_tick, json)
-        }
-        Commands::BossKills {
-            file,
-            filter,
-            summary,
-            limit,
-            tick,
-            min_tick,
-            max_tick,
-        } => {
-            let min_tick = tick.or(min_tick);
-            let max_tick = tick.or(max_tick);
-            commands::boss_kills(&file, filter, summary, limit, min_tick, max_tick, json)
         }
         Commands::Neutrals {
             file,

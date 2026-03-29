@@ -91,7 +91,7 @@ class Demo:
 
         Example:
             >>> Demo.available_datasets()
-            ['abilities', 'ability_upgrades', 'boss_kills', ...]
+            ['abilities', 'ability_upgrades', 'chat', ...]
         """
         ...
 
@@ -410,21 +410,7 @@ class Demo:
             - **x** (*float*) -- X position.
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.
-        """
-        ...
-
-    @property
-    def boss_kills(self) -> pl.DataFrame:
-        """Objective destruction events as a Polars DataFrame.
-
-        Auto-loads on first access if not already loaded via :meth:`load`.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the objective was destroyed.
-            - **objective_team** (*int*) -- The team that owned the destroyed objective.
-            - **objective_id** (*int*) -- Objective mask change ID.
-            - **entity_class** (*str*) -- ``"walker"``, ``"barracks"``, ``"shrine"``, ``"mid_boss"``, ``"patron_shields_down"``, ``"patron"``.
-            - **gametime** (*float*) -- The game time when the objective was destroyed.
+            - **entity_id** (*int*) -- Entity index (stable per structure across ticks).
         """
         ...
 
@@ -436,7 +422,6 @@ class Demo:
 
         Columns:
             - **tick** (*int*) -- The game tick.
-            - **hero_id** (*int*) -- The hero involved (0 for spawn/kill events).
             - **team_num** (*int*) -- The team involved.
             - **event** (*str*) -- ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
         """
@@ -459,6 +444,7 @@ class Demo:
             - **x** (*float*) -- X position.
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.
+            - **entity_id** (*int*) -- Entity index (stable per trooper across ticks).
         """
         ...
 
@@ -470,13 +456,13 @@ class Demo:
 
         Columns:
             - **tick** (*int*) -- The game tick when the state changed.
-            - **neutral_type** (*str*) -- ``"neutral"`` or ``"neutral_node_mover"``.
             - **team_num** (*int*) -- The neutral's team.
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Maximum health.
             - **x** (*float*) -- X position.
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.
+            - **entity_id** (*int*) -- Entity index (stable per neutral across ticks).
         """
         ...
 

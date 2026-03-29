@@ -94,11 +94,8 @@ chat = demo.chat
 ## Objectives and Map State
 
 ```python
-# Objective health state changes (walkers, titans, barracks, mid boss)
+# Objective health state changes (walkers, barracks, shrines, patron, mid boss)
 objectives = demo.objectives
-
-# Objective destruction events
-boss_kills = demo.boss_kills
 
 # Mid boss lifecycle (spawn, kill, rejuv buffs)
 mid_boss = demo.mid_boss

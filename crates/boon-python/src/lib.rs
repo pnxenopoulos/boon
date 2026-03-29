@@ -76,6 +76,12 @@ fn get_qangle(e: &boon_parser::Entity, key: Option<u64>) -> [f32; 3] {
         .unwrap_or([0.0; 3])
 }
 
+/// Extract entity index from a CHandle stored in an entity field.
+/// Uses 0x7FFF (15-bit mask). Note: protobuf message handles (modifier.parent,
+/// msg.player, etc.) use 0x3FFF (14-bit mask) instead. Both work in practice —
+/// the difference may reflect different handle formats between entity fields and
+/// protobuf messages, or either mask may work for both. We keep them separate
+/// to match the contexts where each was validated.
 fn get_handle_index(e: &boon_parser::Entity, key: Option<u64>) -> Option<i32> {
     key.and_then(|k| e.fields.get(&k)).and_then(|v| match v {
         boon_parser::FieldValue::U32(n) => Some((*n & 0x7FFF) as i32),
@@ -89,7 +95,6 @@ fn get_handle_index(e: &boon_parser::Entity, key: Option<u64>) -> Option<i32> {
 const VALID_DATASETS: &[&str] = &[
     "abilities",
     "ability_upgrades",
-    "boss_kills",
     "chat",
     "mid_boss",
     "objectives",
@@ -147,7 +152,6 @@ struct Demo {
     cached_item_purchases: Option<DataFrame>,
     cached_chat: Option<DataFrame>,
     cached_objectives: Option<DataFrame>,
-    cached_boss_kills: Option<DataFrame>,
     cached_mid_boss: Option<DataFrame>,
     cached_troopers: Option<DataFrame>,
     cached_neutrals: Option<DataFrame>,
@@ -259,7 +263,6 @@ impl Demo {
             cached_item_purchases: None,
             cached_chat: None,
             cached_objectives: None,
-            cached_boss_kills: None,
             cached_mid_boss: None,
             cached_troopers: None,
             cached_neutrals: None,
@@ -526,7 +529,7 @@ impl Demo {
                 && !VALID_STREET_BRAWL_DATASETS.contains(&name.as_str())
             {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Unknown dataset: {name:?}. Valid datasets: {VALID_DATASETS:?}"
+                    "Unknown dataset: {name:?}. Valid datasets: {VALID_DATASETS:?}, street brawl: {VALID_STREET_BRAWL_DATASETS:?}"
                 )));
             }
         }
@@ -560,8 +563,6 @@ impl Demo {
         let load_chat = datasets.iter().any(|s| s == "chat") && self.cached_chat.is_none();
         let load_objectives =
             datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
-        let load_boss_kills =
-            datasets.iter().any(|s| s == "boss_kills") && self.cached_boss_kills.is_none();
         let load_mid_boss =
             datasets.iter().any(|s| s == "mid_boss") && self.cached_mid_boss.is_none();
         let load_troopers =
@@ -588,7 +589,6 @@ impl Demo {
             && !load_item_purchases
             && !load_chat
             && !load_objectives
-            && !load_boss_kills
             && !load_mid_boss
             && !load_troopers
             && !load_neutrals
@@ -607,7 +607,6 @@ impl Demo {
             || load_flex_slots
             || load_item_purchases
             || load_chat
-            || load_boss_kills
             || load_mid_boss
             || load_street_brawl_rounds;
 
@@ -645,7 +644,6 @@ impl Demo {
         }
         if load_neutrals {
             class_names.push("CNPC_TrooperNeutral");
-            class_names.push("CNPC_TrooperNeutralNodeMover");
         }
         if load_urn {
             class_names.push("CCitadelIdolReturnTrigger");
@@ -760,25 +758,15 @@ impl Demo {
         let mut obj_x: Vec<f32> = Vec::new();
         let mut obj_y: Vec<f32> = Vec::new();
         let mut obj_z: Vec<f32> = Vec::new();
+        let mut obj_entity_id: Vec<i32> = Vec::new();
         // Change detection: entity_index → (health, max_health, phase)
         let mut obj_prev: HashMap<i32, (i64, i64, i64)> = HashMap::new();
         // Patron phase key
         let mut patron_phase_key: Option<u64> = None;
-        // Patron phase change detection for boss_kills: entity_index → prev phase
-        let mut patron_phase_prev: HashMap<i32, i64> = HashMap::new();
-
-        // ── Column vectors for boss_kills ──
         // ── Column vectors for mid_boss ──
         let mut mb_ticks: Vec<i32> = Vec::new();
-        let mut mb_hero_ids: Vec<i64> = Vec::new();
         let mut mb_team_nums: Vec<i32> = Vec::new();
         let mut mb_events: Vec<String> = Vec::new();
-
-        let mut bk_ticks: Vec<i32> = Vec::new();
-        let mut bk_objective_teams: Vec<i32> = Vec::new();
-        let mut bk_objective_ids: Vec<i32> = Vec::new();
-        let mut bk_entity_classes: Vec<String> = Vec::new();
-        let mut bk_gametimes: Vec<f32> = Vec::new();
 
         // ── Column vectors for item_purchases ──
         let mut ip_ticks: Vec<i32> = Vec::new();
@@ -796,16 +784,17 @@ impl Demo {
         let mut tr_x: Vec<f32> = Vec::new();
         let mut tr_y: Vec<f32> = Vec::new();
         let mut tr_z: Vec<f32> = Vec::new();
+        let mut tr_entity_id: Vec<i32> = Vec::new();
 
         // ── Column vectors for neutrals (change-detected) ──
         let mut nt_tick: Vec<i32> = Vec::new();
-        let mut nt_type: Vec<String> = Vec::new();
         let mut nt_team_num: Vec<i64> = Vec::new();
         let mut nt_health: Vec<i64> = Vec::new();
         let mut nt_max_health: Vec<i64> = Vec::new();
         let mut nt_x: Vec<f32> = Vec::new();
         let mut nt_y: Vec<f32> = Vec::new();
         let mut nt_z: Vec<f32> = Vec::new();
+        let mut nt_entity_id: Vec<i32> = Vec::new();
         // Change detection: entity_index → (was_alive, health, max_health, x_bits, y_bits, z_bits)
         let mut nt_prev: HashMap<i32, (bool, i64, i64, u32, u32, u32)> = HashMap::new();
 
@@ -1193,7 +1182,7 @@ impl Demo {
                         }
                     }
                     if load_neutrals {
-                        for nt_class in &["CNPC_TrooperNeutral", "CNPC_TrooperNeutralNodeMover"] {
+                        for nt_class in &["CNPC_TrooperNeutral"] {
                             if let Some(s) = $ctx.serializers.get(*nt_class) {
                                 ntk_health = s.resolve_field_key("m_iHealth");
                                 ntk_max_health = s.resolve_field_key("m_iMaxHealth");
@@ -1469,29 +1458,15 @@ impl Demo {
                             obj_x.push(get_f32(entity, vx_key));
                             obj_y.push(get_f32(entity, vy_key));
                             obj_z.push(get_f32(entity, vz_key));
+                            obj_entity_id.push(idx);
                         }
 
-                        // Detect patron phase changes for boss_kills
-                        if is_patron && load_boss_kills {
-                            let prev_phase = patron_phase_prev.get(&idx).copied().unwrap_or(0);
-                            if phase != prev_phase {
-                                patron_phase_prev.insert(idx, phase);
-                                if phase == 2 {
-                                    // Shrines destroyed → patron shields down
-                                    bk_ticks.push($ctx.tick);
-                                    bk_objective_teams.push(get_i64(entity, team_key) as i32);
-                                    bk_objective_ids.push(0);
-                                    bk_entity_classes.push("patron_shields_down".to_string());
-                                    bk_gametimes.push(0.0);
-                                }
-                            }
-                        }
                     }
                 }
 
                 // ── Collect troopers (lane troopers, per-tick alive only) ──
                 if load_troopers {
-                    for (_, entity) in $ctx.entities.iter() {
+                    for (&idx, entity) in $ctx.entities.iter() {
                         let ttype = match entity.class_name.as_str() {
                             "CNPC_Trooper" => "trooper",
                             "CNPC_TrooperBoss" => "trooper_boss",
@@ -1514,6 +1489,7 @@ impl Demo {
                         tr_x.push(get_f32(entity, tk_vec_x));
                         tr_y.push(get_f32(entity, tk_vec_y));
                         tr_z.push(get_f32(entity, tk_vec_z));
+                        tr_entity_id.push(idx);
                     }
                 }
 
@@ -1867,11 +1843,9 @@ impl Demo {
                 // ── Collect neutrals (change-detected, only emit on state change) ──
                 if load_neutrals {
                     for (&idx, entity) in $ctx.entities.iter() {
-                        let ntype = match entity.class_name.as_str() {
-                            "CNPC_TrooperNeutral" => "neutral",
-                            "CNPC_TrooperNeutralNodeMover" => "neutral_node_mover",
-                            _ => continue,
-                        };
+                        if entity.class_name != "CNPC_TrooperNeutral" {
+                            continue;
+                        }
                         let max_hp = get_i64(entity, ntk_max_health);
                         if max_hp == 0 {
                             continue;
@@ -1895,13 +1869,13 @@ impl Demo {
                             nt_prev.insert(idx, cur);
                             if alive {
                                 nt_tick.push($ctx.tick);
-                                nt_type.push(ntype.to_string());
                                 nt_team_num.push(get_i64(entity, ntk_team_num));
                                 nt_health.push(hp);
                                 nt_max_health.push(max_hp);
                                 nt_x.push(x);
                                 nt_y.push(y);
                                 nt_z.push(z);
+                                nt_entity_id.push(idx);
                             }
                         }
                     }
@@ -2005,34 +1979,10 @@ impl Demo {
                             chat_texts.push(msg.text.unwrap_or_default());
                             chat_types.push(chat_type.to_string());
                         }
-                        // Collect BossKilled events (msg_type 347)
-                        if load_boss_kills
-                            && event.msg_type == Msg::KEUserMsgBossKilled as u32
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBossKilled::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            let class_id = msg.entity_killed_class.unwrap_or(0);
-                            let entity_class = match class_id {
-                                5 => "walker",
-                                8 => "mid_boss",
-                                28 => "shrine",
-                                29 => "barracks",
-                                30 => "barracks",
-                                31 => "patron",
-                                _ => "unknown",
-                            };
-                            bk_ticks.push(event.tick);
-                            bk_objective_teams.push(msg.objective_team.unwrap_or(0));
-                            bk_objective_ids.push(msg.objective_mask_change.unwrap_or(0));
-                            bk_entity_classes.push(entity_class.to_string());
-                            bk_gametimes.push(msg.gametime.unwrap_or(0.0));
-                        }
                         // Collect mid_boss lifecycle events
                         if load_mid_boss {
                             if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
                                 mb_ticks.push(event.tick);
-                                mb_hero_ids.push(0);
                                 mb_team_nums.push(0);
                                 mb_events.push("spawned".to_string());
                             }
@@ -2042,9 +1992,9 @@ impl Demo {
                                         event.payload.as_slice(),
                                     )
                                 && msg.entity_killed_class.unwrap_or(0) == 8
+                            // mid_boss entity class
                             {
                                 mb_ticks.push(event.tick);
-                                mb_hero_ids.push(0);
                                 mb_team_nums.push(msg.objective_team.unwrap_or(0));
                                 mb_events.push("killed".to_string());
                             }
@@ -2054,16 +2004,14 @@ impl Demo {
                                         event.payload.as_slice(),
                                     )
                             {
-                                let pawn_idx = (msg.player_pawn.unwrap_or(0) & 0x3FFF) as i32;
-                                let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
+                                // RejuvStatus event_type enum from proto
                                 let event_name = match msg.event_type.unwrap_or(0) {
-                                    6 => "picked_up",
-                                    7 => "used",
-                                    8 => "expired",
+                                    6 => "picked_up", // rejuv buff picked up
+                                    7 => "used",      // rejuv buff consumed
+                                    8 => "expired",   // rejuv buff expired
                                     _ => "unknown",
                                 };
                                 mb_ticks.push(event.tick);
-                                mb_hero_ids.push(hero_id);
                                 mb_team_nums.push(msg.user_team.unwrap_or(0));
                                 mb_events.push(event_name.to_string());
                             }
@@ -2351,27 +2299,15 @@ impl Demo {
                 Column::new("x".into(), obj_x),
                 Column::new("y".into(), obj_y),
                 Column::new("z".into(), obj_z),
+                Column::new("entity_id".into(), obj_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_objectives = Some(df);
         }
 
-        if load_boss_kills {
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), bk_ticks),
-                Column::new("objective_team".into(), bk_objective_teams),
-                Column::new("objective_id".into(), bk_objective_ids),
-                Column::new("entity_class".into(), bk_entity_classes),
-                Column::new("gametime".into(), bk_gametimes),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_boss_kills = Some(df);
-        }
-
         if load_mid_boss {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), mb_ticks),
-                Column::new("hero_id".into(), mb_hero_ids),
                 Column::new("team_num".into(), mb_team_nums),
                 Column::new("event".into(), mb_events),
             ])
@@ -2390,6 +2326,7 @@ impl Demo {
                 Column::new("x".into(), tr_x),
                 Column::new("y".into(), tr_y),
                 Column::new("z".into(), tr_z),
+                Column::new("entity_id".into(), tr_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_troopers = Some(df);
@@ -2398,13 +2335,13 @@ impl Demo {
         if load_neutrals {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), nt_tick),
-                Column::new("neutral_type".into(), nt_type),
                 Column::new("team_num".into(), nt_team_num),
                 Column::new("health".into(), nt_health),
                 Column::new("max_health".into(), nt_max_health),
                 Column::new("x".into(), nt_x),
                 Column::new("y".into(), nt_y),
                 Column::new("z".into(), nt_z),
+                Column::new("entity_id".into(), nt_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_neutrals = Some(df);
@@ -2608,7 +2545,7 @@ impl Demo {
 
     /// Objective health state changes as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``, ``phase``, ``x``, ``y``, ``z``.
+    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``, ``phase``, ``x``, ``y``, ``z``, ``entity_id``.
     /// Emits a row when an objective's health or max_health changes.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
@@ -2621,7 +2558,7 @@ impl Demo {
 
     /// Mid boss lifecycle events as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``team_num``, ``event``.
+    /// Columns: ``tick``, ``team_num``, ``event``.
     /// Events: ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
@@ -2630,19 +2567,6 @@ impl Demo {
             self.load(vec!["mid_boss".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_mid_boss.clone().unwrap()))
-    }
-
-    /// Objective destruction events as a Polars DataFrame.
-    ///
-    /// Columns: ``tick``, ``objective_team``, ``objective_id``, ``entity_class``,
-    /// ``gametime``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
-    #[getter]
-    fn boss_kills(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_boss_kills.is_none() {
-            self.load(vec!["boss_kills".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_boss_kills.clone().unwrap()))
     }
 
     /// Per-tick alive lane trooper state as a Polars DataFrame.
@@ -2665,10 +2589,10 @@ impl Demo {
 
     /// Neutral creep state changes as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``neutral_type``, ``team_num``,
+    /// Columns: ``tick``, ``team_num``,
     /// ``health``, ``max_health``, ``x``, ``y``, ``z``.
     ///
-    /// Tracks ``CNPC_TrooperNeutral`` and ``CNPC_TrooperNeutralNodeMover``.
+    /// Tracks ``CNPC_TrooperNeutral``.
     /// Only emits a row when an alive neutral's state changes (health,
     /// position), significantly reducing data volume.
     ///

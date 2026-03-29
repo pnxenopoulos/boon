@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -11,7 +10,6 @@ use serde::Serialize;
 #[derive(Serialize)]
 struct MidBossOutput {
     tick: i32,
-    hero_id: i64,
     team_num: i32,
     event: String,
 }
@@ -34,51 +32,15 @@ pub fn run(
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
 
-    let class_filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
-
-    let mut pk_hero_id: Option<u64> = None;
-    let mut keys_resolved = false;
-    let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
-    let mut entity_to_hero_built = false;
-
+    let class_filter: std::collections::HashSet<&str> = std::collections::HashSet::new();
     let mut rows: Vec<MidBossOutput> = Vec::new();
 
     parser
-        .run_to_end_with_events_filtered(&class_filter, |ctx, events| {
-            if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
-                    pk_hero_id =
-                        s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID");
-                }
-                keys_resolved = true;
-            }
-
-            if !entity_to_hero_built {
-                for (&idx, entity) in ctx.entities.iter() {
-                    if entity.class_name == "CCitadelPlayerPawn" {
-                        let hid = pk_hero_id
-                            .and_then(|k| entity.fields.get(&k))
-                            .and_then(|v| match v {
-                                boon::FieldValue::U32(n) => Some(*n as i64),
-                                boon::FieldValue::U64(n) => Some(*n as i64),
-                                boon::FieldValue::I32(n) => Some(*n as i64),
-                                boon::FieldValue::I64(n) => Some(*n),
-                                _ => None,
-                            })
-                            .unwrap_or(0);
-                        if hid != 0 {
-                            entity_to_hero.insert(idx, hid);
-                        }
-                    }
-                }
-                entity_to_hero_built = true;
-            }
-
+        .run_to_end_with_events_filtered(&class_filter, |_ctx, events| {
             for event in events {
                 if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
                     rows.push(MidBossOutput {
                         tick: event.tick,
-                        hero_id: 0,
                         team_num: 0,
                         event: "spawned".to_string(),
                     });
@@ -88,10 +50,10 @@ pub fn run(
                         event.payload.as_slice(),
                     )
                     && msg.entity_killed_class.unwrap_or(0) == 8
+                // mid_boss entity class
                 {
                     rows.push(MidBossOutput {
                         tick: event.tick,
-                        hero_id: 0,
                         team_num: msg.objective_team.unwrap_or(0),
                         event: "killed".to_string(),
                     });
@@ -101,19 +63,16 @@ pub fn run(
                         event.payload.as_slice(),
                     )
                 {
-                    let pawn_idx = (msg.player_pawn.unwrap_or(0) & 0x3FFF) as i32;
-                    let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
-                    let team_num = msg.user_team.unwrap_or(0);
+                    // RejuvStatus event_type enum from proto
                     let event_name = match msg.event_type.unwrap_or(0) {
-                        6 => "picked_up",
-                        7 => "used",
-                        8 => "expired",
+                        6 => "picked_up", // rejuv buff picked up
+                        7 => "used",      // rejuv buff consumed
+                        8 => "expired",   // rejuv buff expired
                         _ => "unknown",
                     };
                     rows.push(MidBossOutput {
                         tick: event.tick,
-                        hero_id,
-                        team_num,
+                        team_num: msg.user_team.unwrap_or(0),
                         event: event_name.to_string(),
                     });
                 }
@@ -186,22 +145,15 @@ pub fn run(
         }
 
         println!(
-            "{:<8} {:>8} {:>6} {}",
+            "{:<8} {:>6} {}",
             "Tick".bold(),
-            "Hero ID".bold(),
             "Team".bold(),
             "Event".bold()
         );
-        println!("{}", "-".repeat(40));
+        println!("{}", "-".repeat(30));
 
         for r in rows.iter().take(limit) {
-            println!(
-                "{:<8} {:>8} {:>6} {}",
-                r.tick,
-                r.hero_id,
-                r.team_num,
-                r.event.green()
-            );
+            println!("{:<8} {:>6} {}", r.tick, r.team_num, r.event.green());
         }
 
         println!(

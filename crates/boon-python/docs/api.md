@@ -467,24 +467,7 @@ Auto-loads on first access.
 | `x` | `float` | X position |
 | `y` | `float` | Y position |
 | `z` | `float` | Z position |
-
----
-
-#### `boss_kills`
-
-```python
-demo.boss_kills  # polars.DataFrame
-```
-
-Objective destruction events. Auto-loads on first access.
-
-| Column | Type | Description |
-|--------|------|-------------|
-| `tick` | `int` | The game tick when the objective was destroyed |
-| `objective_team` | `int` | The team that owned the destroyed objective |
-| `objective_id` | `int` | Objective mask change ID |
-| `entity_class` | `str` | `"walker"`, `"barracks"`, `"shrine"`, `"mid_boss"`, `"patron_shields_down"`, `"patron"` |
-| `gametime` | `float` | The game time when the objective was destroyed |
+| `entity_id` | `int` | Entity index (stable per structure across ticks) |
 
 ---
 
@@ -500,7 +483,6 @@ Auto-loads on first access.
 | Column | Type | Description |
 |--------|------|-------------|
 | `tick` | `int` | The game tick |
-| `hero_id` | `int` | The hero involved (0 for spawn/kill events) |
 | `team_num` | `int` | The team involved |
 | `event` | `str` | `"spawned"`, `"killed"`, `"picked_up"`, `"used"`, `"expired"` |
 
@@ -529,6 +511,7 @@ Access this property or call `load("troopers")` explicitly.
 | `x` | `float` | X position |
 | `y` | `float` | Y position |
 | `z` | `float` | Z position |
+| `entity_id` | `int` | Entity index (stable per trooper across ticks) |
 
 ---
 
@@ -547,13 +530,13 @@ Not loaded by default. Access this property or call `load("neutrals")` explicitl
 | Column | Type | Description |
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the state changed |
-| `neutral_type` | `str` | `"neutral"` or `"neutral_node_mover"` |
 | `team_num` | `int` | The neutral's team |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
 | `x` | `float` | X position |
 | `y` | `float` | Y position |
 | `z` | `float` | Z position |
+| `entity_id` | `int` | Entity index (stable per neutral across ticks) |
 
 ---
 

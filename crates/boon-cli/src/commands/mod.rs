@@ -3,7 +3,6 @@
 mod abilities;
 mod ability_upgrades;
 mod active_modifiers;
-mod boss_kills;
 mod chat;
 mod classes;
 mod entities;
@@ -24,7 +23,6 @@ mod verify;
 pub use abilities::run as abilities;
 pub use ability_upgrades::run as ability_upgrades;
 pub use active_modifiers::run as active_modifiers;
-pub use boss_kills::run as boss_kills;
 pub use chat::run as chat;
 pub use classes::run as classes;
 pub use entities::run as entities;

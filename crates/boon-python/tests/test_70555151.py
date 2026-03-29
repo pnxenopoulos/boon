@@ -169,30 +169,6 @@ class TestChat:
 
 
 # ===================================================================
-# Boss kills
-# ===================================================================
-
-
-class TestBossKills:
-    def test_total_boss_kills(self, demo: Demo) -> None:
-        assert len(demo.boss_kills) == 19
-
-    def test_entity_classes(self, demo: Demo) -> None:
-        classes = set(demo.boss_kills["entity_class"].to_list())
-        assert classes == {"walker", "barracks", "shrine", "mid_boss", "patron", "patron_shields_down"}
-
-    def test_first_boss_kill(self, demo: Demo) -> None:
-        first = demo.boss_kills.sort("tick").head(1)
-        assert first["entity_class"][0] == "walker"
-        assert first["tick"][0] == 22806
-
-    def test_last_boss_kill(self, demo: Demo) -> None:
-        last = demo.boss_kills.sort("tick").tail(1)
-        assert last["entity_class"][0] == "patron"
-        assert last["tick"][0] == 140217
-
-
-# ===================================================================
 # Mid boss
 # ===================================================================
 

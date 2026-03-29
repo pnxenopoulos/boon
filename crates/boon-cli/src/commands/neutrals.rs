@@ -6,16 +6,6 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::Serialize;
 
-const NEUTRAL_CLASSES: &[&str] = &["CNPC_TrooperNeutral", "CNPC_TrooperNeutralNodeMover"];
-
-fn neutral_type(class_name: &str) -> &'static str {
-    match class_name {
-        "CNPC_TrooperNeutral" => "neutral",
-        "CNPC_TrooperNeutralNodeMover" => "neutral_node_mover",
-        _ => "unknown",
-    }
-}
-
 fn get_i64(e: &boon::Entity, key: Option<u64>) -> i64 {
     key.and_then(|k| e.fields.get(&k))
         .and_then(|v| match v {
@@ -50,7 +40,6 @@ struct NeutralState {
 #[derive(Serialize)]
 struct NeutralOutput {
     tick: i32,
-    neutral_type: &'static str,
     team_num: i64,
     health: i64,
     max_health: i64,
@@ -61,7 +50,6 @@ struct NeutralOutput {
 
 #[derive(Serialize)]
 struct NeutralSummaryOutput {
-    neutral_type: &'static str,
     team_num: i64,
     count: usize,
 }
@@ -78,7 +66,7 @@ pub fn run(
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
 
-    let class_filter: HashSet<&str> = NEUTRAL_CLASSES.iter().copied().collect();
+    let class_filter: HashSet<&str> = ["CNPC_TrooperNeutral"].into_iter().collect();
 
     let mut keys_resolved = false;
     let mut nk_health: Option<u64> = None;
@@ -97,29 +85,23 @@ pub fn run(
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
             if !keys_resolved {
-                for class_name in NEUTRAL_CLASSES {
-                    if let Some(s) = ctx.serializers.get(class_name) {
-                        nk_health = s.resolve_field_key("m_iHealth");
-                        nk_max_health = s.resolve_field_key("m_iMaxHealth");
-                        nk_team_num = s.resolve_field_key("m_iTeamNum");
-                        nk_lifestate = s.resolve_field_key("m_lifeState");
-                        nk_vec_x = s.resolve_field_key(
-                            "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
-                        );
-                        nk_vec_y = s.resolve_field_key(
-                            "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
-                        );
-                        nk_vec_z = s.resolve_field_key(
-                            "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
-                        );
-                        break;
-                    }
+                if let Some(s) = ctx.serializers.get("CNPC_TrooperNeutral") {
+                    nk_health = s.resolve_field_key("m_iHealth");
+                    nk_max_health = s.resolve_field_key("m_iMaxHealth");
+                    nk_team_num = s.resolve_field_key("m_iTeamNum");
+                    nk_lifestate = s.resolve_field_key("m_lifeState");
+                    nk_vec_x =
+                        s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
+                    nk_vec_y =
+                        s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
+                    nk_vec_z =
+                        s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
                 }
                 keys_resolved = true;
             }
 
             for (&idx, entity) in ctx.entities.iter() {
-                if !NEUTRAL_CLASSES.contains(&entity.class_name.as_str()) {
+                if entity.class_name != "CNPC_TrooperNeutral" {
                     continue;
                 }
 
@@ -153,7 +135,6 @@ pub fn run(
                     if alive {
                         rows.push(NeutralOutput {
                             tick: ctx.tick,
-                            neutral_type: neutral_type(&entity.class_name),
                             team_num: get_i64(entity, nk_team_num),
                             health: current.health,
                             max_health: current.max_health,
@@ -170,7 +151,7 @@ pub fn run(
     // Apply filter
     if let Some(ref f) = filter {
         let f_lower = f.to_lowercase();
-        rows.retain(|r| r.neutral_type.to_lowercase().contains(&f_lower));
+        rows.retain(|r| format!("{}", r.team_num).contains(&f_lower));
     }
     if let Some(min) = min_tick {
         rows.retain(|r| r.tick >= min);
@@ -180,14 +161,13 @@ pub fn run(
     }
 
     if summary {
-        let mut counts: std::collections::HashMap<(&str, i64), usize> =
-            std::collections::HashMap::new();
+        let mut counts: HashMap<i64, usize> = HashMap::new();
         for r in &rows {
-            *counts.entry((r.neutral_type, r.team_num)).or_insert(0) += 1;
+            *counts.entry(r.team_num).or_insert(0) += 1;
         }
 
         let mut sorted: Vec<_> = counts.into_iter().collect();
-        sorted.sort_by(|a, b| a.0.0.cmp(b.0.0).then_with(|| a.0.1.cmp(&b.0.1)));
+        sorted.sort_by_key(|(team, _)| *team);
 
         let limit = limit.unwrap_or(sorted.len());
 
@@ -195,8 +175,7 @@ pub fn run(
             let output: Vec<NeutralSummaryOutput> = sorted
                 .iter()
                 .take(limit)
-                .map(|((ntype, team), count)| NeutralSummaryOutput {
-                    neutral_type: ntype,
+                .map(|(team, count)| NeutralSummaryOutput {
                     team_num: *team,
                     count: *count,
                 })
@@ -205,16 +184,11 @@ pub fn run(
             return Ok(());
         }
 
-        println!(
-            "{:<20} {:>8} {:>8}",
-            "Type".bold(),
-            "Team".bold(),
-            "Changes".bold()
-        );
-        println!("{}", "-".repeat(38));
+        println!("{:>8} {:>8}", "Team".bold(), "Changes".bold());
+        println!("{}", "-".repeat(18));
 
-        for ((ntype, team), count) in sorted.iter().take(limit) {
-            println!("{:<20} {:>8} {:>8}", ntype.green(), team, count);
+        for (team, count) in sorted.iter().take(limit) {
+            println!("{:>8} {:>8}", team, count);
         }
 
         println!(
@@ -237,9 +211,8 @@ pub fn run(
         }
 
         println!(
-            "{:<8} {:<20} {:>6} {:>8} {:>8} {:>10} {:>10} {:>10}",
+            "{:<8} {:>6} {:>8} {:>8} {:>10} {:>10} {:>10}",
             "Tick".bold(),
-            "Type".bold(),
             "Team".bold(),
             "Health".bold(),
             "MaxHP".bold(),
@@ -247,19 +220,12 @@ pub fn run(
             "Y".bold(),
             "Z".bold()
         );
-        println!("{}", "-".repeat(88));
+        println!("{}", "-".repeat(68));
 
         for r in rows.iter().take(limit) {
             println!(
-                "{:<8} {:<20} {:>6} {:>8} {:>8} {:>10.1} {:>10.1} {:>10.1}",
-                r.tick,
-                r.neutral_type.green(),
-                r.team_num,
-                r.health,
-                r.max_health,
-                r.x,
-                r.y,
-                r.z
+                "{:<8} {:>6} {:>8} {:>8} {:>10.1} {:>10.1} {:>10.1}",
+                r.tick, r.team_num, r.health, r.max_health, r.x, r.y, r.z
             );
         }
 

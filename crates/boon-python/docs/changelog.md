@@ -27,7 +27,6 @@
 - `Demo.item_purchases` property for item shop transactions.
 - `Demo.chat` property for in-game chat messages.
 - `Demo.objectives` property for objective health state changes.
-- `Demo.boss_kills` property for objective destruction events.
 - `Demo.mid_boss` property for mid boss lifecycle events.
 - `Demo.troopers` property for per-tick alive lane trooper state (opt-in, large dataset).
 - `Demo.neutrals` property for neutral creep state changes with change detection (opt-in).
@@ -55,7 +54,6 @@
 - `shop-events` command for item shop transactions (purchased, upgraded, sold, swapped, failure).
 - `chat` command for in-game chat messages (all chat and team chat).
 - `objectives` command for per-tick objective entity health (walkers, titans, barracks, mid boss).
-- `boss-kills` command for objective destruction events.
 - `mid-boss` command for mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire).
 - `troopers` command for per-tick alive lane trooper state (position, health, lane).
 - `neutrals` command for neutral creep state changes with change detection.

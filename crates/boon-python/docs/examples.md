@@ -168,18 +168,20 @@ for row in purchases.iter_rows(named=True):
 
 ## Objective timeline
 
-Track when objectives are destroyed and by which team.
+Track when objectives are destroyed by filtering for health reaching zero.
 
 ```python
+import polars as pl
 from boon import Demo, team_names
 
 demo = Demo("match.dem")
 teams = team_names()
 
-for row in demo.boss_kills.sort("tick").iter_rows(named=True):
+destroyed = demo.objectives.filter(pl.col("health") == 0).sort("tick")
+for row in destroyed.iter_rows(named=True):
     time = demo.tick_to_clock_time(row["tick"])
-    team = teams.get(row["objective_team"], "Unknown")
-    print(f"[{time}] {team} destroyed {row['entity_class']} (obj {row['objective_id']})")
+    team = teams.get(row["team_num"], "Unknown")
+    print(f"[{time}] {team} lost {row['objective_type']}")
 ```
 
 ## Heatmap data
