@@ -158,7 +158,9 @@ jobs:
         working-directory: crates/boon-python
         run: |
           uv sync --no-install-project
-          uv pip install "../../dist/boon_deadlock-*-cp$(echo ${{ matrix.python-version }} | tr -d .)-*.whl"
+          CPVER="cp$(echo ${{ matrix.python-version }} | tr -d .)"
+          WHEEL=$(ls ../../dist/boon_deadlock-*-${CPVER}-*.whl)
+          uv pip install "$WHEEL"
 
       - name: Run pytest
         working-directory: crates/boon-python
