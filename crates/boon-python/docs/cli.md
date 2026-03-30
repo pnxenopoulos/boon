@@ -7,12 +7,6 @@ Boon includes a command-line tool for inspecting demo files. It is built from th
 
 Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
 
-Or install via [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall) (no compilation needed):
-
-```bash
-cargo binstall boon-cli
-```
-
 Or build from source (requires Rust):
 
 ```bash

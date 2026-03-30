@@ -7,13 +7,18 @@
 [![CI](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml/badge.svg)](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
+**Python** &nbsp;
 [![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
+**Rust** &nbsp;
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 [![crates.io Downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+
+**CLI** &nbsp;
 [![GitHub Release](https://img.shields.io/github/v/release/pnxenopoulos/boon?label=CLI)](https://github.com/pnxenopoulos/boon/releases)
+[![CLI Downloads](https://img.shields.io/github/downloads/pnxenopoulos/boon/total?label=CLI%20Downloads)](https://github.com/pnxenopoulos/boon/releases)
 
 </div>
 
@@ -35,21 +40,27 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 
 Deadlock demo files contain a wealth of match data — player positions, kills, damage, item builds, objective state, and more — but the Source 2 demo format is complex and undocumented. Boon handles the low-level parsing so you can focus on analysis.
 
-- **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
-- **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
-- **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
-- **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
-- **CLI included.** A standalone command-line tool for quick inspection without writing any code.
+- ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
+- 📊 **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
+- 🎯 **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
+- 🗂️ **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
+- 💻 **CLI included.** A standalone command-line tool for quick inspection without writing any code.
 
 ## Installation
 
+Boon can be used as a Python library, a Rust crate, or a standalone CLI tool.
+
 ### Python
+
+We recommend using [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv add boon-deadlock
+```
 
-# or
+You can also use pip:
 
+```bash
 pip install boon-deadlock
 ```
 
@@ -58,12 +69,6 @@ Requires Python 3.11+.
 ### CLI
 
 Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
-
-Or install via [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall) (no compilation needed):
-
-```bash
-cargo binstall boon-cli
-```
 
 ### Rust library
 
@@ -119,6 +124,8 @@ boon --help
 ```
 
 ## Available Datasets
+
+Each dataset is a property on the `Demo` class that returns a [Polars](https://pola.rs) DataFrame. Datasets are lazy-loaded on first access — boon only parses what you request. If you need multiple datasets, `load()` parses them in a single pass for efficiency. Call `Demo.available_datasets()` to see the full list programmatically.
 
 | Dataset | Description |
 |---------|-------------|
