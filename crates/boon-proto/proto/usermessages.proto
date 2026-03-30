@@ -111,6 +111,8 @@ enum PARTICLE_MESSAGE {
 	GAME_PARTICLE_MANAGER_EVENT_ADD_FAN = 36;
 	GAME_PARTICLE_MANAGER_EVENT_UPDATE_FAN = 37;
 	GAME_PARTICLE_MANAGER_EVENT_SET_CLUSTER_GROWTH = 38;
+	GAME_PARTICLE_MANAGER_EVENT_REMOVE_FAN = 39;
+	GAME_PARTICLE_MANAGER_EVENT_CREATE_SMOKE_GRID = 40;
 }
 
 enum EHapticPulseType {
@@ -341,6 +343,8 @@ message CUserMessageCameraTransition {
 }
 
 message CUserMsg_ParticleManager {
+	option (maximum_size_bytes) = 4096;
+
 	message ReleaseParticleIndex {
 	}
 
@@ -462,6 +466,7 @@ message CUserMsg_ParticleManager {
 
 	message SetParticleText {
 		optional string text = 1;
+		optional bool localize = 2;
 	}
 
 	message SetTextureAttribute {
@@ -543,6 +548,10 @@ message CUserMsg_ParticleManager {
 	message DestroyPhysicsSim {
 	}
 
+	message CreateSmokeGrid {
+		optional string vdata_name = 1;
+	}
+
 	message SetVData {
 		optional string vdata_name = 1;
 	}
@@ -565,6 +574,12 @@ message CUserMsg_ParticleManager {
 		optional bool pull_towards_point = 10;
 		optional float curve_min_dist = 11;
 		optional float curve_max_dist = 12;
+		optional uint32 fan_type = 13;
+		optional float cone_start_radius = 14;
+		optional float cone_end_radius = 15;
+		optional float cone_length = 16;
+		optional uint32 entity_handle = 17 [default = 16777215];
+		optional string attachment_name = 18;
 	}
 
 	message UpdateFan {
@@ -577,13 +592,16 @@ message CUserMsg_ParticleManager {
 		optional .CMsgVector bounds_maxs = 6;
 	}
 
+	message RemoveFan {
+	}
+
 	message SetParticleClusterGrowth {
 		optional float duration = 1;
 		optional .CMsgVector origin = 2;
 	}
 
-	required .PARTICLE_MESSAGE type = 1 [default = GAME_PARTICLE_MANAGER_EVENT_CREATE];
-	required uint32 index = 2;
+	optional .PARTICLE_MESSAGE type = 1 [default = GAME_PARTICLE_MANAGER_EVENT_CREATE];
+	optional uint32 index = 2;
 	optional .CUserMsg_ParticleManager.ReleaseParticleIndex release_particle_index = 3;
 	optional .CUserMsg_ParticleManager.CreateParticle create_particle = 4;
 	optional .CUserMsg_ParticleManager.DestroyParticle destroy_particle = 5;
@@ -622,6 +640,8 @@ message CUserMsg_ParticleManager {
 	optional .CUserMsg_ParticleManager.AddFan add_fan = 39;
 	optional .CUserMsg_ParticleManager.UpdateFan update_fan = 40;
 	optional .CUserMsg_ParticleManager.SetParticleClusterGrowth set_particle_cluster_growth = 41;
+	optional .CUserMsg_ParticleManager.RemoveFan remove_fan = 42;
+	optional .CUserMsg_ParticleManager.CreateSmokeGrid create_smoke_grid = 43;
 
 	extensions 100 to 201;
 }

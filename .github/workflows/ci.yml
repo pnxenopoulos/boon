@@ -18,96 +18,248 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  fmt:
-    name: Format
+  lint:
+    name: Format & Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
-      - name: Install Rust (stable) + rustfmt
+      - name: Install Rust (stable) + rustfmt, clippy
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          components: rustfmt
+          components: rustfmt, clippy
 
       - name: Cache cargo/target
         uses: Swatinem/rust-cache@v2
         with:
-          key: fmt-${{ runner.os }}-stable
+          key: lint-${{ runner.os }}-stable
 
       - name: rustfmt
         run: cargo fmt --all -- --check
 
-  clippy:
-    name: Lint
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v5
-
-      - name: Install Rust (stable) + clippy
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: clippy
-
-      - name: Cache cargo/target
-        uses: Swatinem/rust-cache@v2
-        with:
-          key: clippy-${{ runner.os }}-stable
-
       - name: clippy
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-  test:
+      - name: rustdoc
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --no-deps --all-features --exclude boon-cli --exclude boon-python
+
+  deny:
+    name: Dependency Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: cargo deny
+        uses: EmbarkStudios/cargo-deny-action@v2
+        with:
+          command: check
+          arguments: --all-features
+
+  test-rust:
     name: Build & Test (${{ matrix.os }} / ${{ matrix.rust }})
-    needs: [fmt, clippy]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable, beta]
+        rust: [stable]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
-      - name: Install Rust (${{ matrix.rust }}) + components
+      - name: Install Rust (${{ matrix.rust }})
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ matrix.rust }}
-          components: rustfmt, clippy
 
       - name: Cache cargo/target
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ runner.os }}-${{ matrix.rust }}
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:
           tool: nextest
 
-      - name: Build
-        run: cargo build --workspace --all-features --locked
-
       - name: Test
-        run: |
-          mkdir -p target/nextest
-          cargo nextest run \
-            --workspace --all-features \
-            --failure-output immediate-final
+        run: cargo nextest run --workspace --all-features --locked --exclude boon-python --failure-output immediate-final
 
-  coverage:
-    name: Coverage
+  build-python-wheels:
+    name: Build Python Wheels
     runs-on: ubuntu-latest
-    needs: test
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build wheels for all Python versions
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v6
+        with:
+          name: python-wheels
+          path: dist/*.whl
+
+  test-python:
+    name: Python Tests (${{ matrix.python-version }})
+    needs: build-python-wheels
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+    env:
+      # Space-separated list of public URLs for demo fixture files.
+      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/70555151/70555151.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Download wheels
+        uses: actions/download-artifact@v7
+        with:
+          name: python-wheels
+          path: dist
+
+      - name: Download demo fixtures
+        working-directory: crates/boon-python
+        run: |
+          mkdir -p tests/fixtures
+          if [ -n "$DEMO_URLS" ]; then
+            for url in $DEMO_URLS; do
+              echo "Downloading $url ..."
+              curl -fSL --retry 3 -o "tests/fixtures/$(basename "$url")" "$url"
+            done
+          else
+            echo "No DEMO_URLS configured — skipping fixture download"
+          fi
+
+      - name: Install wheel and test dependencies
+        working-directory: crates/boon-python
+        run: |
+          uv sync --no-install-project
+          CPVER="cp$(echo ${{ matrix.python-version }} | tr -d .)"
+          WHEEL=$(ls ../../dist/boon_deadlock-*-${CPVER}-*.whl)
+          uv pip install "$WHEEL"
+
+      - name: Run pytest
+        working-directory: crates/boon-python
+        run: uv run pytest tests/ -v
+
+  dry-run-publish-parser:
+    name: Dry Run (crates.io)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo/target
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: dry-run-parser-${{ runner.os }}
+
+      - name: cargo publish --dry-run (boon-proto)
+        run: cargo publish --dry-run -p boon-proto
+
+      # boon-deadlock depends on boon-proto which isn't on crates.io yet.
+      # Both cargo publish --dry-run and cargo package resolve registry deps,
+      # so neither works until boon-proto is published. Uncomment after first release.
+      # - name: cargo publish --dry-run (boon-deadlock)
+      #   run: cargo publish --dry-run -p boon-deadlock
+
+  dry-run-publish-python:
+    name: Dry Run (PyPI)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --release --out dist -m crates/boon-python/Cargo.toml
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist -m crates/boon-python/Cargo.toml
+
+      - name: Verify dist contents
+        run: ls -lh dist/
+
+  docs:
+    name: Sphinx Docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Sphinx dependencies
+        run: pip install -r crates/boon-python/docs/requirements.txt
+
+      - name: Build docs
+        working-directory: crates/boon-python/docs
+        run: sphinx-build -W -b html . _build/html
+
+  check:
+    name: CI Check
+    if: always()
+    needs: [lint, deny, test-rust, build-python-wheels, test-python, docs, dry-run-publish-parser, dry-run-publish-python]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify all jobs passed
+        run: |
+          if [[ "${{ needs.lint.result }}" != "success" ||
+                "${{ needs.deny.result }}" != "success" ||
+                "${{ needs.test-rust.result }}" != "success" ||
+                "${{ needs.build-python-wheels.result }}" != "success" ||
+                "${{ needs.test-python.result }}" != "success" ||
+                "${{ needs.docs.result }}" != "success" ||
+                "${{ needs.dry-run-publish-parser.result }}" != "success" ||
+                "${{ needs.dry-run-publish-python.result }}" != "success" ]]; then
+            echo "One or more required jobs failed"
+            exit 1
+          fi
+
+  coverage:
+    name: Coverage
+    needs: check
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Install Rust (stable) + components (incl. llvm-tools)
         uses: dtolnay/rust-toolchain@stable

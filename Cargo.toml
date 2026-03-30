@@ -1,14 +1,24 @@
 [workspace]
 exclude = [
   "scripts/build-protos",
+  "scripts/generate-name-tables",
 ]
 members = [
   "crates/boon",
   "crates/boon-cli",
   "crates/boon-proto",
+  "crates/boon-python",
 ]
 resolver = "2"
 
+[workspace.package]
+version = "0.1.0"
+rust-version = "1.88.0"
+
 [workspace.dependencies]
-boon = { path = "crates/boon" }
-boon-proto = { path = "crates/boon-proto" }
+boon = { path = "crates/boon", package = "boon-deadlock", version = "0.1.0" }
+boon-proto = { path = "crates/boon-proto", version = "0.1.0" }
+
+[profile.release]
+lto = true          # Link-time optimization
+codegen-units = 1   # Better optimization, slower compile
