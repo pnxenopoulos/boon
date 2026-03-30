@@ -2,7 +2,7 @@
 
 # Boon
 
-[![Discord](https://img.shields.io/discord/868146581419999232?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/tWCwmHDy2u)
+[![Discord](https://img.shields.io/discord/1466262096479129673?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/WmjZHxWrCD)
 [![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
 [![CI](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml/badge.svg)](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -17,40 +17,29 @@
 
 </div>
 
-Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser. It is written in Rust and ships with Python bindings, a CLI tool, and a standalone Rust library.
+Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It parses Source 2 demo files (`.dem`) and returns [Polars](https://pola.rs) DataFrames, giving you structured access to match data without dealing with the binary format yourself.
 
-## Features
+## Table of Contents
 
-- Parse Deadlock `.dem` demo files at native speed
-- Python library returning [Polars](https://pola.rs) DataFrames for analysis
-- CLI for quick inspection of demo files
-- Access to match metadata, player info, entity state, game events, and post-match summaries
+- [Why Boon?](#why-boon)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Available Datasets](#available-datasets)
+- [Project Structure](#project-structure)
+- [Documentation](#documentation)
+- [Useful Links](#useful-links)
+- [Contributing](#contributing)
+- [License](#license)
 
-## Available Data
+## Why Boon?
 
-The following data can be extracted from demo files:
+Deadlock demo files contain a wealth of match data — player positions, kills, damage, item builds, objective state, and more — but the Source 2 demo format is complex and undocumented. Boon handles the low-level parsing so you can focus on analysis.
 
-- **Player ticks** -- per-player state every tick (position, health, souls, net worth, kills, deaths, assists, and 40+ more fields)
-- **World ticks** -- world state every tick (pause state, next mid boss spawn time)
-- **Kills** -- hero kill events with attacker, victim, and assisters
-- **Damage** -- damage events with pre/post mitigation, hitgroups, and crit damage
-- **Item purchases** -- item shop transactions (purchased, upgraded, sold, swapped, failure)
-- **Ability upgrades** -- hero ability point spending (skill tier upgrades T1-T4)
-- **Abilities** -- important ability usage events
-- **Respawns** -- player respawn events
-- **Flex slots** -- flex slot unlock events per team
-- **Chat** -- in-game chat messages (all chat and team chat)
-- **Objectives** -- per-tick objective entity health (walkers, titans, barracks, mid boss)
-- **Boss kills** -- objective destruction events (walkers, titans, barracks, mid boss, core)
-- **Mid boss** -- mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire)
-- **Troopers** -- per-tick alive lane trooper state (position, health, lane) *(opt-in, large dataset)*
-- **Neutrals** -- neutral creep state changes with change detection *(opt-in)*
-- **Stat modifiers** -- per-player cumulative permanent stat bonuses from pickups *(opt-in)*
-- **Active modifiers** -- active buff/debuff modifier events *(opt-in)*
-- **Urn** -- urn (idol) lifecycle and delivery point events *(opt-in)*
-- **Players** -- player info (name, Steam ID, hero ID, team, starting lane)
-- **Match metadata** -- match ID, map name, build number, game mode, tick rate, total ticks/time
-- **Game result** -- winning team number, game over tick, banned hero IDs
+- **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
+- **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
+- **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
+- **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
+- **CLI included.** A standalone command-line tool for quick inspection without writing any code.
 
 ## Installation
 
@@ -64,30 +53,19 @@ uv add boon-deadlock
 pip install boon-deadlock
 ```
 
-Requires Python 3.11+. Boon depends on [Polars](https://pola.rs) for DataFrames.
+Requires Python 3.11+.
 
 ### CLI
 
-Install a prebuilt binary via [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall) (no compilation needed):
+Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
+
+Or install via [`cargo binstall`](https://github.com/cargo-bins/cargo-binstall) (no compilation needed):
 
 ```bash
 cargo binstall boon-cli
 ```
 
-Or download a binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
-
-Or build from source (requires Rust):
-
-```bash
-git clone https://github.com/pnxenopoulos/boon.git
-cd boon
-cargo build --release -p boon-cli
-# Binary is at target/release/boon
-```
-
 ### Rust library
-
-Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
@@ -104,40 +82,21 @@ from boon import Demo
 demo = Demo("match.dem")
 
 # Match metadata
-print(demo.match_id)         # 28309863
-print(demo.map_name)         # "dl_midtown"
-print(demo.total_ticks)      # 54000
-print(demo.total_clock_time) # "30:00"
-print(demo.winning_team_num) # 2
+print(demo.match_id)         # 70555151
+print(demo.map_name)         # "start"
+print(demo.total_clock_time) # "37:38"
+print(demo.winning_team_num) # 3
 
-# Player info
-print(demo.players)
-# shape: (12, 5)
-# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┐
-# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane │
-# ...
+# Datasets are Polars DataFrames, lazy-loaded on first access
+kills = demo.kills
+damage = demo.damage
+player_ticks = demo.player_ticks
 
-# Datasets (Polars DataFrames — all lazy-loaded on first access)
-player_ticks     = demo.player_ticks      # per-player state every tick
-world_ticks      = demo.world_ticks       # world state every tick
-kills            = demo.kills             # kill events
-damage           = demo.damage            # damage events
-item_purchases   = demo.item_purchases    # item shop transactions
-ability_upgrades = demo.ability_upgrades  # skill point spending
-abilities        = demo.abilities         # ability usage events
-respawns         = demo.respawns          # respawn events
-flex_slots       = demo.flex_slots        # flex slot unlocks
-chat             = demo.chat              # chat messages
-objectives       = demo.objectives        # objective health per tick
-boss_kills       = demo.boss_kills        # objective destruction events
-mid_boss         = demo.mid_boss          # mid boss lifecycle events
+# Batch-load multiple datasets in a single parse pass
+demo.load("kills", "damage", "player_ticks", "objectives")
 
-# Opt-in datasets (not loaded by default)
-troopers         = demo.troopers          # lane trooper state per tick
-neutrals         = demo.neutrals          # neutral creep state changes
-stat_modifiers   = demo.stat_modifiers    # permanent stat bonuses per tick
-active_modifiers = demo.active_modifiers  # buff/debuff modifier events
-urn              = demo.urn               # urn lifecycle and delivery events
+# See what datasets are available
+Demo.available_datasets()
 ```
 
 ### CLI
@@ -159,23 +118,56 @@ boon entities match.dem --tick 10000 --filter CCitadelPlayerController
 boon --help
 ```
 
+## Available Datasets
+
+| Dataset | Description |
+|---------|-------------|
+| `player_ticks` | Per-player state every tick (position, health, souls, net worth, kills, deaths, assists, 40+ fields) |
+| `world_ticks` | World state every tick (pause state, next mid boss spawn) |
+| `kills` | Hero kill events with attacker, victim, and assisters |
+| `damage` | Damage events with pre/post mitigation, hitgroups, and crit damage |
+| `item_purchases` | Item shop transactions (purchased, upgraded, sold, swapped) |
+| `ability_upgrades` | Hero ability point spending (tier 1-3) |
+| `abilities` | Important ability usage events |
+| `flex_slots` | Flex slot unlock events per team |
+| `chat` | In-game chat messages (all chat and team chat) |
+| `objectives` | Objective health state changes (walkers, barracks, shrines, patron, mid boss) with position and phase tracking |
+| `mid_boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire) |
+| `troopers` | Per-tick alive lane trooper state with position *(opt-in, large)* |
+| `neutrals` | Neutral creep state changes with change detection *(opt-in)* |
+| `stat_modifier_events` | Permanent stat bonus change events from pickups *(opt-in)* |
+| `active_modifiers` | Active buff/debuff modifier events *(opt-in)* |
+| `urn` | Urn (idol) lifecycle and delivery point events *(opt-in)* |
+| `street_brawl_ticks` | Per-tick street brawl state *(street brawl only)* |
+| `street_brawl_rounds` | Street brawl round scoring events *(street brawl only)* |
+
 ## Project Structure
 
 | Crate | Description |
 |-------|-------------|
-| `boon` | Core parser library (Rust) |
-| `boon-proto` | Auto-generated Deadlock protobuf definitions |
-| `boon-cli` | Command-line interface |
-| `boon-python` | Python bindings via PyO3 |
+| [`boon`](crates/boon) | Core parser library (published as `boon-deadlock` on crates.io) |
+| [`boon-proto`](crates/boon-proto) | Auto-generated Deadlock protobuf definitions |
+| [`boon-cli`](crates/boon-cli) | Command-line interface |
+| [`boon-python`](crates/boon-python) | Python bindings via PyO3 (published as `boon-deadlock` on PyPI) |
 
 ## Documentation
 
-Full documentation is available at the [Boon docs site](https://boon.readthedocs.io/en/latest/), including:
+Full documentation is available at [boon.readthedocs.io](https://boon.readthedocs.io), including:
 
-- [Getting Started](crates/boon-python/docs/getting-started.md)
-- [Python API Reference](crates/boon-python/docs/api.md)
-- [CLI Reference](crates/boon-python/docs/cli.md)
-- [Changelog](crates/boon-python/docs/changelog.md)
+- [Getting Started](https://boon.readthedocs.io/en/latest/getting-started.html)
+- [Examples](https://boon.readthedocs.io/en/latest/examples.html)
+- [API Reference](https://boon.readthedocs.io/en/latest/api.html)
+- [CLI Reference](https://boon.readthedocs.io/en/latest/cli.html)
+- [FAQ](https://boon.readthedocs.io/en/latest/faq.html)
+- [Known Issues](https://boon.readthedocs.io/en/latest/known-issues.html)
+- [Changelog](https://boon.readthedocs.io/en/latest/changelog.html)
+
+## Useful Links
+
+- [Deadlock](https://www.playdeadlock.com/) — official home page
+- [Steam store page](https://store.steampowered.com/app/1422450/Deadlock/)
+- [Deadlock Wiki](https://deadlock.wiki/)
+- [r/DeadlockTheGame](https://www.reddit.com/r/DeadlockTheGame/) — Reddit community
 
 ## Contributing
 
@@ -183,4 +175,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, 
 
 ## License
 
-MIT &mdash; see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE) for details.

@@ -50,4 +50,4 @@ Yes. The `boon-cli` command-line tool lets you inspect demos without writing cod
 
 ## Something isn't working. Where do I report it?
 
-Check {doc}`known-issues` first. If your problem isn't listed, file a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in the [Discord](https://discord.gg/tWCwmHDy2u).
+Check {doc}`known-issues` first. If your problem isn't listed, file a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in the [Discord](https://discord.gg/WmjZHxWrCD).

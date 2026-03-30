@@ -14,7 +14,7 @@ Deadlock demo files contain a wealth of match data — player positions, kills, 
 
 ## Get started
 
-Install with `uv add boon-deadlock` or `pip install boon-deadlock`, then head to {doc}`getting-started` for a walkthrough. If something isn't working as expected, check {doc}`known-issues` first — then file a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in the [Discord](https://discord.gg/tWCwmHDy2u).
+Install with `uv add boon-deadlock` or `pip install boon-deadlock`, then head to {doc}`getting-started` for a walkthrough. If something isn't working as expected, check {doc}`known-issues` first — then file a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in the [Discord](https://discord.gg/WmjZHxWrCD).
 
 ## Useful links
 

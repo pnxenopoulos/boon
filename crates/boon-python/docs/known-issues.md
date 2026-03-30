@@ -2,7 +2,7 @@
 
 Deadlock is in active development, and Valve frequently changes the demo file format. This page documents known issues and limitations in boon that stem from these changes.
 
-If you encounter a problem not listed here, please report it on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in the [Discord](https://discord.gg/tWCwmHDy2u).
+If you encounter a problem not listed here, please report it on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in the [Discord](https://discord.gg/WmjZHxWrCD).
 
 ## Banned heroes
 

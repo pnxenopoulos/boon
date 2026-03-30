@@ -27,7 +27,7 @@ dependencies = ["polars>=1.0"]
 Homepage = "https://github.com/pnxenopoulos/boon"
 Documentation = "https://boon.readthedocs.io"
 Repository = "https://github.com/pnxenopoulos/boon"
-Discord = "https://discord.gg/tWCwmHDy2u"
+Discord = "https://discord.gg/WmjZHxWrCD"
 Issues = "https://github.com/pnxenopoulos/boon/issues"
 
 [dependency-groups]

@@ -2,7 +2,7 @@
 
 # Boon
 
-[![Discord](https://img.shields.io/discord/868146581419999232?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/tWCwmHDy2u)
+[![Discord](https://img.shields.io/discord/1466262096479129673?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/WmjZHxWrCD)
 [![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pnxenopoulos/boon/blob/main/LICENSE)
 
