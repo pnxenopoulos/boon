@@ -9,7 +9,7 @@
 
 **Python** &nbsp;
 [![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
-[![PyPI Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
+[![Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 **Rust** &nbsp;
