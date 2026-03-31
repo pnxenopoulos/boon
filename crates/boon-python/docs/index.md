@@ -6,11 +6,11 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 
 Deadlock demo files contain a wealth of match data — player positions, kills, damage, item builds, objective state, and more — but the Source 2 demo format is complex and undocumented. Boon handles the low-level parsing so you can focus on analysis.
 
-- **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
-- **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
-- **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
-- **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
-- **CLI included.** A standalone command-line tool for quick inspection without writing any code.
+- ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
+- 📊 **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
+- 🎯 **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
+- 🗂️ **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
+- 💻 **CLI included.** A standalone command-line tool for quick inspection without writing any code.
 
 ## Get started
 

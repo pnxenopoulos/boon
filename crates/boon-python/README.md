@@ -6,13 +6,18 @@
 [![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/pnxenopoulos/boon/blob/main/LICENSE)
 
+**Python** &nbsp;
 [![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
-[![PyPI Downloads](https://img.shields.io/pypi/dm/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
+[![PyPI Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
+**Rust** &nbsp;
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 [![crates.io Downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+
+**CLI** &nbsp;
 [![GitHub Release](https://img.shields.io/github/v/release/pnxenopoulos/boon?label=CLI)](https://github.com/pnxenopoulos/boon/releases)
+[![CLI Downloads](https://img.shields.io/github/downloads/pnxenopoulos/boon/total?label=CLI%20Downloads)](https://github.com/pnxenopoulos/boon/releases)
 
 </div>
 
@@ -20,11 +25,15 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 
 ## Installation
 
+We recommend using [uv](https://docs.astral.sh/uv/):
+
 ```bash
 uv add boon-deadlock
+```
 
-# or
+You can also use pip:
 
+```bash
 pip install boon-deadlock
 ```
 

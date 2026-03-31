@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
@@ -33,6 +34,7 @@ jobs:
     name: Publish to crates.io
     needs: ci-gate
     runs-on: ubuntu-latest
+    environment: crates
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -58,14 +60,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Publish boon-proto
-        run: cargo publish -p boon-proto
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p boon-proto --registry crates-io
 
       - name: Wait for crates.io index propagation
         run: sleep 30
 
       - name: Publish boon-deadlock
-        run: cargo publish -p boon-deadlock
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p boon-deadlock --registry crates-io
