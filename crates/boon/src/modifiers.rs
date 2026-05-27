@@ -42,7 +42,10 @@ const ENTRIES: &[(u32, &str)] = &[
     (1777455211, "modifier_hero_upgrade_bonuses"),
     (1873864326, "modifier_rejuv_pickup_aura"),
     (1954913723, "modifier_streetbrawl_trooper"),
-    (2017094508, "modifier_street_brawl_round_start_zipline_boost"),
+    (
+        2017094508,
+        "modifier_street_brawl_round_start_zipline_boost",
+    ),
     (2040761217, "modifier_force_duck"),
     (2050972778, "modifier_zipline_speed_trooper_first_wave"),
     (2059539911, "timer"),

@@ -524,7 +524,10 @@ const ENTRIES: &[(u32, &str)] = &[
     (2729670681, "tech_upgrade_t4"),
     (2732213553, "fathom_breach"),
     (2739107182, "upgrade_burst_fire"),
-    (2743971415, "citadel_weapon_astro_set_shotgun_shared_weapon_info"),
+    (
+        2743971415,
+        "citadel_weapon_astro_set_shotgun_shared_weapon_info",
+    ),
     (2750845124, "ability_necro_killsummon"),
     (2751689917, "ability_warden_high_alert"),
     (2772141905, "citadel_weapon_yakuza_set"),
