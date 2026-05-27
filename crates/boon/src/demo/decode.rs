@@ -71,7 +71,6 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         355 => CCitadelUserMessageMeleeHit,
         356 => CCitadelUserMsgFlexSlotUnlocked,
         357 => CCitadelUserMsgSeasonalKill,
-        358 => CCitadelUserMsgMusicQueue,
         359 => CCitadelUserMsgAg2ParamTrigger,
         360 => CCitadelUserMessageItemPurchaseNotification,
         361 => CCitadelUserMsgEntityPortalled,
