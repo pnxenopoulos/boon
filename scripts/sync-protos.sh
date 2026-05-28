@@ -7,9 +7,12 @@ set -euo pipefail
 # 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
 # 2) Copies ONLY the allowlisted Protobufs/*.proto into ../crates/boon-proto/proto/
 # 3) Reads game/citadel/steam.inf and updates ../crates/boon-proto/Cargo.toml:
-#    - Sets [package].version to MAJOR.MINOR.PATCH (Cargo-safe SemVer)
-#    - Sets [package.metadata.boon-proto].version to:
-#        MAJOR.MINOR.PATCH.ClientVersion.ServerVersion.SourceRevision
+#    - Reads the compatibility epoch MAJOR.MINOR from [package].version
+#    - Sets [package].version to (Cargo-safe SemVer with build metadata):
+#        MAJOR.MINOR.SourceRevision+ServerVersion
+#      The monotonic SourceRevision is the PATCH, so each game build yields a
+#      higher, publishable version while MAJOR.MINOR stays the compat epoch.
+#      (ClientVersion has always equalled ServerVersion, so only one is kept.)
 #
 # Environment:
 #   CLEAN_DEST=1         delete existing *.proto in DEST_DIR before copying
@@ -165,84 +168,37 @@ update_version_in_section() {
   mv -f "$tmp" "$toml"
 }
 
-upsert_metadata_version() {
-  # Upsert:
-  #   [package.metadata.boon-proto]
-  #   version = "<full>"
-  #
-  # Args:
-  #   $1 = toml file path
-  #   $2 = full version string
-  local toml="$1" full="$2"
-  local hdr="[package.metadata.boon-proto]"
-  local tmp
-  tmp="$(mktemp)"
-
-  awk -v hdr="$hdr" -v full="$full" '
-    BEGIN { in_meta=0; found=0; wrote=0 }
-    $0 == hdr { in_meta=1; found=1; print; next }
-    $0 ~ /^\[/ {
-      if (in_meta) {
-        if (!wrote) { print "version = \"" full "\""; wrote=1 }
-        in_meta=0
-      }
-      print
-      next
-    }
-    in_meta && $0 ~ /^[[:space:]]*version[[:space:]]*=/ {
-      if ($0 ~ /"[^"]*"/) {
-        sub(/"[^"]*"/, "\"" full "\"")
-      } else {
-        $0 = "version = \"" full "\""
-      }
-      wrote=1
-      print
-      next
-    }
-    { print }
-    END {
-      if (in_meta && !wrote) {
-        print "version = \"" full "\""
-        wrote=1
-      }
-      if (!found) {
-        print ""
-        print hdr
-        print "version = \"" full "\""
-      }
-    }
-  ' "$toml" > "$tmp" || {
-    rm -f "$tmp"
-    die "Failed to update $hdr in $toml"
-  }
-
-  mv -f "$tmp" "$toml"
-}
-
 update_cargo_toml() {
   local client="$1" server="$2" rev="$3"
 
-  # boon-proto uses version.workspace = true, so read from the workspace root
-  local workspace_toml="$SCRIPT_DIR/../Cargo.toml"
-  need_file "$workspace_toml"
-
+  # boon-proto is versioned independently from the workspace release version, so
+  # read its current MAJOR.MINOR (the compatibility epoch) from its own [package]
+  # section. The existing PATCH is discarded; it is replaced by SourceRevision.
   local current_version
-  current_version="$(extract_version_in_section "workspace.package" "$workspace_toml")"
-  [[ -n "$current_version" ]] || die "Could not find quoted version in [workspace.package] in $workspace_toml"
+  current_version="$(extract_version_in_section "package" "$CARGO_TOML")"
+  [[ -n "$current_version" ]] || die "Could not find quoted version in [package] in $CARGO_TOML"
 
-  if [[ ! "$current_version" =~ ([0-9]+)\.([0-9]+)\.([0-9]+) ]]; then
-    die "Existing version '$current_version' does not contain MAJOR.MINOR.PATCH"
+  if [[ ! "$current_version" =~ ([0-9]+)\.([0-9]+)\. ]]; then
+    die "Existing version '$current_version' does not start with MAJOR.MINOR"
   fi
 
   local major="${BASH_REMATCH[1]}"
   local minor="${BASH_REMATCH[2]}"
-  local patch="${BASH_REMATCH[3]}"
 
-  local full_version="${major}.${minor}.${patch}.${client}.${server}.${rev}"
+  # The suffix keeps only ServerVersion, which has always matched ClientVersion.
+  # Warn (don't fail) if they ever diverge, since ClientVersion is then dropped.
+  if [[ "$client" != "$server" ]]; then
+    echo "WARNING: ClientVersion ($client) != ServerVersion ($server); only ServerVersion is recorded in the version" >&2
+  fi
 
-  upsert_metadata_version "$CARGO_TOML" "$full_version"
+  # build-rev-as-patch: the monotonic SourceRevision becomes the PATCH (so each
+  # game build is a higher, publishable version), MAJOR.MINOR stays the
+  # compatibility epoch, and ServerVersion rides along as SemVer build metadata.
+  local full_version="${major}.${minor}.${rev}+${server}"
 
-  echo "Updated $CARGO_TOML ([package.metadata.boon-proto].version): -> $full_version"
+  update_version_in_section "package" "$CARGO_TOML" "$full_version"
+
+  echo "Updated $CARGO_TOML ([package].version): -> $full_version"
 }
 
 main() {

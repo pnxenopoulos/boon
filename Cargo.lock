@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "boon-cli"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "boon-deadlock",
@@ -278,7 +278,7 @@ dependencies = [
 
 [[package]]
 name = "boon-deadlock"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "boon-proto",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "boon-proto"
-version = "0.1.0"
+version = "0.2.10686578+6528"
 dependencies = [
  "bytes",
  "prost",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "boon-python"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "boon-deadlock",
  "boon-proto",
@@ -312,6 +312,7 @@ dependencies = [
  "prost",
  "pyo3",
  "pyo3-polars",
+ "serde_json",
 ]
 
 [[package]]

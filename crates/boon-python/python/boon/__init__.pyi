@@ -167,6 +167,25 @@ class Demo:
         """The tick rate of the demo (ticks per second)."""
         ...
 
+    def summary(self) -> dict:
+        """Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+
+        Returns a nested dict mirroring Deadlock's ``CMsgMatchMetaDataContents``
+        structure under a top-level ``match_info`` key: match outcome, per-player
+        records (kills/deaths/assists, net worth, gold breakdowns, items,
+        accolades, and per-minute stat snapshots), objectives, mid-bosses, and the
+        damage matrix.
+
+        Raises ``DemoMessageError`` if the demo contains no post-match details
+        (for example, an incomplete recording).
+
+        To turn the per-player records into a DataFrame::
+
+            import polars as pl
+            pl.DataFrame(demo.summary()["match_info"]["players"])
+        """
+        ...
+
     def tick_to_seconds(self, tick: int) -> float:
         """Convert a tick number to seconds elapsed, excluding paused time.
 
@@ -201,6 +220,34 @@ class Demo:
     @property
     def game_over_tick(self) -> int | None:
         """The tick when the game ended, or ``None`` if no game-over event was found."""
+        ...
+
+    @property
+    def regulation_ticks(self) -> int | None:
+        """Active (non-paused) ticks of regulation play, up to the game-over event.
+
+        Reflects how much of the game was actually played, unlike ``total_ticks``
+        (the full recording, including pre-game and post-match time). ``None`` if
+        no game-over event was found.
+        """
+        ...
+
+    @property
+    def regulation_seconds(self) -> float | None:
+        """Active gameplay duration in seconds, up to the game-over event.
+
+        Equal to ``regulation_ticks / tick_rate``. The regulation counterpart to
+        ``total_seconds``. ``None`` if no game-over event was found.
+        """
+        ...
+
+    @property
+    def regulation_clock_time(self) -> str | None:
+        """Regulation play duration as a formatted string (e.g. ``"32:45"``).
+
+        The regulation counterpart to ``total_clock_time``. ``None`` if no
+        game-over event was found.
+        """
         ...
 
 

@@ -351,6 +351,50 @@ impl Demo {
         self.tick_rate
     }
 
+    /// Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+    ///
+    /// Returns a nested dictionary mirroring Deadlock's
+    /// ``CMsgMatchMetaDataContents`` structure under a top-level ``match_info``
+    /// key: match outcome, per-player records (kills/deaths/assists, net worth,
+    /// gold breakdowns, items, accolades, and per-minute stat snapshots),
+    /// objectives, mid-bosses, and the damage matrix.
+    ///
+    /// Raises ``DemoMessageError`` if the demo contains no post-match details
+    /// (for example, an incomplete recording).
+    ///
+    /// To turn the per-player records into a DataFrame::
+    ///
+    ///     import polars as pl
+    ///     pl.DataFrame(demo.summary()["match_info"]["players"])
+    fn summary(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
+
+        let events = self.parser.events(None).map_err(to_py_err)?;
+        let event = events
+            .iter()
+            .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
+            .ok_or_else(|| DemoMessageError::new_err("no PostMatchDetails event found in demo"))?;
+
+        let outer =
+            CCitadelUserMsgPostMatchDetails::decode(event.payload.as_slice()).map_err(|e| {
+                DemoMessageError::new_err(format!("failed to decode PostMatchDetails: {e}"))
+            })?;
+        let details_bytes = outer.match_details.as_ref().ok_or_else(|| {
+            DemoMessageError::new_err("PostMatchDetails has no match_details bytes")
+        })?;
+        let contents =
+            CMsgMatchMetaDataContents::decode(details_bytes.as_slice()).map_err(|e| {
+                DemoMessageError::new_err(format!("failed to decode match metadata: {e}"))
+            })?;
+
+        // Serialize the decoded proto (it derives `serde::Serialize`) to JSON and
+        // let Python's stdlib `json` parse it into a nested dict.
+        let json = serde_json::to_string(&contents)
+            .map_err(|e| DemoMessageError::new_err(format!("failed to serialize summary: {e}")))?;
+        let obj = py.import("json")?.call_method1("loads", (json,))?;
+        Ok(obj.unbind())
+    }
+
     /// Convert a tick number to seconds elapsed, excluding paused time.
     ///
     /// Automatically loads ``world_ticks`` on first call to determine pauses.
@@ -2729,6 +2773,63 @@ impl Demo {
     fn game_over_tick(&mut self) -> PyResult<Option<i32>> {
         self.ensure_always_events_scanned()?;
         Ok(self.game_over.map(|(_, tick)| tick))
+    }
+
+    /// The number of ticks of regulation play, excluding paused time.
+    ///
+    /// Counts active (non-paused) ticks from the start of the recording up to
+    /// the ``k_EUserMsg_GameOver`` event, reflecting how much of the game was
+    /// actually played rather than the full recording length (``total_ticks``,
+    /// which also includes pre-game and post-match time). Scans for the
+    /// game-over event and loads ``world_ticks`` on first access.
+    ///
+    /// Returns ``None`` if no game over event was found (e.g. an incomplete
+    /// recording).
+    #[getter]
+    fn regulation_ticks(&mut self) -> PyResult<Option<i32>> {
+        self.ensure_always_events_scanned()?;
+        let Some((_, tick)) = self.game_over else {
+            return Ok(None);
+        };
+        self.ensure_paused_ticks_built()?;
+        Ok(Some(self.count_active_ticks(tick)))
+    }
+
+    /// The duration of regulation play in seconds, excluding paused time.
+    ///
+    /// Unlike ``total_seconds`` (the full recording length), this measures the
+    /// active gameplay duration up to the ``k_EUserMsg_GameOver`` event. Equal
+    /// to ``regulation_ticks / tick_rate``. Scans for the game-over event and
+    /// loads ``world_ticks`` on first access.
+    ///
+    /// Returns ``None`` if no game over event was found.
+    #[getter]
+    fn regulation_seconds(&mut self) -> PyResult<Option<f32>> {
+        if self.tick_rate == 0 {
+            return Ok(None);
+        }
+        let Some(ticks) = self.regulation_ticks()? else {
+            return Ok(None);
+        };
+        Ok(Some(ticks as f32 / self.tick_rate as f32))
+    }
+
+    /// The duration of regulation play as a formatted string (e.g. ``"32:45"``),
+    /// excluding paused time.
+    ///
+    /// The regulation counterpart to ``total_clock_time``. Scans for the
+    /// game-over event and loads ``world_ticks`` on first access.
+    ///
+    /// Returns ``None`` if no game over event was found.
+    #[getter]
+    fn regulation_clock_time(&mut self) -> PyResult<Option<String>> {
+        let Some(secs) = self.regulation_seconds()? else {
+            return Ok(None);
+        };
+        let total_seconds = secs as u32;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        Ok(Some(format!("{minutes}:{seconds:02}")))
     }
 
     fn __repr__(&self) -> String {

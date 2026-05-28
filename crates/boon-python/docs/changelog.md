@@ -1,5 +1,21 @@
 # 📝 Changelog
 
+## 0.2.0
+
+### boon-python
+
+- `Demo.summary()` method returning the post-match summary as a nested dict (match outcome, per-player records with gold breakdowns and per-minute stats, objectives, mid-bosses, and damage matrix). Per-player records convert directly to a Polars DataFrame.
+- `Demo.regulation_ticks`, `Demo.regulation_seconds`, `Demo.regulation_clock_time` properties for the duration of actual gameplay (active, paused-time-excluded ticks up to the game-over event), distinct from the full-recording `total_ticks`/`total_seconds`/`total_clock_time`. Return `None` when no game-over event is present.
+
+### boon-cli
+
+- Updated for the latest Deadlock build: name resolution reflects the refreshed ability and modifier name tables.
+
+### boon-proto
+
+- Synced protobuf definitions to the latest Deadlock build and regenerated the ability and modifier name lookup tables (surfaced via `ability_names()` and `modifier_names()`).
+- Versioned independently from the rest of the workspace to track the game build: `MAJOR.MINOR.<SourceRevision>+<GameBuild>` (e.g. `0.2.10686578+6528`). The monotonic `SourceRevision` is the patch, so each proto sync yields a higher, publishable version while staying compatible within the `0.2` line.
+
 ## 0.1.0
 
 ### boon-python (breaking changes from pre-release)
