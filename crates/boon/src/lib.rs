@@ -69,8 +69,8 @@ pub use demo::{
 };
 pub use entity::{
     ClassEntry, ClassInfo, ENTITY_HANDLE_INDEX_MASK, Entity, EntityContainer, FieldValue,
-    Serializer, SerializerContainer, SerializerField, StringTable, StringTableContainer,
-    StringTableEntry,
+    INVALID_ENTITY_HANDLE, Serializer, SerializerContainer, SerializerField, StringTable,
+    StringTableContainer, StringTableEntry, protobuf_handle_index,
 };
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};

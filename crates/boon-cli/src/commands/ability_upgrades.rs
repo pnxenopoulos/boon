@@ -69,32 +69,14 @@ pub fn run(
                     continue;
                 }
 
-                let hero_id = ck_hero_id
-                    .and_then(|k| entity.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon::FieldValue::U32(n) => Some(*n as i64),
-                        boon::FieldValue::U64(n) => Some(*n as i64),
-                        boon::FieldValue::I32(n) => Some(*n as i64),
-                        boon::FieldValue::I64(n) => Some(*n),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
+                let hero_id = entity.get_i64(ck_hero_id);
 
                 if hero_id == 0 {
                     continue;
                 }
 
                 for (slot_idx, (item_key, bits_key)) in slot_keys.iter().enumerate() {
-                    let ability_id = item_key
-                        .and_then(|k| entity.fields.get(&k))
-                        .and_then(|v| match v {
-                            boon::FieldValue::U32(n) => Some(*n),
-                            boon::FieldValue::U64(n) => Some(*n as u32),
-                            boon::FieldValue::I32(n) => Some(*n as u32),
-                            boon::FieldValue::I64(n) => Some(*n as u32),
-                            _ => None,
-                        })
-                        .unwrap_or(0);
+                    let ability_id = entity.get_u32(*item_key);
 
                     if ability_id == 0 {
                         continue;

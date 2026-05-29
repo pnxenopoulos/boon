@@ -31,6 +31,29 @@ const NUM_SERIAL_NUM_BITS: u32 = 32 - NUM_ENT_ENTRY_BITS;
 /// the index and resolves the wrong entity for any handle with an odd serial.
 pub const ENTITY_HANDLE_INDEX_MASK: u32 = 0x3FFF;
 
+/// Sentinel value for a `CHandle` field that points at no entity.
+///
+/// Protobuf handle fields (e.g. `modifier.parent`) are optional; callers
+/// substitute this when the field is absent and skip handles equal to it.
+pub const INVALID_ENTITY_HANDLE: u32 = 0x00FF_FFFF;
+
+/// Resolve a protobuf-style optional `CHandle` to an entity-array index.
+///
+/// Returns `None` when the handle is absent (the protobuf field was not set)
+/// or holds the [`INVALID_ENTITY_HANDLE`] sentinel; otherwise applies
+/// [`ENTITY_HANDLE_INDEX_MASK`] and returns the entity-array index. Use this
+/// for `Option<u32>` fields on `CitadelUserMessage`s such as `modifier.parent`
+/// or `msg.player`; it pairs naturally with `let-else`:
+///
+/// ```ignore
+/// let Some(parent_idx) = boon::protobuf_handle_index(modifier.parent) else { continue };
+/// ```
+pub fn protobuf_handle_index(handle: Option<u32>) -> Option<i32> {
+    handle
+        .filter(|&h| h != INVALID_ENTITY_HANDLE)
+        .map(|h| (h & ENTITY_HANDLE_INDEX_MASK) as i32)
+}
+
 /// Delta header values (2-bit codes) indicating entity state changes.
 const DELTA_UPDATE: u8 = 0b00;
 const DELTA_CREATE: u8 = 0b10;
@@ -155,6 +178,86 @@ impl Entity {
     pub fn get_by_name(&self, path: &str, serializer: &Serializer) -> Option<&FieldValue> {
         let key = serializer.resolve_field_key(path)?;
         self.fields.get(&key)
+    }
+
+    // ── Typed field accessors ──
+    //
+    // Each takes a field key pre-resolved with [`Serializer::resolve_field_key`]
+    // (so it can be resolved once and reused across ticks) and reads the field
+    // leniently: a missing key, an absent field, or a value of a different type
+    // all yield the type's default rather than an error. Integer variants accept
+    // any of the four integer encodings, since the network type is not always
+    // known ahead of time.
+
+    /// Read a field as `i64`, returning `0` when absent or non-integer.
+    pub fn get_i64(&self, key: Option<u64>) -> i64 {
+        key.and_then(|k| self.fields.get(&k))
+            .and_then(|v| match v {
+                FieldValue::U32(n) => Some(*n as i64),
+                FieldValue::U64(n) => Some(*n as i64),
+                FieldValue::I32(n) => Some(*n as i64),
+                FieldValue::I64(n) => Some(*n),
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+
+    /// Read a field as `u32`, returning `0` when absent or non-integer.
+    pub fn get_u32(&self, key: Option<u64>) -> u32 {
+        key.and_then(|k| self.fields.get(&k))
+            .and_then(|v| match v {
+                FieldValue::U32(n) => Some(*n),
+                FieldValue::U64(n) => Some(*n as u32),
+                FieldValue::I32(n) => Some(*n as u32),
+                FieldValue::I64(n) => Some(*n as u32),
+                _ => None,
+            })
+            .unwrap_or(0)
+    }
+
+    /// Read a field as `f32`, returning `0.0` when absent or non-float.
+    pub fn get_f32(&self, key: Option<u64>) -> f32 {
+        key.and_then(|k| self.fields.get(&k))
+            .and_then(|v| match v {
+                FieldValue::F32(f) => Some(*f),
+                _ => None,
+            })
+            .unwrap_or(0.0)
+    }
+
+    /// Read a field as `bool`, returning `false` when absent or non-bool.
+    pub fn get_bool(&self, key: Option<u64>) -> bool {
+        key.and_then(|k| self.fields.get(&k))
+            .and_then(|v| match v {
+                FieldValue::Bool(b) => Some(*b),
+                _ => None,
+            })
+            .unwrap_or(false)
+    }
+
+    /// Read a field as a `QAngle`, returning `[0.0; 3]` when absent or non-angle.
+    pub fn get_qangle(&self, key: Option<u64>) -> [f32; 3] {
+        key.and_then(|k| self.fields.get(&k))
+            .and_then(|v| match v {
+                FieldValue::QAngle(a) => Some(*a),
+                _ => None,
+            })
+            .unwrap_or([0.0; 3])
+    }
+
+    /// Read a raw `CHandle` field as `u32`, if present.
+    ///
+    /// Pass the result to [`EntityContainer::get_by_handle`] to follow the handle
+    /// to its entity; that helper owns the index mask so callers never decode it
+    /// by hand.
+    pub fn get_handle(&self, key: Option<u64>) -> Option<u32> {
+        key.and_then(|k| self.fields.get(&k)).and_then(|v| match v {
+            FieldValue::U32(n) => Some(*n),
+            FieldValue::U64(n) => Some(*n as u32),
+            FieldValue::I32(n) => Some(*n as u32),
+            FieldValue::I64(n) => Some(*n as u32),
+            _ => None,
+        })
     }
 }
 

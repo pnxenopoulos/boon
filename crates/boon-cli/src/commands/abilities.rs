@@ -58,16 +58,7 @@ pub fn run(
             if !entity_to_hero_built {
                 for (&idx, entity) in ctx.entities.iter() {
                     if entity.class_name == "CCitadelPlayerPawn" {
-                        let hid = pk_hero_id
-                            .and_then(|k| entity.fields.get(&k))
-                            .and_then(|v| match v {
-                                boon::FieldValue::U32(n) => Some(*n as i64),
-                                boon::FieldValue::U64(n) => Some(*n as i64),
-                                boon::FieldValue::I32(n) => Some(*n as i64),
-                                boon::FieldValue::I64(n) => Some(*n),
-                                _ => None,
-                            })
-                            .unwrap_or(0);
+                        let hid = entity.get_i64(pk_hero_id);
                         if hid != 0 {
                             entity_to_hero.insert(idx, hid);
                         }
@@ -83,9 +74,9 @@ pub fn run(
                             event.payload.as_slice(),
                         )
                 {
-                    let pawn_idx =
-                        (msg.player.unwrap_or(0) & boon::ENTITY_HANDLE_INDEX_MASK) as i32;
-                    let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
+                    let hero_id = boon::protobuf_handle_index(msg.player)
+                        .and_then(|i| entity_to_hero.get(&i).copied())
+                        .unwrap_or(0);
                     abilities.push(AbilityOutput {
                         tick: event.tick,
                         hero_id,

@@ -27,39 +27,6 @@ fn stat_index(val_type: u32) -> Option<usize> {
     }
 }
 
-fn get_i64(entity: &boon::Entity, key: Option<u64>) -> i64 {
-    key.and_then(|k| entity.fields.get(&k))
-        .and_then(|v| match v {
-            boon::FieldValue::I32(n) => Some(*n as i64),
-            boon::FieldValue::I64(n) => Some(*n),
-            boon::FieldValue::U32(n) => Some(*n as i64),
-            boon::FieldValue::U64(n) => Some(*n as i64),
-            _ => None,
-        })
-        .unwrap_or(0)
-}
-
-fn get_u32(entity: &boon::Entity, key: Option<u64>) -> u32 {
-    key.and_then(|k| entity.fields.get(&k))
-        .and_then(|v| match v {
-            boon::FieldValue::U32(n) => Some(*n),
-            boon::FieldValue::I32(n) => Some(*n as u32),
-            boon::FieldValue::U64(n) => Some(*n as u32),
-            boon::FieldValue::I64(n) => Some(*n as u32),
-            _ => None,
-        })
-        .unwrap_or(0)
-}
-
-fn get_f32(entity: &boon::Entity, key: Option<u64>) -> f32 {
-    key.and_then(|k| entity.fields.get(&k))
-        .and_then(|v| match v {
-            boon::FieldValue::F32(n) => Some(*n),
-            _ => None,
-        })
-        .unwrap_or(0.0)
-}
-
 #[derive(Serialize)]
 struct StatModifierOutput {
     tick: i32,
@@ -136,7 +103,7 @@ pub fn run(
                 if entity.class_name != "CCitadelPlayerController" {
                     continue;
                 }
-                let hero_id = get_i64(entity, ck_hero_id);
+                let hero_id = entity.get_i64(ck_hero_id);
                 if hero_id == 0 {
                     continue;
                 }
@@ -144,9 +111,9 @@ pub fn run(
                 // Sum values by eValType
                 let mut sums = [0.0f32; 6];
                 for (mid_key, vt_key, val_key) in &sv_keys {
-                    let mid = get_u32(entity, *mid_key);
-                    let vt = get_u32(entity, *vt_key);
-                    let val = get_f32(entity, *val_key);
+                    let mid = entity.get_u32(*mid_key);
+                    let vt = entity.get_u32(*vt_key);
+                    let val = entity.get_f32(*val_key);
                     if mid == 0 && vt == 0 && val == 0.0 {
                         continue;
                     }

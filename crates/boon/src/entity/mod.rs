@@ -17,7 +17,9 @@ mod serializers;
 mod string_tables;
 
 pub use class_info::{ClassEntry, ClassInfo};
-pub use entities::{ENTITY_HANDLE_INDEX_MASK, Entity, EntityContainer};
+pub use entities::{
+    ENTITY_HANDLE_INDEX_MASK, Entity, EntityContainer, INVALID_ENTITY_HANDLE, protobuf_handle_index,
+};
 pub use field_decoder::{FieldDecodeContext, FieldMetadata};
 pub use field_value::FieldValue;
 pub use serializers::{Serializer, SerializerContainer, SerializerField};
