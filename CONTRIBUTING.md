@@ -85,14 +85,21 @@ This updates the files under `crates/boon-proto/proto/` and regenerates `crates/
 
 ## Updating the Name Lookup Tables
 
-Ability/item and modifier IDs in demo events are MurmurHash2 hashes of their string names. The lookup tables at `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs` are generated from Deadlock's `abilities.vdata` and `modifiers.vdata` (extracted from the game's VPK data using [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)):
+Ability/item and modifier IDs in demo events are MurmurHash2 hashes of their string names. The lookup tables at `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs` are generated from Deadlock's `abilities.vdata` and `modifiers.vdata`.
+
+```bash
+# Fetch the latest vdata files from SteamDB and regenerate the tables
+./scripts/sync-name-tables.sh
+```
+
+This regenerates `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs`.
+
+If you already have `abilities.vdata` and `modifiers.vdata` locally (e.g., extracted from the game's VPK data using [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)), you can skip the fetch step and run the generator directly:
 
 ```bash
 # Run from the repo root with abilities.vdata and modifiers.vdata in the working directory
 cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 ```
-
-This regenerates `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs`.
 
 ## Release Strategy
 

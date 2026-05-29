@@ -103,6 +103,65 @@ determine pauses.
 
 **Returns:** `str` -- A formatted clock time string.
 
+#### `summary()`
+
+```python
+summary = demo.summary()
+summary.keys()                 # dict_keys(['snapshots', 'last_hits', 'objectives', 'damage'])
+summary["snapshots"]           # pl.DataFrame -- one row per (snapshot, player)
+summary["last_hits"]           # pl.DataFrame -- hero_id, last_hits
+summary["objectives"]          # pl.DataFrame -- post-match objective records
+summary["damage"]              # pl.DataFrame -- damage matrix (long form)
+```
+
+Parse the post-match summary from the demo's `PostMatchDetails` event. Returns a
+dict with four top-level keys:
+
+- **`snapshots`** -- a Polars DataFrame with one row per (snapshot, player).
+  Snapshots are taken at intervals through the match (not every minute);
+  `snapshot_time_s` marks each one. Columns hold that player's running totals at
+  that time: `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
+  `level`, `lane`, `creep_kills`, `neutral_kills`, `player_damage`, and the
+  per-source gold/orbs breakdown (`player_*`, `lane_creep_*`, `neutral_creep*`,
+  `boss_*`, `treasure_*`, `denies_*`, `team_bonus_*`, `breakable_*`,
+  `assassinate_*`, `trophy_collector_*`, `cultist_sacrifice_*`, `assists_*`, and
+  `unknown_*`).
+- **`last_hits`** -- a Polars DataFrame of `hero_id` and `last_hits`: the final
+  scoreboard last-hit (souls secured) total. This is only recorded per match,
+  not per snapshot, which is why it is a separate frame rather than a snapshot
+  column.
+- **`objectives`** -- a Polars DataFrame of post-match objective records:
+  `team_objective_id`, `team`, `destroyed_time_s`, `first_damage_time_s`,
+  `creep_damage`, `player_damage`, `player_spirit_damage`. `destroyed_time_s` and
+  `first_damage_time_s` are null when the objective was never destroyed/damaged.
+- **`damage`** -- a Polars DataFrame of the damage matrix in long form: one row
+  per (`dealer_player_slot`, `target_player_slot`, `source_name`,
+  `sample_time_s`). Dealer/target are also resolved to `dealer_hero_id` and
+  `target_hero_id` (null for non-player slots like `0`), so the frame joins to
+  `snapshots`/`last_hits` on `hero_id`. `damage` is the **per-interval, additive**
+  amount for that
+  `stat_type` dealt during the interval ending at that sample -- `sum` it for
+  totals, `cumsum` over `sample_time_s` for the running total. `stat_type` is a
+  string (`damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`,
+  `regen`). `is_category` (bool) flags Valve's coarse damage-type buckets
+  (`Bullet`/`Ability`/`Melee`/`Misc`/`UnknownAbility`), which duplicate the
+  specific-source rows for `damage`; filter to `is_category == False` for the
+  complete, non-overlapping per-source breakdown across all stat types.
+
+  ```python
+  import polars as pl
+  dmg = demo.summary()["damage"]
+  # player-vs-player damage matrix (totals) -- the obvious query just works:
+  (dmg.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
+      .group_by("dealer_player_slot", "target_player_slot")
+      .agg(pl.col("damage").sum()))
+  ```
+
+**Returns:** `dict` -- The post-match summary (Polars DataFrames keyed by name).
+
+**Raises:** `DemoMessageError` -- If the demo contains no post-match details
+(for example, an incomplete recording).
+
 ### Metadata Properties
 
 #### `path`
@@ -131,7 +190,9 @@ The total number of ticks in the demo.
 demo.total_seconds  # float
 ```
 
-The total duration of the demo in seconds.
+The total duration of the demo in seconds, covering the **entire recording**
+(including pre-game and post-match time). For the duration of actual gameplay,
+see `regulation_seconds`.
 
 ---
 
@@ -141,7 +202,8 @@ The total duration of the demo in seconds.
 demo.total_clock_time  # str
 ```
 
-The total duration of the demo as a formatted string (e.g., `"12:34"`).
+The total duration of the demo as a formatted string (e.g., `"12:34"`), covering
+the **entire recording**. For gameplay duration, see `regulation_clock_time`.
 
 ---
 
@@ -214,6 +276,43 @@ demo.game_over_tick  # int | None
 
 The tick when the game ended, or `None` if no game-over event was found.
 Scans for the `k_EUserMsg_GameOver` event on first access.
+
+---
+
+#### `regulation_ticks`
+
+```python
+demo.regulation_ticks  # int | None
+```
+
+The number of active (non-paused) ticks of regulation play, counted from the
+start of the recording up to the game-over event. Reflects how much of the game
+was actually played, unlike `total_ticks` (the full recording). `None` if no
+game-over event was found. Scans for `k_EUserMsg_GameOver` and loads
+`world_ticks` on first access.
+
+---
+
+#### `regulation_seconds`
+
+```python
+demo.regulation_seconds  # float | None
+```
+
+The active gameplay duration in seconds, up to the game-over event. Equal to
+`regulation_ticks / tick_rate`. The regulation counterpart to `total_seconds`.
+`None` if no game-over event was found.
+
+---
+
+#### `regulation_clock_time`
+
+```python
+demo.regulation_clock_time  # str | None
+```
+
+The regulation play duration as a formatted string (e.g., `"32:45"`). The
+counterpart to `total_clock_time`. `None` if no game-over event was found.
 
 ### DataFrame Properties
 

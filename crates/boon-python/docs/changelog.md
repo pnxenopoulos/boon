@@ -1,5 +1,22 @@
 # 📝 Changelog
 
+## 0.2.0
+
+### boon-python
+
+- `Demo.summary()` method returning the post-match summary as a dict with `snapshots`, `last_hits`, `objectives`, and `damage` keys. `snapshots` is a Polars DataFrame with one row per (snapshot, player) — a `snapshot_time_s` column plus per-player running totals (kills/deaths/assists, net worth, denies, level, lane, creep/neutral kills, player damage, and the per-source gold/orbs breakdown). `last_hits` is a Polars DataFrame of `hero_id` and `last_hits` (the final scoreboard last-hit total, only recorded per match). `objectives` is a Polars DataFrame of post-match objective records (destruction time and damage taken). `damage` is a Polars DataFrame of the damage matrix in long form — one row per (dealer, target, source, sample) with dealer/target as both `*_player_slot` and resolved `*_hero_id` (null for non-player slots, joinable to the other frames on `hero_id`), the per-interval (additive) `damage` per `stat_type` (a readable string), an `is_category` flag distinguishing coarse damage-type buckets from specific sources, and `sample_time_s`. Filter to `is_category == False` and `sum` for totals, or `cumsum` over `sample_time_s` for the running total.
+- `Demo.regulation_ticks`, `Demo.regulation_seconds`, `Demo.regulation_clock_time` properties for the duration of actual gameplay (active, paused-time-excluded ticks up to the game-over event), distinct from the full-recording `total_ticks`/`total_seconds`/`total_clock_time`. Return `None` when no game-over event is present.
+
+### boon-cli
+
+- `summary` command for post-match details: a match overview, a timing section (total ticks/time and tick rate from the recording, the game-over tick, and the regulation/gameplay duration), each player's final snapshot (with the scoreboard last-hit total), and an objectives table mirroring the Python `summary()` `objectives` frame. `--json` dumps the full decoded metadata.
+- Name resolution reflects the refreshed ability and modifier name tables from the latest Deadlock build.
+
+### boon-proto
+
+- Synced protobuf definitions to the latest Deadlock build and regenerated the ability and modifier name lookup tables (surfaced via `ability_names()` and `modifier_names()`).
+- Versioned independently from the rest of the workspace to track the game build: `MAJOR.MINOR.<SourceRevision>+<GameBuild>` (e.g. `0.2.10686578+6528`). The monotonic `SourceRevision` is the patch, so each proto sync yields a higher, publishable version while staying compatible within the `0.2` line.
+
 ## 0.1.0
 
 ### boon-python (breaking changes from pre-release)

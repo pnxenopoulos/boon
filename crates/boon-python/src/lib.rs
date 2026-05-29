@@ -6,6 +6,7 @@ use polars::prelude::*;
 use prost::Message;
 use pyo3::exceptions::PyFileNotFoundError;
 use pyo3::prelude::*;
+use pyo3::types::PyDict;
 use pyo3_polars::PyDataFrame;
 
 /// Source 2 null entity handle (0x00FFFFFF).
@@ -161,6 +162,358 @@ struct Demo {
     cached_street_brawl_ticks: Option<DataFrame>,
     cached_street_brawl_rounds: Option<DataFrame>,
     cached_urn: Option<DataFrame>,
+}
+
+/// The (gold, orbs) a player earned from a given source at a snapshot, or
+/// ``(0, 0)`` when that source is absent.
+fn gold_source_totals(
+    stats: &boon_proto::proto::c_msg_match_meta_data_contents::PlayerStats,
+    source: boon_proto::proto::c_msg_match_meta_data_contents::EGoldSource,
+) -> (u32, u32) {
+    stats
+        .gold_sources
+        .iter()
+        .find(|g| g.source == Some(source as i32))
+        .map(|g| (g.gold(), g.gold_orbs()))
+        .unwrap_or((0, 0))
+}
+
+/// Build the long-form ``snapshots`` DataFrame: one row per (snapshot time,
+/// player), with a ``snapshot_time_s`` column plus every per-player stat. The
+/// per-source gold/orbs columns come from ``PlayerStats.gold_sources`` keyed by
+/// ``EGoldSource``; ``unknown_*`` is the ``k_eItemGooseEgg`` source. (The
+/// scoreboard last-hit total is not per-snapshot; see ``build_last_hits_frame``.)
+fn build_snapshots_frame(
+    match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+) -> PolarsResult<DataFrame> {
+    use boon_proto::proto::c_msg_match_meta_data_contents::EGoldSource;
+    use std::collections::BTreeSet;
+
+    // Stats are stored per player; take the union of timestamps so players who
+    // abandoned early (fewer snapshots) are still handled correctly.
+    let mut times: BTreeSet<u32> = BTreeSet::new();
+    for player in &match_info.players {
+        for stats in &player.stats {
+            times.insert(stats.time_stamp_s());
+        }
+    }
+
+    let mut snapshot_time_s = Vec::new();
+    let mut hero_id = Vec::new();
+    let mut kills = Vec::new();
+    let mut deaths = Vec::new();
+    let mut assists = Vec::new();
+    let mut net_worth = Vec::new();
+    let mut denies = Vec::new();
+    let mut level = Vec::new();
+    let mut lane = Vec::new();
+    let mut creep_kills = Vec::new();
+    let mut neutral_kills = Vec::new();
+    let mut player_damage = Vec::new();
+    let mut player_gold = Vec::new();
+    let mut player_orbs = Vec::new();
+    let mut lane_creep_gold = Vec::new();
+    let mut lane_creep_orbs = Vec::new();
+    let mut neutral_creep = Vec::new();
+    let mut neutral_creep_orbs = Vec::new();
+    let mut boss_gold = Vec::new();
+    let mut boss_orbs = Vec::new();
+    let mut treasure_gold = Vec::new();
+    let mut treasure_orbs = Vec::new();
+    let mut denies_gold = Vec::new();
+    let mut denies_orbs = Vec::new();
+    let mut team_bonus_gold = Vec::new();
+    let mut team_bonus_orbs = Vec::new();
+    let mut breakable_gold = Vec::new();
+    let mut breakable_orbs = Vec::new();
+    let mut assassinate_gold = Vec::new();
+    let mut assassinate_orbs = Vec::new();
+    let mut trophy_collector_gold = Vec::new();
+    let mut trophy_collector_orbs = Vec::new();
+    let mut cultist_sacrifice_gold = Vec::new();
+    let mut cultist_sacrifice_orbs = Vec::new();
+    let mut unknown_gold = Vec::new();
+    let mut unknown_orbs = Vec::new();
+    let mut assists_gold = Vec::new();
+    let mut assists_orbs = Vec::new();
+
+    for &time in &times {
+        for player in &match_info.players {
+            let Some(stats) = player.stats.iter().find(|s| s.time_stamp_s() == time) else {
+                continue;
+            };
+            snapshot_time_s.push(time);
+            hero_id.push(player.hero_id());
+            kills.push(stats.kills());
+            deaths.push(stats.deaths());
+            assists.push(stats.assists());
+            net_worth.push(stats.net_worth());
+            denies.push(stats.denies());
+            level.push(stats.level());
+            lane.push(player.assigned_lane());
+            creep_kills.push(stats.creep_kills());
+            neutral_kills.push(stats.neutral_kills());
+            player_damage.push(stats.player_damage());
+
+            // Per-source gold/orbs (see EGoldSource); `gold`/`orbs` rebind per source.
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEPlayers);
+            player_gold.push(gold);
+            player_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KELaneCreeps);
+            lane_creep_gold.push(gold);
+            lane_creep_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KENeutrals);
+            neutral_creep.push(gold);
+            neutral_creep_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEBosses);
+            boss_gold.push(gold);
+            boss_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KETreasure);
+            treasure_gold.push(gold);
+            treasure_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEDenies);
+            denies_gold.push(gold);
+            denies_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KETeamBonus);
+            team_bonus_gold.push(gold);
+            team_bonus_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEBreakable);
+            breakable_gold.push(gold);
+            breakable_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEAbilityAssassinate);
+            assassinate_gold.push(gold);
+            assassinate_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEItemTrophyCollector);
+            trophy_collector_gold.push(gold);
+            trophy_collector_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEItemCultistSacrifice);
+            cultist_sacrifice_gold.push(gold);
+            cultist_sacrifice_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEItemGooseEgg);
+            unknown_gold.push(gold);
+            unknown_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEAssists);
+            assists_gold.push(gold);
+            assists_orbs.push(orbs);
+        }
+    }
+
+    df_from_columns(vec![
+        Column::new("snapshot_time_s".into(), snapshot_time_s),
+        Column::new("hero_id".into(), hero_id),
+        Column::new("kills".into(), kills),
+        Column::new("deaths".into(), deaths),
+        Column::new("assists".into(), assists),
+        Column::new("net_worth".into(), net_worth),
+        Column::new("denies".into(), denies),
+        Column::new("level".into(), level),
+        Column::new("lane".into(), lane),
+        Column::new("creep_kills".into(), creep_kills),
+        Column::new("neutral_kills".into(), neutral_kills),
+        Column::new("player_damage".into(), player_damage),
+        Column::new("player_gold".into(), player_gold),
+        Column::new("player_orbs".into(), player_orbs),
+        Column::new("lane_creep_gold".into(), lane_creep_gold),
+        Column::new("lane_creep_orbs".into(), lane_creep_orbs),
+        Column::new("neutral_creep".into(), neutral_creep),
+        Column::new("neutral_creep_orbs".into(), neutral_creep_orbs),
+        Column::new("boss_gold".into(), boss_gold),
+        Column::new("boss_orbs".into(), boss_orbs),
+        Column::new("treasure_gold".into(), treasure_gold),
+        Column::new("treasure_orbs".into(), treasure_orbs),
+        Column::new("denies_gold".into(), denies_gold),
+        Column::new("denies_orbs".into(), denies_orbs),
+        Column::new("team_bonus_gold".into(), team_bonus_gold),
+        Column::new("team_bonus_orbs".into(), team_bonus_orbs),
+        Column::new("breakable_gold".into(), breakable_gold),
+        Column::new("breakable_orbs".into(), breakable_orbs),
+        Column::new("assassinate_gold".into(), assassinate_gold),
+        Column::new("assassinate_orbs".into(), assassinate_orbs),
+        Column::new("trophy_collector_gold".into(), trophy_collector_gold),
+        Column::new("trophy_collector_orbs".into(), trophy_collector_orbs),
+        Column::new("cultist_sacrifice_gold".into(), cultist_sacrifice_gold),
+        Column::new("cultist_sacrifice_orbs".into(), cultist_sacrifice_orbs),
+        Column::new("unknown_gold".into(), unknown_gold),
+        Column::new("unknown_orbs".into(), unknown_orbs),
+        Column::new("assists_gold".into(), assists_gold),
+        Column::new("assists_orbs".into(), assists_orbs),
+    ])
+}
+
+/// Build the per-player ``last_hits`` DataFrame (``hero_id``, ``last_hits``).
+///
+/// The scoreboard last-hit (souls secured) total is only recorded once per
+/// match, so it is returned separately from the time-series snapshots.
+fn build_last_hits_frame(
+    match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+) -> PolarsResult<DataFrame> {
+    let mut hero_id = Vec::new();
+    let mut last_hits = Vec::new();
+    for player in &match_info.players {
+        hero_id.push(player.hero_id());
+        last_hits.push(player.last_hits());
+    }
+    df_from_columns(vec![
+        Column::new("hero_id".into(), hero_id),
+        Column::new("last_hits".into(), last_hits),
+    ])
+}
+
+/// Build the post-match ``objectives`` DataFrame from match metadata. One row
+/// per objective; ``destroyed_time_s``/``first_damage_time_s`` are null when
+/// the objective was never destroyed/damaged.
+fn build_objectives_frame(
+    match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+) -> PolarsResult<DataFrame> {
+    let mut team_objective_id = Vec::new();
+    let mut team = Vec::new();
+    let mut destroyed_time_s: Vec<Option<u32>> = Vec::new();
+    let mut first_damage_time_s: Vec<Option<u32>> = Vec::new();
+    let mut creep_damage = Vec::new();
+    let mut player_damage = Vec::new();
+    let mut player_spirit_damage = Vec::new();
+
+    for obj in &match_info.objectives {
+        team_objective_id.push(obj.team_objective_id() as i32);
+        team.push(obj.team() as i32);
+        destroyed_time_s.push(obj.destroyed_time_s);
+        first_damage_time_s.push(obj.first_damage_time_s);
+        creep_damage.push(obj.creep_damage());
+        player_damage.push(obj.player_damage());
+        player_spirit_damage.push(obj.player_spirit_damage());
+    }
+
+    df_from_columns(vec![
+        Column::new("team_objective_id".into(), team_objective_id),
+        Column::new("team".into(), team),
+        Column::new("destroyed_time_s".into(), destroyed_time_s),
+        Column::new("first_damage_time_s".into(), first_damage_time_s),
+        Column::new("creep_damage".into(), creep_damage),
+        Column::new("player_damage".into(), player_damage),
+        Column::new("player_spirit_damage".into(), player_spirit_damage),
+    ])
+}
+
+/// Human-readable label for a damage-matrix ``EStatType`` value.
+fn stat_type_label(stat_type: i32) -> String {
+    match stat_type {
+        0 => "damage".to_string(),
+        1 => "healing".to_string(),
+        2 => "heal_prevented".to_string(),
+        3 => "mitigated".to_string(),
+        4 => "lethal".to_string(),
+        5 => "regen".to_string(),
+        other => format!("unknown_{other}"),
+    }
+}
+
+/// Whether a ``source_name`` is one of Valve's coarse damage-type buckets
+/// (``Bullet``/``Ability``/``Melee``/``Misc``/``UnknownAbility``) rather than a
+/// specific source. Coarse buckets use Capitalized display names; specific
+/// sources use snake_case identifiers (e.g. ``citadel_weapon_astro_set``).
+fn is_category_source(name: &str) -> bool {
+    name.chars().next().is_some_and(char::is_uppercase) && !name.contains('_')
+}
+
+/// Build the post-match ``damage`` DataFrame from the damage matrix: one row per
+/// (``dealer_player_slot``, ``target_player_slot``, ``source_name``,
+/// ``sample_time_s``). ``dealer_hero_id``/``target_hero_id`` resolve the slots
+/// to heroes (null for non-player slots such as 0), so the frame joins to
+/// ``snapshots``/``last_hits`` on ``hero_id``. ``damage`` is the per-interval
+/// value of ``stat_type``
+/// (``damage``/``healing``/``heal_prevented``/``mitigated``/``lethal``/``regen``)
+/// dealt from dealer to target during the interval ending at that sample. It is
+/// additive: ``sum`` for totals, ``cumsum`` over ``sample_time_s`` for the
+/// running total.
+///
+/// Empty when the demo has no damage matrix. The underlying cumulative arrays
+/// are shorter than the full sample list when the pair met mid-match, so they
+/// are aligned to the end of ``sample_time_s`` (verified against the snapshot
+/// ``player_damage``).
+///
+/// The matrix records the same hit twice: under a coarse category
+/// (``is_category`` true) and under a specific source (``is_category`` false).
+/// Categories only exist for ``damage`` (and some ``mitigated``); every other
+/// stat type is specific-only. Summing all rows therefore double-counts
+/// ``damage`` — filter to ``is_category == False`` for the complete, never
+/// double-counted per-source breakdown across all stat types.
+fn build_damage_frame(
+    match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+) -> PolarsResult<DataFrame> {
+    let mut dealer_player_slot = Vec::new();
+    let mut dealer_hero_id: Vec<Option<u32>> = Vec::new();
+    let mut target_player_slot = Vec::new();
+    let mut target_hero_id: Vec<Option<u32>> = Vec::new();
+    let mut source_name = Vec::new();
+    let mut is_category = Vec::new();
+    let mut stat_type = Vec::new();
+    let mut sample_time_s = Vec::new();
+    let mut damage = Vec::new();
+
+    // player_slot -> hero_id, so dealer/target slots resolve to heroes (slot 0
+    // and other non-player slots have no hero and stay null).
+    let slot_to_hero: HashMap<u32, u32> = match_info
+        .players
+        .iter()
+        .filter_map(|p| p.player_slot.map(|slot| (slot, p.hero_id())))
+        .collect();
+
+    if let Some(matrix) = match_info.damage_matrix.as_ref() {
+        let times = &matrix.sample_time_s;
+        let n = times.len();
+        let (names, stats): (&[String], &[i32]) = match matrix.source_details.as_ref() {
+            Some(sd) => (sd.source_name.as_slice(), sd.stat_type.as_slice()),
+            None => (&[], &[]),
+        };
+
+        for dealer in &matrix.damage_dealers {
+            let dslot = dealer.dealer_player_slot();
+            let dhero = slot_to_hero.get(&dslot).copied();
+            for source in &dealer.damage_sources {
+                let idx = source.source_details_index() as usize;
+                let name = names.get(idx).cloned().unwrap_or_default();
+                let category = is_category_source(&name);
+                let stat = stat_type_label(stats.get(idx).copied().unwrap_or(0));
+                for dtp in &source.damage_to_players {
+                    let tslot = dtp.target_player_slot();
+                    let thero = slot_to_hero.get(&tslot).copied();
+                    let arr = &dtp.damage;
+                    // Cumulative arrays cover the last `arr.len()` samples. Emit
+                    // per-interval deltas so the `damage` column is additive
+                    // (sum for totals; cumsum over `sample_time_s` for the
+                    // running total).
+                    let start = n.saturating_sub(arr.len());
+                    let mut prev = 0u32;
+                    for (k, &cumulative) in arr.iter().enumerate() {
+                        let time = times.get(start + k).copied().unwrap_or(0);
+                        let delta = cumulative.saturating_sub(prev);
+                        prev = cumulative;
+                        dealer_player_slot.push(dslot);
+                        dealer_hero_id.push(dhero);
+                        target_player_slot.push(tslot);
+                        target_hero_id.push(thero);
+                        source_name.push(name.clone());
+                        is_category.push(category);
+                        stat_type.push(stat.clone());
+                        sample_time_s.push(time);
+                        damage.push(delta);
+                    }
+                }
+            }
+        }
+    }
+
+    df_from_columns(vec![
+        Column::new("dealer_player_slot".into(), dealer_player_slot),
+        Column::new("dealer_hero_id".into(), dealer_hero_id),
+        Column::new("target_player_slot".into(), target_player_slot),
+        Column::new("target_hero_id".into(), target_hero_id),
+        Column::new("source_name".into(), source_name),
+        Column::new("is_category".into(), is_category),
+        Column::new("stat_type".into(), stat_type),
+        Column::new("sample_time_s".into(), sample_time_s),
+        Column::new("damage".into(), damage),
+    ])
 }
 
 #[pymethods]
@@ -349,6 +702,73 @@ impl Demo {
     #[getter]
     fn tick_rate(&self) -> i32 {
         self.tick_rate
+    }
+
+    /// Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+    ///
+    /// Returns a dictionary with four top-level keys:
+    ///
+    /// - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
+    ///   Snapshots are taken at intervals through the match (not every minute);
+    ///   ``snapshot_time_s`` marks each one. Columns hold that player's running
+    ///   totals at that time: ``hero_id``, ``kills``, ``deaths``, ``assists``,
+    ///   ``net_worth``, ``denies``, ``level``, ``lane``, ``creep_kills``,
+    ///   ``neutral_kills``, ``player_damage``, and the per-source gold/orbs
+    ///   breakdown.
+    /// - ``last_hits``: a Polars DataFrame of ``hero_id`` and ``last_hits`` (the
+    ///   final scoreboard last-hit / souls-secured total, which is only recorded
+    ///   per match, not per snapshot).
+    /// - ``objectives``: a Polars DataFrame of post-match objective records
+    ///   (lane/team objectives, destruction time, and damage taken).
+    /// - ``damage``: a Polars DataFrame of the damage matrix — one row per
+    ///   (dealer, target, source, sample). Dealer/target are given as both
+    ///   ``*_player_slot`` and resolved ``*_hero_id`` (null for non-player slots
+    ///   like 0), so it joins to the other frames on ``hero_id``. ``damage`` is
+    ///   the per-interval (additive) amount for that ``stat_type`` (a string:
+    ///   ``damage``, ``healing``, ``mitigated``, …) dealt during the interval
+    ///   ending at ``sample_time_s``. Each hit is recorded under both a coarse
+    ///   category (``is_category`` true) and a specific source, so filter to
+    ///   ``is_category == False`` to avoid double-counting, then ``sum``.
+    ///
+    /// Raises ``DemoMessageError`` if the demo contains no post-match details
+    /// (for example, an incomplete recording).
+    fn summary(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
+        use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
+
+        let events = self.parser.events(None).map_err(to_py_err)?;
+        let event = events
+            .iter()
+            .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
+            .ok_or_else(|| DemoMessageError::new_err("no PostMatchDetails event found in demo"))?;
+
+        let outer =
+            CCitadelUserMsgPostMatchDetails::decode(event.payload.as_slice()).map_err(|e| {
+                DemoMessageError::new_err(format!("failed to decode PostMatchDetails: {e}"))
+            })?;
+        let details_bytes = outer.match_details.as_ref().ok_or_else(|| {
+            DemoMessageError::new_err("PostMatchDetails has no match_details bytes")
+        })?;
+        let contents =
+            CMsgMatchMetaDataContents::decode(details_bytes.as_slice()).map_err(|e| {
+                DemoMessageError::new_err(format!("failed to decode match metadata: {e}"))
+            })?;
+        let match_info = contents
+            .match_info
+            .ok_or_else(|| DemoMessageError::new_err("match metadata has no match_info"))?;
+
+        let to_df_err =
+            |e: PolarsError| DemoMessageError::new_err(format!("failed to build summary: {e}"));
+        let snapshots = build_snapshots_frame(&match_info).map_err(to_df_err)?;
+        let last_hits = build_last_hits_frame(&match_info).map_err(to_df_err)?;
+        let objectives = build_objectives_frame(&match_info).map_err(to_df_err)?;
+        let damage = build_damage_frame(&match_info).map_err(to_df_err)?;
+
+        let dict = PyDict::new(py);
+        dict.set_item("snapshots", PyDataFrame(snapshots))?;
+        dict.set_item("last_hits", PyDataFrame(last_hits))?;
+        dict.set_item("objectives", PyDataFrame(objectives))?;
+        dict.set_item("damage", PyDataFrame(damage))?;
+        Ok(dict.into_any().unbind())
     }
 
     /// Convert a tick number to seconds elapsed, excluding paused time.
@@ -2729,6 +3149,63 @@ impl Demo {
     fn game_over_tick(&mut self) -> PyResult<Option<i32>> {
         self.ensure_always_events_scanned()?;
         Ok(self.game_over.map(|(_, tick)| tick))
+    }
+
+    /// The number of ticks of regulation play, excluding paused time.
+    ///
+    /// Counts active (non-paused) ticks from the start of the recording up to
+    /// the ``k_EUserMsg_GameOver`` event, reflecting how much of the game was
+    /// actually played rather than the full recording length (``total_ticks``,
+    /// which also includes pre-game and post-match time). Scans for the
+    /// game-over event and loads ``world_ticks`` on first access.
+    ///
+    /// Returns ``None`` if no game over event was found (e.g. an incomplete
+    /// recording).
+    #[getter]
+    fn regulation_ticks(&mut self) -> PyResult<Option<i32>> {
+        self.ensure_always_events_scanned()?;
+        let Some((_, tick)) = self.game_over else {
+            return Ok(None);
+        };
+        self.ensure_paused_ticks_built()?;
+        Ok(Some(self.count_active_ticks(tick)))
+    }
+
+    /// The duration of regulation play in seconds, excluding paused time.
+    ///
+    /// Unlike ``total_seconds`` (the full recording length), this measures the
+    /// active gameplay duration up to the ``k_EUserMsg_GameOver`` event. Equal
+    /// to ``regulation_ticks / tick_rate``. Scans for the game-over event and
+    /// loads ``world_ticks`` on first access.
+    ///
+    /// Returns ``None`` if no game over event was found.
+    #[getter]
+    fn regulation_seconds(&mut self) -> PyResult<Option<f32>> {
+        if self.tick_rate == 0 {
+            return Ok(None);
+        }
+        let Some(ticks) = self.regulation_ticks()? else {
+            return Ok(None);
+        };
+        Ok(Some(ticks as f32 / self.tick_rate as f32))
+    }
+
+    /// The duration of regulation play as a formatted string (e.g. ``"32:45"``),
+    /// excluding paused time.
+    ///
+    /// The regulation counterpart to ``total_clock_time``. Scans for the
+    /// game-over event and loads ``world_ticks`` on first access.
+    ///
+    /// Returns ``None`` if no game over event was found.
+    #[getter]
+    fn regulation_clock_time(&mut self) -> PyResult<Option<String>> {
+        let Some(secs) = self.regulation_seconds()? else {
+            return Ok(None);
+        };
+        let total_seconds = secs as u32;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        Ok(Some(format!("{minutes}:{seconds:02}")))
     }
 
     fn __repr__(&self) -> String {

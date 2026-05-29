@@ -1,6 +1,12 @@
 [package]
 name = "boon-proto"
-version.workspace = true
+# boon-proto is versioned independently from the workspace release version. The
+# PATCH is the game's monotonic SourceRevision and the +ServerVersion suffix
+# records the game build (ClientVersion has always equalled ServerVersion), so
+# every proto sync yields a higher, publishable version. MAJOR.MINOR is the
+# compatibility epoch (bump it for breaking changes to this crate's API).
+# scripts/sync-protos.sh refreshes this on each sync.
+version = "0.2.10686578+6528"
 rust-version.workspace = true
 edition = "2024"
 description = "Protobuf definitions for Deadlock demo files"
@@ -9,9 +15,6 @@ repository = "https://github.com/pnxenopoulos/boon"
 authors = ["Peter Xenopoulos"]
 keywords = ["deadlock", "protobuf", "demo"]
 categories = ["game-development", "encoding"]
-
-[package.metadata.boon-proto]
-version = "0.1.0.6416.6416.10556490"
 
 [dependencies]
 bytes = "1.11"

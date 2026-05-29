@@ -167,6 +167,49 @@ class Demo:
         """The tick rate of the demo (ticks per second)."""
         ...
 
+    def summary(self) -> dict[str, pl.DataFrame | None]:
+        """Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+
+        Returns a dict with four top-level keys:
+
+        - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
+          Snapshots are taken at intervals through the match (not every minute);
+          ``snapshot_time_s`` marks each one. Columns hold that player's running
+          totals at that time: ``hero_id``, ``kills``, ``deaths``, ``assists``,
+          ``net_worth``, ``denies``, ``level``, ``lane``, ``creep_kills``,
+          ``neutral_kills``, ``player_damage``, and the per-source gold/orbs
+          breakdown (``player_*``, ``lane_creep_*``, ``neutral_creep*``,
+          ``boss_*``, ``treasure_*``, ``denies_*``, ``team_bonus_*``,
+          ``breakable_*``, ``assassinate_*``, ``trophy_collector_*``,
+          ``cultist_sacrifice_*``, ``assists_*``, and ``unknown_*``).
+        - ``last_hits``: a Polars DataFrame of ``hero_id`` and ``last_hits`` (the
+          final scoreboard last-hit / souls-secured total, only recorded per
+          match, not per snapshot).
+        - ``objectives``: a Polars DataFrame of post-match objective records
+          (``team_objective_id``, ``team``, ``destroyed_time_s``,
+          ``first_damage_time_s``, ``creep_damage``, ``player_damage``,
+          ``player_spirit_damage``). ``destroyed_time_s``/``first_damage_time_s``
+          are null when the objective was never destroyed/damaged.
+        - ``damage``: a Polars DataFrame of the damage matrix — one row per
+          (``dealer_player_slot``, ``target_player_slot``, ``source_name``,
+          ``sample_time_s``). Dealer/target are also given as resolved
+          ``dealer_hero_id``/``target_hero_id`` (null for non-player slots like
+          0), so the frame joins to ``snapshots``/``last_hits`` on ``hero_id``.
+          ``damage`` is the **per-interval** (additive) amount for that
+          ``stat_type`` dealt during the interval ending at that sample; ``sum``
+          for totals, ``cumsum`` over ``sample_time_s`` for the running total.
+          ``stat_type`` is a string (``damage``, ``healing``, ``heal_prevented``,
+          ``mitigated``, ``lethal``, ``regen``). ``is_category`` flags coarse
+          damage-type buckets (``Bullet``/``Ability``/``Melee``/``Misc``/
+          ``UnknownAbility``) which duplicate the specific-source rows, so filter
+          to ``is_category == False`` for the complete, non-overlapping
+          breakdown.
+
+        Raises ``DemoMessageError`` if the demo contains no post-match details
+        (for example, an incomplete recording).
+        """
+        ...
+
     def tick_to_seconds(self, tick: int) -> float:
         """Convert a tick number to seconds elapsed, excluding paused time.
 
@@ -201,6 +244,34 @@ class Demo:
     @property
     def game_over_tick(self) -> int | None:
         """The tick when the game ended, or ``None`` if no game-over event was found."""
+        ...
+
+    @property
+    def regulation_ticks(self) -> int | None:
+        """Active (non-paused) ticks of regulation play, up to the game-over event.
+
+        Reflects how much of the game was actually played, unlike ``total_ticks``
+        (the full recording, including pre-game and post-match time). ``None`` if
+        no game-over event was found.
+        """
+        ...
+
+    @property
+    def regulation_seconds(self) -> float | None:
+        """Active gameplay duration in seconds, up to the game-over event.
+
+        Equal to ``regulation_ticks / tick_rate``. The regulation counterpart to
+        ``total_seconds``. ``None`` if no game-over event was found.
+        """
+        ...
+
+    @property
+    def regulation_clock_time(self) -> str | None:
+        """Regulation play duration as a formatted string (e.g. ``"32:45"``).
+
+        The regulation counterpart to ``total_clock_time``. ``None`` if no
+        game-over event was found.
+        """
         ...
 
 
