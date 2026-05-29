@@ -164,52 +164,6 @@ struct Demo {
     cached_urn: Option<DataFrame>,
 }
 
-/// One player's running totals at a single post-match snapshot.
-///
-/// The gold/orbs pairs are the per-source breakdown from
-/// ``PlayerStats.gold_sources``; ``unknown_*`` corresponds to the
-/// ``k_eItemGooseEgg`` source. The scoreboard "last hits" total is not
-/// available per snapshot; ``Demo.summary()`` returns it as a separate frame.
-struct SummarySnapshotPlayer {
-    hero_id: u32,
-    kills: u32,
-    deaths: u32,
-    assists: u32,
-    net_worth: u32,
-    denies: u32,
-    level: u32,
-    lane: u32,
-    creep_kills: u32,
-    neutral_kills: u32,
-    player_damage: u32,
-    player_gold: u32,
-    player_orbs: u32,
-    lane_creep_gold: u32,
-    lane_creep_orbs: u32,
-    neutral_creep: u32,
-    neutral_creep_orbs: u32,
-    boss_gold: u32,
-    boss_orbs: u32,
-    treasure_gold: u32,
-    treasure_orbs: u32,
-    denies_gold: u32,
-    denies_orbs: u32,
-    team_bonus_gold: u32,
-    team_bonus_orbs: u32,
-    breakable_gold: u32,
-    breakable_orbs: u32,
-    assassinate_gold: u32,
-    assassinate_orbs: u32,
-    trophy_collector_gold: u32,
-    trophy_collector_orbs: u32,
-    cultist_sacrifice_gold: u32,
-    cultist_sacrifice_orbs: u32,
-    unknown_gold: u32,
-    unknown_orbs: u32,
-    assists_gold: u32,
-    assists_orbs: u32,
-}
-
 /// The (gold, orbs) a player earned from a given source at a snapshot, or
 /// ``(0, 0)`` when that source is absent.
 fn gold_source_totals(
@@ -224,77 +178,15 @@ fn gold_source_totals(
         .unwrap_or((0, 0))
 }
 
-/// Build one snapshot player record from the parent player (for hero/lane,
-/// which are constant across snapshots) and a single ``PlayerStats`` snapshot.
-fn build_snapshot_player(
-    player: &boon_proto::proto::c_msg_match_meta_data_contents::Players,
-    stats: &boon_proto::proto::c_msg_match_meta_data_contents::PlayerStats,
-) -> SummarySnapshotPlayer {
-    use boon_proto::proto::c_msg_match_meta_data_contents::EGoldSource;
-
-    let (player_gold, player_orbs) = gold_source_totals(stats, EGoldSource::KEPlayers);
-    let (lane_creep_gold, lane_creep_orbs) = gold_source_totals(stats, EGoldSource::KELaneCreeps);
-    let (neutral_creep, neutral_creep_orbs) = gold_source_totals(stats, EGoldSource::KENeutrals);
-    let (boss_gold, boss_orbs) = gold_source_totals(stats, EGoldSource::KEBosses);
-    let (treasure_gold, treasure_orbs) = gold_source_totals(stats, EGoldSource::KETreasure);
-    let (assists_gold, assists_orbs) = gold_source_totals(stats, EGoldSource::KEAssists);
-    let (denies_gold, denies_orbs) = gold_source_totals(stats, EGoldSource::KEDenies);
-    let (team_bonus_gold, team_bonus_orbs) = gold_source_totals(stats, EGoldSource::KETeamBonus);
-    let (assassinate_gold, assassinate_orbs) =
-        gold_source_totals(stats, EGoldSource::KEAbilityAssassinate);
-    let (trophy_collector_gold, trophy_collector_orbs) =
-        gold_source_totals(stats, EGoldSource::KEItemTrophyCollector);
-    let (cultist_sacrifice_gold, cultist_sacrifice_orbs) =
-        gold_source_totals(stats, EGoldSource::KEItemCultistSacrifice);
-    let (breakable_gold, breakable_orbs) = gold_source_totals(stats, EGoldSource::KEBreakable);
-    let (unknown_gold, unknown_orbs) = gold_source_totals(stats, EGoldSource::KEItemGooseEgg);
-
-    SummarySnapshotPlayer {
-        hero_id: player.hero_id(),
-        kills: stats.kills(),
-        deaths: stats.deaths(),
-        assists: stats.assists(),
-        net_worth: stats.net_worth(),
-        denies: stats.denies(),
-        level: stats.level(),
-        lane: player.assigned_lane(),
-        creep_kills: stats.creep_kills(),
-        neutral_kills: stats.neutral_kills(),
-        player_damage: stats.player_damage(),
-        player_gold,
-        player_orbs,
-        lane_creep_gold,
-        lane_creep_orbs,
-        neutral_creep,
-        neutral_creep_orbs,
-        boss_gold,
-        boss_orbs,
-        treasure_gold,
-        treasure_orbs,
-        denies_gold,
-        denies_orbs,
-        team_bonus_gold,
-        team_bonus_orbs,
-        breakable_gold,
-        breakable_orbs,
-        assassinate_gold,
-        assassinate_orbs,
-        trophy_collector_gold,
-        trophy_collector_orbs,
-        cultist_sacrifice_gold,
-        cultist_sacrifice_orbs,
-        unknown_gold,
-        unknown_orbs,
-        assists_gold,
-        assists_orbs,
-    }
-}
-
 /// Build the long-form ``snapshots`` DataFrame: one row per (snapshot time,
-/// player), with a ``snapshot_time_s`` column plus every per-player stat.
+/// player), with a ``snapshot_time_s`` column plus every per-player stat. The
+/// per-source gold/orbs columns come from ``PlayerStats.gold_sources`` keyed by
+/// ``EGoldSource``; ``unknown_*`` is the ``k_eItemGooseEgg`` source. (The
+/// scoreboard last-hit total is not per-snapshot; see ``build_last_hits_frame``.)
 fn build_snapshots_frame(
     match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
 ) -> PolarsResult<DataFrame> {
+    use boon_proto::proto::c_msg_match_meta_data_contents::EGoldSource;
     use std::collections::BTreeSet;
 
     // Stats are stored per player; take the union of timestamps so players who
@@ -350,45 +242,59 @@ fn build_snapshots_frame(
             let Some(stats) = player.stats.iter().find(|s| s.time_stamp_s() == time) else {
                 continue;
             };
-            let p = build_snapshot_player(player, stats);
             snapshot_time_s.push(time);
-            hero_id.push(p.hero_id);
-            kills.push(p.kills);
-            deaths.push(p.deaths);
-            assists.push(p.assists);
-            net_worth.push(p.net_worth);
-            denies.push(p.denies);
-            level.push(p.level);
-            lane.push(p.lane);
-            creep_kills.push(p.creep_kills);
-            neutral_kills.push(p.neutral_kills);
-            player_damage.push(p.player_damage);
-            player_gold.push(p.player_gold);
-            player_orbs.push(p.player_orbs);
-            lane_creep_gold.push(p.lane_creep_gold);
-            lane_creep_orbs.push(p.lane_creep_orbs);
-            neutral_creep.push(p.neutral_creep);
-            neutral_creep_orbs.push(p.neutral_creep_orbs);
-            boss_gold.push(p.boss_gold);
-            boss_orbs.push(p.boss_orbs);
-            treasure_gold.push(p.treasure_gold);
-            treasure_orbs.push(p.treasure_orbs);
-            denies_gold.push(p.denies_gold);
-            denies_orbs.push(p.denies_orbs);
-            team_bonus_gold.push(p.team_bonus_gold);
-            team_bonus_orbs.push(p.team_bonus_orbs);
-            breakable_gold.push(p.breakable_gold);
-            breakable_orbs.push(p.breakable_orbs);
-            assassinate_gold.push(p.assassinate_gold);
-            assassinate_orbs.push(p.assassinate_orbs);
-            trophy_collector_gold.push(p.trophy_collector_gold);
-            trophy_collector_orbs.push(p.trophy_collector_orbs);
-            cultist_sacrifice_gold.push(p.cultist_sacrifice_gold);
-            cultist_sacrifice_orbs.push(p.cultist_sacrifice_orbs);
-            unknown_gold.push(p.unknown_gold);
-            unknown_orbs.push(p.unknown_orbs);
-            assists_gold.push(p.assists_gold);
-            assists_orbs.push(p.assists_orbs);
+            hero_id.push(player.hero_id());
+            kills.push(stats.kills());
+            deaths.push(stats.deaths());
+            assists.push(stats.assists());
+            net_worth.push(stats.net_worth());
+            denies.push(stats.denies());
+            level.push(stats.level());
+            lane.push(player.assigned_lane());
+            creep_kills.push(stats.creep_kills());
+            neutral_kills.push(stats.neutral_kills());
+            player_damage.push(stats.player_damage());
+
+            // Per-source gold/orbs (see EGoldSource); `gold`/`orbs` rebind per source.
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEPlayers);
+            player_gold.push(gold);
+            player_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KELaneCreeps);
+            lane_creep_gold.push(gold);
+            lane_creep_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KENeutrals);
+            neutral_creep.push(gold);
+            neutral_creep_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEBosses);
+            boss_gold.push(gold);
+            boss_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KETreasure);
+            treasure_gold.push(gold);
+            treasure_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEDenies);
+            denies_gold.push(gold);
+            denies_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KETeamBonus);
+            team_bonus_gold.push(gold);
+            team_bonus_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEBreakable);
+            breakable_gold.push(gold);
+            breakable_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEAbilityAssassinate);
+            assassinate_gold.push(gold);
+            assassinate_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEItemTrophyCollector);
+            trophy_collector_gold.push(gold);
+            trophy_collector_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEItemCultistSacrifice);
+            cultist_sacrifice_gold.push(gold);
+            cultist_sacrifice_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEItemGooseEgg);
+            unknown_gold.push(gold);
+            unknown_orbs.push(orbs);
+            let (gold, orbs) = gold_source_totals(stats, EGoldSource::KEAssists);
+            assists_gold.push(gold);
+            assists_orbs.push(orbs);
         }
     }
 
