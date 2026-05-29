@@ -107,25 +107,57 @@ determine pauses.
 
 ```python
 summary = demo.summary()
-summary["match_info"]["match_id"]       # int
-summary["match_info"]["winning_team"]   # int
-players = summary["match_info"]["players"]  # list[dict]
+summary.keys()                 # dict_keys(['snapshots', 'last_hits', 'objectives', 'damage'])
+summary["snapshots"]           # pl.DataFrame -- one row per (snapshot, player)
+summary["last_hits"]           # pl.DataFrame -- hero_id, last_hits
+summary["objectives"]          # pl.DataFrame -- post-match objective records
+summary["damage"]              # pl.DataFrame -- damage matrix (long form)
 ```
 
 Parse the post-match summary from the demo's `PostMatchDetails` event. Returns a
-nested dict mirroring Deadlock's `CMsgMatchMetaDataContents` structure under a
-top-level `match_info` key: match outcome, per-player records
-(kills/deaths/assists, net worth, gold breakdowns, items, accolades, and
-per-minute stat snapshots), objectives, mid-bosses, and the damage matrix.
+dict with four top-level keys:
 
-The per-player records convert directly to a DataFrame:
+- **`snapshots`** -- a Polars DataFrame with one row per (snapshot, player).
+  Snapshots are taken at intervals through the match (not every minute);
+  `snapshot_time_s` marks each one. Columns hold that player's running totals at
+  that time: `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
+  `level`, `lane`, `creep_kills`, `neutral_kills`, `player_damage`, and the
+  per-source gold/orbs breakdown (`player_*`, `lane_creep_*`, `neutral_creep*`,
+  `boss_*`, `treasure_*`, `denies_*`, `team_bonus_*`, `breakable_*`,
+  `assassinate_*`, `trophy_collector_*`, `cultist_sacrifice_*`, `assists_*`, and
+  `unknown_*`).
+- **`last_hits`** -- a Polars DataFrame of `hero_id` and `last_hits`: the final
+  scoreboard last-hit (souls secured) total. This is only recorded per match,
+  not per snapshot, which is why it is a separate frame rather than a snapshot
+  column.
+- **`objectives`** -- a Polars DataFrame of post-match objective records:
+  `team_objective_id`, `team`, `destroyed_time_s`, `first_damage_time_s`,
+  `creep_damage`, `player_damage`, `player_spirit_damage`. `destroyed_time_s` and
+  `first_damage_time_s` are null when the objective was never destroyed/damaged.
+- **`damage`** -- a Polars DataFrame of the damage matrix in long form: one row
+  per (`dealer_player_slot`, `target_player_slot`, `source_name`,
+  `sample_time_s`). Dealer/target are also resolved to `dealer_hero_id` and
+  `target_hero_id` (null for non-player slots like `0`), so the frame joins to
+  `snapshots`/`last_hits` on `hero_id`. `damage` is the **per-interval, additive**
+  amount for that
+  `stat_type` dealt during the interval ending at that sample -- `sum` it for
+  totals, `cumsum` over `sample_time_s` for the running total. `stat_type` is a
+  string (`damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`,
+  `regen`). `is_category` (bool) flags Valve's coarse damage-type buckets
+  (`Bullet`/`Ability`/`Melee`/`Misc`/`UnknownAbility`), which duplicate the
+  specific-source rows for `damage`; filter to `is_category == False` for the
+  complete, non-overlapping per-source breakdown across all stat types.
 
-```python
-import polars as pl
-pl.DataFrame(demo.summary()["match_info"]["players"])
-```
+  ```python
+  import polars as pl
+  dmg = demo.summary()["damage"]
+  # player-vs-player damage matrix (totals) -- the obvious query just works:
+  (dmg.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
+      .group_by("dealer_player_slot", "target_player_slot")
+      .agg(pl.col("damage").sum()))
+  ```
 
-**Returns:** `dict` -- The nested post-match summary.
+**Returns:** `dict` -- The post-match summary (Polars DataFrames keyed by name).
 
 **Raises:** `DemoMessageError` -- If the demo contains no post-match details
 (for example, an incomplete recording).

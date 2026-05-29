@@ -312,7 +312,6 @@ dependencies = [
  "prost",
  "pyo3",
  "pyo3-polars",
- "serde_json",
 ]
 
 [[package]]
