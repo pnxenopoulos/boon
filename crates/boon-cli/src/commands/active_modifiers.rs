@@ -119,7 +119,7 @@ pub fn run(
                     if parent_handle == INVALID_ENTITY_HANDLE {
                         continue;
                     }
-                    let parent_idx = (parent_handle & 0x3FFF) as i32;
+                    let parent_idx = (parent_handle & boon::ENTITY_HANDLE_INDEX_MASK) as i32;
 
                     // Only track modifiers on player pawns
                     let hero_id = match entity_to_hero.get(&parent_idx) {
@@ -160,7 +160,8 @@ pub fn run(
                         let duration = modifier.duration.unwrap_or(-1.0);
                         let caster_handle = modifier.caster.unwrap_or(INVALID_ENTITY_HANDLE);
                         let caster_hero_id = if caster_handle != INVALID_ENTITY_HANDLE {
-                            let caster_idx = (caster_handle & 0x3FFF) as i32;
+                            let caster_idx =
+                                (caster_handle & boon::ENTITY_HANDLE_INDEX_MASK) as i32;
                             entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
                         } else {
                             0

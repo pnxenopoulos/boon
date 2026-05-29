@@ -14,12 +14,22 @@ use super::string_tables::StringTableContainer;
 
 use boon_proto::proto::CsvcMsgPacketEntities;
 
-// Entity handle bit layout (32 bits total):
-// - Lower 15 bits: entity index (up to 2^14 edicts + 1 bit)
-// - Upper 17 bits: serial number (disambiguates reused indices)
+// Serial-number layout for the entity *create* delta (legacy Source CBaseHandle):
+// a create carries a 15-bit entity entry (`MAX_EDICT_BITS + 1`) followed by a
+// 17-bit serial number. This governs only the serial read in `handle_create`; it
+// is NOT the layout of a networked CHandle *field value*, whose entity index is
+// the low 14 bits — see [`ENTITY_HANDLE_INDEX_MASK`] / [`EntityContainer::get_by_handle`].
 const MAX_EDICT_BITS: u32 = 14;
 const NUM_ENT_ENTRY_BITS: u32 = MAX_EDICT_BITS + 1;
 const NUM_SERIAL_NUM_BITS: u32 = 32 - NUM_ENT_ENTRY_BITS;
+
+/// Mask that extracts the entity-array index from a networked `CHandle` value.
+///
+/// Source 2 packs a 14-bit edict index (entity indices run 0–16383) in the low
+/// bits of a handle with a serial number above it, so the index is recovered
+/// with this 14-bit mask. A wider mask (e.g. `0x7FFF`) leaks a serial bit into
+/// the index and resolves the wrong entity for any handle with an odd serial.
+pub const ENTITY_HANDLE_INDEX_MASK: u32 = 0x3FFF;
 
 /// Delta header values (2-bit codes) indicating entity state changes.
 const DELTA_UPDATE: u8 = 0b00;
@@ -466,6 +476,15 @@ impl EntityContainer {
     /// Look up an entity by its slot index.
     pub fn get(&self, index: i32) -> Option<&Entity> {
         self.entities.get(&index)
+    }
+
+    /// Resolve a networked `CHandle` to the entity it refers to, if still active.
+    ///
+    /// Applies [`ENTITY_HANDLE_INDEX_MASK`] to recover the entity index, then
+    /// looks it up. This is the canonical way to follow a handle field such as
+    /// `m_hPawn`; decoding the mask by hand risks resolving the wrong entity.
+    pub fn get_by_handle(&self, handle: u32) -> Option<&Entity> {
+        self.get((handle & ENTITY_HANDLE_INDEX_MASK) as i32)
     }
 
     /// Iterate over all active entities as `(index, entity)` pairs.

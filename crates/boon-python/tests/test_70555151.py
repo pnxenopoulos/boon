@@ -309,7 +309,7 @@ class TestObjectives:
 
 class TestPlayerTicks:
     def test_row_count(self, demo: Demo) -> None:
-        assert len(demo.player_ticks) == 938_232
+        assert len(demo.player_ticks) == 1_605_489
 
     def test_tick_range(self, demo: Demo) -> None:
         assert demo.player_ticks["tick"].min() == 1

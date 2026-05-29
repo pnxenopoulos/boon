@@ -68,8 +68,9 @@ pub use demo::{
     CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name, decode_event_payload,
 };
 pub use entity::{
-    ClassEntry, ClassInfo, Entity, EntityContainer, FieldValue, Serializer, SerializerContainer,
-    SerializerField, StringTable, StringTableContainer, StringTableEntry,
+    ClassEntry, ClassInfo, ENTITY_HANDLE_INDEX_MASK, Entity, EntityContainer, FieldValue,
+    Serializer, SerializerContainer, SerializerField, StringTable, StringTableContainer,
+    StringTableEntry,
 };
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};

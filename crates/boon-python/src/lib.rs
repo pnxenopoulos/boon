@@ -77,18 +77,17 @@ fn get_qangle(e: &boon_parser::Entity, key: Option<u64>) -> [f32; 3] {
         .unwrap_or([0.0; 3])
 }
 
-/// Extract entity index from a CHandle stored in an entity field.
-/// Uses 0x7FFF (15-bit mask). Note: protobuf message handles (modifier.parent,
-/// msg.player, etc.) use 0x3FFF (14-bit mask) instead. Both work in practice —
-/// the difference may reflect different handle formats between entity fields and
-/// protobuf messages, or either mask may work for both. We keep them separate
-/// to match the contexts where each was validated.
-fn get_handle_index(e: &boon_parser::Entity, key: Option<u64>) -> Option<i32> {
+/// Read a raw `CHandle` value from an entity field, if present.
+///
+/// Pass the result to [`boon_parser::EntityContainer::get_by_handle`] to follow
+/// the handle to its entity; that helper owns the index mask so callers never
+/// decode it by hand.
+fn get_handle_raw(e: &boon_parser::Entity, key: Option<u64>) -> Option<u32> {
     key.and_then(|k| e.fields.get(&k)).and_then(|v| match v {
-        boon_parser::FieldValue::U32(n) => Some((*n & 0x7FFF) as i32),
-        boon_parser::FieldValue::U64(n) => Some((*n as u32 & 0x7FFF) as i32),
-        boon_parser::FieldValue::I32(n) => Some(*n & 0x7FFF),
-        boon_parser::FieldValue::I64(n) => Some((*n as i32) & 0x7FFF),
+        boon_parser::FieldValue::U32(n) => Some(*n),
+        boon_parser::FieldValue::U64(n) => Some(*n as u32),
+        boon_parser::FieldValue::I32(n) => Some(*n as u32),
+        boon_parser::FieldValue::I64(n) => Some(*n as u32),
         _ => None,
     })
 }
@@ -1669,12 +1668,9 @@ impl Demo {
                         .collect();
 
                     for ctrl in &controllers {
-                        let pawn_index = match get_handle_index(ctrl, ck_pawn_handle) {
-                            Some(idx) => idx,
-                            None => continue,
-                        };
-
-                        let pawn = match $ctx.entities.get(pawn_index) {
+                        let pawn = match get_handle_raw(ctrl, ck_pawn_handle)
+                            .and_then(|h| $ctx.entities.get_by_handle(h))
+                        {
                             Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
                             _ => continue,
                         };
@@ -1994,7 +1990,8 @@ impl Demo {
                             if parent_handle == INVALID_ENTITY_HANDLE {
                                 continue;
                             }
-                            let parent_idx = (parent_handle & 0x3FFF) as i32;
+                            let parent_idx =
+                                (parent_handle & boon_parser::ENTITY_HANDLE_INDEX_MASK) as i32;
 
                             let hero_id = match entity_to_hero.get(&parent_idx) {
                                 Some(&hid) => hid,
@@ -2025,7 +2022,8 @@ impl Demo {
                                 let duration = modifier.duration.unwrap_or(-1.0);
                                 let caster_handle = modifier.caster.unwrap_or(INVALID_ENTITY_HANDLE);
                                 let caster_hero_id = if caster_handle != INVALID_ENTITY_HANDLE {
-                                    let caster_idx = (caster_handle & 0x3FFF) as i32;
+                                    let caster_idx =
+                                        (caster_handle & boon_parser::ENTITY_HANDLE_INDEX_MASK) as i32;
                                     entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
                                 } else {
                                     0
@@ -2135,7 +2133,8 @@ impl Demo {
                             if parent_handle == INVALID_ENTITY_HANDLE {
                                 continue;
                             }
-                            let parent_idx = (parent_handle & 0x3FFF) as i32;
+                            let parent_idx =
+                                (parent_handle & boon_parser::ENTITY_HANDLE_INDEX_MASK) as i32;
 
                             let hero_id = match entity_to_hero.get(&parent_idx) {
                                 Some(&hid) => hid,
@@ -2350,7 +2349,9 @@ impl Demo {
                                     event.payload.as_slice(),
                                 )
                         {
-                            let pawn_idx = (msg.player.unwrap_or(0) & 0x3FFF) as i32;
+                            let pawn_idx = (msg.player.unwrap_or(0)
+                                & boon_parser::ENTITY_HANDLE_INDEX_MASK)
+                                as i32;
                             let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
                             ability_ticks.push(event.tick);
                             ability_hero_ids.push(hero_id);

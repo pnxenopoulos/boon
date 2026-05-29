@@ -83,7 +83,8 @@ pub fn run(
                             event.payload.as_slice(),
                         )
                 {
-                    let pawn_idx = (msg.player.unwrap_or(0) & 0x3FFF) as i32;
+                    let pawn_idx =
+                        (msg.player.unwrap_or(0) & boon::ENTITY_HANDLE_INDEX_MASK) as i32;
                     let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
                     abilities.push(AbilityOutput {
                         tick: event.tick,

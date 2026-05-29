@@ -233,12 +233,12 @@ class TestObjectives:
 
 class TestPlayerTicks:
     def test_row_count(self, demo: Demo) -> None:
-        assert len(demo.player_ticks) == 32_039
+        assert len(demo.player_ticks) == 249_008
 
     def test_hero_ids(self, demo: Demo) -> None:
-        """Street brawl local replay — only local player's pawn."""
+        """All eight players in this street brawl are tracked per tick."""
         hero_ids = sorted(demo.player_ticks["hero_id"].unique().to_list())
-        assert hero_ids == [77]
+        assert hero_ids == [11, 20, 25, 27, 31, 65, 77, 80]
 
     def test_tick_range(self, demo: Demo) -> None:
         assert demo.player_ticks["tick"].min() == 1
