@@ -34,5 +34,6 @@ faq
 known-issues
 reference/index
 internals/index
+roadmap
 changelog
 ```

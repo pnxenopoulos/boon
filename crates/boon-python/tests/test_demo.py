@@ -6,7 +6,16 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from boon import Demo, InvalidDemoError, ability_names, game_mode_names, hero_names, modifier_names, team_names
+from boon import (
+    Demo,
+    InvalidDemoError,
+    ability_names,
+    game_mode_names,
+    hero_names,
+    modifier_names,
+    patron_phase_names,
+    team_names,
+)
 
 from conftest import _require_demo_fixture
 
@@ -261,6 +270,11 @@ class TestNameLookups:
         names = game_mode_names()
         assert names[1] == "6v6"
         assert names[4] == "street_brawl"
+
+    def test_patron_phase_names_is_dict(self) -> None:
+        names = patron_phase_names()
+        assert isinstance(names, dict)
+        assert names == {0: "normal", 1: "final", 2: "shields_down"}
 
 
 # ===================================================================

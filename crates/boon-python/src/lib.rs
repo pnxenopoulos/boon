@@ -734,7 +734,8 @@ impl Demo {
     /// - steam_id: The player's Steam ID
     /// - hero_id: The player's hero ID
     /// - team_num: The player's raw team number
-    /// - start_lane: The player's original lane (1=left, 4=center, 6=right)
+    /// - start_lane: The player's original lane color
+    ///   (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum)
     #[getter]
     fn players(&mut self) -> PyResult<PyDataFrame> {
         if let Some(ref df) = self.cached_players {
@@ -802,9 +803,8 @@ impl Demo {
                 // Extract team number
                 let team_num = entity.get_i64(key_team_num);
 
-                // Extract original lane assignment (I64)
-                // Lane mapping (assuming Hidden King is at the bottom of the map):
-                // 1 -> left, 4 -> center, 6 -> right
+                // Extract original lane assignment (I64).
+                // Values are CMsgLaneColor IDs: 1=yellow, 3=green, 4=blue, 6=purple, 0=none.
                 let start_lane = entity.get_i64(key_start_lane);
 
                 player_names.push(player_name);
@@ -3232,6 +3232,22 @@ fn modifier_names() -> HashMap<u32, &'static str> {
         .collect()
 }
 
+/// Return a mapping of patron phase ID to phase name.
+///
+/// Phases are the values of the ``CNPC_Boss_Tier3.m_ePhase`` netvar:
+/// ``0=normal`` (shielded), ``1=final`` (killable), ``2=shields_down``
+/// (vulnerable). Non-patron objectives report ``0`` by default.
+///
+/// Returns:
+///     A dict mapping patron phase IDs (int) to phase names (str).
+#[pyfunction]
+fn patron_phase_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_patron_phases()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
 /// Python bindings for the boon Deadlock demo parser.
 #[pymodule]
 fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -3241,6 +3257,7 @@ fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ability_names, m)?)?;
     m.add_function(wrap_pyfunction!(modifier_names, m)?)?;
     m.add_function(wrap_pyfunction!(game_mode_names, m)?)?;
+    m.add_function(wrap_pyfunction!(patron_phase_names, m)?)?;
     m.add("InvalidDemoError", m.py().get_type::<InvalidDemoError>())?;
     m.add("DemoHeaderError", m.py().get_type::<DemoHeaderError>())?;
     m.add("DemoInfoError", m.py().get_type::<DemoInfoError>())?;
