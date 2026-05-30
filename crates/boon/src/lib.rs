@@ -60,6 +60,7 @@ pub mod game_modes;
 pub mod heroes;
 pub mod io;
 pub mod modifiers;
+pub mod patron_phases;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
@@ -68,11 +69,13 @@ pub use demo::{
     CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name, decode_event_payload,
 };
 pub use entity::{
-    ClassEntry, ClassInfo, Entity, EntityContainer, FieldValue, Serializer, SerializerContainer,
-    SerializerField, StringTable, StringTableContainer, StringTableEntry,
+    ClassEntry, ClassInfo, ENTITY_HANDLE_INDEX_MASK, Entity, EntityContainer, FieldValue,
+    INVALID_ENTITY_HANDLE, Serializer, SerializerContainer, SerializerField, StringTable,
+    StringTableContainer, StringTableEntry, protobuf_handle_index,
 };
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};
 pub use heroes::{all_heroes, hero_name};
 pub use modifiers::{all_modifiers, modifier_name};
+pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use teams::{all_teams, team_name};

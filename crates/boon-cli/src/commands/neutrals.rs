@@ -6,27 +6,6 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::Serialize;
 
-fn get_i64(e: &boon::Entity, key: Option<u64>) -> i64 {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon::FieldValue::U32(n) => Some(*n as i64),
-            boon::FieldValue::U64(n) => Some(*n as i64),
-            boon::FieldValue::I32(n) => Some(*n as i64),
-            boon::FieldValue::I64(n) => Some(*n),
-            _ => None,
-        })
-        .unwrap_or(0)
-}
-
-fn get_f32(e: &boon::Entity, key: Option<u64>) -> f32 {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon::FieldValue::F32(f) => Some(*f),
-            _ => None,
-        })
-        .unwrap_or(0.0)
-}
-
 /// State snapshot for change detection (bitwise-comparable).
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct NeutralState {
@@ -105,20 +84,20 @@ pub fn run(
                     continue;
                 }
 
-                let max_health = get_i64(entity, nk_max_health);
+                let max_health = entity.get_i64(nk_max_health);
                 if max_health == 0 {
                     continue;
                 }
 
-                let lifestate = get_i64(entity, nk_lifestate);
+                let lifestate = entity.get_i64(nk_lifestate);
                 let alive = lifestate == 0;
 
-                let x = get_f32(entity, nk_vec_x);
-                let y = get_f32(entity, nk_vec_y);
-                let z = get_f32(entity, nk_vec_z);
+                let x = entity.get_f32(nk_vec_x);
+                let y = entity.get_f32(nk_vec_y);
+                let z = entity.get_f32(nk_vec_z);
 
                 let current = NeutralState {
-                    health: get_i64(entity, nk_health),
+                    health: entity.get_i64(nk_health),
                     max_health,
                     x_bits: x.to_bits(),
                     y_bits: y.to_bits(),
@@ -135,7 +114,7 @@ pub fn run(
                     if alive {
                         rows.push(NeutralOutput {
                             tick: ctx.tick,
-                            team_num: get_i64(entity, nk_team_num),
+                            team_num: entity.get_i64(nk_team_num),
                             health: current.health,
                             max_health: current.max_health,
                             x,

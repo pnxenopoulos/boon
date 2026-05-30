@@ -47,6 +47,15 @@ def game_mode_names() -> dict[int, str]:
     """Return a mapping of game mode ID to game mode name."""
     ...
 
+def patron_phase_names() -> dict[int, str]:
+    """Return a mapping of patron phase ID to phase name.
+
+    Phases of ``CNPC_Boss_Tier3.m_ePhase``: ``0=normal`` (shielded),
+    ``1=final`` (killable), ``2=shields_down`` (vulnerable). Non-patron
+    objectives report ``0`` by default.
+    """
+    ...
+
 class Demo:
     """A Deadlock demo file.
 
@@ -284,7 +293,7 @@ class Demo:
             - **steam_id** (*int*) -- The player's Steam ID.
             - **hero_id** (*int*) -- The player's hero ID.
             - **team_num** (*int*) -- The player's raw team number.
-            - **start_lane** (*int*) -- The player's original lane (1=left, 4=center, 6=right).
+            - **start_lane** (*int*) -- The player's original lane color (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the ``CMsgLaneColor`` proto enum).
         """
         ...
 
@@ -477,7 +486,7 @@ class Demo:
             - **lane** (*int*) -- Lane assignment (1, 4, or 6; 0 for patron/shrine/mid_boss).
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Maximum health.
-            - **phase** (*int*) -- Patron phase (0=normal, 2=shields down, 1=final phase; 0 for non-patron).
+            - **phase** (*int*) -- Patron phase (use ``patron_phase_names()`` to resolve; 0=normal, 1=final, 2=shields_down; 0 for non-patron).
             - **x** (*float*) -- X position.
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.

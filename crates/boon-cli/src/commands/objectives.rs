@@ -22,18 +22,6 @@ fn objective_type(class_name: &str) -> &'static str {
     }
 }
 
-fn get_i64(e: &boon::Entity, key: Option<u64>) -> i64 {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon::FieldValue::U32(n) => Some(*n as i64),
-            boon::FieldValue::U64(n) => Some(*n as i64),
-            boon::FieldValue::I32(n) => Some(*n as i64),
-            boon::FieldValue::I64(n) => Some(*n),
-            _ => None,
-        })
-        .unwrap_or(0)
-}
-
 /// State snapshot for change detection.
 #[derive(Clone, Copy, PartialEq, Eq)]
 struct ObjectiveState {
@@ -106,7 +94,7 @@ pub fn run(
                     continue;
                 }
 
-                let max_health = get_i64(entity, nk_max_health);
+                let max_health = entity.get_i64(nk_max_health);
 
                 // Skip entities with no max_health (not yet initialized)
                 if max_health == 0 {
@@ -114,10 +102,10 @@ pub fn run(
                 }
 
                 let current = ObjectiveState {
-                    health: get_i64(entity, nk_health),
+                    health: entity.get_i64(nk_health),
                     max_health,
-                    team_num: get_i64(entity, nk_team_num),
-                    lane: get_i64(entity, nk_lane),
+                    team_num: entity.get_i64(nk_team_num),
+                    lane: entity.get_i64(nk_lane),
                 };
 
                 if prev_state.get(&idx) == Some(&current) {

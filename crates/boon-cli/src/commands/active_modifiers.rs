@@ -7,9 +7,6 @@ use colored::Colorize;
 use prost::Message;
 use serde::Serialize;
 
-/// Source 2 null entity handle (0x00FFFFFF).
-const INVALID_ENTITY_HANDLE: u32 = 0x00FF_FFFF;
-
 struct CachedModifier {
     hero_id: i64,
     modifier: String,
@@ -74,16 +71,7 @@ pub fn run(
             if !entity_to_hero_built {
                 for (&idx, entity) in ctx.entities.iter() {
                     if entity.class_name == "CCitadelPlayerPawn" {
-                        let hid = pk_hero_id
-                            .and_then(|k| entity.fields.get(&k))
-                            .and_then(|v| match v {
-                                boon::FieldValue::U32(n) => Some(*n as i64),
-                                boon::FieldValue::U64(n) => Some(*n as i64),
-                                boon::FieldValue::I32(n) => Some(*n as i64),
-                                boon::FieldValue::I64(n) => Some(*n),
-                                _ => None,
-                            })
-                            .unwrap_or(0);
+                        let hid = entity.get_i64(pk_hero_id);
                         if hid != 0 {
                             entity_to_hero.insert(idx, hid);
                         }
@@ -110,21 +98,17 @@ pub fn run(
                         continue;
                     };
 
-                    let serial = match modifier.serial_number {
-                        Some(s) => s,
-                        None => continue,
+                    let Some(serial) = modifier.serial_number else {
+                        continue;
                     };
 
-                    let parent_handle = modifier.parent.unwrap_or(INVALID_ENTITY_HANDLE);
-                    if parent_handle == INVALID_ENTITY_HANDLE {
+                    let Some(parent_idx) = boon::protobuf_handle_index(modifier.parent) else {
                         continue;
-                    }
-                    let parent_idx = (parent_handle & 0x3FFF) as i32;
+                    };
 
                     // Only track modifiers on player pawns
-                    let hero_id = match entity_to_hero.get(&parent_idx) {
-                        Some(&hid) => hid,
-                        None => continue,
+                    let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
+                        continue;
                     };
 
                     let entry_type = modifier.entry_type.unwrap_or(1);
@@ -158,13 +142,9 @@ pub fn run(
                         let ability_name =
                             boon::ability_name(modifier.ability_subclass.unwrap_or(0)).to_string();
                         let duration = modifier.duration.unwrap_or(-1.0);
-                        let caster_handle = modifier.caster.unwrap_or(INVALID_ENTITY_HANDLE);
-                        let caster_hero_id = if caster_handle != INVALID_ENTITY_HANDLE {
-                            let caster_idx = (caster_handle & 0x3FFF) as i32;
-                            entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
-                        } else {
-                            0
-                        };
+                        let caster_hero_id = boon::protobuf_handle_index(modifier.caster)
+                            .and_then(|i| entity_to_hero.get(&i).copied())
+                            .unwrap_or(0);
                         let stacks = modifier.stack_count.unwrap_or(0);
 
                         events_out.push(ActiveModifierOutput {

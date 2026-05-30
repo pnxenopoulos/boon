@@ -6,7 +6,16 @@ from pathlib import Path
 
 import polars as pl
 import pytest
-from boon import Demo, InvalidDemoError, ability_names, game_mode_names, hero_names, modifier_names, team_names
+from boon import (
+    Demo,
+    InvalidDemoError,
+    ability_names,
+    game_mode_names,
+    hero_names,
+    modifier_names,
+    patron_phase_names,
+    team_names,
+)
 
 from conftest import _require_demo_fixture
 
@@ -197,6 +206,18 @@ class TestPlayersAndTeams:
         for t in team_nums:
             assert t in (1, 2, 3)
 
+    def test_player_ticks_covers_all_players(self, demo: Demo) -> None:
+        """Every hero in `players` must appear in `player_ticks`.
+
+        `players` reads the hero ID straight off each player controller, while
+        `player_ticks` reaches it through the controller's pawn handle. A bad
+        handle mask drops players from `player_ticks` only, so the set of unique
+        hero IDs must match between the two datasets.
+        """
+        player_heroes = set(demo.players["hero_id"].to_list())
+        tick_heroes = set(demo.player_ticks["hero_id"].to_list())
+        assert tick_heroes == player_heroes
+
 
 # ===================================================================
 # Name lookups
@@ -249,6 +270,11 @@ class TestNameLookups:
         names = game_mode_names()
         assert names[1] == "6v6"
         assert names[4] == "street_brawl"
+
+    def test_patron_phase_names_is_dict(self) -> None:
+        names = patron_phase_names()
+        assert isinstance(names, dict)
+        assert names == {0: "normal", 1: "final", 2: "shields_down"}
 
 
 # ===================================================================

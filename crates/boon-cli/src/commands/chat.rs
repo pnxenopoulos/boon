@@ -55,16 +55,7 @@ pub fn run(
             if !slot_to_hero_built {
                 for (&idx, entity) in ctx.entities.iter() {
                     if entity.class_name == "CCitadelPlayerController" {
-                        let hid = ck_hero_id
-                            .and_then(|k| entity.fields.get(&k))
-                            .and_then(|v| match v {
-                                boon::FieldValue::U32(n) => Some(*n as i64),
-                                boon::FieldValue::U64(n) => Some(*n as i64),
-                                boon::FieldValue::I32(n) => Some(*n as i64),
-                                boon::FieldValue::I64(n) => Some(*n),
-                                _ => None,
-                            })
-                            .unwrap_or(0);
+                        let hid = entity.get_i64(ck_hero_id);
                         if hid != 0 {
                             slot_to_hero.insert(idx - 1, hid);
                         }

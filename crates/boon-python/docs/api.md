@@ -330,7 +330,7 @@ Player information. Computed from the final tick.
 | `steam_id` | `int` | The player's Steam ID |
 | `hero_id` | `int` | The player's hero ID (use `hero_names()` to resolve) |
 | `team_num` | `int` | Raw team number (use `team_names()` to resolve) |
-| `start_lane` | `int` | Original lane (1=left, 4=center, 6=right) |
+| `start_lane` | `int` | Original lane color (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum) |
 
 ---
 
@@ -559,10 +559,10 @@ Auto-loads on first access.
 | `tick` | `int` | The game tick |
 | `objective_type` | `str` | `"walker"`, `"barracks"`, `"shrine"`, `"patron"`, or `"mid_boss"` |
 | `team_num` | `int` | The team that owns the objective |
-| `lane` | `int` | Lane assignment (1, 4, or 6; 0 for patron/shrine/mid_boss) |
+| `lane` | `int` | Lane color (1=yellow, 3=green, 4=blue, 6=purple; 0 for patron/shrine/mid_boss) |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
-| `phase` | `int` | Patron phase (0=normal, 2=shields down, 1=final phase; 0 for non-patron) |
+| `phase` | `int` | Patron phase — resolve with `patron_phase_names()` (0=normal, 1=final, 2=shields_down; 0 for non-patron) |
 | `x` | `float` | X position |
 | `y` | `float` | Y position |
 | `z` | `float` | Z position |
@@ -822,6 +822,22 @@ modifier_names()  # -> dict[int, str]
 Return a mapping of MurmurHash2 modifier ID to modifier name.
 
 **Returns:** `dict[int, str]` -- Modifier hash to name mapping.
+
+---
+
+### `patron_phase_names()`
+
+```python
+from boon import patron_phase_names
+
+patron_phase_names()  # -> dict[int, str]
+```
+
+Return a mapping of patron phase ID to phase name. Phases are the values of
+`CNPC_Boss_Tier3.m_ePhase`: `0=normal` (shielded), `1=final` (killable),
+`2=shields_down` (vulnerable). Non-patron objectives report `0` by default.
+
+**Returns:** `dict[int, str]` -- Patron phase ID to name mapping (e.g., `{0: "normal", 1: "final", 2: "shields_down"}`).
 
 ---
 

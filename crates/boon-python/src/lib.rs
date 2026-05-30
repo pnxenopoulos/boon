@@ -9,9 +9,6 @@ use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use pyo3_polars::PyDataFrame;
 
-/// Source 2 null entity handle (0x00FFFFFF).
-const INVALID_ENTITY_HANDLE: u32 = 0x00FF_FFFF;
-
 pyo3::create_exception!(_boon, InvalidDemoError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoHeaderError, pyo3::exceptions::PyException);
 pyo3::create_exception!(_boon, DemoInfoError, pyo3::exceptions::PyException);
@@ -36,61 +33,6 @@ fn to_py_err(e: boon_parser::Error) -> PyErr {
         }
         other => InvalidDemoError::new_err(format!("{other}")),
     }
-}
-
-fn get_f32(e: &boon_parser::Entity, key: Option<u64>) -> f32 {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon_parser::FieldValue::F32(f) => Some(*f),
-            _ => None,
-        })
-        .unwrap_or(0.0)
-}
-
-fn get_i64(e: &boon_parser::Entity, key: Option<u64>) -> i64 {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon_parser::FieldValue::U32(n) => Some(*n as i64),
-            boon_parser::FieldValue::U64(n) => Some(*n as i64),
-            boon_parser::FieldValue::I32(n) => Some(*n as i64),
-            boon_parser::FieldValue::I64(n) => Some(*n),
-            _ => None,
-        })
-        .unwrap_or(0)
-}
-
-fn get_bool(e: &boon_parser::Entity, key: Option<u64>) -> bool {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon_parser::FieldValue::Bool(b) => Some(*b),
-            _ => None,
-        })
-        .unwrap_or(false)
-}
-
-fn get_qangle(e: &boon_parser::Entity, key: Option<u64>) -> [f32; 3] {
-    key.and_then(|k| e.fields.get(&k))
-        .and_then(|v| match v {
-            boon_parser::FieldValue::QAngle(a) => Some(*a),
-            _ => None,
-        })
-        .unwrap_or([0.0; 3])
-}
-
-/// Extract entity index from a CHandle stored in an entity field.
-/// Uses 0x7FFF (15-bit mask). Note: protobuf message handles (modifier.parent,
-/// msg.player, etc.) use 0x3FFF (14-bit mask) instead. Both work in practice —
-/// the difference may reflect different handle formats between entity fields and
-/// protobuf messages, or either mask may work for both. We keep them separate
-/// to match the contexts where each was validated.
-fn get_handle_index(e: &boon_parser::Entity, key: Option<u64>) -> Option<i32> {
-    key.and_then(|k| e.fields.get(&k)).and_then(|v| match v {
-        boon_parser::FieldValue::U32(n) => Some((*n & 0x7FFF) as i32),
-        boon_parser::FieldValue::U64(n) => Some((*n as u32 & 0x7FFF) as i32),
-        boon_parser::FieldValue::I32(n) => Some(*n & 0x7FFF),
-        boon_parser::FieldValue::I64(n) => Some((*n as i32) & 0x7FFF),
-        _ => None,
-    })
 }
 
 const VALID_DATASETS: &[&str] = &[
@@ -570,17 +512,7 @@ impl Demo {
                     boon_parser::FieldValue::I64(id) => *id as u64,
                     _ => return None,
                 };
-                let gm = serializer
-                    .resolve_field_key("m_pGameRules.m_eGameMode")
-                    .and_then(|k| e.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon_parser::FieldValue::U64(n) => Some(*n as i64),
-                        boon_parser::FieldValue::I64(n) => Some(*n),
-                        boon_parser::FieldValue::U32(n) => Some(*n as i64),
-                        boon_parser::FieldValue::I32(n) => Some(*n as i64),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
+                let gm = e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode"));
                 Some((mid, gm))
             })
             .ok_or_else(|| {
@@ -802,7 +734,8 @@ impl Demo {
     /// - steam_id: The player's Steam ID
     /// - hero_id: The player's hero ID
     /// - team_num: The player's raw team number
-    /// - start_lane: The player's original lane (1=left, 4=center, 6=right)
+    /// - start_lane: The player's original lane color
+    ///   (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum)
     #[getter]
     fn players(&mut self) -> PyResult<PyDataFrame> {
         if let Some(ref df) = self.cached_players {
@@ -866,35 +799,13 @@ impl Demo {
                 }
 
                 // Extract hero ID and name
-                let hero_id = key_hero_id
-                    .and_then(|k| entity.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon_parser::FieldValue::U64(id) => Some(*id as i64),
-                        boon_parser::FieldValue::I64(id) => Some(*id),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
+                let hero_id = entity.get_i64(key_hero_id);
                 // Extract team number
-                let team_num = key_team_num
-                    .and_then(|k| entity.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon_parser::FieldValue::U64(n) => Some(*n as i64),
-                        boon_parser::FieldValue::I64(n) => Some(*n),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
+                let team_num = entity.get_i64(key_team_num);
 
-                // Extract original lane assignment (I64)
-                // Lane mapping (assuming Hidden King is at the bottom of the map):
-                // 1 -> left, 4 -> center, 6 -> right
-                let start_lane = key_start_lane
-                    .and_then(|k| entity.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon_parser::FieldValue::I64(n) => Some(*n),
-                        boon_parser::FieldValue::U64(n) => Some(*n as i64),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
+                // Extract original lane assignment (I64).
+                // Values are CMsgLaneColor IDs: 1=yellow, 3=green, 4=blue, 6=purple, 0=none.
+                let start_lane = entity.get_i64(key_start_lane);
 
                 player_names.push(player_name);
                 steam_ids.push(steam_id);
@@ -1669,71 +1580,68 @@ impl Demo {
                         .collect();
 
                     for ctrl in &controllers {
-                        let pawn_index = match get_handle_index(ctrl, ck_pawn_handle) {
-                            Some(idx) => idx,
-                            None => continue,
-                        };
-
-                        let pawn = match $ctx.entities.get(pawn_index) {
+                        let pawn = match ctrl.get_handle(ck_pawn_handle)
+                            .and_then(|h| $ctx.entities.get_by_handle(h))
+                        {
                             Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
                             _ => continue,
                         };
 
-                        let hid = get_i64(pawn, pk_hero_id);
+                        let hid = pawn.get_i64(pk_hero_id);
                         if hid == 0 {
                             continue;
                         }
 
                         pt_tick.push($ctx.tick);
                         pt_hero_id.push(hid);
-                        pt_x.push(get_f32(pawn, pk_vec_x));
-                        pt_y.push(get_f32(pawn, pk_vec_y));
-                        pt_z.push(get_f32(pawn, pk_vec_z));
-                        let angles = get_qangle(pawn, pk_camera);
+                        pt_x.push(pawn.get_f32(pk_vec_x));
+                        pt_y.push(pawn.get_f32(pk_vec_y));
+                        pt_z.push(pawn.get_f32(pk_vec_z));
+                        let angles = pawn.get_qangle(pk_camera);
                         pt_pitch.push(angles[0]);
                         pt_yaw.push(angles[1]);
                         pt_roll.push(angles[2]);
-                        pt_in_regen_zone.push(get_bool(pawn, pk_in_regen));
-                        pt_death_time.push(get_f32(pawn, pk_death_time));
-                        pt_last_spawn_time.push(get_f32(pawn, pk_last_spawn));
-                        pt_respawn_time.push(get_f32(pawn, pk_respawn));
-                        pt_health.push(get_i64(pawn, pk_health));
-                        pt_max_health.push(get_i64(pawn, pk_max_health));
-                        pt_lifestate.push(get_i64(pawn, pk_lifestate));
-                        pt_souls.push(get_i64(pawn, pk_souls));
-                        pt_spent_souls.push(get_i64(pawn, pk_spent_souls));
-                        pt_combat_end.push(get_f32(pawn, pk_combat_end));
-                        pt_combat_last_dmg.push(get_f32(pawn, pk_combat_last_dmg));
-                        pt_combat_start.push(get_f32(pawn, pk_combat_start));
-                        pt_dmg_dealt_end.push(get_f32(pawn, pk_dmg_dealt_end));
-                        pt_dmg_dealt_last.push(get_f32(pawn, pk_dmg_dealt_last));
-                        pt_dmg_dealt_start.push(get_f32(pawn, pk_dmg_dealt_start));
-                        pt_dmg_taken_end.push(get_f32(pawn, pk_dmg_taken_end));
-                        pt_dmg_taken_last.push(get_f32(pawn, pk_dmg_taken_last));
-                        pt_dmg_taken_start.push(get_f32(pawn, pk_dmg_taken_start));
-                        pt_time_revealed.push(get_f32(pawn, pk_time_revealed));
-                        pt_build_id.push(get_i64(pawn, pk_build_id));
-                        pt_is_alive.push(get_bool(ctrl, ck_alive));
-                        pt_has_rebirth.push(get_bool(ctrl, ck_rebirth));
-                        pt_has_rejuvenator.push(get_bool(ctrl, ck_rejuvenator));
-                        pt_has_ultimate.push(get_bool(ctrl, ck_ultimate));
-                        pt_health_regen.push(get_f32(ctrl, ck_health_regen));
+                        pt_in_regen_zone.push(pawn.get_bool(pk_in_regen));
+                        pt_death_time.push(pawn.get_f32(pk_death_time));
+                        pt_last_spawn_time.push(pawn.get_f32(pk_last_spawn));
+                        pt_respawn_time.push(pawn.get_f32(pk_respawn));
+                        pt_health.push(pawn.get_i64(pk_health));
+                        pt_max_health.push(pawn.get_i64(pk_max_health));
+                        pt_lifestate.push(pawn.get_i64(pk_lifestate));
+                        pt_souls.push(pawn.get_i64(pk_souls));
+                        pt_spent_souls.push(pawn.get_i64(pk_spent_souls));
+                        pt_combat_end.push(pawn.get_f32(pk_combat_end));
+                        pt_combat_last_dmg.push(pawn.get_f32(pk_combat_last_dmg));
+                        pt_combat_start.push(pawn.get_f32(pk_combat_start));
+                        pt_dmg_dealt_end.push(pawn.get_f32(pk_dmg_dealt_end));
+                        pt_dmg_dealt_last.push(pawn.get_f32(pk_dmg_dealt_last));
+                        pt_dmg_dealt_start.push(pawn.get_f32(pk_dmg_dealt_start));
+                        pt_dmg_taken_end.push(pawn.get_f32(pk_dmg_taken_end));
+                        pt_dmg_taken_last.push(pawn.get_f32(pk_dmg_taken_last));
+                        pt_dmg_taken_start.push(pawn.get_f32(pk_dmg_taken_start));
+                        pt_time_revealed.push(pawn.get_f32(pk_time_revealed));
+                        pt_build_id.push(pawn.get_i64(pk_build_id));
+                        pt_is_alive.push(ctrl.get_bool(ck_alive));
+                        pt_has_rebirth.push(ctrl.get_bool(ck_rebirth));
+                        pt_has_rejuvenator.push(ctrl.get_bool(ck_rejuvenator));
+                        pt_has_ultimate.push(ctrl.get_bool(ck_ultimate));
+                        pt_health_regen.push(ctrl.get_f32(ck_health_regen));
                         // Note: column start → field CooldownEnd, column end → field CooldownStart
-                        pt_ult_cd_start.push(get_f32(ctrl, ck_ult_cd_end));
-                        pt_ult_cd_end.push(get_f32(ctrl, ck_ult_cd_start));
-                        pt_ap_nw.push(get_i64(ctrl, ck_ap_nw));
-                        pt_gold_nw.push(get_i64(ctrl, ck_gold_nw));
-                        pt_denies.push(get_i64(ctrl, ck_denies));
-                        pt_hero_damage.push(get_i64(ctrl, ck_hero_damage));
-                        pt_hero_healing.push(get_i64(ctrl, ck_hero_healing));
-                        pt_obj_damage.push(get_i64(ctrl, ck_obj_damage));
-                        pt_self_healing.push(get_i64(ctrl, ck_self_healing));
-                        pt_kill_streak.push(get_i64(ctrl, ck_kill_streak));
-                        pt_last_hits.push(get_i64(ctrl, ck_last_hits));
-                        pt_level.push(get_i64(ctrl, ck_level));
-                        pt_kills.push(get_i64(ctrl, ck_kills));
-                        pt_deaths.push(get_i64(ctrl, ck_deaths));
-                        pt_assists.push(get_i64(ctrl, ck_assists));
+                        pt_ult_cd_start.push(ctrl.get_f32(ck_ult_cd_end));
+                        pt_ult_cd_end.push(ctrl.get_f32(ck_ult_cd_start));
+                        pt_ap_nw.push(ctrl.get_i64(ck_ap_nw));
+                        pt_gold_nw.push(ctrl.get_i64(ck_gold_nw));
+                        pt_denies.push(ctrl.get_i64(ck_denies));
+                        pt_hero_damage.push(ctrl.get_i64(ck_hero_damage));
+                        pt_hero_healing.push(ctrl.get_i64(ck_hero_healing));
+                        pt_obj_damage.push(ctrl.get_i64(ck_obj_damage));
+                        pt_self_healing.push(ctrl.get_i64(ck_self_healing));
+                        pt_kill_streak.push(ctrl.get_i64(ck_kill_streak));
+                        pt_last_hits.push(ctrl.get_i64(ck_last_hits));
+                        pt_level.push(ctrl.get_i64(ck_level));
+                        pt_kills.push(ctrl.get_i64(ck_kills));
+                        pt_deaths.push(ctrl.get_i64(ck_deaths));
+                        pt_assists.push(ctrl.get_i64(ck_assists));
                     }
                 }
 
@@ -1746,19 +1654,19 @@ impl Demo {
                     {
                         if load_world_ticks {
                             wt_tick.push($ctx.tick);
-                            wt_is_paused.push(get_bool(entity, wk_is_paused));
-                            wt_next_midboss.push(get_f32(entity, wk_next_midboss));
+                            wt_is_paused.push(entity.get_bool(wk_is_paused));
+                            wt_next_midboss.push(entity.get_f32(wk_next_midboss));
                         }
                         if load_street_brawl_ticks {
                             sbt_tick.push($ctx.tick);
-                            sbt_round.push(get_i64(entity, sbk_round) as i32);
-                            sbt_state.push(get_i64(entity, sbk_state) as i32);
-                            sbt_amber_score.push(get_i64(entity, sbk_amber_score) as i32);
-                            sbt_sapphire_score.push(get_i64(entity, sbk_sapphire_score) as i32);
-                            sbt_buy_countdown.push(get_i64(entity, sbk_buy_countdown) as i32);
-                            sbt_next_state_time.push(get_f32(entity, sbk_next_state_time));
-                            sbt_state_start_time.push(get_f32(entity, sbk_state_start_time));
-                            sbt_non_combat_time.push(get_f32(entity, sbk_non_combat_time));
+                            sbt_round.push(entity.get_i64(sbk_round) as i32);
+                            sbt_state.push(entity.get_i64(sbk_state) as i32);
+                            sbt_amber_score.push(entity.get_i64(sbk_amber_score) as i32);
+                            sbt_sapphire_score.push(entity.get_i64(sbk_sapphire_score) as i32);
+                            sbt_buy_countdown.push(entity.get_i64(sbk_buy_countdown) as i32);
+                            sbt_next_state_time.push(entity.get_f32(sbk_next_state_time));
+                            sbt_state_start_time.push(entity.get_f32(sbk_state_start_time));
+                            sbt_non_combat_time.push(entity.get_f32(sbk_non_combat_time));
                         }
                     }
                 }
@@ -1767,7 +1675,7 @@ impl Demo {
                 if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn) && !entity_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerPawn" {
-                            let hid = get_i64(entity, pk_hero_id);
+                            let hid = entity.get_i64(pk_hero_id);
                             if hid != 0 {
                                 entity_to_hero.insert(idx, hid);
                             }
@@ -1780,7 +1688,7 @@ impl Demo {
                 if (load_item_purchases || load_chat) && !slot_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerController" {
-                            let hid = get_i64(entity, ck_hero_id);
+                            let hid = entity.get_i64(ck_hero_id);
                             if hid != 0 {
                                 // userid is 0-based, controller entity index is 1-based
                                 slot_to_hero.insert(idx - 1, hid);
@@ -1798,21 +1706,12 @@ impl Demo {
                         if entity.class_name != "CCitadelPlayerController" {
                             continue;
                         }
-                        let hero_id = get_i64(entity, ck_hero_id);
+                        let hero_id = entity.get_i64(ck_hero_id);
                         if hero_id == 0 {
                             continue;
                         }
                         for (slot_idx, (item_key, bits_key)) in au_slot_keys.iter().enumerate() {
-                            let ability_id = item_key
-                                .and_then(|k| entity.fields.get(&k))
-                                .and_then(|v| match v {
-                                    boon_parser::FieldValue::U32(n) => Some(*n),
-                                    boon_parser::FieldValue::U64(n) => Some(*n as u32),
-                                    boon_parser::FieldValue::I32(n) => Some(*n as u32),
-                                    boon_parser::FieldValue::I64(n) => Some(*n as u32),
-                                    _ => None,
-                                })
-                                .unwrap_or(0);
+                            let ability_id = entity.get_u32(*item_key);
                             if ability_id == 0 {
                                 continue;
                             }
@@ -1855,12 +1754,12 @@ impl Demo {
                             "CCitadel_Destroyable_Building" => ("shrine", shrine_health, shrine_max_health, shrine_team_num, None, shrine_vec_x, shrine_vec_y, shrine_vec_z),
                             _ => continue,
                         };
-                        let max_hp = get_i64(entity, max_hp_key);
+                        let max_hp = entity.get_i64(max_hp_key);
                         if max_hp == 0 {
                             continue;
                         }
-                        let hp = get_i64(entity, hp_key);
-                        let phase = if is_patron { get_i64(entity, patron_phase_key) } else { 0 };
+                        let hp = entity.get_i64(hp_key);
+                        let phase = if is_patron { entity.get_i64(patron_phase_key) } else { 0 };
                         let cur = (hp, max_hp, phase);
                         let changed = match obj_prev.get(&idx) {
                             None => true,
@@ -1870,14 +1769,14 @@ impl Demo {
                             obj_prev.insert(idx, cur);
                             obj_tick.push($ctx.tick);
                             obj_type.push(otype.to_string());
-                            obj_team_num.push(get_i64(entity, team_key));
-                            obj_lane.push(get_i64(entity, lane_key));
+                            obj_team_num.push(entity.get_i64(team_key));
+                            obj_lane.push(entity.get_i64(lane_key));
                             obj_health.push(hp);
                             obj_max_health.push(max_hp);
                             obj_phase.push(phase);
-                            obj_x.push(get_f32(entity, vx_key));
-                            obj_y.push(get_f32(entity, vy_key));
-                            obj_z.push(get_f32(entity, vz_key));
+                            obj_x.push(entity.get_f32(vx_key));
+                            obj_y.push(entity.get_f32(vy_key));
+                            obj_z.push(entity.get_f32(vz_key));
                             obj_entity_id.push(idx);
                         }
 
@@ -1892,23 +1791,23 @@ impl Demo {
                             "CNPC_TrooperBoss" => "trooper_boss",
                             _ => continue,
                         };
-                        let max_hp = get_i64(entity, tk_max_health);
+                        let max_hp = entity.get_i64(tk_max_health);
                         if max_hp == 0 {
                             continue;
                         }
-                        let lifestate = get_i64(entity, tk_lifestate);
+                        let lifestate = entity.get_i64(tk_lifestate);
                         if lifestate != 0 {
                             continue;
                         }
                         tr_tick.push($ctx.tick);
                         tr_type.push(ttype.to_string());
-                        tr_team_num.push(get_i64(entity, tk_team_num));
-                        tr_lane.push(get_i64(entity, tk_lane));
-                        tr_health.push(get_i64(entity, tk_health));
+                        tr_team_num.push(entity.get_i64(tk_team_num));
+                        tr_lane.push(entity.get_i64(tk_lane));
+                        tr_health.push(entity.get_i64(tk_health));
                         tr_max_health.push(max_hp);
-                        tr_x.push(get_f32(entity, tk_vec_x));
-                        tr_y.push(get_f32(entity, tk_vec_y));
-                        tr_z.push(get_f32(entity, tk_vec_z));
+                        tr_x.push(entity.get_f32(tk_vec_x));
+                        tr_y.push(entity.get_f32(tk_vec_y));
+                        tr_z.push(entity.get_f32(tk_vec_z));
                         tr_entity_id.push(idx);
                     }
                 }
@@ -1919,7 +1818,7 @@ impl Demo {
                         if entity.class_name != "CCitadelPlayerController" {
                             continue;
                         }
-                        let hero_id = get_i64(entity, ck_hero_id);
+                        let hero_id = entity.get_i64(ck_hero_id);
                         if hero_id == 0 {
                             continue;
                         }
@@ -1940,7 +1839,7 @@ impl Demo {
                             if vt_val == 0 {
                                 continue;
                             }
-                            let fl_val = get_f32(entity, *val_key);
+                            let fl_val = entity.get_f32(*val_key);
                             *by_type.entry(vt_val).or_insert(0.0) += fl_val;
                         }
 
@@ -1985,20 +1884,16 @@ impl Demo {
                                 continue;
                             };
 
-                            let serial = match modifier.serial_number {
-                                Some(s) => s,
-                                None => continue,
+                            let Some(serial) = modifier.serial_number else { continue };
+
+                            let Some(parent_idx) =
+                                boon_parser::protobuf_handle_index(modifier.parent)
+                            else {
+                                continue;
                             };
 
-                            let parent_handle = modifier.parent.unwrap_or(INVALID_ENTITY_HANDLE);
-                            if parent_handle == INVALID_ENTITY_HANDLE {
+                            let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
                                 continue;
-                            }
-                            let parent_idx = (parent_handle & 0x3FFF) as i32;
-
-                            let hero_id = match entity_to_hero.get(&parent_idx) {
-                                Some(&hid) => hid,
-                                None => continue,
                             };
 
                             let mod_entry_type = modifier.entry_type.unwrap_or(1);
@@ -2023,13 +1918,10 @@ impl Demo {
                                 let mod_id = modifier.modifier_subclass.unwrap_or(0);
                                 let abil_id = modifier.ability_subclass.unwrap_or(0);
                                 let duration = modifier.duration.unwrap_or(-1.0);
-                                let caster_handle = modifier.caster.unwrap_or(INVALID_ENTITY_HANDLE);
-                                let caster_hero_id = if caster_handle != INVALID_ENTITY_HANDLE {
-                                    let caster_idx = (caster_handle & 0x3FFF) as i32;
-                                    entity_to_hero.get(&caster_idx).copied().unwrap_or(0)
-                                } else {
-                                    0
-                                };
+                                let caster_hero_id =
+                                    boon_parser::protobuf_handle_index(modifier.caster)
+                                        .and_then(|i| entity_to_hero.get(&i).copied())
+                                        .unwrap_or(0);
                                 let stacks = modifier.stack_count.unwrap_or(0);
 
                                 am_tick.push($ctx.tick);
@@ -2091,10 +1983,7 @@ impl Demo {
                                 continue;
                             };
 
-                            let serial = match modifier.serial_number {
-                                Some(s) => s,
-                                None => continue,
-                            };
+                            let Some(serial) = modifier.serial_number else { continue };
 
                             let mod_entry_type = modifier.entry_type.unwrap_or(1);
 
@@ -2113,9 +2002,9 @@ impl Demo {
                                         urn_event.push("dropped".to_string());
                                         urn_hero_id.push(hero_id);
                                         urn_team_num.push(0);
-                                        urn_x.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_x)));
-                                        urn_y.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_y)));
-                                        urn_z.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_z)));
+                                        urn_x.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_x)));
+                                        urn_y.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_y)));
+                                        urn_z.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_z)));
                                     }
                                 }
                                 urn_return_seen.remove(&serial);
@@ -2131,22 +2020,21 @@ impl Demo {
                                 continue;
                             }
 
-                            let parent_handle = modifier.parent.unwrap_or(INVALID_ENTITY_HANDLE);
-                            if parent_handle == INVALID_ENTITY_HANDLE {
+                            let Some(parent_idx) =
+                                boon_parser::protobuf_handle_index(modifier.parent)
+                            else {
                                 continue;
-                            }
-                            let parent_idx = (parent_handle & 0x3FFF) as i32;
+                            };
 
-                            let hero_id = match entity_to_hero.get(&parent_idx) {
-                                Some(&hid) => hid,
-                                None => continue,
+                            let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
+                                continue;
                             };
 
                             // Look up pawn position for hero events
                             let pawn = $ctx.entities.get(parent_idx);
-                            let hero_x = pawn.map_or(0.0, |e| get_f32(e, pk_vec_x));
-                            let hero_y = pawn.map_or(0.0, |e| get_f32(e, pk_vec_y));
-                            let hero_z = pawn.map_or(0.0, |e| get_f32(e, pk_vec_z));
+                            let hero_x = pawn.map_or(0.0, |e| e.get_f32(pk_vec_x));
+                            let hero_y = pawn.map_or(0.0, |e| e.get_f32(pk_vec_y));
+                            let hero_z = pawn.map_or(0.0, |e| e.get_f32(pk_vec_z));
 
                             current_urn_serials.insert(serial);
 
@@ -2206,9 +2094,9 @@ impl Demo {
                                     urn_event.push("dropped".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
-                                    urn_x.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_x)));
-                                    urn_y.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_y)));
-                                    urn_z.push(pawn.map_or(0.0, |e| get_f32(e, pk_vec_z)));
+                                    urn_x.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_x)));
+                                    urn_y.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_y)));
+                                    urn_z.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_z)));
                                 }
                             }
                         }
@@ -2224,8 +2112,8 @@ impl Demo {
                         if entity.class_name != "CCitadelIdolReturnTrigger" {
                             continue;
                         }
-                        let disabled = get_bool(entity, urnk_disabled);
-                        let team = get_i64(entity, urnk_team_num);
+                        let disabled = entity.get_bool(urnk_disabled);
+                        let team = entity.get_i64(urnk_team_num);
                         let cur = (disabled, team);
                         let prev = urn_trigger_prev.get(&idx).copied();
                         let changed = match prev {
@@ -2239,9 +2127,9 @@ impl Demo {
                                 urn_event.push("delivery_active".to_string());
                                 urn_hero_id.push(0);
                                 urn_team_num.push(team);
-                                urn_x.push(get_f32(entity, urnk_vec_x));
-                                urn_y.push(get_f32(entity, urnk_vec_y));
-                                urn_z.push(get_f32(entity, urnk_vec_z));
+                                urn_x.push(entity.get_f32(urnk_vec_x));
+                                urn_y.push(entity.get_f32(urnk_vec_y));
+                                urn_z.push(entity.get_f32(urnk_vec_z));
                             } else if disabled {
                                 // Only emit inactive when transitioning from active
                                 if let Some((prev_disabled, _)) = prev {
@@ -2250,9 +2138,9 @@ impl Demo {
                                         urn_event.push("delivery_inactive".to_string());
                                         urn_hero_id.push(0);
                                         urn_team_num.push(team);
-                                        urn_x.push(get_f32(entity, urnk_vec_x));
-                                        urn_y.push(get_f32(entity, urnk_vec_y));
-                                        urn_z.push(get_f32(entity, urnk_vec_z));
+                                        urn_x.push(entity.get_f32(urnk_vec_x));
+                                        urn_y.push(entity.get_f32(urnk_vec_y));
+                                        urn_z.push(entity.get_f32(urnk_vec_z));
                                     }
                                 }
                             }
@@ -2266,16 +2154,16 @@ impl Demo {
                         if entity.class_name != "CNPC_TrooperNeutral" {
                             continue;
                         }
-                        let max_hp = get_i64(entity, ntk_max_health);
+                        let max_hp = entity.get_i64(ntk_max_health);
                         if max_hp == 0 {
                             continue;
                         }
-                        let lifestate = get_i64(entity, ntk_lifestate);
+                        let lifestate = entity.get_i64(ntk_lifestate);
                         let alive = lifestate == 0;
-                        let x = get_f32(entity, ntk_vec_x);
-                        let y = get_f32(entity, ntk_vec_y);
-                        let z = get_f32(entity, ntk_vec_z);
-                        let hp = get_i64(entity, ntk_health);
+                        let x = entity.get_f32(ntk_vec_x);
+                        let y = entity.get_f32(ntk_vec_y);
+                        let z = entity.get_f32(ntk_vec_z);
+                        let hp = entity.get_i64(ntk_health);
 
                         let cur = (alive, hp, max_hp, x.to_bits(), y.to_bits(), z.to_bits());
                         let changed = match nt_prev.get(&idx) {
@@ -2289,7 +2177,7 @@ impl Demo {
                             nt_prev.insert(idx, cur);
                             if alive {
                                 nt_tick.push($ctx.tick);
-                                nt_team_num.push(get_i64(entity, ntk_team_num));
+                                nt_team_num.push(entity.get_i64(ntk_team_num));
                                 nt_health.push(hp);
                                 nt_max_health.push(max_hp);
                                 nt_x.push(x);
@@ -2350,8 +2238,9 @@ impl Demo {
                                     event.payload.as_slice(),
                                 )
                         {
-                            let pawn_idx = (msg.player.unwrap_or(0) & 0x3FFF) as i32;
-                            let hero_id = entity_to_hero.get(&pawn_idx).copied().unwrap_or(0);
+                            let hero_id = boon_parser::protobuf_handle_index(msg.player)
+                                .and_then(|i| entity_to_hero.get(&i).copied())
+                                .unwrap_or(0);
                             ability_ticks.push(event.tick);
                             ability_hero_ids.push(hero_id);
                             ability_names.push(msg.ability_name.unwrap_or_default());
@@ -3343,6 +3232,22 @@ fn modifier_names() -> HashMap<u32, &'static str> {
         .collect()
 }
 
+/// Return a mapping of patron phase ID to phase name.
+///
+/// Phases are the values of the ``CNPC_Boss_Tier3.m_ePhase`` netvar:
+/// ``0=normal`` (shielded), ``1=final`` (killable), ``2=shields_down``
+/// (vulnerable). Non-patron objectives report ``0`` by default.
+///
+/// Returns:
+///     A dict mapping patron phase IDs (int) to phase names (str).
+#[pyfunction]
+fn patron_phase_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_patron_phases()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
 /// Python bindings for the boon Deadlock demo parser.
 #[pymodule]
 fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
@@ -3352,6 +3257,7 @@ fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(ability_names, m)?)?;
     m.add_function(wrap_pyfunction!(modifier_names, m)?)?;
     m.add_function(wrap_pyfunction!(game_mode_names, m)?)?;
+    m.add_function(wrap_pyfunction!(patron_phase_names, m)?)?;
     m.add("InvalidDemoError", m.py().get_type::<InvalidDemoError>())?;
     m.add("DemoHeaderError", m.py().get_type::<DemoHeaderError>())?;
     m.add("DemoInfoError", m.py().get_type::<DemoInfoError>())?;

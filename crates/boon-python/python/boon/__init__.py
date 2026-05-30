@@ -10,6 +10,7 @@ from boon._boon import (
     game_mode_names,
     hero_names,
     modifier_names,
+    patron_phase_names,
     team_names,
 )
 from boon.errors import (
@@ -31,5 +32,6 @@ __all__ = [
     "game_mode_names",
     "hero_names",
     "modifier_names",
+    "patron_phase_names",
     "team_names",
 ]
