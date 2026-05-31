@@ -245,6 +245,41 @@ impl Entity {
             .unwrap_or([0.0; 3])
     }
 
+    /// Combine cell + in-cell offset fields into a world-coordinate `[x, y, z]`.
+    ///
+    /// Source 2 splits each axis of an entity's position across two networked
+    /// fields — an integer cell index (e.g. `m_cellX`) and a quantized offset
+    /// inside that cell (e.g. `m_vecOrigin.m_vecX`). Pass the resolved keys
+    /// for both halves and this returns the full world position in Hammer
+    /// units via [`cell_to_world`](crate::position::cell_to_world). Reading
+    /// the offset alone gives a sawtooth that resets every cell boundary, not
+    /// a usable coordinate.
+    ///
+    /// Cell keys with no resolved field decode as cell `0`, which means the
+    /// result is shifted into a single cell-grid quadrant rather than
+    /// returning a sentinel — verify the keys before relying on it.
+    pub fn world_position(
+        &self,
+        cell_keys: [Option<u64>; 3],
+        offset_keys: [Option<u64>; 3],
+    ) -> [f32; 3] {
+        let cell = [
+            self.get_i64(cell_keys[0]) as i32,
+            self.get_i64(cell_keys[1]) as i32,
+            self.get_i64(cell_keys[2]) as i32,
+        ];
+        let offset = [
+            self.get_f32(offset_keys[0]),
+            self.get_f32(offset_keys[1]),
+            self.get_f32(offset_keys[2]),
+        ];
+        [
+            crate::position::cell_to_world(cell[0], offset[0]),
+            crate::position::cell_to_world(cell[1], offset[1]),
+            crate::position::cell_to_world(cell[2], offset[2]),
+        ]
+    }
+
     /// Read a raw `CHandle` field as `u32`, if present.
     ///
     /// Pass the result to [`EntityContainer::get_by_handle`] to follow the handle

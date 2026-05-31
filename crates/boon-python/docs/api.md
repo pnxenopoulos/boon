@@ -350,9 +350,9 @@ Auto-loads on first access if not already loaded via `load()`.
 |--------|------|-------------|
 | `tick` | `int` | The game tick |
 | `hero_id` | `int` | Hero ID |
-| `x` | `float` | Player X position |
-| `y` | `float` | Player Y position |
-| `z` | `float` | Player Z position |
+| `x` | `float` | Player X position in world (Hammer) units |
+| `y` | `float` | Player Y position in world (Hammer) units |
+| `z` | `float` | Player Z position in world (Hammer) units |
 | `pitch` | `float` | Camera pitch angle |
 | `yaw` | `float` | Camera yaw angle |
 | `roll` | `float` | Camera roll angle |
@@ -563,9 +563,9 @@ Auto-loads on first access.
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
 | `phase` | `int` | Patron phase — resolve with `patron_phase_names()` (0=normal, 1=final, 2=shields_down; 0 for non-patron) |
-| `x` | `float` | X position |
-| `y` | `float` | Y position |
-| `z` | `float` | Z position |
+| `x` | `float` | X position in world (Hammer) units |
+| `y` | `float` | Y position in world (Hammer) units |
+| `z` | `float` | Z position in world (Hammer) units |
 | `entity_id` | `int` | Entity index (stable per structure across ticks) |
 
 ---
@@ -607,9 +607,9 @@ Access this property or call `load("troopers")` explicitly.
 | `lane` | `int` | Lane assignment (1, 4, or 6) |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
-| `x` | `float` | X position |
-| `y` | `float` | Y position |
-| `z` | `float` | Z position |
+| `x` | `float` | X position in world (Hammer) units |
+| `y` | `float` | Y position in world (Hammer) units |
+| `z` | `float` | Z position in world (Hammer) units |
 | `entity_id` | `int` | Entity index (stable per trooper across ticks) |
 
 ---
@@ -632,9 +632,9 @@ Not loaded by default. Access this property or call `load("neutrals")` explicitl
 | `team_num` | `int` | The neutral's team |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
-| `x` | `float` | X position |
-| `y` | `float` | Y position |
-| `z` | `float` | Z position |
+| `x` | `float` | X position in world (Hammer) units |
+| `y` | `float` | Y position in world (Hammer) units |
+| `z` | `float` | Z position in world (Hammer) units |
 | `entity_id` | `int` | Entity index (stable per neutral across ticks) |
 
 ---
@@ -700,9 +700,9 @@ Not loaded by default. Access this property or call `load("urn")` explicitly.
 | `event` | `str` | `"picked_up"`, `"dropped"`, `"returned"`, `"delivery_active"`, or `"delivery_inactive"` |
 | `hero_id` | `int` | The hero involved (0 for delivery events) |
 | `team_num` | `int` | Team of the delivery point (0 for modifier events) |
-| `x` | `float` | Delivery point X position (0.0 for modifier events) |
-| `y` | `float` | Delivery point Y position (0.0 for modifier events) |
-| `z` | `float` | Delivery point Z position (0.0 for modifier events) |
+| `x` | `float` | Delivery point or pawn X position in world (Hammer) units |
+| `y` | `float` | Delivery point or pawn Y position in world (Hammer) units |
+| `z` | `float` | Delivery point or pawn Z position in world (Hammer) units |
 
 ---
 
