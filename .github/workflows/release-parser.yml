@@ -36,6 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: crates
     permissions:
+      contents: read
       id-token: write
     steps:
       - name: Checkout
