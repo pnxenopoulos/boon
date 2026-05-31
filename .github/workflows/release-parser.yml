@@ -42,6 +42,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
       - name: Parse version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#boon-v}" >> "$GITHUB_OUTPUT"
@@ -64,6 +67,8 @@ jobs:
 
       - name: Publish boon-proto
         run: cargo publish -p boon-proto --registry crates-io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
 
       - name: Wait for crates.io index propagation
         run: sleep 30
