@@ -1,5 +1,11 @@
 # 📝 Changelog
 
+## Unreleased
+
+### boon-python
+
+- **Fixed:** the `max_health` column on `player_ticks` reported the pawn's `m_iMaxHealth`, a base/stale value that current health exceeds in over half of all ticks (e.g. health `817` against a reported max of `780`). It now reads the controller's `m_PlayerDataGlobal.m_iHealthMax` — the live effective maximum, which already folds in level growth, items, and buffs — and falls back to the pawn's value only when the controller isn't populated yet. The `health` column (the pawn's live `m_iHealth`) is unchanged.
+
 ## 0.2.0
 
 ### boon-python

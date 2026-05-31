@@ -220,6 +220,41 @@ class TestPlayersAndTeams:
 
 
 # ===================================================================
+# Health invariants
+# ===================================================================
+
+
+class TestHealthInvariants:
+    """Tests for player health sanity across all ticks."""
+
+    # A player's current health can momentarily read above max_health — e.g. a
+    # transient overheal effect, or health and max_health being networked on
+    # different ticks so a snapshot catches them mid-update. It is real but
+    # rare, so we cap the share of offending (player, tick) rows rather than
+    # forbidding it outright. Observed across fixtures: ~0.01%-0.13%, so 1%
+    # leaves comfortable headroom while still catching a regression.
+    MAX_OVERHEALTH_RATE = 0.01
+
+    def test_health_rarely_exceeds_max(self, demo: Demo) -> None:
+        ticks = demo.player_ticks
+
+        # Only rows with a known, positive max_health carry a meaningful bound;
+        # max_health == 0 is an un-networked / dead-state artifact, not a cap a
+        # player could exceed.
+        valid = ticks.filter(pl.col("max_health") > 0)
+        assert len(valid) > 0, "no player ticks with a positive max_health"
+
+        over = valid.filter(pl.col("health") > pl.col("max_health"))
+        rate = len(over) / len(valid)
+
+        assert rate <= self.MAX_OVERHEALTH_RATE, (
+            f"{rate:.2%} of player ticks have health > max_health "
+            f"({len(over)}/{len(valid)}), exceeding the "
+            f"{self.MAX_OVERHEALTH_RATE:.0%} tolerance"
+        )
+
+
+# ===================================================================
 # Name lookups
 # ===================================================================
 

@@ -1245,6 +1245,7 @@ impl Demo {
         let mut ck_rejuvenator: Option<u64> = None;
         let mut ck_ultimate: Option<u64> = None;
         let mut ck_health_regen: Option<u64> = None;
+        let mut ck_health_max: Option<u64> = None;
         let mut ck_ult_cd_end: Option<u64> = None;
         let mut ck_ult_cd_start: Option<u64> = None;
         let mut ck_ap_nw: Option<u64> = None;
@@ -1417,6 +1418,12 @@ impl Demo {
                                 s.resolve_field_key("m_PlayerDataGlobal.m_bUltimateTrained");
                             ck_health_regen =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_flHealthRegen");
+                            // Effective max health. The pawn's m_iMaxHealth is a
+                            // base/stale value that current health routinely
+                            // exceeds; the controller's m_iHealthMax is the live
+                            // total (level + items + buffs).
+                            ck_health_max =
+                                s.resolve_field_key("m_PlayerDataGlobal.m_iHealthMax");
                             ck_ult_cd_end = s
                                 .resolve_field_key("m_PlayerDataGlobal.m_flUltimateCooldownEnd");
                             ck_ult_cd_start = s.resolve_field_key(
@@ -1670,7 +1677,14 @@ impl Demo {
                         pt_last_spawn_time.push(pawn.get_f32(pk_last_spawn));
                         pt_respawn_time.push(pawn.get_f32(pk_respawn));
                         pt_health.push(pawn.get_i64(pk_health));
-                        pt_max_health.push(pawn.get_i64(pk_max_health));
+                        // Prefer the controller's effective max; fall back to the
+                        // pawn's base max when the controller isn't populated yet.
+                        let eff_max_health = ctrl.get_i64(ck_health_max);
+                        pt_max_health.push(if eff_max_health > 0 {
+                            eff_max_health
+                        } else {
+                            pawn.get_i64(pk_max_health)
+                        });
                         pt_lifestate.push(pawn.get_i64(pk_lifestate));
                         pt_souls.push(pawn.get_i64(pk_souls));
                         pt_spent_souls.push(pawn.get_i64(pk_spent_souls));
