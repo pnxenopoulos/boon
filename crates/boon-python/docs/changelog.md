@@ -9,11 +9,13 @@
 - `patron_phase_names()` module-level function returning `dict[int, str]` of patron phase ID to name (`0=normal`, `1=final`, `2=shields_down`) for the `phase` column on patron objective rows.
 - **Fixed:** the `start_lane` / `lane` column docs previously claimed `1=left, 4=center, 6=right`, which is wrong — the values are `CMsgLaneColor` color IDs and `3=green` was also missing. Docs now correctly read `1=yellow, 3=green, 4=blue, 6=purple, 0=none`.
 - **Fixed:** `player_ticks` dropped most players, often leaving only one hero. Player controllers link to their pawn through a `CHandle` whose entity index is the low 14 bits; the index was masked with `0x7FFF` (15 bits) instead of `0x3FFF`, so any handle with an odd serial resolved to the wrong entity and that player was silently skipped. The mask is now `0x3FFF`, and `player_ticks` again covers every player on the roster.
+- **Fixed:** the `x` / `y` / `z` columns on `player_ticks`, `objectives`, `troopers`, `neutrals`, and `urn` previously emitted only the in-cell offset half of Source 2's split position storage — values bounded to `[0, 512)` that reset to `0` every time the entity crossed a cell boundary, producing a sawtooth instead of a trajectory. They now emit full world (Hammer-unit) positions, combining the networked `m_cellX/Y/Z` cell index with the `m_vecOrigin.m_vec{X,Y,Z}` offset via the new `boon::position::cell_to_world` helper. No display-side scaling is applied; downstream plotters supply their own map projection.
 
 ### boon-cli
 
 - `summary` command for post-match details: a match overview, a timing section (total ticks/time and tick rate from the recording, the game-over tick, and the regulation/gameplay duration), each player's final snapshot (with the scoreboard last-hit total), and an objectives table mirroring the Python `summary()` `objectives` frame. `--json` dumps the full decoded metadata.
 - Name resolution reflects the refreshed ability and modifier name tables from the latest Deadlock build.
+- **Fixed:** the `neutrals` and `troopers` commands' `x` / `y` / `z` columns now report full world coordinates (Hammer units) instead of just the in-cell offset half of Source 2's split position storage — see the matching Python fix above.
 
 ### boon-proto
 

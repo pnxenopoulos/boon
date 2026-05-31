@@ -47,20 +47,31 @@ fn main() {
         let max_health = entity.get_by_name("m_iMaxHealth", ser);
         let team = entity.get_by_name("m_iTeamNum", ser);
 
-        // Position via CBodyComponent
-        let x = entity.get_by_name("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX", ser);
-        let y = entity.get_by_name("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY", ser);
-        let z = entity.get_by_name("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ", ser);
+        // Position via CBodyComponent. Source 2 splits position into a cell
+        // index (m_cellX/Y/Z) and an in-cell offset (m_vecOrigin.m_vec{X,Y,Z});
+        // combine them with `Entity::world_position` to get Hammer-unit world
+        // coordinates.
+        let cell_keys = [
+            ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX"),
+            ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY"),
+            ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ"),
+        ];
+        let offset_keys = [
+            ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
+            ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
+            ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ"),
+        ];
+        let [x, y, z] = entity.world_position(cell_keys, offset_keys);
 
         println!(
-            "  Entity #{:<5} team={:<4} health={}/{}  pos=({}, {}, {})",
+            "  Entity #{:<5} team={:<4} health={}/{}  pos=({:.1}, {:.1}, {:.1})",
             idx,
             team.map_or("-".into(), |v| format!("{:?}", v)),
             health.map_or("-".into(), |v| format!("{:?}", v)),
             max_health.map_or("-".into(), |v| format!("{:?}", v)),
-            x.map_or("-".into(), |v| format!("{:.1}", v)),
-            y.map_or("-".into(), |v| format!("{:.1}", v)),
-            z.map_or("-".into(), |v| format!("{:.1}", v)),
+            x,
+            y,
+            z,
         );
 
         // Show first ability slot as an example of ability_name() lookup

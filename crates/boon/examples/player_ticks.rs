@@ -23,6 +23,9 @@ fn main() {
     let mut nk_vec_x: Option<u64> = None;
     let mut nk_vec_y: Option<u64> = None;
     let mut nk_vec_z: Option<u64> = None;
+    let mut nk_cell_x: Option<u64> = None;
+    let mut nk_cell_y: Option<u64> = None;
+    let mut nk_cell_z: Option<u64> = None;
 
     parser
         .run_to_end_filtered(&filter, |ctx| {
@@ -36,6 +39,12 @@ fn main() {
                         s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
                     nk_vec_z =
                         s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
+                    nk_cell_x = s
+                        .resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX");
+                    nk_cell_y = s
+                        .resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY");
+                    nk_cell_z = s
+                        .resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ");
                 }
                 keys_resolved = true;
             }
@@ -51,23 +60,18 @@ fn main() {
                     .and_then(|k| entity.fields.get(&k))
                     .map(|v| format!("{:?}", v))
                     .unwrap_or_else(|| "-".into());
-                let x = nk_vec_x
-                    .and_then(|k| entity.fields.get(&k))
-                    .map(|v| format!("{:.1}", v))
-                    .unwrap_or_else(|| "-".into());
-                let y = nk_vec_y
-                    .and_then(|k| entity.fields.get(&k))
-                    .map(|v| format!("{:.1}", v))
-                    .unwrap_or_else(|| "-".into());
-                let z = nk_vec_z
-                    .and_then(|k| entity.fields.get(&k))
-                    .map(|v| format!("{:.1}", v))
-                    .unwrap_or_else(|| "-".into());
+                // Combine the networked cell + in-cell offset into world coords
+                // (Hammer units). Reading the offset alone gives a sawtooth that
+                // resets every CELL_SIZE; see `boon::position` for the math.
+                let [x, y, z] = entity.world_position(
+                    [nk_cell_x, nk_cell_y, nk_cell_z],
+                    [nk_vec_x, nk_vec_y, nk_vec_z],
+                );
 
                 // Print first 20 ticks of data, then just count
                 if total_ticks <= 20 {
                     println!(
-                        "[tick {:>6}] pawn #{:<5} health={:<6} pos=({}, {}, {})",
+                        "[tick {:>6}] pawn #{:<5} health={:<6} pos=({:.1}, {:.1}, {:.1})",
                         ctx.tick, entity.index, health, x, y, z,
                     );
                 }

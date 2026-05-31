@@ -61,6 +61,7 @@ pub mod heroes;
 pub mod io;
 pub mod modifiers;
 pub mod patron_phases;
+pub mod position;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
@@ -78,4 +79,5 @@ pub use game_modes::{all_game_modes, game_mode_name};
 pub use heroes::{all_heroes, hero_name};
 pub use modifiers::{all_modifiers, modifier_name};
 pub use patron_phases::{all_patron_phases, patron_phase_name};
+pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
 pub use teams::{all_teams, team_name};
