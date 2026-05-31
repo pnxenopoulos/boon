@@ -35,6 +35,8 @@ jobs:
     needs: ci-gate
     runs-on: ubuntu-latest
     environment: crates
+    permissions:
+      id-token: write
     steps:
       - name: Checkout
         uses: actions/checkout@v6
