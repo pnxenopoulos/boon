@@ -1213,6 +1213,9 @@ impl Demo {
         let mut pk_vec_x: Option<u64> = None;
         let mut pk_vec_y: Option<u64> = None;
         let mut pk_vec_z: Option<u64> = None;
+        let mut pk_cell_x: Option<u64> = None;
+        let mut pk_cell_y: Option<u64> = None;
+        let mut pk_cell_z: Option<u64> = None;
         let mut pk_camera: Option<u64> = None;
         let mut pk_in_regen: Option<u64> = None;
         let mut pk_death_time: Option<u64> = None;
@@ -1272,12 +1275,18 @@ impl Demo {
         let mut nk_vec_x: Option<u64> = None;
         let mut nk_vec_y: Option<u64> = None;
         let mut nk_vec_z: Option<u64> = None;
+        let mut nk_cell_x: Option<u64> = None;
+        let mut nk_cell_y: Option<u64> = None;
+        let mut nk_cell_z: Option<u64> = None;
         // Shrine (CCitadel_Destroyable_Building) has different field keys
         let mut shrine_health: Option<u64> = None;
         let mut shrine_max_health: Option<u64> = None;
         let mut shrine_vec_x: Option<u64> = None;
         let mut shrine_vec_y: Option<u64> = None;
         let mut shrine_vec_z: Option<u64> = None;
+        let mut shrine_cell_x: Option<u64> = None;
+        let mut shrine_cell_y: Option<u64> = None;
+        let mut shrine_cell_z: Option<u64> = None;
         let mut shrine_team_num: Option<u64> = None;
 
         // Trooper NPC keys (lane troopers)
@@ -1289,6 +1298,9 @@ impl Demo {
         let mut tk_vec_x: Option<u64> = None;
         let mut tk_vec_y: Option<u64> = None;
         let mut tk_vec_z: Option<u64> = None;
+        let mut tk_cell_x: Option<u64> = None;
+        let mut tk_cell_y: Option<u64> = None;
+        let mut tk_cell_z: Option<u64> = None;
 
         // Neutral NPC keys
         let mut ntk_health: Option<u64> = None;
@@ -1298,6 +1310,9 @@ impl Demo {
         let mut ntk_vec_x: Option<u64> = None;
         let mut ntk_vec_y: Option<u64> = None;
         let mut ntk_vec_z: Option<u64> = None;
+        let mut ntk_cell_x: Option<u64> = None;
+        let mut ntk_cell_y: Option<u64> = None;
+        let mut ntk_cell_z: Option<u64> = None;
 
         // StatViewerModifierValues keys for indices 0..20: (modifier_id, val_type, value)
         let mut smk_keys: Vec<(Option<u64>, Option<u64>, Option<u64>)> = Vec::new();
@@ -1312,6 +1327,9 @@ impl Demo {
         let mut urnk_vec_x: Option<u64> = None;
         let mut urnk_vec_y: Option<u64> = None;
         let mut urnk_vec_z: Option<u64> = None;
+        let mut urnk_cell_x: Option<u64> = None;
+        let mut urnk_cell_y: Option<u64> = None;
+        let mut urnk_cell_z: Option<u64> = None;
 
         // Street brawl keys
         let mut sbk_round: Option<u64> = None;
@@ -1344,6 +1362,15 @@ impl Demo {
                                 );
                                 pk_vec_z = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                                );
+                                pk_cell_x = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
+                                );
+                                pk_cell_y = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
+                                );
+                                pk_cell_z = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
                                 );
                                 pk_camera = s.resolve_field_key("m_angClientCamera");
                                 pk_in_regen = s.resolve_field_key("m_bInRegenerationZone");
@@ -1474,6 +1501,9 @@ impl Demo {
                                 nk_vec_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
                                 nk_vec_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
                                 nk_vec_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
+                                nk_cell_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX");
+                                nk_cell_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY");
+                                nk_cell_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ");
                                 break;
                             }
                         }
@@ -1489,6 +1519,9 @@ impl Demo {
                             shrine_vec_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
                             shrine_vec_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
                             shrine_vec_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
+                            shrine_cell_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX");
+                            shrine_cell_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY");
+                            shrine_cell_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ");
                         }
                     }
                     if load_troopers {
@@ -1507,6 +1540,15 @@ impl Demo {
                                 );
                                 tk_vec_z = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                                );
+                                tk_cell_x = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
+                                );
+                                tk_cell_y = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
+                                );
+                                tk_cell_z = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
                                 );
                                 break;
                             }
@@ -1527,6 +1569,15 @@ impl Demo {
                                 );
                                 ntk_vec_z = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                                );
+                                ntk_cell_x = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
+                                );
+                                ntk_cell_y = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
+                                );
+                                ntk_cell_z = s.resolve_field_key(
+                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
                                 );
                                 break;
                             }
@@ -1552,6 +1603,15 @@ impl Demo {
                             );
                             urnk_vec_z = s.resolve_field_key(
                                 "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                            );
+                            urnk_cell_x = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
+                            );
+                            urnk_cell_y = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
+                            );
+                            urnk_cell_z = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
                             );
                         }
                     }
@@ -1594,9 +1654,13 @@ impl Demo {
 
                         pt_tick.push($ctx.tick);
                         pt_hero_id.push(hid);
-                        pt_x.push(pawn.get_f32(pk_vec_x));
-                        pt_y.push(pawn.get_f32(pk_vec_y));
-                        pt_z.push(pawn.get_f32(pk_vec_z));
+                        let [pawn_x, pawn_y, pawn_z] = pawn.world_position(
+                            [pk_cell_x, pk_cell_y, pk_cell_z],
+                            [pk_vec_x, pk_vec_y, pk_vec_z],
+                        );
+                        pt_x.push(pawn_x);
+                        pt_y.push(pawn_y);
+                        pt_z.push(pawn_z);
                         let angles = pawn.get_qangle(pk_camera);
                         pt_pitch.push(angles[0]);
                         pt_yaw.push(angles[1]);
@@ -1746,12 +1810,12 @@ impl Demo {
                     for (&idx, entity) in $ctx.entities.iter() {
                         let obj_class = entity.class_name.as_str();
                         let is_patron = obj_class == "CNPC_Boss_Tier3";
-                        let (otype, hp_key, max_hp_key, team_key, lane_key, vx_key, vy_key, vz_key) = match obj_class {
-                            "CNPC_Boss_Tier2" => ("walker", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
-                            "CNPC_Boss_Tier3" => ("patron", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
-                            "CNPC_BarrackBoss" => ("barracks", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
-                            "CNPC_MidBoss" => ("mid_boss", nk_health, nk_max_health, nk_team_num, nk_lane, nk_vec_x, nk_vec_y, nk_vec_z),
-                            "CCitadel_Destroyable_Building" => ("shrine", shrine_health, shrine_max_health, shrine_team_num, None, shrine_vec_x, shrine_vec_y, shrine_vec_z),
+                        let (otype, hp_key, max_hp_key, team_key, lane_key, cell_keys, offset_keys) = match obj_class {
+                            "CNPC_Boss_Tier2" => ("walker", nk_health, nk_max_health, nk_team_num, nk_lane, [nk_cell_x, nk_cell_y, nk_cell_z], [nk_vec_x, nk_vec_y, nk_vec_z]),
+                            "CNPC_Boss_Tier3" => ("patron", nk_health, nk_max_health, nk_team_num, nk_lane, [nk_cell_x, nk_cell_y, nk_cell_z], [nk_vec_x, nk_vec_y, nk_vec_z]),
+                            "CNPC_BarrackBoss" => ("barracks", nk_health, nk_max_health, nk_team_num, nk_lane, [nk_cell_x, nk_cell_y, nk_cell_z], [nk_vec_x, nk_vec_y, nk_vec_z]),
+                            "CNPC_MidBoss" => ("mid_boss", nk_health, nk_max_health, nk_team_num, nk_lane, [nk_cell_x, nk_cell_y, nk_cell_z], [nk_vec_x, nk_vec_y, nk_vec_z]),
+                            "CCitadel_Destroyable_Building" => ("shrine", shrine_health, shrine_max_health, shrine_team_num, None, [shrine_cell_x, shrine_cell_y, shrine_cell_z], [shrine_vec_x, shrine_vec_y, shrine_vec_z]),
                             _ => continue,
                         };
                         let max_hp = entity.get_i64(max_hp_key);
@@ -1774,9 +1838,10 @@ impl Demo {
                             obj_health.push(hp);
                             obj_max_health.push(max_hp);
                             obj_phase.push(phase);
-                            obj_x.push(entity.get_f32(vx_key));
-                            obj_y.push(entity.get_f32(vy_key));
-                            obj_z.push(entity.get_f32(vz_key));
+                            let [ox, oy, oz] = entity.world_position(cell_keys, offset_keys);
+                            obj_x.push(ox);
+                            obj_y.push(oy);
+                            obj_z.push(oz);
                             obj_entity_id.push(idx);
                         }
 
@@ -1805,9 +1870,13 @@ impl Demo {
                         tr_lane.push(entity.get_i64(tk_lane));
                         tr_health.push(entity.get_i64(tk_health));
                         tr_max_health.push(max_hp);
-                        tr_x.push(entity.get_f32(tk_vec_x));
-                        tr_y.push(entity.get_f32(tk_vec_y));
-                        tr_z.push(entity.get_f32(tk_vec_z));
+                        let [trx, try_, trz] = entity.world_position(
+                            [tk_cell_x, tk_cell_y, tk_cell_z],
+                            [tk_vec_x, tk_vec_y, tk_vec_z],
+                        );
+                        tr_x.push(trx);
+                        tr_y.push(try_);
+                        tr_z.push(trz);
                         tr_entity_id.push(idx);
                     }
                 }
@@ -1998,13 +2067,20 @@ impl Demo {
                                         let pawn = entity_to_hero.iter()
                                             .find(|(_, hid)| **hid == hero_id)
                                             .and_then(|(idx, _)| $ctx.entities.get(*idx));
+                                        let [drop_x, drop_y, drop_z] = pawn.map_or(
+                                            [0.0, 0.0, 0.0],
+                                            |e| e.world_position(
+                                                [pk_cell_x, pk_cell_y, pk_cell_z],
+                                                [pk_vec_x, pk_vec_y, pk_vec_z],
+                                            ),
+                                        );
                                         urn_tick.push($ctx.tick);
                                         urn_event.push("dropped".to_string());
                                         urn_hero_id.push(hero_id);
                                         urn_team_num.push(0);
-                                        urn_x.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_x)));
-                                        urn_y.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_y)));
-                                        urn_z.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_z)));
+                                        urn_x.push(drop_x);
+                                        urn_y.push(drop_y);
+                                        urn_z.push(drop_z);
                                     }
                                 }
                                 urn_return_seen.remove(&serial);
@@ -2032,9 +2108,13 @@ impl Demo {
 
                             // Look up pawn position for hero events
                             let pawn = $ctx.entities.get(parent_idx);
-                            let hero_x = pawn.map_or(0.0, |e| e.get_f32(pk_vec_x));
-                            let hero_y = pawn.map_or(0.0, |e| e.get_f32(pk_vec_y));
-                            let hero_z = pawn.map_or(0.0, |e| e.get_f32(pk_vec_z));
+                            let [hero_x, hero_y, hero_z] = pawn.map_or(
+                                [0.0, 0.0, 0.0],
+                                |e| e.world_position(
+                                    [pk_cell_x, pk_cell_y, pk_cell_z],
+                                    [pk_vec_x, pk_vec_y, pk_vec_z],
+                                ),
+                            );
 
                             current_urn_serials.insert(serial);
 
@@ -2090,13 +2170,20 @@ impl Demo {
                                     let pawn = entity_to_hero.iter()
                                         .find(|(_, hid)| **hid == hero_id)
                                         .and_then(|(idx, _)| $ctx.entities.get(*idx));
+                                    let [drop_x, drop_y, drop_z] = pawn.map_or(
+                                        [0.0, 0.0, 0.0],
+                                        |e| e.world_position(
+                                            [pk_cell_x, pk_cell_y, pk_cell_z],
+                                            [pk_vec_x, pk_vec_y, pk_vec_z],
+                                        ),
+                                    );
                                     urn_tick.push($ctx.tick);
                                     urn_event.push("dropped".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
-                                    urn_x.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_x)));
-                                    urn_y.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_y)));
-                                    urn_z.push(pawn.map_or(0.0, |e| e.get_f32(pk_vec_z)));
+                                    urn_x.push(drop_x);
+                                    urn_y.push(drop_y);
+                                    urn_z.push(drop_z);
                                 }
                             }
                         }
@@ -2122,14 +2209,18 @@ impl Demo {
                         };
                         if changed {
                             urn_trigger_prev.insert(idx, cur);
+                            let [trig_x, trig_y, trig_z] = entity.world_position(
+                                [urnk_cell_x, urnk_cell_y, urnk_cell_z],
+                                [urnk_vec_x, urnk_vec_y, urnk_vec_z],
+                            );
                             if !disabled && team != 0 {
                                 urn_tick.push($ctx.tick);
                                 urn_event.push("delivery_active".to_string());
                                 urn_hero_id.push(0);
                                 urn_team_num.push(team);
-                                urn_x.push(entity.get_f32(urnk_vec_x));
-                                urn_y.push(entity.get_f32(urnk_vec_y));
-                                urn_z.push(entity.get_f32(urnk_vec_z));
+                                urn_x.push(trig_x);
+                                urn_y.push(trig_y);
+                                urn_z.push(trig_z);
                             } else if disabled {
                                 // Only emit inactive when transitioning from active
                                 if let Some((prev_disabled, _)) = prev {
@@ -2138,9 +2229,9 @@ impl Demo {
                                         urn_event.push("delivery_inactive".to_string());
                                         urn_hero_id.push(0);
                                         urn_team_num.push(team);
-                                        urn_x.push(entity.get_f32(urnk_vec_x));
-                                        urn_y.push(entity.get_f32(urnk_vec_y));
-                                        urn_z.push(entity.get_f32(urnk_vec_z));
+                                        urn_x.push(trig_x);
+                                        urn_y.push(trig_y);
+                                        urn_z.push(trig_z);
                                     }
                                 }
                             }
@@ -2160,9 +2251,10 @@ impl Demo {
                         }
                         let lifestate = entity.get_i64(ntk_lifestate);
                         let alive = lifestate == 0;
-                        let x = entity.get_f32(ntk_vec_x);
-                        let y = entity.get_f32(ntk_vec_y);
-                        let z = entity.get_f32(ntk_vec_z);
+                        let [x, y, z] = entity.world_position(
+                            [ntk_cell_x, ntk_cell_y, ntk_cell_z],
+                            [ntk_vec_x, ntk_vec_y, ntk_vec_z],
+                        );
                         let hp = entity.get_i64(ntk_health);
 
                         let cur = (alive, hp, max_hp, x.to_bits(), y.to_bits(), z.to_bits());

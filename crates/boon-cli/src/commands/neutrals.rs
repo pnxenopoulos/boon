@@ -55,6 +55,9 @@ pub fn run(
     let mut nk_vec_x: Option<u64> = None;
     let mut nk_vec_y: Option<u64> = None;
     let mut nk_vec_z: Option<u64> = None;
+    let mut nk_cell_x: Option<u64> = None;
+    let mut nk_cell_y: Option<u64> = None;
+    let mut nk_cell_z: Option<u64> = None;
 
     // Change detection: entity_index → (was_alive, last state)
     let mut prev_state: HashMap<i32, (bool, NeutralState)> = HashMap::new();
@@ -75,6 +78,12 @@ pub fn run(
                         s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY");
                     nk_vec_z =
                         s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ");
+                    nk_cell_x = s
+                        .resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX");
+                    nk_cell_y = s
+                        .resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY");
+                    nk_cell_z = s
+                        .resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ");
                 }
                 keys_resolved = true;
             }
@@ -92,9 +101,10 @@ pub fn run(
                 let lifestate = entity.get_i64(nk_lifestate);
                 let alive = lifestate == 0;
 
-                let x = entity.get_f32(nk_vec_x);
-                let y = entity.get_f32(nk_vec_y);
-                let z = entity.get_f32(nk_vec_z);
+                let [x, y, z] = entity.world_position(
+                    [nk_cell_x, nk_cell_y, nk_cell_z],
+                    [nk_vec_x, nk_vec_y, nk_vec_z],
+                );
 
                 let current = NeutralState {
                     health: entity.get_i64(nk_health),
