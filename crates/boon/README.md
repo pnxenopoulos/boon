@@ -28,7 +28,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon-deadlock = "0.1"
+boon-deadlock = "0.2"
 ```
 
 Requires Rust 1.88+ (edition 2024).

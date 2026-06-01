@@ -74,7 +74,7 @@ Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenop
 
 ```toml
 [dependencies]
-boon-deadlock = "0.1"
+boon-deadlock = "0.2"
 ```
 
 ## Quick Start
