@@ -553,7 +553,7 @@ class Demo:
 
         Not loaded by default. Access this property or call ``load("stat_modifier_events")`` explicitly.
 
-        Emits a row whenever a stat total changes (idol/breakable pickups).
+        Emits a row whenever a stat total changes (urn/breakable pickups).
 
         Columns:
             - **tick** (*int*) -- The game tick when the stat changed.
