@@ -370,15 +370,19 @@ class TestTickConversion:
 
 class TestUrn:
     def test_total_count(self, demo: Demo) -> None:
-        assert len(demo.urn) == 23
+        # 21 (was 23): the ActiveModifiers scan no longer re-fires events from
+        # stale entries each tick, removing two duplicate idol hero events.
+        assert len(demo.urn) == 21
 
     def test_event_types(self, demo: Demo) -> None:
         events = set(demo.urn["event"].to_list())
         assert events == {"delivery_active", "delivery_inactive", "dropped", "picked_up", "returned"}
 
     def test_hero_events_have_position(self, demo: Demo) -> None:
+        # 15 (was 17): balanced 6 picked_up / 6 dropped / 3 returned after the
+        # duplicate-event fix; the two removed rows were flicker duplicates.
         hero_events = demo.urn.filter(pl.col("hero_id") != 0)
-        assert len(hero_events) == 17
+        assert len(hero_events) == 15
         assert (hero_events["x"] != 0.0).all()
         assert (hero_events["y"] != 0.0).all()
 

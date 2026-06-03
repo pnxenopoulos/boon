@@ -1189,6 +1189,10 @@ impl Demo {
             stacks: i32,
         }
         let mut am_prev: HashMap<u32, CachedMod> = HashMap::new();
+        // ActiveModifiers entry index -> serial currently stored there. Lets us
+        // detect a removal when a slot is reused by a new modifier without an
+        // explicit `entry_type == 2` (replaces the old full-table rescan).
+        let mut am_idx_serial: HashMap<usize, u32> = HashMap::new();
 
         // Track idol modifiers for urn lifecycle
         const GOLDEN_IDOL_ABILITY: u32 = 2521299219;
@@ -1196,6 +1200,10 @@ impl Demo {
 
         // serial -> hero_id for golden_idol modifiers (carrying state)
         let mut urn_idol_serials: HashMap<u32, i64> = HashMap::new();
+        // ActiveModifiers entry index -> idol-relevant serial currently there
+        // (golden_idol or idol_return). Mirrors `am_idx_serial` for the urn pass
+        // so a slot being reused counts as the old idol modifier disappearing.
+        let mut urn_idx_serial: HashMap<usize, u32> = HashMap::new();
         // hero_id -> number of active golden_idol modifiers
         let mut urn_hero_count: HashMap<i64, i32> = HashMap::new();
         // serials for idol_return modifiers already emitted
@@ -1951,11 +1959,22 @@ impl Demo {
                 }
 
                 // ── Collect active_modifiers (string table change detection) ──
+                //
+                // The ActiveModifiers string table grows to >1000 entries and is
+                // delta-updated, so rescanning + re-decoding every entry each tick
+                // is the dominant cost of this dataset. Instead we decode only the
+                // entries the delta touched this tick (`dirty_indices`) and keep an
+                // index -> serial map. A removal shows up either as an explicit
+                // `entry_type == 2` or as a slot being reused by a new serial; both
+                // are changes to that index, so both are caught here. This is exact
+                // because the table never shrinks and indices are stable (a serial
+                // only leaves the table when its slot is rewritten).
                 if load_active_modifiers {
                     if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
-                        let mut current_serials: std::collections::HashSet<u32> = std::collections::HashSet::new();
-
-                        for entry in &table.entries {
+                        for &idx in table.dirty_indices() {
+                            let Some(entry) = table.entries.get(idx) else {
+                                continue;
+                            };
                             let data = match &entry.user_data {
                                 Some(d) if !d.is_empty() => d,
                                 _ => continue,
@@ -1969,19 +1988,26 @@ impl Demo {
 
                             let Some(serial) = modifier.serial_number else { continue };
 
-                            let Some(parent_idx) =
-                                boon_parser::protobuf_handle_index(modifier.parent)
-                            else {
-                                continue;
-                            };
-
-                            let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
-                                continue;
-                            };
+                            // Slot reused by a different serial => the old modifier
+                            // was removed without an explicit entry_type == 2.
+                            if let Some(old_serial) = am_idx_serial.get(&idx).copied()
+                                && old_serial != serial
+                                && let Some(cached) = am_prev.remove(&old_serial)
+                            {
+                                am_tick.push($ctx.tick);
+                                am_hero_id.push(cached.hero_id);
+                                am_event.push("removed".to_string());
+                                am_modifier_id.push(cached.modifier_id);
+                                am_ability_id.push(cached.ability_id);
+                                am_duration.push(cached.duration);
+                                am_caster_hero_id.push(cached.caster_hero_id);
+                                am_stacks.push(cached.stacks);
+                            }
 
                             let mod_entry_type = modifier.entry_type.unwrap_or(1);
 
                             if mod_entry_type == 2 {
+                                am_idx_serial.remove(&idx);
                                 if let Some(cached) = am_prev.remove(&serial) {
                                     am_tick.push($ctx.tick);
                                     am_hero_id.push(cached.hero_id);
@@ -1995,7 +2021,17 @@ impl Demo {
                                 continue;
                             }
 
-                            current_serials.insert(serial);
+                            am_idx_serial.insert(idx, serial);
+
+                            let Some(parent_idx) =
+                                boon_parser::protobuf_handle_index(modifier.parent)
+                            else {
+                                continue;
+                            };
+
+                            let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
+                                continue;
+                            };
 
                             if let std::collections::hash_map::Entry::Vacant(e) = am_prev.entry(serial) {
                                 let mod_id = modifier.modifier_subclass.unwrap_or(0);
@@ -2026,35 +2062,33 @@ impl Demo {
                                 });
                             }
                         }
-
-                        // Detect removed: serials in prev but not in current
-                        let removed: Vec<u32> = am_prev
-                            .keys()
-                            .filter(|s| !current_serials.contains(s))
-                            .copied()
-                            .collect();
-                        for serial in removed {
-                            if let Some(cached) = am_prev.remove(&serial) {
-                                am_tick.push($ctx.tick);
-                                am_hero_id.push(cached.hero_id);
-                                am_event.push("removed".to_string());
-                                am_modifier_id.push(cached.modifier_id);
-                                am_ability_id.push(cached.ability_id);
-                                am_duration.push(cached.duration);
-                                am_caster_hero_id.push(cached.caster_hero_id);
-                                am_stacks.push(cached.stacks);
-                            }
-                        }
                     }
                 }
 
                 // ── Collect urn (idol lifecycle tracking) ──
+                //
+                // Same change-only strategy as active_modifiers: walk just the
+                // entries the delta touched, keeping `urn_idx_serial` (entry index
+                // -> idol serial there). A golden idol "drops" when its slot is
+                // explicitly removed (entry_type == 2) or reused by another serial.
+                // The pickup/drop counters are order-sensitive, so we process
+                // touched indices in ascending index order — mirroring the previous
+                // full scan — and defer slot-reuse drops to a post-pass, mirroring
+                // the previous post-loop so per-tick ordering is unchanged.
                 if load_urn {
                     if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
-                        let mut current_urn_serials: std::collections::HashSet<u32> =
-                            std::collections::HashSet::new();
+                        let mut dirty: Vec<usize> = table.dirty_indices().to_vec();
+                        dirty.sort_unstable();
+                        dirty.dedup();
 
-                        for entry in &table.entries {
+                        // Golden serials whose slot was reused this tick; dropped
+                        // after the main pass (matches the old post-loop ordering).
+                        let mut urn_overwrite_gone: Vec<u32> = Vec::new();
+
+                        for &idx in &dirty {
+                            let Some(entry) = table.entries.get(idx) else {
+                                continue;
+                            };
                             let data = match &entry.user_data {
                                 Some(d) if !d.is_empty() => d,
                                 _ => continue,
@@ -2069,6 +2103,19 @@ impl Demo {
                             let Some(serial) = modifier.serial_number else { continue };
 
                             let mod_entry_type = modifier.entry_type.unwrap_or(1);
+
+                            // The idol serial previously stored at this slot leaving:
+                            // explicit removal (handled inline below) or slot reuse
+                            // (deferred to the post-pass).
+                            if let Some(old_serial) = urn_idx_serial.get(&idx).copied() {
+                                if old_serial != serial {
+                                    urn_idx_serial.remove(&idx);
+                                    urn_overwrite_gone.push(old_serial);
+                                    urn_return_seen.remove(&old_serial);
+                                } else if mod_entry_type == 2 {
+                                    urn_idx_serial.remove(&idx);
+                                }
+                            }
 
                             // Handle explicit removal (entry_type == 2)
                             if mod_entry_type == 2 {
@@ -2107,6 +2154,7 @@ impl Demo {
                             let is_idol_return = mod_id == IDOL_RETURN;
 
                             if !is_golden_idol && !is_idol_return {
+                                urn_idx_serial.remove(&idx);
                                 continue;
                             }
 
@@ -2130,7 +2178,7 @@ impl Demo {
                                 ),
                             );
 
-                            current_urn_serials.insert(serial);
+                            urn_idx_serial.insert(idx, serial);
 
                             if is_golden_idol
                                 && !urn_idol_serials.contains_key(&serial)
@@ -2168,13 +2216,8 @@ impl Demo {
                             }
                         }
 
-                        // Detect disappeared golden_idol modifiers
-                        let removed: Vec<u32> = urn_idol_serials
-                            .keys()
-                            .filter(|s| !current_urn_serials.contains(s))
-                            .copied()
-                            .collect();
-                        for serial in removed {
+                        // Slot-reuse drops (mirrors the previous post-loop).
+                        for serial in urn_overwrite_gone {
                             if let Some(hero_id) = urn_idol_serials.remove(&serial) {
                                 let count =
                                     urn_hero_count.entry(hero_id).or_insert(0);
@@ -2201,9 +2244,6 @@ impl Demo {
                                 }
                             }
                         }
-                        // Clean up disappeared return serials
-                        urn_return_seen
-                            .retain(|s| current_urn_serials.contains(s));
                     }
                 }
 

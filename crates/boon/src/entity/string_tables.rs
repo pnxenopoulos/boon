@@ -41,6 +41,12 @@ pub struct StringTable {
     flags: i32,
     using_varint_bitcounts: bool,
     pub entries: Vec<StringTableEntry>,
+    /// Entry indices written since the last [`StringTableContainer::clear_dirty`]
+    /// (i.e. since the previous per-tick callback). Lets consumers decode only
+    /// what changed this tick instead of rescanning the whole table — see
+    /// [`StringTable::dirty_indices`]. May contain duplicates if an index is
+    /// touched more than once between callbacks.
+    dirty: Vec<usize>,
 }
 
 impl StringTable {
@@ -60,7 +66,18 @@ impl StringTable {
             flags,
             using_varint_bitcounts,
             entries: Vec::new(),
+            dirty: Vec::new(),
         }
+    }
+
+    /// Entry indices written since the last per-tick callback.
+    ///
+    /// A consumer that maintains its own per-index state can react to only
+    /// these entries rather than iterating (and decoding) every entry every
+    /// tick. The list is cleared by the parser after each callback via
+    /// [`StringTableContainer::clear_dirty`]. Indices may repeat.
+    pub fn dirty_indices(&self) -> &[usize] {
+        &self.dirty
     }
 
     /// Parse a string table update from a bit reader.
@@ -169,6 +186,7 @@ impl StringTable {
                 }
                 self.entries.push(StringTableEntry { string, user_data });
             }
+            self.dirty.push(idx);
         }
 
         Ok(())
@@ -254,6 +272,7 @@ impl StringTableContainer {
                     if i < table.entries.len() {
                         if entry.user_data.is_some() {
                             table.entries[i].user_data = entry.user_data;
+                            table.dirty.push(i);
                         }
                     } else {
                         while table.entries.len() < i {
@@ -263,9 +282,21 @@ impl StringTableContainer {
                             });
                         }
                         table.entries.push(entry);
+                        table.dirty.push(i);
                     }
                 }
             }
+        }
+    }
+
+    /// Clear every table's dirty-index list.
+    ///
+    /// The parser calls this after each per-tick callback so that
+    /// [`StringTable::dirty_indices`] reflects only the entries written since
+    /// the previous callback.
+    pub fn clear_dirty(&mut self) {
+        for table in &mut self.tables {
+            table.dirty.clear();
         }
     }
 
