@@ -54,9 +54,11 @@ pub fn run(
     let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
     let mut entity_to_hero_built = false;
 
-    // Track active modifiers by serial_number
+    // Track active modifiers by serial_number, plus the serial currently stored
+    // at each ActiveModifiers entry index — so a slot reused by a new modifier
+    // (a removal without an explicit entry_type == 2) is detected.
     let mut prev_modifiers: HashMap<u32, CachedModifier> = HashMap::new();
-    let mut current_serials: HashSet<u32> = HashSet::new();
+    let mut idx_serial: HashMap<usize, u32> = HashMap::new();
     let mut events_out: Vec<ActiveModifierOutput> = Vec::new();
 
     parser
@@ -82,11 +84,19 @@ pub fn run(
                 }
             }
 
-            // Scan ActiveModifiers string table
+            // Scan only the ActiveModifiers entries this tick's delta touched.
+            // The table grows past 1000 entries and is delta-updated, so a full
+            // rescan + re-decode every tick re-fired the same applied/removed
+            // pair for stale entries indefinitely (the table never shrinks, and
+            // a removed modifier leaves both its original entry and a separate
+            // entry_type == 2 entry behind). Processing only changed indices,
+            // with an index -> serial map to catch slot reuse, reports each
+            // modifier exactly once applied and once removed.
             if let Some(table) = ctx.string_tables.find_table("ActiveModifiers") {
-                current_serials.clear();
-
-                for entry in &table.entries {
+                for &idx in table.dirty_indices() {
+                    let Some(entry) = table.entries.get(idx) else {
+                        continue;
+                    };
                     let data = match &entry.user_data {
                         Some(d) if !d.is_empty() => d,
                         _ => continue,
@@ -102,19 +112,29 @@ pub fn run(
                         continue;
                     };
 
-                    let Some(parent_idx) = boon::protobuf_handle_index(modifier.parent) else {
-                        continue;
-                    };
-
-                    // Only track modifiers on player pawns
-                    let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
-                        continue;
-                    };
+                    // Slot reused by a different serial => the old modifier was
+                    // removed without an explicit entry_type == 2.
+                    if let Some(old_serial) = idx_serial.get(&idx).copied()
+                        && old_serial != serial
+                        && let Some(cached) = prev_modifiers.remove(&old_serial)
+                    {
+                        events_out.push(ActiveModifierOutput {
+                            tick: ctx.tick,
+                            hero_id: cached.hero_id,
+                            event: "removed".to_string(),
+                            modifier: cached.modifier,
+                            ability: cached.ability,
+                            duration: cached.duration,
+                            caster_hero_id: cached.caster_hero_id,
+                            stacks: cached.stacks,
+                        });
+                    }
 
                     let entry_type = modifier.entry_type.unwrap_or(1);
 
                     // entry_type == 2 means explicitly removed
                     if entry_type == 2 {
+                        idx_serial.remove(&idx);
                         if let Some(cached) = prev_modifiers.remove(&serial) {
                             events_out.push(ActiveModifierOutput {
                                 tick: ctx.tick,
@@ -130,7 +150,16 @@ pub fn run(
                         continue;
                     }
 
-                    current_serials.insert(serial);
+                    idx_serial.insert(idx, serial);
+
+                    let Some(parent_idx) = boon::protobuf_handle_index(modifier.parent) else {
+                        continue;
+                    };
+
+                    // Only track modifiers on player pawns
+                    let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
+                        continue;
+                    };
 
                     // New modifier (not seen before)
                     if let std::collections::hash_map::Entry::Vacant(e) =
@@ -165,27 +194,6 @@ pub fn run(
                             duration,
                             caster_hero_id,
                             stacks,
-                        });
-                    }
-                }
-
-                // Detect removed modifiers: serials in prev but not in current
-                let removed: Vec<u32> = prev_modifiers
-                    .keys()
-                    .filter(|s| !current_serials.contains(s))
-                    .copied()
-                    .collect();
-                for serial in removed {
-                    if let Some(cached) = prev_modifiers.remove(&serial) {
-                        events_out.push(ActiveModifierOutput {
-                            tick: ctx.tick,
-                            hero_id: cached.hero_id,
-                            event: "removed".to_string(),
-                            modifier: cached.modifier,
-                            ability: cached.ability,
-                            duration: cached.duration,
-                            caster_hero_id: cached.caster_hero_id,
-                            stacks: cached.stacks,
                         });
                     }
                 }
