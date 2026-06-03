@@ -4,7 +4,13 @@
 
 ### boon-python
 
+- **Fixed:** `modifier_names()` resolved only ~87 modifiers — the generic/global ones (shop zones, capture auras, boss invuln) defined as top-level keys in `modifiers.vdata`. The vast majority of gameplay modifiers (hero abilities, items, troopers, bosses, objectives) are instead defined as nested `subclass:` blocks inside `abilities.vdata`, `npc_units.vdata`, and `misc.vdata`, which the name-table generator never scanned. It now also harvests those nested modifiers — identified by a `_class` starting with `modifier_`, to exclude the scale-functions and other subclass types that share the `_my_subclass_name` field — bringing the table to ~900 modifiers. Most `modifier_id` values on the `modifiers` frame now resolve to a name instead of `MODIFIER_NOT_FOUND`.
+- `ability_names()` and `modifier_names()` reflect the latest Deadlock build — the ability table also tracked a handful of upstream removals.
 - **Fixed:** the `max_health` column on `player_ticks` reported the pawn's `m_iMaxHealth`, a base/stale value that current health exceeds in over half of all ticks (e.g. health `817` against a reported max of `780`). It now reads the controller's `m_PlayerDataGlobal.m_iHealthMax` — the live effective maximum, which already folds in level growth, items, and buffs — and falls back to the pawn's value only when the controller isn't populated yet. The `health` column (the pawn's live `m_iHealth`) is unchanged.
+
+### boon-proto
+
+- Synced protobuf definitions to the latest Deadlock build (game build `6536` → `6542`); `boon-proto` is now `0.2.10706367+6542`. The only schema change is cosmetic: upstream dropped the redundant `[default = 0]` annotation from two `uint32` fields in `usermessages.proto` (`CUserMessageAudioParameter.name_hash_code` and `CUserMessageHapticsManagerEffect.effect_name_hash_code`) — a no-op, since `0` is already the implicit default.
 
 ## 0.2.0
 

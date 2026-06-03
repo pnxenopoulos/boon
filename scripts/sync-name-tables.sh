@@ -19,7 +19,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
 
 VDATA_DIR="game/citadel/pak01_dir/scripts"
-VDATA_FILES=(abilities.vdata modifiers.vdata)
+# modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers
+# are nested inside abilities.vdata, npc_units.vdata and misc.vdata (see
+# scripts/generate-name-tables/main.rs).
+VDATA_FILES=(abilities.vdata modifiers.vdata npc_units.vdata misc.vdata)
 
 DEADLOCK_REF="${DEADLOCK_REF:-}"
 
@@ -30,7 +33,13 @@ need_cmd git
 need_cmd cargo
 
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"; rm -f "$ROOT_DIR/abilities.vdata" "$ROOT_DIR/modifiers.vdata"' EXIT
+cleanup() {
+  rm -rf "$TMP_DIR"
+  for file in "${VDATA_FILES[@]}"; do
+    rm -f "$ROOT_DIR/$file"
+  done
+}
+trap cleanup EXIT
 
 REPO_DIR="$TMP_DIR/deadlock"
 

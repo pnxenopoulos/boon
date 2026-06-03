@@ -1,15 +1,24 @@
 //! Run: cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 //!
 //! Generates crates/boon/src/abilities.rs from abilities.vdata and
-//! crates/boon/src/modifiers.rs from modifiers.vdata.
+//! crates/boon/src/modifiers.rs from several vdata files.
 //!
-//! Both files come from Deadlock's VPK game data, extracted using
+//! These files come from Deadlock's VPK game data, extracted using
 //! Source2Viewer (ValveResourceFormat). They use Valve's KV3 format — a
 //! non-standard JSON-like structure where top-level keys (indented one tab)
 //! are identifiers.
 //!
 //! Source 2 uses CUtlStringToken (MurmurHash2 with seed 0x31415926) for both
 //! ability subclass IDs and modifier subclass IDs.
+//!
+//! Ability names are the top-level keys of abilities.vdata. Modifier names
+//! come from two places: modifiers.vdata holds the generic/global modifiers
+//! (every top-level key and `_my_subclass_name` there is a modifier), while
+//! the bulk of gameplay modifiers are defined as nested `subclass:` blocks
+//! inside abilities.vdata, npc_units.vdata and misc.vdata. A nested block is
+//! a modifier only when its `_class` starts with `modifier_` — the same
+//! `_my_subclass_name` field is also used for scale-functions and other
+//! subclass types, which must be excluded.
 
 use std::collections::HashSet;
 use std::fs;
@@ -110,14 +119,60 @@ fn extract_subclass_names(content: &str) -> Vec<&str> {
             if let Some(rest) = rest.strip_prefix('=') {
                 let rest = rest.trim();
                 // Strip surrounding quotes
-                if let Some(name) = rest.strip_prefix('"') {
-                    if let Some(name) = name.strip_suffix('"') {
-                        if !name.is_empty() {
-                            names.push(name);
-                        }
-                    }
+                if let Some(name) = rest.strip_prefix('"')
+                    && let Some(name) = name.strip_suffix('"')
+                    && !name.is_empty()
+                {
+                    names.push(name);
                 }
             }
+        }
+    }
+
+    names
+}
+
+/// Extract modifier `_my_subclass_name` values from nested `subclass:` blocks.
+///
+/// Unlike [`extract_subclass_names`], this only keeps subclasses whose
+/// `_class` starts with `modifier_` (e.g. `modifier_base`,
+/// `modifier_intrinsic_base`, `modifier_slow_base`). The `_my_subclass_name`
+/// field is also used for scale-functions and other subclass types, so files
+/// like abilities.vdata mix modifier and non-modifier subclasses — the
+/// `_class` is the only reliable discriminator. In KV3 the `_class` line
+/// always precedes its sibling `_my_subclass_name`.
+fn extract_modifier_subclass_names(content: &str) -> Vec<&str> {
+    let mut names = Vec::new();
+    let mut current_is_modifier = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Track the enclosing subclass's `_class`.
+        if let Some(rest) = trimmed.strip_prefix("_class") {
+            let rest = rest.trim_start();
+            if let Some(rest) = rest.strip_prefix('=') {
+                let value = rest.trim().trim_matches('"');
+                current_is_modifier = value.starts_with("modifier_");
+            }
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("_my_subclass_name") {
+            let rest = rest.trim_start();
+            if let Some(rest) = rest.strip_prefix('=') {
+                let rest = rest.trim();
+                if let Some(name) = rest.strip_prefix('"')
+                    && let Some(name) = name.strip_suffix('"')
+                    && !name.is_empty()
+                    && current_is_modifier
+                {
+                    names.push(name);
+                }
+            }
+            // Reset so a modifier `_class` doesn't leak onto a sibling
+            // subclass that lacks its own `_class` line.
+            current_is_modifier = false;
         }
     }
 
@@ -152,16 +207,8 @@ fn write_hash_table(
     writeln!(out).unwrap();
 
     // Static slice for all_*()
-    writeln!(
-        out,
-        "/// All known (hash, name) pairs sorted by hash."
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "const ENTRIES: &[(u32, &str)] = &["
-    )
-    .unwrap();
+    writeln!(out, "/// All known (hash, name) pairs sorted by hash.").unwrap();
+    writeln!(out, "const ENTRIES: &[(u32, &str)] = &[").unwrap();
     for (hash, name) in entries {
         writeln!(out, "    ({hash}, \"{name}\"),").unwrap();
     }
@@ -181,11 +228,7 @@ fn write_hash_table(
     writeln!(out).unwrap();
 
     // all_*() function
-    writeln!(
-        out,
-        "/// Return all known (hash, name) pairs."
-    )
-    .unwrap();
+    writeln!(out, "/// Return all known (hash, name) pairs.").unwrap();
     writeln!(
         out,
         "pub fn {all_fn_name}() -> &'static [(u32, &'static str)] {{"
@@ -229,11 +272,7 @@ fn write_hash_table(
 
     writeln!(out, "    #[test]").unwrap();
     writeln!(out, "    fn unknown_id_zero() {{").unwrap();
-    writeln!(
-        out,
-        "        assert_eq!({fn_name}(0), \"{not_found}\");"
-    )
-    .unwrap();
+    writeln!(out, "        assert_eq!({fn_name}(0), \"{not_found}\");").unwrap();
     writeln!(out, "    }}").unwrap();
     writeln!(out).unwrap();
 
@@ -299,15 +338,19 @@ fn main() {
         );
     }
 
-    // --- modifiers.vdata → modifiers.rs ---
+    // --- modifiers → modifiers.rs ---
+    //
+    // modifiers.vdata holds the generic/global modifiers (every top-level key
+    // and subclass name there is a modifier). The bulk of gameplay modifiers
+    // are nested `subclass:` blocks inside these other files, kept only when
+    // their `_class` starts with `modifier_`.
+    const MODIFIER_SUBCLASS_FILES: &[&str] = &["abilities.vdata", "npc_units.vdata", "misc.vdata"];
+
     let modifiers_path = Path::new("modifiers.vdata");
     let modifiers_output = Path::new("crates/boon/src/modifiers.rs");
 
     if !modifiers_path.exists() {
-        eprintln!(
-            "modifiers.vdata not found at {}",
-            modifiers_path.display()
-        );
+        eprintln!("modifiers.vdata not found at {}", modifiers_path.display());
         eprintln!("Run this from the repo root.");
         if !abilities_path.exists() {
             std::process::exit(1);
@@ -315,26 +358,57 @@ fn main() {
         return;
     }
 
-    let content = fs::read_to_string(modifiers_path).expect("failed to read modifiers.vdata");
+    let modifiers_content =
+        fs::read_to_string(modifiers_path).expect("failed to read modifiers.vdata");
 
-    // Extract both top-level keys and nested _my_subclass_name values
-    let top_level = extract_top_level_keys(&content);
-    let subclass = extract_subclass_names(&content);
+    // Read the auxiliary files up front so their contents outlive the
+    // borrowed `&str` names below.
+    let aux_contents: Vec<(&str, String)> = MODIFIER_SUBCLASS_FILES
+        .iter()
+        .filter_map(|&file| {
+            let path = Path::new(file);
+            if path.exists() {
+                Some((
+                    file,
+                    fs::read_to_string(path).expect("failed to read vdata"),
+                ))
+            } else {
+                eprintln!("{file} not found (skipping its modifier subclasses)");
+                None
+            }
+        })
+        .collect();
 
-    eprintln!(
-        "Extracted {} top-level + {} subclass names from {}",
-        top_level.len(),
-        subclass.len(),
-        modifiers_path.display()
-    );
-
-    // Deduplicate
+    // Collect candidate names in priority order, then deduplicate.
     let mut seen = HashSet::new();
     let mut all_names: Vec<&str> = Vec::new();
+
+    let top_level = extract_top_level_keys(&modifiers_content);
+    let subclass = extract_subclass_names(&modifiers_content);
+    eprintln!(
+        "Extracted {} top-level + {} subclass names from modifiers.vdata",
+        top_level.len(),
+        subclass.len()
+    );
     for name in top_level.iter().chain(subclass.iter()) {
         if seen.insert(*name) {
             all_names.push(name);
         }
+    }
+
+    for (file, content) in &aux_contents {
+        let names = extract_modifier_subclass_names(content);
+        let before = all_names.len();
+        for name in &names {
+            if seen.insert(*name) {
+                all_names.push(name);
+            }
+        }
+        eprintln!(
+            "Extracted {} modifier subclass names from {file} ({} new)",
+            names.len(),
+            all_names.len() - before
+        );
     }
 
     let mut entries: Vec<(u32, &str)> = all_names
@@ -346,7 +420,7 @@ fn main() {
     write_hash_table(
         modifiers_output,
         &entries,
-        "modifiers.vdata",
+        "modifiers.vdata + nested subclasses in abilities/npc_units/misc.vdata",
         "modifier_name",
         "all_modifiers",
         "MODIFIER_NOT_FOUND",
