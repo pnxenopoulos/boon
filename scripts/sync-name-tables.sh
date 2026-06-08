@@ -10,6 +10,10 @@ set -euo pipefail
 # 3) Runs the generate-name-tables script to regenerate abilities.rs and modifiers.rs
 # 4) Cleans up the temporary vdata files
 #
+# The modifier table is built purely from these two vdata files: modifiers.vdata
+# (top-level keys + nested `_my_subclass_name` values) plus the modifier
+# subclasses nested in abilities.vdata. See scripts/generate-name-tables/main.rs.
+#
 # Environment:
 #   DEADLOCK_REF=<ref>   optional: branch/tag/commit to checkout
 
@@ -19,10 +23,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
 
 VDATA_DIR="game/citadel/pak01_dir/scripts"
-# modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers
-# are nested inside abilities.vdata, npc_units.vdata and misc.vdata (see
+# modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers are
+# nested as modifier subclasses inside abilities.vdata (see
 # scripts/generate-name-tables/main.rs).
-VDATA_FILES=(abilities.vdata modifiers.vdata npc_units.vdata misc.vdata)
+VDATA_FILES=(abilities.vdata modifiers.vdata)
 
 DEADLOCK_REF="${DEADLOCK_REF:-}"
 

@@ -395,6 +395,17 @@ message CMsgServerSignoutData_DetailedStats {
 		optional uint32 destroyed_time_s = 3;
 	}
 
+	message UrnCapture {
+		optional .ECitadelLobbyTeam winning_team = 1 [default = k_ECitadelLobbyTeam_Team0];
+		optional .ECitadelLobbyTeam deposit_team = 2 [default = k_ECitadelLobbyTeam_Team0];
+		optional bool overtime = 3;
+		optional uint32 match_time_s = 4;
+		optional uint32 winning_players = 5;
+		optional uint32 losing_players = 6;
+		optional uint32 duration_s = 7;
+		optional bool was_comeback_victory = 8;
+	}
+
 	message Player {
 		optional uint32 player_slot = 1;
 		repeated .CMsgServerSignoutData_DetailedStats.TimeSample time_samples = 3;
@@ -403,6 +414,7 @@ message CMsgServerSignoutData_DetailedStats {
 	repeated .CMsgServerSignoutData_DetailedStats.Player player_stats = 1;
 	repeated .CMsgServerSignoutData_DetailedStats.Objective objectives = 2;
 	repeated .CMsgServerSignoutData_DetailedStats.MidBoss mid_boss = 3;
+	repeated .CMsgServerSignoutData_DetailedStats.UrnCapture urn_captures = 4;
 }
 
 message CMsgServerSignoutData_PerfData {

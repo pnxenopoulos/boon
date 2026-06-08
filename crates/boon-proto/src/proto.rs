@@ -17513,6 +17513,10 @@ pub struct CMsgServerSignoutDataDetailedStats {
     pub mid_boss: ::prost::alloc::vec::Vec<
         c_msg_server_signout_data_detailed_stats::MidBoss,
     >,
+    #[prost(message, repeated, tag = "4")]
+    pub urn_captures: ::prost::alloc::vec::Vec<
+        c_msg_server_signout_data_detailed_stats::UrnCapture,
+    >,
 }
 /// Nested message and enum types in `CMsgServerSignoutData_DetailedStats`.
 pub mod c_msg_server_signout_data_detailed_stats {
@@ -17704,6 +17708,36 @@ pub mod c_msg_server_signout_data_detailed_stats {
         pub team_claimed: ::core::option::Option<i32>,
         #[prost(uint32, optional, tag = "3")]
         pub destroyed_time_s: ::core::option::Option<u32>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct UrnCapture {
+        #[prost(
+            enumeration = "super::ECitadelLobbyTeam",
+            optional,
+            tag = "1",
+            default = "KECitadelLobbyTeamTeam0"
+        )]
+        pub winning_team: ::core::option::Option<i32>,
+        #[prost(
+            enumeration = "super::ECitadelLobbyTeam",
+            optional,
+            tag = "2",
+            default = "KECitadelLobbyTeamTeam0"
+        )]
+        pub deposit_team: ::core::option::Option<i32>,
+        #[prost(bool, optional, tag = "3")]
+        pub overtime: ::core::option::Option<bool>,
+        #[prost(uint32, optional, tag = "4")]
+        pub match_time_s: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "5")]
+        pub winning_players: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "6")]
+        pub losing_players: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "7")]
+        pub duration_s: ::core::option::Option<u32>,
+        #[prost(bool, optional, tag = "8")]
+        pub was_comeback_victory: ::core::option::Option<bool>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -25973,9 +26007,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1", default = "0")]
+    #[prost(uint32, optional, tag = "1")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2", default = "0")]
+    #[prost(uint32, optional, tag = "2")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -26779,7 +26813,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2", default = "0")]
+    #[prost(uint32, optional, tag = "2")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,
