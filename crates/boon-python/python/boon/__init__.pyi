@@ -320,7 +320,8 @@ class Demo:
             - **last_spawn_time** (*float*) -- Time of last spawn.
             - **respawn_time** (*float*) -- Time until respawn.
             - **health** (*int*) -- Current health.
-            - **max_health** (*int*) -- Maximum health.
+            - **max_health** (*int*) -- Effective maximum health (level + items +
+              buffs), from the controller's ``m_iHealthMax``.
             - **lifestate** (*int*) -- Life state value.
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.
@@ -552,7 +553,7 @@ class Demo:
 
         Not loaded by default. Access this property or call ``load("stat_modifier_events")`` explicitly.
 
-        Emits a row whenever a stat total changes (idol/breakable pickups).
+        Emits a row whenever a stat total changes (urn/breakable pickups).
 
         Columns:
             - **tick** (*int*) -- The game tick when the stat changed.

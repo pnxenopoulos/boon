@@ -6,7 +6,7 @@ name = "boon-proto"
 # every proto sync yields a higher, publishable version. MAJOR.MINOR is the
 # compatibility epoch (bump it for breaking changes to this crate's API).
 # scripts/sync-protos.sh refreshes this on each sync.
-version = "0.2.10691905+6536"
+version = "0.2.10717574+6557"
 rust-version.workspace = true
 edition = "2024"
 description = "Protobuf definitions for Deadlock demo files"

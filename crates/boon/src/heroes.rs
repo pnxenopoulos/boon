@@ -1,6 +1,6 @@
 //! Hero ID to name mapping for Deadlock.
 //!
-//! Last updated: 2026-03-19
+//! Last updated: 2026-06-08
 
 /// All known hero (ID, name) pairs sorted by ID.
 const HEROES: &[(i64, &str)] = &[
@@ -46,6 +46,7 @@ const HEROES: &[(i64, &str)] = &[
     (59, "Vandal"),
     (60, "Sinclair"),
     (61, "Trapper"),
+    (62, "Raven"),
     (63, "Mina"),
     (64, "Drifter"),
     (65, "Venator"),
@@ -65,7 +66,8 @@ const HEROES: &[(i64, &str)] = &[
     (79, "Rem"),
     (80, "Silver"),
     (81, "Celeste"),
-    (82, "Raven"),
+    (82, "Opera"),
+    (83, "Test Hero"),
 ];
 
 /// Look up a hero name by ID. Returns `"HERO_NOT_FOUND"` for unknown IDs.
@@ -97,8 +99,13 @@ mod tests {
     }
 
     #[test]
+    fn known_hero_raven() {
+        assert_eq!(hero_name(62), "Raven");
+    }
+
+    #[test]
     fn known_hero_last() {
-        assert_eq!(hero_name(82), "Raven");
+        assert_eq!(hero_name(83), "Test Hero");
     }
 
     #[test]

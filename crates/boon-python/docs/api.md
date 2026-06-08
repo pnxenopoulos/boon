@@ -645,7 +645,7 @@ Not loaded by default. Access this property or call `load("neutrals")` explicitl
 demo.stat_modifier_events  # polars.DataFrame
 ```
 
-Permanent stat bonus change events from idol and breakable pickups. Emits a row whenever a stat total changes.
+Permanent stat bonus change events from urn and breakable pickups. Emits a row whenever a stat total changes.
 
 Not loaded by default. Access this property or call `load("stat_modifier_events")` explicitly.
 
@@ -688,8 +688,8 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 demo.urn  # polars.DataFrame
 ```
 
-Urn (idol) lifecycle events. Tracks when the urn is picked up, dropped, or returned
-by filtering idol-related modifiers from the `ActiveModifiers` string table.
+Urn lifecycle events. Tracks when the urn is picked up, dropped, or returned
+by filtering urn-related modifiers from the `ActiveModifiers` string table.
 Also tracks delivery point activation/deactivation via `CCitadelIdolReturnTrigger` entities.
 
 Not loaded by default. Access this property or call `load("urn")` explicitly.

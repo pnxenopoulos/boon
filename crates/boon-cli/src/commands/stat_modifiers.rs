@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::Serialize;
 
-// eValType → stat name mapping (from misc.vdata idol pickup definitions)
+// eValType → stat name mapping (from misc.vdata pickup definitions)
 const EVAL_HEALTH: u32 = 31;
 const EVAL_SPIRIT_POWER: u32 = 51;
 const EVAL_FIRE_RATE: u32 = 79;

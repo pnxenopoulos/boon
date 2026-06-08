@@ -395,7 +395,7 @@ boon neutrals match.dem --summary
 
 ### `stat-modifiers`
 
-Track permanent stat bonus change events (idol and breakable pickups).
+Track permanent stat bonus change events (urn and breakable pickups).
 
 ```bash
 boon stat-modifiers match.dem

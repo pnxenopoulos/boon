@@ -298,7 +298,7 @@ enum Commands {
         #[arg(long, value_name = "TICK")]
         max_tick: Option<i32>,
     },
-    /// Track per-player cumulative permanent stat bonuses (idol/breakable pickups)
+    /// Track per-player cumulative permanent stat bonuses (urn/breakable pickups)
     StatModifiers {
         /// Path to the demo file
         file: PathBuf,

@@ -817,6 +817,7 @@ impl Parser {
             // Call callback when tick changes
             if header.tick != last_tick && last_tick >= 0 {
                 on_tick(&ctx);
+                ctx.string_tables.clear_dirty();
             }
             last_tick = header.tick;
             ctx.tick = header.tick;
@@ -910,6 +911,7 @@ impl Parser {
             // Call callback when tick changes
             if header.tick != last_tick && last_tick >= 0 {
                 on_tick(&ctx);
+                ctx.string_tables.clear_dirty();
             }
             last_tick = header.tick;
             ctx.tick = header.tick;
@@ -1010,6 +1012,7 @@ impl Parser {
             if header.tick != last_tick && last_tick >= 0 {
                 on_tick(&ctx, &tick_events);
                 tick_events.clear();
+                ctx.string_tables.clear_dirty();
             }
             last_tick = header.tick;
             ctx.tick = header.tick;
@@ -1092,6 +1095,19 @@ impl Parser {
             let msg_type = br.read_ubitvar()?;
             let size = br.read_uvarint32()? as usize;
 
+            // Only these four message types are consumed below; advance past
+            // everything else without copying its bytes out of the bitstream.
+            if !matches!(
+                msg_type,
+                svc::CREATE_STRING_TABLE
+                    | svc::UPDATE_STRING_TABLE
+                    | svc::SERVER_INFO
+                    | svc::PACKET_ENTITIES
+            ) {
+                br.skip_bits(size * 8)?;
+                continue;
+            }
+
             if size > packet_buf.len() {
                 packet_buf.resize(size, 0);
             }
@@ -1152,6 +1168,19 @@ impl Parser {
         while br.bits_remaining() > 8 {
             let msg_type = br.read_ubitvar()?;
             let size = br.read_uvarint32()? as usize;
+
+            // Only these four message types are consumed below; advance past
+            // everything else without copying its bytes out of the bitstream.
+            if !matches!(
+                msg_type,
+                svc::CREATE_STRING_TABLE
+                    | svc::UPDATE_STRING_TABLE
+                    | svc::SERVER_INFO
+                    | svc::PACKET_ENTITIES
+            ) {
+                br.skip_bits(size * 8)?;
+                continue;
+            }
 
             if size > packet_buf.len() {
                 packet_buf.resize(size, 0);

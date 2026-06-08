@@ -18,7 +18,7 @@ This crate contains auto-generated Rust code produced by [`prost`](https://githu
 
 ```toml
 [dependencies]
-boon-proto = "0.1"
+boon-proto = "0.2"
 ```
 
 ## Usage

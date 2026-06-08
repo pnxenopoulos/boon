@@ -10,6 +10,10 @@ set -euo pipefail
 # 3) Runs the generate-name-tables script to regenerate abilities.rs and modifiers.rs
 # 4) Cleans up the temporary vdata files
 #
+# The modifier table is built purely from these two vdata files: modifiers.vdata
+# (top-level keys + nested `_my_subclass_name` values) plus the modifier
+# subclasses nested in abilities.vdata. See scripts/generate-name-tables/main.rs.
+#
 # Environment:
 #   DEADLOCK_REF=<ref>   optional: branch/tag/commit to checkout
 
@@ -19,6 +23,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
 
 VDATA_DIR="game/citadel/pak01_dir/scripts"
+# modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers are
+# nested as modifier subclasses inside abilities.vdata (see
+# scripts/generate-name-tables/main.rs).
 VDATA_FILES=(abilities.vdata modifiers.vdata)
 
 DEADLOCK_REF="${DEADLOCK_REF:-}"
@@ -30,7 +37,13 @@ need_cmd git
 need_cmd cargo
 
 TMP_DIR="$(mktemp -d)"
-trap 'rm -rf "$TMP_DIR"; rm -f "$ROOT_DIR/abilities.vdata" "$ROOT_DIR/modifiers.vdata"' EXIT
+cleanup() {
+  rm -rf "$TMP_DIR"
+  for file in "${VDATA_FILES[@]}"; do
+    rm -f "$ROOT_DIR/$file"
+  done
+}
+trap cleanup EXIT
 
 REPO_DIR="$TMP_DIR/deadlock"
 

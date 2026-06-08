@@ -74,7 +74,7 @@ Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenop
 
 ```toml
 [dependencies]
-boon-deadlock = "0.1"
+boon-deadlock = "0.3"
 ```
 
 ## Quick Start
@@ -144,7 +144,7 @@ Each dataset is a property on the `Demo` class that returns a [Polars](https://p
 | `neutrals` | Neutral creep state changes with change detection *(opt-in)* |
 | `stat_modifier_events` | Permanent stat bonus change events from pickups *(opt-in)* |
 | `active_modifiers` | Active buff/debuff modifier events *(opt-in)* |
-| `urn` | Urn (idol) lifecycle and delivery point events *(opt-in)* |
+| `urn` | Urn lifecycle and delivery point events *(opt-in)* |
 | `street_brawl_ticks` | Per-tick street brawl state *(street brawl only)* |
 | `street_brawl_rounds` | Street brawl round scoring events *(street brawl only)* |
 
