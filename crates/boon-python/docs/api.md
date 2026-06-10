@@ -1,5 +1,6 @@
 # 📚 API Reference
 
+(demo)=
 ## `Demo`
 
 ```python
@@ -162,6 +163,7 @@ dict with four top-level keys:
 **Raises:** `DemoMessageError` -- If the demo contains no post-match details
 (for example, an incomplete recording).
 
+(kill-participation)=
 #### `kill_participation()`
 
 ```python
@@ -190,6 +192,7 @@ window (the denominator is the team's kills in the same window).
 | `team_kills` | `int` | Total kills by the player's team (in the window) |
 | `kill_participation` | `float` | `(kills + assists) / team_kills`, or null if the team had zero kills |
 
+(time-dead)=
 #### `time_dead()`
 
 ```python
