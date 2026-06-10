@@ -14,9 +14,6 @@ with a `*_names()` lookup, mirroring the shape of `team_names()` or
 - **`lane_names()`** — for the `start_lane` (players) and `lane` (objectives)
   columns. Values come from the `CMsgLaneColor` proto enum: `1=yellow`,
   `3=green`, `4=blue`, `6=purple`, `0=none`.
-- **`hitgroup_names()`** — for the `hitgroup_id` column in `damage`. Source 2
-  uses a standard set (head, chest, stomach, limbs, …); confirming the exact
-  set Deadlock uses needs a pass over the game data.
 - More as new opaque enums are surfaced.
 
 ## Visualization

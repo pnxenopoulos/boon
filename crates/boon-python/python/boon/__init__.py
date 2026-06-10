@@ -9,6 +9,8 @@ from boon._boon import (
     ability_names,
     game_mode_names,
     hero_names,
+    hitgroup_names,
+    lifestate_names,
     modifier_names,
     patron_phase_names,
     team_names,
@@ -20,6 +22,13 @@ from boon.errors import (
     InvalidDemoError,
     NotStreetBrawlError,
 )
+from boon import stats
+
+# Surface stats as convenience methods on Demo. The implementation lives in
+# ``boon.stats``; these are thin delegators so ``demo.kill_participation()`` and
+# ``boon.stats.kill_participation(demo)`` are the same computation.
+Demo.kill_participation = stats.kill_participation
+Demo.time_dead = stats.time_dead
 
 __all__ = [
     "Demo",
@@ -31,7 +40,10 @@ __all__ = [
     "ability_names",
     "game_mode_names",
     "hero_names",
+    "hitgroup_names",
+    "lifestate_names",
     "modifier_names",
     "patron_phase_names",
+    "stats",
     "team_names",
 ]

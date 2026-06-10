@@ -12,6 +12,8 @@ from boon import (
     ability_names,
     game_mode_names,
     hero_names,
+    hitgroup_names,
+    lifestate_names,
     modifier_names,
     patron_phase_names,
     team_names,
@@ -309,7 +311,31 @@ class TestNameLookups:
     def test_patron_phase_names_is_dict(self) -> None:
         names = patron_phase_names()
         assert isinstance(names, dict)
-        assert names == {0: "normal", 1: "final", 2: "shields_down"}
+        assert names == {0: "normal", 1: "final", 2: "transforming"}
+
+    def test_hitgroup_names_is_dict(self) -> None:
+        names = hitgroup_names()
+        assert isinstance(names, dict)
+        assert len(names) > 0
+
+    def test_hitgroup_names_contains_known(self) -> None:
+        names = hitgroup_names()
+        assert names[0] == "generic"
+        assert names[1] == "head"
+        assert names[-1] == "invalid"
+        assert names[19] == "head_no_resist"
+        assert 20 not in names  # HITGROUP_COUNT sentinel is omitted
+
+    def test_lifestate_names_is_dict(self) -> None:
+        names = lifestate_names()
+        assert isinstance(names, dict)
+        assert names == {
+            0: "alive",
+            1: "dying",
+            2: "dead",
+            3: "respawnable",
+            4: "respawning",
+        }
 
 
 # ===================================================================

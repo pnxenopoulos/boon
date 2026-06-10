@@ -201,9 +201,9 @@ alive = demo.player_ticks.filter(
 )
 
 # x/y coordinates ready for matplotlib, seaborn, etc.
-positions = alive.select("x", "y").to_numpy()
-print(f"{len(positions)} position samples for hero {hero_id}")
-# positions[:, 0] = x, positions[:, 1] = y
+positions = alive.select("x", "y")
+print(f"{positions.height} position samples for hero {hero_id}")
+# positions["x"], positions["y"] pass straight to plt.scatter(...)
 ```
 
 ## Active modifiers (buffs/debuffs)

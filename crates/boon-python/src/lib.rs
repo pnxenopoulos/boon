@@ -2924,7 +2924,7 @@ impl Demo {
     /// - victim_hero_id: The hero ID of the victim (0 if not a hero)
     /// - attacker_hero_id: The hero ID of the attacker (0 if not a hero)
     /// - victim_health_new: The victim's health after damage
-    /// - hitgroup_id: The hitgroup that was hit
+    /// - hitgroup_id: The hitgroup that was hit (use ``hitgroup_names()`` to resolve)
     /// - crit_damage: Critical damage amount
     /// - attacker_class: The attacker's entity class ID
     /// - victim_class: The victim's entity class ID
@@ -3381,7 +3381,7 @@ fn modifier_names() -> HashMap<u32, &'static str> {
 /// Return a mapping of patron phase ID to phase name.
 ///
 /// Phases are the values of the ``CNPC_Boss_Tier3.m_ePhase`` netvar:
-/// ``0=normal`` (shielded), ``1=final`` (killable), ``2=shields_down``
+/// ``0=normal`` (shielded), ``1=final`` (killable), ``2=transforming``
 /// (vulnerable). Non-patron objectives report ``0`` by default.
 ///
 /// Returns:
@@ -3394,7 +3394,41 @@ fn patron_phase_names() -> HashMap<i64, &'static str> {
         .collect()
 }
 
-/// Python bindings for the boon Deadlock demo parser.
+/// Return a mapping of hit group ID to hit group name.
+///
+/// Hit group IDs are the values of Source 2's ``HitGroup_t`` enum, used by the
+/// ``hitgroup_id`` column on the ``damage`` frame: ``0=generic``, ``1=head``,
+/// ``2=chest``, ``3=stomach``, the limbs (``4``–``7``), ``8=neck``,
+/// ``10=gear``, ``11=special``, the tier-2 / drone boss weakpoints
+/// (``12``–``18``), ``19=head_no_resist``, and ``-1=invalid``.
+///
+/// Returns:
+///     A dict mapping hit group IDs (int) to hit group names (str).
+#[pyfunction]
+fn hitgroup_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_hitgroups()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
+/// Return a mapping of life state ID to life state name.
+///
+/// Life state IDs are the values of Source 2's ``LifeState_t`` enum, used by
+/// the ``lifestate`` column on ``player_ticks``: ``0=alive``, ``1=dying``,
+/// ``2=dead``, ``3=respawnable``, ``4=respawning``.
+///
+/// Returns:
+///     A dict mapping life state IDs (int) to life state names (str).
+#[pyfunction]
+fn lifestate_names() -> HashMap<i64, &'static str> {
+    boon_parser::all_lifestates()
+        .iter()
+        .map(|&(id, name)| (id, name))
+        .collect()
+}
+
+/// Python bindings for the Boon Deadlock demo parser.
 #[pymodule]
 fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Demo>()?;
@@ -3404,6 +3438,8 @@ fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(modifier_names, m)?)?;
     m.add_function(wrap_pyfunction!(game_mode_names, m)?)?;
     m.add_function(wrap_pyfunction!(patron_phase_names, m)?)?;
+    m.add_function(wrap_pyfunction!(hitgroup_names, m)?)?;
+    m.add_function(wrap_pyfunction!(lifestate_names, m)?)?;
     m.add("InvalidDemoError", m.py().get_type::<InvalidDemoError>())?;
     m.add("DemoHeaderError", m.py().get_type::<DemoHeaderError>())?;
     m.add("DemoInfoError", m.py().get_type::<DemoInfoError>())?;

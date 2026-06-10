@@ -50,6 +50,8 @@
 //! assert_eq!(boon::hero_name(1), "Infernus");
 //! assert_eq!(boon::team_name(2), "Hidden King");
 //! assert_eq!(boon::team_name(3), "Archmother");
+//! assert_eq!(boon::hitgroup_name(1), "head");
+//! assert_eq!(boon::lifestate_name(0), "alive");
 //! ```
 
 pub mod abilities;
@@ -58,7 +60,9 @@ pub mod entity;
 pub mod error;
 pub mod game_modes;
 pub mod heroes;
+pub mod hitgroups;
 pub mod io;
+pub mod lifestates;
 pub mod modifiers;
 pub mod patron_phases;
 pub mod position;
@@ -77,6 +81,8 @@ pub use entity::{
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};
 pub use heroes::{all_heroes, hero_name};
+pub use hitgroups::{all_hitgroups, hitgroup_name};
+pub use lifestates::{all_lifestates, lifestate_name};
 pub use modifiers::{all_modifiers, modifier_name};
 pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};

@@ -6,12 +6,12 @@
 //!
 //! - `0` — `normal`: shielded by walkers; cannot take damage.
 //! - `1` — `final`: last killable state.
-//! - `2` — `shields_down`: vulnerable to damage but still has a regenerating barrier.
+//! - `2` — `transforming`: vulnerable to damage but still has a regenerating barrier.
 //!
 //! Non-patron objectives report phase `0` by default.
 
 /// All known patron phase (ID, name) pairs sorted by ID.
-const PATRON_PHASES: &[(i64, &str)] = &[(0, "normal"), (1, "final"), (2, "shields_down")];
+const PATRON_PHASES: &[(i64, &str)] = &[(0, "normal"), (1, "final"), (2, "transforming")];
 
 /// Look up a patron phase name by ID. Returns `"PATRON_PHASE_NOT_FOUND"` for unknown IDs.
 pub fn patron_phase_name(id: i64) -> &'static str {
@@ -42,8 +42,8 @@ mod tests {
     }
 
     #[test]
-    fn known_phase_shields_down() {
-        assert_eq!(patron_phase_name(2), "shields_down");
+    fn known_phase_transforming() {
+        assert_eq!(patron_phase_name(2), "transforming");
     }
 
     #[test]

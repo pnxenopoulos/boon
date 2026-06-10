@@ -51,8 +51,26 @@ def patron_phase_names() -> dict[int, str]:
     """Return a mapping of patron phase ID to phase name.
 
     Phases of ``CNPC_Boss_Tier3.m_ePhase``: ``0=normal`` (shielded),
-    ``1=final`` (killable), ``2=shields_down`` (vulnerable). Non-patron
+    ``1=final`` (killable), ``2=transforming`` (vulnerable). Non-patron
     objectives report ``0`` by default.
+    """
+    ...
+
+def hitgroup_names() -> dict[int, str]:
+    """Return a mapping of hit group ID to hit group name.
+
+    Hit group IDs are Source 2's ``HitGroup_t`` enum values, used by the
+    ``hitgroup_id`` column on the ``damage`` frame (``0=generic``, ``1=head``,
+    ``2=chest`` ... ``19=head_no_resist``; ``-1=invalid``).
+    """
+    ...
+
+def lifestate_names() -> dict[int, str]:
+    """Return a mapping of life state ID to life state name.
+
+    Life state IDs are Source 2's ``LifeState_t`` enum values, used by the
+    ``lifestate`` column on ``player_ticks`` (``0=alive``, ``1=dying``,
+    ``2=dead``, ``3=respawnable``, ``4=respawning``).
     """
     ...
 
@@ -219,6 +237,29 @@ class Demo:
         """
         ...
 
+    def kill_participation(
+        self, *, start_tick: int | None = ..., end_tick: int | None = ...
+    ) -> pl.DataFrame:
+        """Kill participation per player: ``(kills + assists) / team_kills``.
+
+        Convenience method delegating to :func:`boon.stats.kill_participation`.
+        Returns one row per player (``hero_id``, ``team_num``, ``kills``,
+        ``assists``, ``team_kills``, ``kill_participation``), optionally
+        restricted to a ``[start_tick, end_tick]`` window.
+        """
+        ...
+
+    def time_dead(self) -> pl.DataFrame:
+        """Time each player spent dead during regulation (non-paused ticks).
+
+        Convenience method delegating to :func:`boon.stats.time_dead`. Returns
+        one row per player (``hero_id``, ``team_num``, ``ticks_dead``,
+        ``seconds_dead``, ``pct_regulation_dead``).
+
+        Raises ``ValueError`` if the demo has no game-over event.
+        """
+        ...
+
     def tick_to_seconds(self, tick: int) -> float:
         """Convert a tick number to seconds elapsed, excluding paused time.
 
@@ -322,7 +363,7 @@ class Demo:
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Effective maximum health (level + items +
               buffs), from the controller's ``m_iHealthMax``.
-            - **lifestate** (*int*) -- Life state value.
+            - **lifestate** (*int*) -- Life state value (use ``lifestate_names()`` to resolve).
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.
             - **in_combat_end_time** (*float*) -- In-combat timer end.
@@ -399,7 +440,7 @@ class Demo:
             - **victim_hero_id** (*int*) -- The hero ID of the victim (0 if not a hero).
             - **attacker_hero_id** (*int*) -- The hero ID of the attacker (0 if not a hero).
             - **victim_health_new** (*int*) -- The victim's health after damage.
-            - **hitgroup_id** (*int*) -- The hitgroup that was hit.
+            - **hitgroup_id** (*int*) -- The hitgroup that was hit (use ``hitgroup_names()`` to resolve).
             - **crit_damage** (*float*) -- Critical damage amount.
             - **attacker_class** (*int*) -- The attacker's entity class ID.
             - **victim_class** (*int*) -- The victim's entity class ID.
@@ -487,7 +528,7 @@ class Demo:
             - **lane** (*int*) -- Lane assignment (1, 4, or 6; 0 for patron/shrine/mid_boss).
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Maximum health.
-            - **phase** (*int*) -- Patron phase (use ``patron_phase_names()`` to resolve; 0=normal, 1=final, 2=shields_down; 0 for non-patron).
+            - **phase** (*int*) -- Patron phase (use ``patron_phase_names()`` to resolve; 0=normal, 1=final, 2=transforming; 0 for non-patron).
             - **x** (*float*) -- X position.
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.

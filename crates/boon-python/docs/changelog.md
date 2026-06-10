@@ -1,5 +1,25 @@
 # 📝 Changelog
 
+## 0.4.0
+
+### boon-python
+
+- New `boon.stats` module — an analysis layer of derived metrics computed from parsed demo data, keyed on `hero_id` so results join cleanly to the other frames. Each metric is also surfaced as a thin `Demo` method. Initial metrics:
+  - `kill_participation(demo)` (`Demo.kill_participation()`) — each player's `(kills + assists) / team_kills` (a `[0, 1]` fraction), with an optional `start_tick` / `end_tick` window.
+  - `time_dead(demo)` (`Demo.time_dead()`) — each player's `ticks_dead`, `seconds_dead`, and `pct_regulation_dead` (percentage of regulation time spent dead), counting only non-paused ticks up to the game-over event so totals align with `regulation_ticks` / `regulation_seconds`.
+- `hitgroup_names()` module-level function returning `dict[int, str]` of hit group ID to name, for resolving the `hitgroup_id` column on the `damage` frame. Values are Source 2's `HitGroup_t` enum (`0=generic`, `1=head`, `2=chest`, `3=stomach`, the limbs `4`–`7`, `8=neck`, `10=gear`, `11=special`, the tier-2 / drone boss weakpoints `12`–`18`, `19=head_no_resist`, and `-1=invalid`; the `HITGROUP_COUNT` sentinel is omitted).
+- `lifestate_names()` module-level function returning `dict[int, str]` of life state ID to name, for resolving the `lifestate` column on `player_ticks`. Values are Source 2's `LifeState_t` enum (`0=alive`, `1=dying`, `2=dead`, `3=respawnable`, `4=respawning`).
+- **Changed:** `patron_phase_names()` renames patron phase `2` from `shields_down` to `transforming`. The raw `phase` integer on objective rows is unchanged (still `2`); only the resolved name differs, so update any code that compared the resolved string against `"shields_down"`.
+
+### boon-cli
+
+- No functional changes; the version is bumped in step with the workspace.
+
+### boon
+
+- New `hitgroups` and `lifestates` lookup tables in the core crate: `hitgroup_name(id)` / `all_hitgroups()` and `lifestate_name(id)` / `all_lifestates()`, mapping Source 2's `HitGroup_t` and `LifeState_t` enum values to names and re-exported at the crate root alongside `hero_name`/`team_name`. These back the new Python `hitgroup_names()` / `lifestate_names()`.
+- **Changed:** `patron_phase_name(2)` now returns `transforming` (was `shields_down`).
+
 ## 0.3.0
 
 ### boon-python
