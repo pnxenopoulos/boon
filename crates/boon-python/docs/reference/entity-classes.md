@@ -63,7 +63,7 @@ position, health, and combat state.
 | `m_angClientCamera` | QAngle | Camera angles (pitch, yaw, roll) |
 | `m_iHealth` | I64 | Current health |
 | `m_iMaxHealth` | I64 | Maximum health |
-| `m_lifeState` | I64 | Life state (0 = alive, 1 = dying, 2 = dead) |
+| `m_lifeState` | I64 | Life state (0 = alive, 1 = dying, 2 = dead, 3 = respawnable, 4 = respawning); resolve with `lifestate_names()` |
 | `m_flDeathTime` | F32 | Time of death |
 | `m_flLastSpawnTime` | F32 | Time of last spawn |
 | `m_flRespawnTime` | F32 | Respawn timer |

@@ -1,5 +1,6 @@
 # 📚 API Reference
 
+(demo)=
 ## `Demo`
 
 ```python
@@ -161,6 +162,62 @@ dict with four top-level keys:
 
 **Raises:** `DemoMessageError` -- If the demo contains no post-match details
 (for example, an incomplete recording).
+
+(kill-participation)=
+#### `kill_participation()`
+
+```python
+demo.kill_participation()                          # whole match
+demo.kill_participation(start_tick=0, end_tick=18000)  # windowed
+```
+
+Each player's kill participation: `(kills + assists) / team_kills`. A player is
+credited on a team kill as either the killer or an assister (never both), so the
+value is a fraction in `[0, 1]` — the share of their team's kills they were
+involved in. Convenience method that delegates to
+[`boon.stats.kill_participation()`](#stats); see that section for details.
+
+Optional `start_tick` / `end_tick` restrict the count to kills within that tick
+window (the denominator is the team's kills in the same window).
+
+**Returns:** `polars.DataFrame` — one row per player, sorted by `team_num` then
+`hero_id`:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `hero_id` | `int` | The player's hero ID |
+| `team_num` | `int` | The player's team number |
+| `kills` | `int` | Kills credited to the player (in the window) |
+| `assists` | `int` | Assists credited to the player (in the window) |
+| `team_kills` | `int` | Total kills by the player's team (in the window) |
+| `kill_participation` | `float` | `(kills + assists) / team_kills`, or null if the team had zero kills |
+
+(time-dead)=
+#### `time_dead()`
+
+```python
+demo.time_dead()
+```
+
+Time each player spent dead during regulation. A player is dead on any tick
+where they are not alive (`is_alive == False`); only non-paused ticks up to the
+game-over event are counted, so the totals align with `regulation_ticks` /
+`regulation_seconds`. Convenience method that delegates to
+[`boon.stats.time_dead()`](#stats).
+
+**Returns:** `polars.DataFrame` — one row per player, sorted by `team_num` then
+`hero_id`:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `hero_id` | `int` | The player's hero ID |
+| `team_num` | `int` | The player's team number |
+| `ticks_dead` | `int` | Non-paused regulation ticks spent dead |
+| `seconds_dead` | `float` | `ticks_dead / tick_rate` |
+| `pct_regulation_dead` | `float` | `ticks_dead / regulation_ticks` as a percentage in `[0, 100]` |
+
+**Raises:** `ValueError` — If the demo has no game-over event (regulation time,
+and therefore this metric, is undefined).
 
 ### Metadata Properties
 
@@ -362,7 +419,7 @@ Auto-loads on first access if not already loaded via `load()`.
 | `respawn_time` | `float` | Time until respawn |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
-| `lifestate` | `int` | Life state value |
+| `lifestate` | `int` | Life state value (use `lifestate_names()` to resolve) |
 | `souls` | `int` | Current souls (currency) |
 | `spent_souls` | `int` | Total spent souls |
 | `in_combat_end_time` | `float` | In-combat timer end |
@@ -454,7 +511,7 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 | `victim_hero_id` | `int` | The hero ID of the victim (0 if not a hero) |
 | `attacker_hero_id` | `int` | The hero ID of the attacker (0 if not a hero) |
 | `victim_health_new` | `int` | The victim's health after damage |
-| `hitgroup_id` | `int` | The hitgroup that was hit |
+| `hitgroup_id` | `int` | The hitgroup that was hit (use `hitgroup_names()` to resolve) |
 | `crit_damage` | `float` | Critical damage amount |
 | `attacker_class` | `int` | The attacker's entity class ID |
 | `victim_class` | `int` | The victim's entity class ID |
@@ -562,7 +619,7 @@ Auto-loads on first access.
 | `lane` | `int` | Lane color (1=yellow, 3=green, 4=blue, 6=purple; 0 for patron/shrine/mid_boss) |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
-| `phase` | `int` | Patron phase — resolve with `patron_phase_names()` (0=normal, 1=final, 2=shields_down; 0 for non-patron) |
+| `phase` | `int` | Patron phase — resolve with `patron_phase_names()` (0=normal, 1=final, 2=transforming; 0 for non-patron) |
 | `x` | `float` | X position in world (Hammer) units |
 | `y` | `float` | Y position in world (Hammer) units |
 | `z` | `float` | Z position in world (Hammer) units |
@@ -835,9 +892,96 @@ patron_phase_names()  # -> dict[int, str]
 
 Return a mapping of patron phase ID to phase name. Phases are the values of
 `CNPC_Boss_Tier3.m_ePhase`: `0=normal` (shielded), `1=final` (killable),
-`2=shields_down` (vulnerable). Non-patron objectives report `0` by default.
+`2=transforming` (vulnerable). Non-patron objectives report `0` by default.
 
-**Returns:** `dict[int, str]` -- Patron phase ID to name mapping (e.g., `{0: "normal", 1: "final", 2: "shields_down"}`).
+**Returns:** `dict[int, str]` -- Patron phase ID to name mapping (e.g., `{0: "normal", 1: "final", 2: "transforming"}`).
+
+---
+
+### `hitgroup_names()`
+
+```python
+from boon import hitgroup_names
+
+hitgroup_names()  # -> dict[int, str]
+```
+
+Return a mapping of hit group ID to hit group name, for resolving the
+`hitgroup_id` column on the `damage` frame. Values are Source 2's `HitGroup_t`
+enum: `0=generic`, `1=head`, `2=chest`, `3=stomach`, the limbs (`4=left_arm`,
+`5=right_arm`, `6=left_leg`, `7=right_leg`), `8=neck`, `10=gear`, `11=special`,
+the tier-2 / drone boss weakpoints (`12`–`18`), `19=head_no_resist`, and
+`-1=invalid`. The `HITGROUP_COUNT` sentinel is omitted.
+
+**Returns:** `dict[int, str]` -- Hit group ID to name mapping.
+
+---
+
+### `lifestate_names()`
+
+```python
+from boon import lifestate_names
+
+lifestate_names()  # -> dict[int, str]
+```
+
+Return a mapping of life state ID to life state name, for resolving the
+`lifestate` column on `player_ticks`. Values are Source 2's `LifeState_t` enum.
+
+**Returns:** `dict[int, str]` -- Life state ID to name mapping (`{0: "alive", 1: "dying", 2: "dead", 3: "respawnable", 4: "respawning"}`).
+
+---
+
+(stats)=
+## Stats (`boon.stats`)
+
+An analysis layer of derived metrics computed from parsed demo data. Each
+function takes a [`Demo`](#demo) and returns a Polars DataFrame, keyed on
+`hero_id` so results join cleanly to the parser's other frames (`players`,
+`kills`, `player_ticks`, the `summary()` outputs, ...). Every metric is also
+surfaced as a convenience method on `Demo` (e.g. `demo.kill_participation()`
+delegates to `boon.stats.kill_participation(demo)` — same computation).
+
+### `kill_participation()`
+
+```python
+from boon import stats
+
+stats.kill_participation(demo)                              # whole match
+stats.kill_participation(demo, start_tick=0, end_tick=18000)  # windowed
+demo.kill_participation()                                   # equivalent method form
+```
+
+Each player's `(kills + assists) / team_kills`. A player is credited on a team
+kill as either the killer or an assister (never both on the same kill), so the
+value is a fraction in `[0, 1]` — the share of their team's kills they were
+involved in. Pass `start_tick` / `end_tick` to count only kills within that tick
+window (the denominator is the team's kills in the same window).
+
+**Returns:** `polars.DataFrame` with columns `hero_id`, `team_num`, `kills`,
+`assists`, `team_kills`, `kill_participation` (see the
+[`Demo.kill_participation()`](#kill-participation) table), one row per player,
+sorted by `team_num` then `hero_id`.
+
+### `time_dead()`
+
+```python
+from boon import stats
+
+stats.time_dead(demo)   # equivalently: demo.time_dead()
+```
+
+Time each player spent dead during regulation. A player is dead on any tick
+where `is_alive == False`; only non-paused ticks up to the game-over event are
+counted, so the totals align with `demo.regulation_ticks` /
+`demo.regulation_seconds`.
+
+**Returns:** `polars.DataFrame` with columns `hero_id`, `team_num`,
+`ticks_dead`, `seconds_dead`, `pct_regulation_dead` (see the
+[`Demo.time_dead()`](#time-dead) table), one row per player, sorted by
+`team_num` then `hero_id`.
+
+**Raises:** `ValueError` — if the demo has no game-over event.
 
 ---
 

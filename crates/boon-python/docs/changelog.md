@@ -1,22 +1,42 @@
 # 📝 Changelog
 
+## 0.4.0
+
+### boon-python
+
+- New `boon.stats` module — derived metrics computed from parsed demo data, keyed on `hero_id`. Each is also a thin `Demo` method. Initial metrics:
+  - `kill_participation(demo)` (`Demo.kill_participation()`) — `(kills + assists) / team_kills` per player (a `[0, 1]` fraction), with an optional `start_tick` / `end_tick` window.
+  - `time_dead(demo)` (`Demo.time_dead()`) — per-player `ticks_dead`, `seconds_dead`, and `pct_regulation_dead`, counting only non-paused ticks up to game-over so totals align with `regulation_ticks` / `regulation_seconds`.
+- `hitgroup_names()` returning `dict[int, str]` for the `hitgroup_id` column on `damage`. Values are Source 2's `HitGroup_t` enum (`-1=invalid`, `0=generic`, `1=head`, … `19=head_no_resist`; the `HITGROUP_COUNT` sentinel is omitted).
+- `lifestate_names()` returning `dict[int, str]` for the `lifestate` column on `player_ticks`. Values are Source 2's `LifeState_t` enum (`0=alive`, `1=dying`, `2=dead`, `3=respawnable`, `4=respawning`).
+- **Changed:** `patron_phase_names()` renames patron phase `2` from `shields_down` to `transforming`. The raw `phase` integer is unchanged (still `2`); update any code comparing the resolved string against `"shields_down"`.
+
+### boon-cli
+
+- No functional changes; the version is bumped in step with the workspace.
+
+### boon
+
+- New `hitgroups` and `lifestates` lookup tables: `hitgroup_name(id)` / `all_hitgroups()` and `lifestate_name(id)` / `all_lifestates()`, mapping Source 2's `HitGroup_t` and `LifeState_t` enums to names and re-exported at the crate root. These back the Python `hitgroup_names()` / `lifestate_names()`.
+- **Changed:** `patron_phase_name(2)` now returns `transforming` (was `shields_down`).
+
 ## 0.3.0
 
 ### boon-python
 
-- **Faster:** all parsing is a few percent quicker — packet messages the parser doesn't consume (sounds, temp entities, etc.) are now skipped in place instead of being copied out of the bitstream first.
-- **Fixed & faster:** `active_modifiers` (and the idol events in `urn`) emitted duplicate `applied`/`removed` rows on nearly every tick. When a modifier ends, Source 2 keeps its original entry in the `ActiveModifiers` string table *and* adds a separate `entry_type=2` removal entry (the table never shrinks), so the previous per-tick full-table rescan re-applied and re-removed such modifiers indefinitely — roughly 99% of `active_modifiers` rows were these per-tick duplicates (e.g. 3.16M rows where ~41k were real). The scan now processes only the entries each string-table delta actually touches, so each modifier is reported once when applied and once when removed. Building `active_modifiers` is correspondingly much faster: on a full match the ActiveModifiers decode dropped from ~7.3s to ~0.06s (the whole dataset load went from ~18s to ~5s, the remainder being the shared entity parse). `urn` output is unchanged apart from dropping the same duplicate idol events.
-- **Fixed:** `modifier_names()` resolved only ~87 modifiers — the generic/global ones (shop zones, capture auras, boss invuln) defined as top-level keys in `modifiers.vdata`. Many gameplay modifiers (hero abilities, items) are instead defined as nested `subclass:` blocks, which the name-table generator never scanned. It now builds the table from the union of: every top-level key in `modifiers.vdata`, every nested `_my_subclass_name` there, and the `_my_subclass_name` of each modifier subclass nested in `abilities.vdata` (those whose `_class` starts with `modifier_`, which excludes the scale-functions and ability/item subclasses that share the `_my_subclass_name` field) — ~917 entries. This is the right field because a demo identifies a modifier by the `modifier_subclass` token on `CModifierTableEntry`, which is the `CUtlStringToken` (`MurmurHash2`) of the modifier's `_my_subclass_name`. Many modifiers are still registered in engine/C++ code and appear in no vdata file, so a substantial share of `modifier_id` values remain `MODIFIER_NOT_FOUND` (resolution is name-list-bound, not a hashing limitation).
-- `ability_names()`, `modifier_names()`, and `hero_names()` reflect the latest Deadlock build (game build `6557`). The hero table gains Raven (`hero_operative`, id 62) and a test hero (id 83), and renames id 82 (`hero_opera`) from "Raven" to "Opera" — Valve moved the "Raven" name onto the new hero slot. The ability table also tracked a handful of upstream removals.
-- **Fixed:** the `max_health` column on `player_ticks` reported the pawn's `m_iMaxHealth`, a base/stale value that current health exceeds in over half of all ticks (e.g. health `817` against a reported max of `780`). It now reads the controller's `m_PlayerDataGlobal.m_iHealthMax` — the live effective maximum, which already folds in level growth, items, and buffs — and falls back to the pawn's value only when the controller isn't populated yet. The `health` column (the pawn's live `m_iHealth`) is unchanged.
+- **Faster:** all parsing is a few percent quicker — packet messages the parser doesn't consume (sounds, temp entities, etc.) are now skipped in place instead of copied out of the bitstream first.
+- **Fixed & faster:** `active_modifiers` (and the idol events in `urn`) emitted duplicate `applied`/`removed` rows on nearly every tick. Source 2 keeps a modifier's original `ActiveModifiers` entry and adds a separate `entry_type=2` removal entry (the table never shrinks), so the old per-tick full-table rescan re-applied and re-removed it indefinitely — ~99% of rows were per-tick duplicates (e.g. 3.16M rows where ~41k were real). The scan now processes only the entries each string-table delta touches, reporting each modifier once applied and once removed. Much faster too: the ActiveModifiers decode dropped from ~7.3s to ~0.06s (full dataset load ~18s → ~5s). `urn` output is unchanged apart from dropping the duplicate idol events.
+- **Fixed:** `modifier_names()` resolved only ~87 modifiers — the generic ones defined as top-level keys in `modifiers.vdata`; most gameplay modifiers are nested `subclass:` blocks the generator never scanned. It now unions every top-level key in `modifiers.vdata`, every nested `_my_subclass_name` there, and the `_my_subclass_name` of each modifier subclass in `abilities.vdata` (those whose `_class` starts with `modifier_`) — ~917 entries. This is the right field because a demo identifies a modifier by the `modifier_subclass` token on `CModifierTableEntry`, the `CUtlStringToken` (`MurmurHash2`) of its `_my_subclass_name`. Many modifiers live only in engine/C++ code and appear in no vdata file, so a share of `modifier_id` values stay `MODIFIER_NOT_FOUND` (name-list-bound, not a hashing limitation).
+- `ability_names()`, `modifier_names()`, and `hero_names()` reflect the latest Deadlock build (`6557`). The hero table gains Raven (`hero_operative`, id 62) and a test hero (id 83), and renames id 82 (`hero_opera`) from "Raven" to "Opera" — Valve moved "Raven" onto the new slot. The ability table also tracked a few upstream removals.
+- **Fixed:** the `max_health` column on `player_ticks` reported the pawn's `m_iMaxHealth`, a stale base value that current health exceeds on over half of all ticks (e.g. `817` vs a reported max of `780`). It now reads the controller's `m_PlayerDataGlobal.m_iHealthMax` — the live effective max (level growth, items, buffs) — falling back to the pawn value only before the controller is populated. The `health` column is unchanged.
 
 ### boon-cli
 
-- **Fixed & faster:** the `active-modifiers` command had the same per-tick flicker as the Python dataset — it re-emitted an `applied`/`removed` pair for stale `ActiveModifiers` entries on nearly every tick (e.g. 435,795 events where ~5,763 were real). It now processes only the entries each string-table delta touches, reporting each modifier once applied and once removed, which also makes the command much faster to run.
+- **Fixed & faster:** the `active-modifiers` command had the same per-tick flicker — re-emitting an `applied`/`removed` pair for stale entries on nearly every tick (e.g. 435,795 events where ~5,763 were real). It now processes only the entries each string-table delta touches, reporting each modifier once applied and once removed, and runs much faster.
 
 ### boon-proto
 
-- Synced protobuf definitions to the latest Deadlock build (game build `6536` → `6557`); `boon-proto` is now `0.2.10717574+6557`. The notable schema change is a new `CMsgServerSignoutData_DetailedStats.UrnCapture` message (per-urn post-match stats — winning/deposit team, overtime flag, match time, winning/losing player counts, duration, and a comeback-victory flag) added as a repeated `urn_captures` field. An earlier build in this range also dropped the redundant `[default = 0]` annotation from two `usermessages.proto` `uint32` fields (`CUserMessageAudioParameter.name_hash_code` and `CUserMessageHapticsManagerEffect.effect_name_hash_code`) — a no-op, since `0` is already the implicit default.
+- Synced protobuf definitions to the latest Deadlock build (`6536` → `6557`); `boon-proto` is now `0.2.10717574+6557`. The notable change is a new `CMsgServerSignoutData_DetailedStats.UrnCapture` message (per-urn post-match stats) added as a repeated `urn_captures` field. An earlier build also dropped a redundant `[default = 0]` from two `usermessages.proto` `uint32` fields — a no-op, since `0` is already the implicit default.
 
 ## 0.2.0
 

@@ -2,23 +2,28 @@
 
 # Boon
 
-[![Discord](https://img.shields.io/discord/1466262096479129673?color=5865F2&logo=discord&logoColor=white)](https://discord.gg/WmjZHxWrCD)
-[![Docs](https://readthedocs.org/projects/boon/badge/?version=latest)](https://boon.readthedocs.io)
-[![CI](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml/badge.svg)](https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p>
+  <a href="https://discord.gg/WmjZHxWrCD"><img src="https://img.shields.io/discord/1466262096479129673?color=5865F2&logo=discord&logoColor=white&style=for-the-badge" alt="Discord"></a>
+  <a href="https://boon.readthedocs.io"><img src="https://readthedocs.org/projects/boon/badge/?version=latest&style=for-the-badge" alt="Docs"></a>
+  <a href="https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/pnxenopoulos/boon/ci.yml?style=for-the-badge" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
+</p>
 
-**Python** &nbsp;
-[![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
-[![Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+<p>
+  <a href="https://pypi.org/project/boon-deadlock/"><img src="https://img.shields.io/pypi/v/boon-deadlock.svg?style=for-the-badge" alt="PyPI"></a>
+  <a href="https://pepy.tech/project/boon-deadlock"><img src="https://img.shields.io/pepy/dt/boon-deadlock?style=for-the-badge" alt="Downloads"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11+"></a>
+</p>
 
-**Rust** &nbsp;
-[![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
-[![crates.io Downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
+<p>
+  <a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/v/boon-deadlock?style=for-the-badge" alt="crates.io"></a>
+  <a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/dr/boon-deadlock?style=for-the-badge" alt="crates.io Downloads"></a>
+</p>
 
-**CLI** &nbsp;
-[![GitHub Release](https://img.shields.io/github/v/release/pnxenopoulos/boon?label=CLI)](https://github.com/pnxenopoulos/boon/releases)
-[![CLI Downloads](https://img.shields.io/github/downloads/pnxenopoulos/boon/total?label=CLI%20Downloads)](https://github.com/pnxenopoulos/boon/releases)
+<p>
+  <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/v/release/pnxenopoulos/boon?style=for-the-badge" alt="GitHub Release"></a>
+  <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/downloads/pnxenopoulos/boon/total?style=for-the-badge" alt="CLI Downloads"></a>
+</p>
 
 </div>
 
@@ -102,6 +107,9 @@ demo.load("kills", "damage", "player_ticks", "objectives")
 
 # See what datasets are available
 Demo.available_datasets()
+
+# Derived stats (boon.stats), also exposed as Demo methods
+demo.kill_participation()    # (kills + assists) / team kills, per player
 ```
 
 ### CLI
@@ -125,7 +133,7 @@ boon --help
 
 ## Available Datasets
 
-Each dataset is a property on the `Demo` class that returns a [Polars](https://pola.rs) DataFrame. Datasets are lazy-loaded on first access — boon only parses what you request. If you need multiple datasets, `load()` parses them in a single pass for efficiency. Call `Demo.available_datasets()` to see the full list programmatically.
+Each dataset is a property on the `Demo` class that returns a [Polars](https://pola.rs) DataFrame. Datasets are lazy-loaded on first access — Boon only parses what you request. If you need multiple datasets, `load()` parses them in a single pass for efficiency. Call `Demo.available_datasets()` to see the full list programmatically.
 
 | Dataset | Description |
 |---------|-------------|
@@ -175,6 +183,7 @@ Full documentation is available at [boon.readthedocs.io](https://boon.readthedoc
 - [Steam store page](https://store.steampowered.com/app/1422450/Deadlock/)
 - [Deadlock Wiki](https://deadlock.wiki/)
 - [r/DeadlockTheGame](https://www.reddit.com/r/DeadlockTheGame/) — Reddit community
+- [deadlock.nyc](https://deadlock.nyc) — an online demo parser powered by Boon
 
 ## Contributing
 
