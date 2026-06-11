@@ -8,7 +8,8 @@ set -euo pipefail
 # 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
 # 2) Copies abilities.vdata and modifiers.vdata to the repo root
 # 3) Runs the generate-name-tables script to regenerate abilities.rs and modifiers.rs
-# 4) Cleans up the temporary vdata files
+# 4) Runs `cargo fmt --all` so the regenerated tables are correctly formatted
+# 5) Cleans up the temporary vdata files
 #
 # The modifier table is built purely from these two vdata files: modifiers.vdata
 # (top-level keys + nested `_my_subclass_name` values) plus the modifier
@@ -88,10 +89,17 @@ generate_tables() {
   cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 }
 
+format_tables() {
+  echo "Formatting with cargo fmt..."
+  cd "$ROOT_DIR"
+  cargo fmt --all
+}
+
 main() {
   clone_repo
   copy_vdata
   generate_tables
+  format_tables
   echo "Done. Updated crates/boon/src/abilities.rs and crates/boon/src/modifiers.rs"
 }
 

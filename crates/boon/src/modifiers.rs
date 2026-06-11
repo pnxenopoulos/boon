@@ -151,7 +151,10 @@ const ENTRIES: &[(u32, &str)] = &[
     (703763413, "modifier_streetbrawl_buyphase_drafting"),
     (709920167, "reviving"),
     (716053107, "modifier_citadel_in_shoptunnel_amber"),
-    (719284215, "modifier_citadel_silence_proc_tech_damage_reduction"),
+    (
+        719284215,
+        "modifier_citadel_silence_proc_tech_damage_reduction",
+    ),
     (721339712, "modifier_flamedash"),
     (722709575, "active"),
     (733899682, "modifier_citadel_disarm_proc"),
@@ -427,7 +430,10 @@ const ENTRIES: &[(u32, &str)] = &[
     (2007437238, "modifier_garbageaura"),
     (2009958750, "modifier_cadence_gun_spikes"),
     (2015287185, "modifier_doorman_bell_aura"),
-    (2017094508, "modifier_street_brawl_round_start_zipline_boost"),
+    (
+        2017094508,
+        "modifier_street_brawl_round_start_zipline_boost",
+    ),
     (2018748030, "tether_firerate_slow"),
     (2019097483, "modifier_citadel_delayed_stun"),
     (2024067339, "modifier_cloaking_device_active_ambush"),
