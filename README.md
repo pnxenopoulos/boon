@@ -3,26 +3,26 @@
 # Boon
 
 <p>
-  <a href="https://discord.gg/WmjZHxWrCD"><img src="https://img.shields.io/discord/1466262096479129673?color=5865F2&logo=discord&logoColor=white&style=for-the-badge" alt="Discord"></a>
-  <a href="https://boon.readthedocs.io"><img src="https://readthedocs.org/projects/boon/badge/?version=latest&style=for-the-badge" alt="Docs"></a>
-  <a href="https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/pnxenopoulos/boon/ci.yml?style=for-the-badge" alt="CI"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
-</p>
+<a href="https://discord.gg/WmjZHxWrCD"><img src="https://img.shields.io/discord/1466262096479129673?color=5865F2&logo=discord&logoColor=white&style=for-the-badge" alt="Discord"></a>
+<a href="https://boon.readthedocs.io"><img src="https://readthedocs.org/projects/boon/badge/?version=latest&style=for-the-badge" alt="Docs"></a>
+<a href="https://github.com/pnxenopoulos/boon/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/pnxenopoulos/boon/ci.yml?style=for-the-badge" alt="CI"></a>
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg?style=for-the-badge" alt="License: MIT"></a>
 
-<p>
-  <a href="https://pypi.org/project/boon-deadlock/"><img src="https://img.shields.io/pypi/v/boon-deadlock.svg?style=for-the-badge" alt="PyPI"></a>
-  <a href="https://pepy.tech/project/boon-deadlock"><img src="https://img.shields.io/pepy/dt/boon-deadlock?style=for-the-badge" alt="Downloads"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11+"></a>
-</p>
+<br />
 
-<p>
-  <a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/v/boon-deadlock?style=for-the-badge" alt="crates.io"></a>
-  <a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/dr/boon-deadlock?style=for-the-badge" alt="crates.io Downloads"></a>
-</p>
+<a href="https://pypi.org/project/boon-deadlock/"><img src="https://img.shields.io/pypi/v/boon-deadlock.svg?style=for-the-badge" alt="PyPI"></a>
+<a href="https://pepy.tech/project/boon-deadlock"><img src="https://img.shields.io/pepy/dt/boon-deadlock?style=for-the-badge" alt="Downloads"></a>
+<a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11+"></a>
 
-<p>
-  <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/v/release/pnxenopoulos/boon?style=for-the-badge" alt="GitHub Release"></a>
-  <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/downloads/pnxenopoulos/boon/total?style=for-the-badge" alt="CLI Downloads"></a>
+<br />
+
+<a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/v/boon-deadlock?style=for-the-badge" alt="crates.io"></a>
+<a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/dr/boon-deadlock?style=for-the-badge" alt="crates.io Downloads"></a>
+
+<br />
+
+<a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/v/release/pnxenopoulos/boon?style=for-the-badge" alt="GitHub Release"></a>
+<a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/downloads/pnxenopoulos/boon/total?style=for-the-badge" alt="CLI Downloads"></a>
 </p>
 
 </div>
