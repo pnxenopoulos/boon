@@ -15,4 +15,5 @@ class-info
 serializers
 entities
 parsing-flow
+name-tables
 ```

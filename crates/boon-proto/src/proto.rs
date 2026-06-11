@@ -26007,9 +26007,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1")]
+    #[prost(uint32, optional, tag = "1", default = "0")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -26813,7 +26813,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,
