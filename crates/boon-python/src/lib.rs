@@ -38,6 +38,7 @@ fn to_py_err(e: boon_parser::Error) -> PyErr {
 const VALID_DATASETS: &[&str] = &[
     "abilities",
     "ability_upgrades",
+    "ability_ticks",
     "chat",
     "mid_boss",
     "objectives",
@@ -100,6 +101,7 @@ struct Demo {
     cached_neutrals: Option<DataFrame>,
     cached_stat_modifier_events: Option<DataFrame>,
     cached_active_modifiers: Option<DataFrame>,
+    cached_ability_ticks: Option<DataFrame>,
     cached_players: Option<DataFrame>,
     cached_street_brawl_ticks: Option<DataFrame>,
     cached_street_brawl_rounds: Option<DataFrame>,
@@ -553,6 +555,7 @@ impl Demo {
             cached_neutrals: None,
             cached_stat_modifier_events: None,
             cached_active_modifiers: None,
+            cached_ability_ticks: None,
             cached_players: None,
             cached_street_brawl_ticks: None,
             cached_street_brawl_rounds: None,
@@ -904,6 +907,8 @@ impl Demo {
             && self.cached_stat_modifier_events.is_none();
         let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
             && self.cached_active_modifiers.is_none();
+        let load_ability_ticks =
+            datasets.iter().any(|s| s == "ability_ticks") && self.cached_ability_ticks.is_none();
         let load_urn = datasets.iter().any(|s| s == "urn") && self.cached_urn.is_none();
         let load_street_brawl_ticks = datasets.iter().any(|s| s == "street_brawl_ticks")
             && self.cached_street_brawl_ticks.is_none();
@@ -925,6 +930,7 @@ impl Demo {
             && !load_neutrals
             && !load_stat_modifier_events
             && !load_active_modifiers
+            && !load_ability_ticks
             && !load_urn
             && !load_street_brawl_ticks
             && !load_street_brawl_rounds
@@ -940,6 +946,25 @@ impl Demo {
             || load_chat
             || load_mid_boss
             || load_street_brawl_rounds;
+
+        // ability_ticks needs every ability *entity* class decoded. There are
+        // hundreds (one per ability), so collect their names from the send tables
+        // (any networked class whose name contains "Ability") into an owned Vec
+        // that outlives the borrowed `&str` class filter below.
+        let ability_class_names: Vec<String> = if load_ability_ticks {
+            self.parser
+                .parse_send_tables()
+                .map(|sc| {
+                    sc.serializers
+                        .keys()
+                        .filter(|n| n.contains("Ability"))
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
@@ -979,6 +1004,13 @@ impl Demo {
         if load_urn {
             class_names.push("CCitadelIdolReturnTrigger");
         }
+        if load_ability_ticks {
+            // Pawns for the owner -> hero mapping, plus every ability class.
+            class_names.push("CCitadelPlayerPawn");
+            for n in &ability_class_names {
+                class_names.push(n.as_str());
+            }
+        }
         let class_filter: std::collections::HashSet<&str> = class_names.into_iter().collect();
 
         // ── Column vectors for player_ticks ──
@@ -996,6 +1028,7 @@ impl Demo {
         let mut pt_yaw: Vec<f32> = Vec::with_capacity(pt_capacity);
         let mut pt_roll: Vec<f32> = Vec::with_capacity(pt_capacity);
         let mut pt_in_regen_zone: Vec<bool> = Vec::with_capacity(pt_capacity);
+        let mut pt_in_item_shop: Vec<bool> = Vec::with_capacity(pt_capacity);
         let mut pt_death_time: Vec<f32> = Vec::with_capacity(pt_capacity);
         let mut pt_last_spawn_time: Vec<f32> = Vec::with_capacity(pt_capacity);
         let mut pt_respawn_time: Vec<f32> = Vec::with_capacity(pt_capacity);
@@ -1146,6 +1179,17 @@ impl Demo {
         let mut am_duration: Vec<f32> = Vec::new();
         let mut am_caster_hero_id: Vec<i64> = Vec::new();
         let mut am_stacks: Vec<i32> = Vec::new();
+
+        // ── Column vectors for ability_ticks (entity change detection) ──
+        let mut at_tick: Vec<i32> = Vec::new();
+        let mut at_hero_id: Vec<i64> = Vec::new();
+        let mut at_ability_id: Vec<u32> = Vec::new();
+        let mut at_slot: Vec<i32> = Vec::new();
+        let mut at_cooldown_start: Vec<f32> = Vec::new();
+        let mut at_cooldown_end: Vec<f32> = Vec::new();
+        let mut at_remaining_charges: Vec<i32> = Vec::new();
+        let mut at_charge_recharge_start: Vec<f32> = Vec::new();
+        let mut at_charge_recharge_end: Vec<f32> = Vec::new();
         // ── Column vectors for street_brawl_ticks ──
         let sbt_capacity = if load_street_brawl_ticks {
             self.total_ticks as usize
@@ -1194,6 +1238,29 @@ impl Demo {
         // explicit `entry_type == 2` (replaces the old full-table rescan).
         let mut am_idx_serial: HashMap<usize, u32> = HashMap::new();
 
+        // ability_ticks: per-ability-class resolved field keys (cached on first
+        // sight of each class) and per-entity previous state for change detection.
+        struct AbilityKeys {
+            subclass_id: Option<u64>,
+            slot: Option<u64>,
+            cooldown_start: Option<u64>,
+            cooldown_end: Option<u64>,
+            remaining_charges: Option<u64>,
+            recharge_start: Option<u64>,
+            recharge_end: Option<u64>,
+            owner: Option<u64>,
+        }
+        #[derive(PartialEq)]
+        struct AbilState {
+            cooldown_start: f32,
+            cooldown_end: f32,
+            remaining_charges: i32,
+            recharge_start: f32,
+            recharge_end: f32,
+        }
+        let mut ability_keys_cache: HashMap<String, AbilityKeys> = HashMap::new();
+        let mut abil_prev: HashMap<i32, AbilState> = HashMap::new();
+
         // Track idol modifiers for urn lifecycle
         const GOLDEN_IDOL_ABILITY: u32 = 2521299219;
         const IDOL_RETURN: u32 = 3388847715;
@@ -1226,6 +1293,7 @@ impl Demo {
         let mut pk_cell_z: Option<u64> = None;
         let mut pk_camera: Option<u64> = None;
         let mut pk_in_regen: Option<u64> = None;
+        let mut pk_in_item_shop: Option<u64> = None;
         let mut pk_death_time: Option<u64> = None;
         let mut pk_last_spawn: Option<u64> = None;
         let mut pk_respawn: Option<u64> = None;
@@ -1357,7 +1425,7 @@ impl Demo {
         macro_rules! collect_entity_data {
             ($ctx:expr) => {
                 if !keys_resolved {
-                    if load_abilities || load_player_ticks || load_kills || load_damage || load_active_modifiers || load_urn {
+                    if load_abilities || load_player_ticks || load_kills || load_damage || load_active_modifiers || load_urn || load_ability_ticks {
                         if let Some(s) = $ctx.serializers.get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
@@ -1383,6 +1451,7 @@ impl Demo {
                                 );
                                 pk_camera = s.resolve_field_key("m_angClientCamera");
                                 pk_in_regen = s.resolve_field_key("m_bInRegenerationZone");
+                                pk_in_item_shop = s.resolve_field_key("m_bInItemShopZone");
                                 pk_death_time = s.resolve_field_key("m_flDeathTime");
                                 pk_last_spawn = s.resolve_field_key("m_flLastSpawnTime");
                                 pk_respawn = s.resolve_field_key("m_flRespawnTime");
@@ -1681,6 +1750,7 @@ impl Demo {
                         pt_yaw.push(angles[1]);
                         pt_roll.push(angles[2]);
                         pt_in_regen_zone.push(pawn.get_bool(pk_in_regen));
+                        pt_in_item_shop.push(pawn.get_bool(pk_in_item_shop));
                         pt_death_time.push(pawn.get_f32(pk_death_time));
                         pt_last_spawn_time.push(pawn.get_f32(pk_last_spawn));
                         pt_respawn_time.push(pawn.get_f32(pk_respawn));
@@ -1758,7 +1828,7 @@ impl Demo {
                 }
 
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
-                if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn) && !entity_to_hero_built {
+                if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks) && !entity_to_hero_built {
                     for (&idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerPawn" {
                             let hid = entity.get_i64(pk_hero_id);
@@ -2061,6 +2131,70 @@ impl Demo {
                                     stacks,
                                 });
                             }
+                        }
+                    }
+                }
+
+                // ── Collect ability_ticks (entity change detection on cooldown/charges) ──
+                //
+                // Each ability is its own entity (one networked class per ability).
+                // We walk the decoded ability entities each tick, read their
+                // cooldown/charge fields, and emit a row only when an ability's
+                // state changes (change-only, like active_modifiers). Field keys
+                // differ per ability class, so they are resolved once per class and
+                // cached. Owner -> hero comes from m_hOwnerEntity (the pawn).
+                if load_ability_ticks {
+                    for (&idx, entity) in $ctx.entities.iter() {
+                        if !entity.class_name.contains("Ability") {
+                            continue;
+                        }
+                        if !ability_keys_cache.contains_key(&entity.class_name) {
+                            let s = $ctx.serializers.get(&entity.class_name);
+                            let r = |p: &str| s.and_then(|s| s.resolve_field_key(p));
+                            let ak = AbilityKeys {
+                                subclass_id: r("m_nSubclassID"),
+                                slot: r("m_eAbilitySlot"),
+                                cooldown_start: r("m_flCooldownStart"),
+                                cooldown_end: r("m_flCooldownEnd"),
+                                remaining_charges: r("m_iRemainingCharges"),
+                                recharge_start: r("m_flChargeRechargeStart"),
+                                recharge_end: r("m_flChargeRechargeEnd"),
+                                owner: r("m_hOwnerEntity"),
+                            };
+                            ability_keys_cache.insert(entity.class_name.clone(), ak);
+                        }
+                        let keys = &ability_keys_cache[&entity.class_name];
+                        // Capability gate: real abilities expose cooldown + charges.
+                        if keys.cooldown_end.is_none() || keys.remaining_charges.is_none() {
+                            continue;
+                        }
+                        let hero_id = entity
+                            .get_handle(keys.owner)
+                            .map(|h| (h & boon_parser::ENTITY_HANDLE_INDEX_MASK) as i32)
+                            .and_then(|owner_idx| entity_to_hero.get(&owner_idx).copied())
+                            .unwrap_or(0);
+                        if hero_id == 0 {
+                            continue;
+                        }
+                        let state = AbilState {
+                            cooldown_start: entity.get_f32(keys.cooldown_start),
+                            cooldown_end: entity.get_f32(keys.cooldown_end),
+                            remaining_charges: entity.get_i64(keys.remaining_charges) as i32,
+                            recharge_start: entity.get_f32(keys.recharge_start),
+                            recharge_end: entity.get_f32(keys.recharge_end),
+                        };
+                        let changed = abil_prev.get(&idx).map(|p| *p != state).unwrap_or(true);
+                        if changed {
+                            at_tick.push($ctx.tick);
+                            at_hero_id.push(hero_id);
+                            at_ability_id.push(entity.get_u32(keys.subclass_id));
+                            at_slot.push(entity.get_i64(keys.slot) as i32);
+                            at_cooldown_start.push(state.cooldown_start);
+                            at_cooldown_end.push(state.cooldown_end);
+                            at_remaining_charges.push(state.remaining_charges);
+                            at_charge_recharge_start.push(state.recharge_start);
+                            at_charge_recharge_end.push(state.recharge_end);
+                            abil_prev.insert(idx, state);
                         }
                     }
                 }
@@ -2516,6 +2650,7 @@ impl Demo {
                 Column::new("yaw".into(), pt_yaw),
                 Column::new("roll".into(), pt_roll),
                 Column::new("in_regen_zone".into(), pt_in_regen_zone),
+                Column::new("in_item_shop".into(), pt_in_item_shop),
                 Column::new("death_time".into(), pt_death_time),
                 Column::new("last_spawn_time".into(), pt_last_spawn_time),
                 Column::new("respawn_time".into(), pt_respawn_time),
@@ -2828,6 +2963,22 @@ impl Demo {
             self.cached_active_modifiers = Some(df);
         }
 
+        if load_ability_ticks {
+            let df = df_from_columns(vec![
+                Column::new("tick".into(), at_tick),
+                Column::new("hero_id".into(), at_hero_id),
+                Column::new("ability_id".into(), at_ability_id),
+                Column::new("slot".into(), at_slot),
+                Column::new("cooldown_start".into(), at_cooldown_start),
+                Column::new("cooldown_end".into(), at_cooldown_end),
+                Column::new("remaining_charges".into(), at_remaining_charges),
+                Column::new("charge_recharge_start".into(), at_charge_recharge_start),
+                Column::new("charge_recharge_end".into(), at_charge_recharge_end),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_ability_ticks = Some(df);
+        }
+
         if load_urn {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), urn_tick),
@@ -3095,6 +3246,31 @@ impl Demo {
             self.load(vec!["active_modifiers".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_active_modifiers.clone().unwrap()))
+    }
+
+    /// Ability cooldown / charge state changes as a Polars DataFrame.
+    ///
+    /// Change-only: a row is emitted for an ability only on the tick its
+    /// cooldown or charge state changes (not every tick), keeping the frame
+    /// compact. One ability entity exists per ability the player owns, including
+    /// innate movement abilities (jump, dash, slide, ...) which can be filtered
+    /// out via ``slot``.
+    ///
+    /// Columns: ``tick``, ``hero_id``, ``ability_id`` (a ``CUtlStringToken``;
+    /// resolve with ``ability_names()``), ``slot`` (``EAbilitySlots_t``),
+    /// ``cooldown_start`` / ``cooldown_end`` (game time; available again at
+    /// ``cooldown_end``), ``remaining_charges``, and ``charge_recharge_start`` /
+    /// ``charge_recharge_end`` (recharge window of the charge currently
+    /// regenerating).
+    ///
+    /// Not loaded by default. Access this property or call
+    /// ``load("ability_ticks")`` explicitly.
+    #[getter]
+    fn ability_ticks(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_ability_ticks.is_none() {
+            self.load(vec!["ability_ticks".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_ability_ticks.clone().unwrap()))
     }
 
     /// Urn (idol) lifecycle events as a Polars DataFrame.

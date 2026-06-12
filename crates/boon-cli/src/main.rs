@@ -40,6 +40,29 @@ enum Commands {
         #[arg(long, value_name = "TICK")]
         max_tick: Option<i32>,
     },
+    /// List ability cooldown / charge state changes from a demo
+    AbilityTicks {
+        /// Path to the demo file
+        file: PathBuf,
+        /// Filter abilities by name substring
+        #[arg(long)]
+        filter: Option<String>,
+        /// Show state-change counts per ability per hero
+        #[arg(long)]
+        summary: bool,
+        /// Maximum number of entries to display
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Filter by exact tick (equivalent to --min-tick N --max-tick N)
+        #[arg(long)]
+        tick: Option<i32>,
+        /// Filter by minimum tick
+        #[arg(long, value_name = "TICK")]
+        min_tick: Option<i32>,
+        /// Filter by maximum tick
+        #[arg(long, value_name = "TICK")]
+        max_tick: Option<i32>,
+    },
     /// Verify a demo file's magic bytes and header
     Verify {
         /// Path to the demo file
@@ -386,6 +409,19 @@ fn main() -> Result<()> {
             let min_tick = tick.or(min_tick);
             let max_tick = tick.or(max_tick);
             commands::abilities(&file, filter, summary, limit, min_tick, max_tick, json)
+        }
+        Commands::AbilityTicks {
+            file,
+            filter,
+            summary,
+            limit,
+            tick,
+            min_tick,
+            max_tick,
+        } => {
+            let min_tick = tick.or(min_tick);
+            let max_tick = tick.or(max_tick);
+            commands::ability_ticks(&file, filter, summary, limit, min_tick, max_tick, json)
         }
         Commands::Verify { file } => commands::verify(&file, json),
         Commands::Messages {

@@ -1,5 +1,21 @@
 # 📝 Changelog
 
+## 0.5.0
+
+### boon-python
+
+- New `boon.stats` metric `in_combat(demo)` (`Demo.in_combat()`) — a per-tick `in_combat` boolean keyed on `(tick, hero_id)`, derived from the pawn's `in_combat_end_time` window so it joins directly onto `player_ticks`.
+- New `player_ticks` column: `in_item_shop` (zone bool alongside `in_regen_zone`).
+- New `ability_ticks` dataset — change-only ability cooldown/charge state (`cooldown_start`/`cooldown_end`, `remaining_charges`, `charge_recharge_start`/`charge_recharge_end`) per `(hero_id, ability_id, slot)`, emitting a row only when an ability's state changes. Not loaded by default.
+
+### boon-cli
+
+- New `ability-ticks` command — inspect ability cooldown/charge state changes (the CLI counterpart of the `ability_ticks` dataset), with `--filter`, `--summary`, tick-window flags, and `--json`.
+
+### boon
+
+- No functional changes; the version is bumped in step with the workspace.
+
 ## 0.4.0
 
 ### boon-python
