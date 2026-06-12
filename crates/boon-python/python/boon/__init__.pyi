@@ -237,6 +237,16 @@ class Demo:
         """
         ...
 
+    def in_combat(self) -> pl.DataFrame:
+        """Whether each player is in combat, per tick.
+
+        Convenience method delegating to :func:`boon.stats.in_combat`. Returns
+        one row per ``(tick, hero_id)`` -- so it joins directly onto
+        ``player_ticks`` -- with a boolean ``in_combat`` column derived from the
+        pawn's ``in_combat_end_time`` window.
+        """
+        ...
+
     def kill_participation(
         self, *, start_tick: int | None = ..., end_tick: int | None = ...
     ) -> pl.DataFrame:
@@ -357,6 +367,7 @@ class Demo:
             - **yaw** (*float*) -- Camera yaw angle.
             - **roll** (*float*) -- Camera roll angle.
             - **in_regen_zone** (*bool*) -- Whether the player is in a regeneration zone.
+            - **in_item_shop** (*bool*) -- Whether the player is in an item shop zone.
             - **death_time** (*float*) -- Time of death.
             - **last_spawn_time** (*float*) -- Time of last spawn.
             - **respawn_time** (*float*) -- Time until respawn.
@@ -619,6 +630,32 @@ class Demo:
             - **duration** (*float*) -- Modifier duration.
             - **caster_hero_id** (*int*) -- Hero ID of the caster.
             - **stacks** (*int*) -- Number of stacks.
+        """
+        ...
+
+    @property
+    def ability_ticks(self) -> pl.DataFrame:
+        """Ability cooldown / charge state changes as a Polars DataFrame.
+
+        Change-only: a row is emitted for an ability only on the tick its
+        cooldown or charge state changes, keeping the frame compact. One ability
+        entity exists per ability a player owns, including innate movement
+        abilities (jump, dash, slide, ...) which can be filtered out via ``slot``.
+
+        Not loaded by default. Access this property or call ``load("ability_ticks")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick of the state change.
+            - **hero_id** (*int*) -- The owning player's hero ID.
+            - **ability_id** (*int*) -- Ability subclass hash (``CUtlStringToken``;
+              resolve with ``ability_names()``).
+            - **slot** (*int*) -- Ability slot (``EAbilitySlots_t``); signature
+              abilities use small values, innate movement abilities larger ones.
+            - **cooldown_start** (*float*) -- Game time the cooldown started.
+            - **cooldown_end** (*float*) -- Game time the ability is available again.
+            - **remaining_charges** (*int*) -- Charges currently available.
+            - **charge_recharge_start** (*float*) -- Game time the regenerating charge started.
+            - **charge_recharge_end** (*float*) -- Game time the regenerating charge completes.
         """
         ...
 

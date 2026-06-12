@@ -1,6 +1,7 @@
 //! CLI command implementations.
 
 mod abilities;
+mod ability_ticks;
 mod ability_upgrades;
 mod active_modifiers;
 mod chat;
@@ -21,6 +22,7 @@ mod troopers;
 mod verify;
 
 pub use abilities::run as abilities;
+pub use ability_ticks::run as ability_ticks;
 pub use ability_upgrades::run as ability_upgrades;
 pub use active_modifiers::run as active_modifiers;
 pub use chat::run as chat;

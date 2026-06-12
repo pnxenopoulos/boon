@@ -818,6 +818,7 @@ impl Parser {
             if header.tick != last_tick && last_tick >= 0 {
                 on_tick(&ctx);
                 ctx.string_tables.clear_dirty();
+                ctx.entities.clear_updated();
             }
             last_tick = header.tick;
             ctx.tick = header.tick;
@@ -912,6 +913,7 @@ impl Parser {
             if header.tick != last_tick && last_tick >= 0 {
                 on_tick(&ctx);
                 ctx.string_tables.clear_dirty();
+                ctx.entities.clear_updated();
             }
             last_tick = header.tick;
             ctx.tick = header.tick;
@@ -1013,6 +1015,7 @@ impl Parser {
                 on_tick(&ctx, &tick_events);
                 tick_events.clear();
                 ctx.string_tables.clear_dirty();
+                ctx.entities.clear_updated();
             }
             last_tick = header.tick;
             ctx.tick = header.tick;

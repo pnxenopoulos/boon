@@ -432,3 +432,30 @@ boon active-modifiers match.dem
 | `--tick <TICK>` | Filter by exact tick |
 | `--min-tick <TICK>` | Minimum tick |
 | `--max-tick <TICK>` | Maximum tick |
+
+---
+
+### `ability-ticks`
+
+Track ability cooldown and charge state changes. Change-only: a row is printed
+for an ability only on the tick its cooldown or charge state changes. Each row
+shows the cooldown window (`CD Start` → `CD End`, where `CD End` is when the
+ability is available again), remaining charges (`Chg`), and the recharge window
+of the regenerating charge (`Rch Strt` → `Rch End`). `Slot` separates signature
+abilities (small values) from innate movement abilities (jump, dash, slide, …).
+
+```bash
+boon ability-ticks match.dem --filter lightning_ball
+boon ability-ticks match.dem --summary
+```
+
+**Options:**
+
+| Flag | Description |
+|------|-------------|
+| `--filter <NAME>` | Filter abilities by name (substring) |
+| `--summary` | Show state-change counts per ability per hero |
+| `--limit <N>` | Maximum entries to display |
+| `--tick <TICK>` | Filter by exact tick |
+| `--min-tick <TICK>` | Minimum tick |
+| `--max-tick <TICK>` | Maximum tick |

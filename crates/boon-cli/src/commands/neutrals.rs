@@ -88,7 +88,12 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (&idx, entity) in ctx.entities.iter() {
+            // Only entities this tick changed — a neutral's tracked state can
+            // only change on a tick the entity was updated.
+            for &idx in ctx.entities.updated_indices() {
+                let Some(entity) = ctx.entities.get(idx) else {
+                    continue;
+                };
                 if entity.class_name != "CNPC_TrooperNeutral" {
                     continue;
                 }

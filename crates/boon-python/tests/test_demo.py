@@ -27,7 +27,8 @@ from conftest import _require_demo_fixture
 
 PLAYER_TICKS_COLUMNS = {
     "tick", "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
-    "in_regen_zone", "death_time", "last_spawn_time", "respawn_time",
+    "in_regen_zone", "in_item_shop",
+    "death_time", "last_spawn_time", "respawn_time",
     "health", "max_health", "lifestate", "souls", "spent_souls",
     "in_combat_end_time", "in_combat_last_damage_time", "in_combat_start_time",
     "player_damage_dealt_end_time", "player_damage_dealt_last_damage_time",
@@ -89,6 +90,11 @@ URN_COLUMNS = {
     "tick", "event", "hero_id", "team_num", "x", "y", "z",
 }
 
+ABILITY_TICKS_COLUMNS = {
+    "tick", "hero_id", "ability_id", "slot", "cooldown_start", "cooldown_end",
+    "remaining_charges", "charge_recharge_start", "charge_recharge_end",
+}
+
 PLAYERS_COLUMNS = {
     "player_name", "steam_id", "hero_id", "team_num", "start_lane",
 }
@@ -110,6 +116,7 @@ DATASET_COLUMNS = {
     "neutrals": NEUTRALS_COLUMNS,
     "stat_modifier_events": STAT_MODIFIER_EVENTS_COLUMNS,
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
+    "ability_ticks": ABILITY_TICKS_COLUMNS,
     "urn": URN_COLUMNS,
 }
 
@@ -372,6 +379,26 @@ class TestDatasets:
         df = getattr(demo, dataset)
         if "tick" in df.columns and len(df) > 0:
             assert df["tick"].min() >= 0  # type: ignore[operator]
+
+
+class TestAbilityTicks:
+    """Semantics of the change-only ability_ticks frame."""
+
+    def test_charges_nonnegative(self, demo: Demo) -> None:
+        at = demo.ability_ticks
+        assert at["remaining_charges"].min() >= 0
+
+    def test_hero_ids_on_roster(self, demo: Demo) -> None:
+        roster = set(demo.players["hero_id"].to_list())
+        assert set(demo.ability_ticks["hero_id"].unique().to_list()) <= roster
+
+    def test_ability_ids_resolve(self, demo: Demo) -> None:
+        # At least some emitted ability_ids resolve to known ability names.
+        import boon
+
+        names = boon.ability_names()
+        seen = set(demo.ability_ticks["ability_id"].unique().to_list())
+        assert len(seen & set(names)) > 0
 
 
 # ===================================================================

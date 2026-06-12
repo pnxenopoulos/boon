@@ -65,6 +65,36 @@ class TestKillParticipation:
         assert empty["kill_participation"].is_null().all()
 
 
+class TestInCombat:
+    def test_columns_and_shape(self, demo: Demo) -> None:
+        ic = stats.in_combat(demo)
+        assert ic.columns == ["tick", "hero_id", "in_combat"]
+        # One row per player_ticks row (per tick, per player).
+        assert ic.height == demo.player_ticks.height
+
+    def test_in_combat_is_non_null_bool(self, demo: Demo) -> None:
+        ic = stats.in_combat(demo)
+        assert ic.schema["in_combat"] == pl.Boolean
+        assert ic["in_combat"].null_count() == 0
+
+    def test_method_matches_function(self, demo: Demo) -> None:
+        assert demo.in_combat().equals(stats.in_combat(demo))
+
+    def test_in_combat_requires_an_open_window(self, demo: Demo) -> None:
+        # A player can only be "in combat" when the pawn has an active combat
+        # window (in_combat_end_time > 0). Join back to player_ticks and check
+        # that no row is flagged in-combat without one.
+        joined = stats.in_combat(demo).join(
+            demo.player_ticks.select("tick", "hero_id", "in_combat_end_time"),
+            on=["tick", "hero_id"],
+            how="left",
+        )
+        flagged_without_window = joined.filter(
+            pl.col("in_combat") & (pl.col("in_combat_end_time") <= 0.0)
+        )
+        assert flagged_without_window.height == 0
+
+
 TIME_DEAD_COLUMNS = [
     "hero_id",
     "team_num",

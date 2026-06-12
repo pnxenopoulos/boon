@@ -1,5 +1,24 @@
 # 📝 Changelog
 
+## 0.5.0
+
+### boon-python
+
+- New `boon.stats` metric `in_combat(demo)` (`Demo.in_combat()`) — a per-tick `in_combat` boolean keyed on `(tick, hero_id)`, derived from the pawn's `in_combat_end_time` window so it joins directly onto `player_ticks`.
+- New `player_ticks` column: `in_item_shop` (zone bool alongside `in_regen_zone`).
+- New `ability_ticks` dataset — change-only ability cooldown/charge state (`cooldown_start`/`cooldown_end`, `remaining_charges`, `charge_recharge_start`/`charge_recharge_end`) per `(hero_id, ability_id, slot)`, emitting a row only when an ability's state changes. Not loaded by default.
+- **Faster:** the change-only entity datasets (`ability_ticks`, `objectives`, `neutrals`, `urn`) now process only the entities each tick actually changed instead of rescanning every active entity. An ability's cooldown/charge state can only change on a tick it was updated, so `demo.ability_ticks` is ~2.4× faster; output is byte-for-byte identical. The gain compounds when several of these datasets are loaded together.
+
+### boon-cli
+
+- New `ability-ticks` command — inspect ability cooldown/charge state changes (the CLI counterpart of the `ability_ticks` dataset), with `--filter`, `--summary`, tick-window flags, and `--json`.
+- **Faster:** the `ability-ticks`, `objectives`, and `neutrals` commands use the same change-only scan — `ability-ticks` drops from ~1010 ms to ~426 ms on a 64 MB demo, with identical output.
+
+### boon
+
+- New `EntityContainer::updated_indices()` / `clear_updated()`: the parser now records which tracked entities were created or updated on each tick and exposes them on the per-tick `Context`, letting change-only consumers process just what changed instead of rescanning every active entity. The set is cleared after each `run_to_end*` callback.
+- **Faster:** entity decode is ~5% quicker on a full-demo parse (back-to-back measurement), from two changes with identical output: (1) `SerializerContainer` now uses an `FxHashMap` rather than the default SipHash `HashMap`, since the per-update serializer lookup hashes the class-name string on the hot path; and (2) a new entity's field map is pre-sized to its class's field count, avoiding repeated rehashing as the baseline and create delta populate it.
+
 ## 0.4.0
 
 ### boon-python

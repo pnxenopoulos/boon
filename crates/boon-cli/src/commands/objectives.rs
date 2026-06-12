@@ -89,7 +89,12 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (&idx, entity) in ctx.entities.iter() {
+            // Only entities this tick changed — objective health/phase can only
+            // change on a tick the entity was updated.
+            for &idx in ctx.entities.updated_indices() {
+                let Some(entity) = ctx.entities.get(idx) else {
+                    continue;
+                };
                 if !OBJECTIVE_CLASSES.contains(&entity.class_name.as_str()) {
                     continue;
                 }

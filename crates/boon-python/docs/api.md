@@ -219,6 +219,30 @@ game-over event are counted, so the totals align with `regulation_ticks` /
 **Raises:** `ValueError` — If the demo has no game-over event (regulation time,
 and therefore this metric, is undefined).
 
+(in-combat)=
+
+#### `in_combat()`
+
+```python
+demo.in_combat()
+```
+
+Whether each player is in combat, per tick. Deadlock tracks combat on the pawn
+as a window (`in_combat_end_time` on `player_ticks`, pushed to
+`last_damage_time + delay` on every hit — ~0.5s for trooper/denizen damage, ~3.0s
+for hero damage); this derives the live boolean by comparing the current game
+time against that window. Convenience method that delegates to
+[`boon.stats.in_combat()`](#stats).
+
+**Returns:** `polars.DataFrame` — one row per `(tick, hero_id)`, so it joins
+directly onto `player_ticks`, sorted by `tick` then `hero_id`:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick |
+| `hero_id` | `int` | The player's hero ID |
+| `in_combat` | `bool` | Whether the player is in combat on that tick |
+
 ### Metadata Properties
 
 #### `path`
@@ -414,6 +438,7 @@ Auto-loads on first access if not already loaded via `load()`.
 | `yaw` | `float` | Camera yaw angle |
 | `roll` | `float` | Camera roll angle |
 | `in_regen_zone` | `bool` | In a regeneration zone |
+| `in_item_shop` | `bool` | In an item shop zone |
 | `death_time` | `float` | Time of death |
 | `last_spawn_time` | `float` | Time of last spawn |
 | `respawn_time` | `float` | Time until respawn |
@@ -739,6 +764,34 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 
 ---
 
+#### `ability_ticks`
+
+```python
+demo.ability_ticks  # polars.DataFrame
+```
+
+Ability cooldown and charge state over time. **Change-only**: a row is emitted
+for an ability only on the tick its cooldown or charge state changes (not every
+tick), keeping the frame compact. One ability entity exists per ability a player
+owns, including innate movement abilities (jump, dash, slide, …), which can be
+filtered out via `slot`.
+
+Not loaded by default. Access this property or call `load("ability_ticks")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | The game tick of the state change |
+| `hero_id` | `int` | The owning player's hero ID |
+| `ability_id` | `int` | Ability subclass hash (use `ability_names()` to resolve) |
+| `slot` | `int` | Ability slot (`EAbilitySlots_t`); signature abilities use small values |
+| `cooldown_start` | `float` | Game time the cooldown started |
+| `cooldown_end` | `float` | Game time the ability is available again |
+| `remaining_charges` | `int` | Charges currently available |
+| `charge_recharge_start` | `float` | Game time the regenerating charge started |
+| `charge_recharge_end` | `float` | Game time the regenerating charge completes |
+
+---
+
 #### `urn`
 
 ```python
@@ -982,6 +1035,24 @@ counted, so the totals align with `demo.regulation_ticks` /
 `team_num` then `hero_id`.
 
 **Raises:** `ValueError` — if the demo has no game-over event.
+
+### `in_combat()`
+
+```python
+from boon import stats
+
+stats.in_combat(demo)   # equivalently: demo.in_combat()
+```
+
+Whether each player is in combat, per tick, derived from the pawn's
+`in_combat_end_time` window on `player_ticks`. The current game time per tick is
+reconstructed from non-paused elapsed ticks plus a constant offset calibrated
+against the data (at a damage tick `in_combat_last_damage_time` equals the
+current game time).
+
+**Returns:** `polars.DataFrame` with columns `tick`, `hero_id`, `in_combat` (see
+the [`Demo.in_combat()`](#in-combat) table), one row per `(tick, hero_id)`,
+sorted by `tick` then `hero_id`.
 
 ---
 

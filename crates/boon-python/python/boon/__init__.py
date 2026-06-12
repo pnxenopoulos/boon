@@ -27,6 +27,7 @@ from boon import stats
 # Surface stats as convenience methods on Demo. The implementation lives in
 # ``boon.stats``; these are thin delegators so ``demo.kill_participation()`` and
 # ``boon.stats.kill_participation(demo)`` are the same computation.
+Demo.in_combat = stats.in_combat
 Demo.kill_participation = stats.kill_participation
 Demo.time_dead = stats.time_dead
 

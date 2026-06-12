@@ -12,12 +12,19 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.4.0"
+version = "0.5.0"
 rust-version = "1.88.0"
 
 [workspace.dependencies]
-boon = { path = "crates/boon", package = "boon-deadlock", version = "0.4.0" }
+boon = { path = "crates/boon", package = "boon-deadlock", version = "0.5.0" }
 boon-proto = { path = "crates/boon-proto", version = "0.2" }
+
+[profile.dev]
+incremental = false   # boon-proto is a 28k-line generated crate; incremental bookkeeping
+                      # (dep-graph + query-cache) ballooned target/ to tens of GB for little gain
+
+[profile.dev.package.boon-proto]
+debug = false         # never step into prost-generated proto code; skip its debuginfo
 
 [profile.release]
 lto = true          # Link-time optimization

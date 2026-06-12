@@ -18,7 +18,79 @@ import polars as pl
 if TYPE_CHECKING:
     from boon import Demo
 
-__all__ = ["kill_participation", "time_dead"]
+__all__ = ["in_combat", "kill_participation", "time_dead"]
+
+
+def in_combat(demo: Demo) -> pl.DataFrame:
+    """Whether each player is in combat, per tick.
+
+    Deadlock tracks a player's combat state on the pawn as a window: a player is
+    "in combat" while the current game time is before ``in_combat_end_time``,
+    which the engine pushes to ``last_damage_time + delay`` on every hit (delay
+    ~0.5s for trooper/denizen damage, ~3.0s for hero damage). This derives the
+    live boolean from those raw ``player_ticks`` columns.
+
+    The comparison needs the *current* game time per tick. That is reconstructed
+    from non-paused elapsed ticks (matching :meth:`Demo.tick_to_seconds`) plus a
+    constant offset between the demo tick clock and the engine's game clock. The
+    offset is calibrated against the data itself: at any damage tick the engine's
+    ``last_damage_time`` equals the current game time, and ``last_damage_time``
+    can never exceed "now", so ``max(last_damage_time - elapsed_seconds)`` over
+    all ticks recovers the offset.
+
+    Args:
+        demo: The demo to compute over.
+
+    Returns:
+        A Polars DataFrame with one row per ``(tick, hero_id)`` -- so it joins
+        directly onto ``demo.player_ticks`` -- sorted by ``tick`` then
+        ``hero_id``, with columns:
+
+        - ``tick`` (*int*) -- The game tick.
+        - ``hero_id`` (*int*) -- The player's hero ID.
+        - ``in_combat`` (*bool*) -- Whether the player is in combat on that tick.
+    """
+    tick_rate = demo.tick_rate
+    if tick_rate == 0:
+        raise ValueError("tick_rate is 0: cannot reconstruct the game clock")
+
+    # Elapsed game seconds per tick, excluding paused time (same basis as
+    # Demo.tick_to_seconds): cumulative count of non-paused ticks / tick_rate.
+    clock = (
+        demo.world_ticks.sort("tick")
+        .with_columns(
+            elapsed_seconds=(~pl.col("is_paused")).cum_sum().cast(pl.Float64)
+            / tick_rate
+        )
+        .select("tick", "elapsed_seconds")
+    )
+
+    pt = demo.player_ticks.select(
+        "tick", "hero_id", "in_combat_end_time", "in_combat_last_damage_time"
+    ).join(clock, on="tick", how="left")
+
+    # Offset between the engine game clock and our elapsed-seconds clock.
+    offset = (
+        pt.filter(pl.col("in_combat_last_damage_time") > 0.0)
+        .select(
+            (pl.col("in_combat_last_damage_time") - pl.col("elapsed_seconds")).max()
+        )
+        .item()
+    )
+    offset = offset if offset is not None else 0.0
+
+    return (
+        pt.with_columns(
+            (
+                (pl.col("in_combat_end_time") > 0.0)
+                & (pl.col("elapsed_seconds") + offset < pl.col("in_combat_end_time"))
+            )
+            .fill_null(False)
+            .alias("in_combat")
+        )
+        .select("tick", "hero_id", "in_combat")
+        .sort("tick", "hero_id")
+    )
 
 
 def kill_participation(
