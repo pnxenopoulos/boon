@@ -3,6 +3,15 @@
 [advisories]
 # Check all crates (workspace + transitive) for advisories.
 version = 2
+# pyo3 0.27 (pulled in directly and transitively via pyo3-polars) has two
+# advisories fixed only in pyo3 >= 0.29. We can't upgrade yet: the latest
+# pyo3-polars (0.27.0) still pins pyo3 ^0.28, and pyo3 0.28 is also affected, so
+# no published combination reaches a fixed pyo3 while keeping pyo3-polars.
+# Re-evaluate / remove these when pyo3-polars supports pyo3 >= 0.29.
+ignore = [
+    "RUSTSEC-2026-0176", # OOB read in PyList/PyTuple nth/nth_back iterators
+    "RUSTSEC-2026-0177", # missing Sync bound on PyCFunction::new_closure
+]
 
 [licenses]
 # Boon is MIT-licensed. Allow permissive and weak-copyleft licenses.
