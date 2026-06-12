@@ -303,6 +303,12 @@ pub struct EntityContainer {
     /// Tracks class_id for entities we're not fully tracking (for filtered parsing).
     /// This lets us skip updates properly by knowing which serializer to use.
     skipped_entity_classes: FxHashMap<i32, i32>,
+    /// Indices of tracked entities created or updated since the last
+    /// [`clear_updated`](Self::clear_updated). Accumulates across every packet in
+    /// a tick so change-only consumers can process just what changed instead of
+    /// rescanning every active entity. The parser clears it after each per-tick
+    /// callback.
+    updated: Vec<i32>,
 }
 
 impl EntityContainer {
@@ -345,6 +351,7 @@ impl EntityContainer {
                     .map_err(|e| Error::Parse {
                         context: format!("entity create #{}: {}", entity_index, e),
                     })?;
+                    self.updated.push(entity_index);
                 }
                 DELTA_UPDATE => {
                     self.handle_update(
@@ -363,6 +370,7 @@ impl EntityContainer {
                             e
                         ),
                     })?;
+                    self.updated.push(entity_index);
                 }
                 DELTA_DELETE | DELTA_LEAVE => {
                     self.entities.remove(&entity_index);
@@ -400,7 +408,7 @@ impl EntityContainer {
 
             match dh {
                 DELTA_CREATE => {
-                    self.handle_create_filtered(
+                    if self.handle_create_filtered(
                         entity_index,
                         &mut br,
                         class_info,
@@ -409,10 +417,12 @@ impl EntityContainer {
                         field_decode_ctx,
                         class_filter,
                         fp_buf,
-                    )?;
+                    )? {
+                        self.updated.push(entity_index);
+                    }
                 }
                 DELTA_UPDATE => {
-                    self.handle_update_filtered(
+                    if self.handle_update_filtered(
                         entity_index,
                         &mut br,
                         class_info,
@@ -420,7 +430,9 @@ impl EntityContainer {
                         field_decode_ctx,
                         class_filter,
                         fp_buf,
-                    )?;
+                    )? {
+                        self.updated.push(entity_index);
+                    }
                 }
                 DELTA_DELETE | DELTA_LEAVE => {
                     self.entities.remove(&entity_index);
@@ -460,6 +472,10 @@ impl EntityContainer {
                 })?;
 
         let mut entity = Entity::new(index, class_id, class_entry.network_name.clone());
+        // Pre-size the field map to the class's field count: a create applies the
+        // baseline plus the create delta, setting many fields at once, so starting
+        // from an empty map otherwise rehashes repeatedly as it grows.
+        entity.fields.reserve(serializer.fields.len());
 
         // Apply baseline from instancebaseline string table
         if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
@@ -516,6 +532,7 @@ impl EntityContainer {
         Ok(())
     }
 
+    /// Returns `true` if the entity's class passed the filter and was stored.
     #[allow(clippy::too_many_arguments)]
     fn handle_create_filtered(
         &mut self,
@@ -527,7 +544,7 @@ impl EntityContainer {
         field_decode_ctx: &mut FieldDecodeContext,
         class_filter: &HashSet<&str>,
         fp_buf: &mut Vec<FieldPath>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let class_id = br.read_bits(class_info.bits)? as i32;
         let _serial = br.read_bits(NUM_SERIAL_NUM_BITS as usize)?;
         let _unknown = br.read_uvarint32()?;
@@ -549,11 +566,15 @@ impl EntityContainer {
             // But track its class_id so we can skip updates later
             self.skipped_entity_classes.insert(index, class_id);
             Entity::skip_update(br, serializer, field_decode_ctx, fp_buf)?;
-            return Ok(());
+            return Ok(false);
         }
 
         // Full processing for filtered entities
         let mut entity = Entity::new(index, class_id, class_entry.network_name.clone());
+        // Pre-size the field map to the class's field count: a create applies the
+        // baseline plus the create delta, setting many fields at once, so starting
+        // from an empty map otherwise rehashes repeatedly as it grows.
+        entity.fields.reserve(serializer.fields.len());
 
         if let Some(baseline_data) = string_tables.instance_baselines.get(&class_id) {
             let mut baseline_br = BitReader::new(baseline_data);
@@ -563,9 +584,10 @@ impl EntityContainer {
         entity.apply_update(br, serializer, field_decode_ctx, fp_buf)?;
         self.entities.insert(index, entity);
 
-        Ok(())
+        Ok(true)
     }
 
+    /// Returns `true` if this entity is tracked and was updated (vs. skipped).
     #[allow(clippy::too_many_arguments)]
     fn handle_update_filtered(
         &mut self,
@@ -576,7 +598,7 @@ impl EntityContainer {
         field_decode_ctx: &mut FieldDecodeContext,
         _class_filter: &HashSet<&str>,
         fp_buf: &mut Vec<FieldPath>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         // Check if we're tracking this entity
         if let Some(entity) = self.entities.get_mut(&index) {
             let serializer = serializers
@@ -586,7 +608,7 @@ impl EntityContainer {
                 })?;
 
             entity.apply_update(br, serializer, field_decode_ctx, fp_buf)?;
-            return Ok(());
+            return Ok(true);
         }
 
         // Entity is not tracked - check if we know its class from skipped creates
@@ -608,7 +630,7 @@ impl EntityContainer {
 
         // If we don't know about this entity at all, it was created before filtering started
         // This shouldn't happen if we start filtering from the beginning
-        Ok(())
+        Ok(false)
     }
 
     /// Look up an entity by its slot index.
@@ -628,6 +650,26 @@ impl EntityContainer {
     /// Iterate over all active entities as `(index, entity)` pairs.
     pub fn iter(&self) -> impl Iterator<Item = (&i32, &Entity)> {
         self.entities.iter()
+    }
+
+    /// Indices of tracked entities created or updated during the current tick.
+    ///
+    /// Lets change-only consumers (cooldowns, modifiers, …) process just the
+    /// entities a tick touched instead of rescanning every active entity. Valid
+    /// inside a `run_to_end*` per-tick callback; the parser clears it after each
+    /// callback returns.
+    ///
+    /// Caveats: an index may appear more than once if multiple packets in the
+    /// same tick updated the entity, and may refer to an entity that is no
+    /// longer active if it was deleted later in the same tick. Resolve each with
+    /// [`get`](Self::get) and skip `None`.
+    pub fn updated_indices(&self) -> &[i32] {
+        &self.updated
+    }
+
+    /// Clear the per-tick updated set. Called by the parser after each callback.
+    pub fn clear_updated(&mut self) {
+        self.updated.clear();
     }
 
     /// Number of currently active entities.

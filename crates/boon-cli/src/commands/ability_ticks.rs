@@ -118,7 +118,13 @@ pub fn run(
                 }
             }
 
-            for (&idx, entity) in ctx.entities.iter() {
+            // Only the entities this tick actually changed — an ability's
+            // cooldown/charge state can only change on a tick it was updated, so
+            // scanning every active entity every tick is wasted work.
+            for &idx in ctx.entities.updated_indices() {
+                let Some(entity) = ctx.entities.get(idx) else {
+                    continue;
+                };
                 if !entity.class_name.contains("Ability") {
                     continue;
                 }

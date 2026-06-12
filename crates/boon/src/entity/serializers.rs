@@ -1,4 +1,6 @@
 use std::collections::HashMap;
+
+use rustc_hash::FxHashMap;
 // Arc (not Rc) so that SerializerContainer is Send + Sync and can be
 // shared across threads.  The serializer graph is immutable after
 // construction, so atomic refcounting adds negligible overhead.
@@ -227,7 +229,10 @@ impl Serializer {
 
 /// Container holding all parsed serializers, indexed by name.
 pub struct SerializerContainer {
-    pub serializers: HashMap<String, Arc<Serializer>>,
+    // `FxHashMap` (not the default SipHash `HashMap`): `get` is called once per
+    // entity update in the decode hot path, hashing the class-name string each
+    // time; FxHash is markedly cheaper for short string keys.
+    pub serializers: FxHashMap<String, Arc<Serializer>>,
 }
 
 impl SerializerContainer {
@@ -247,7 +252,7 @@ impl SerializerContainer {
 
         // Build fields and serializers
         let mut field_cache: HashMap<i32, Arc<SerializerField>> = HashMap::new();
-        let mut serializer_map: HashMap<String, Arc<Serializer>> = HashMap::new();
+        let mut serializer_map: FxHashMap<String, Arc<Serializer>> = FxHashMap::default();
 
         for serializer_proto in &msg.serializers {
             let ser_name = resolve_sym(serializer_proto.serializer_name_sym.unwrap_or(0));

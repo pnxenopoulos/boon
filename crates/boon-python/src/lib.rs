@@ -1899,7 +1899,10 @@ impl Demo {
 
                 // ── Collect objectives (change detection on health/max_health/phase) ──
                 if load_objectives {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for &idx in $ctx.entities.updated_indices() {
+                        let Some(entity) = $ctx.entities.get(idx) else {
+                            continue;
+                        };
                         let obj_class = entity.class_name.as_str();
                         let is_patron = obj_class == "CNPC_Boss_Tier3";
                         let (otype, hp_key, max_hp_key, team_key, lane_key, cell_keys, offset_keys) = match obj_class {
@@ -2144,7 +2147,12 @@ impl Demo {
                 // differ per ability class, so they are resolved once per class and
                 // cached. Owner -> hero comes from m_hOwnerEntity (the pawn).
                 if load_ability_ticks {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    // Only entities this tick changed: an ability's cooldown/charge
+                    // state can only change on a tick it was updated.
+                    for &idx in $ctx.entities.updated_indices() {
+                        let Some(entity) = $ctx.entities.get(idx) else {
+                            continue;
+                        };
                         if !entity.class_name.contains("Ability") {
                             continue;
                         }
@@ -2383,7 +2391,10 @@ impl Demo {
 
                 // ── Collect urn delivery triggers ──
                 if load_urn {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for &idx in $ctx.entities.updated_indices() {
+                        let Some(entity) = $ctx.entities.get(idx) else {
+                            continue;
+                        };
                         if entity.class_name != "CCitadelIdolReturnTrigger" {
                             continue;
                         }
@@ -2429,7 +2440,10 @@ impl Demo {
 
                 // ── Collect neutrals (change-detected, only emit on state change) ──
                 if load_neutrals {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for &idx in $ctx.entities.updated_indices() {
+                        let Some(entity) = $ctx.entities.get(idx) else {
+                            continue;
+                        };
                         if entity.class_name != "CNPC_TrooperNeutral" {
                             continue;
                         }
