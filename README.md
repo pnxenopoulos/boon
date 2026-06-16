@@ -15,15 +15,15 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11+"></a>
 </p>
 
-<p>
-  <a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/v/boon-deadlock?style=for-the-badge" alt="crates.io"></a>
-  <a href="https://crates.io/crates/boon-deadlock"><img src="https://img.shields.io/crates/dr/boon-deadlock?style=for-the-badge" alt="crates.io Downloads"></a>
+<!-- <p>
+  <a href="https://crates.io/crates/boon-deadlock"><img src="https://flat.badgen.net/crates/v/boon-deadlock?color=orange" alt="crates.io"></a>
+  <a href="https://crates.io/crates/boon-deadlock"><img src="https://flat.badgen.net/crates/d/boon-deadlock" alt="crates.io Downloads"></a>
 </p>
 
 <p>
   <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/v/release/pnxenopoulos/boon?style=for-the-badge" alt="GitHub Release"></a>
   <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/downloads/pnxenopoulos/boon/total?style=for-the-badge" alt="CLI Downloads"></a>
-</p>
+</p> -->
 
 </div>
 
