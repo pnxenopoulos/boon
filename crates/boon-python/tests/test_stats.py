@@ -138,3 +138,53 @@ class TestTimeDead:
             (pl.col("pct_regulation_dead") >= 0.0)
             & (pl.col("pct_regulation_dead") <= 100.0)
         ).to_series().all()
+
+
+TF_COLUMNS = [
+    "fight_id",
+    "start_tick",
+    "end_tick",
+    "start_seconds",
+    "end_seconds",
+    "duration_seconds",
+    "center_x",
+    "center_y",
+    "participants",
+    "num_participants",
+    "hero_damage",
+    "kills",
+]
+
+
+class TestTeamfights:
+    def test_columns(self, demo: Demo) -> None:
+        assert stats.teamfights(demo).columns == TF_COLUMNS
+
+    def test_method_matches_function(self, demo: Demo) -> None:
+        assert demo.teamfights().equals(stats.teamfights(demo))
+
+    def test_invariants(self, demo: Demo) -> None:
+        tf = stats.teamfights(demo)
+        if tf.is_empty():
+            return
+        # A fight involves >= min_players heroes and takes non-negative time.
+        assert (tf["num_participants"] >= 3).all()
+        assert (tf["participants"].list.len() == tf["num_participants"]).all()
+        assert (tf["hero_damage"] > 0).all()
+        assert (tf["duration_seconds"] >= 0.0).all()
+        assert (tf["end_tick"] >= tf["start_tick"]).all()
+        # fight_id is 1..N in start-tick order.
+        assert tf["fight_id"].to_list() == list(range(1, tf.height + 1))
+        assert tf["start_tick"].is_sorted()
+        # Each kill is attributed to at most one fight -- never double-counted.
+        assert tf["kills"].sum() <= demo.kills.height
+
+    def test_min_players_filter(self, demo: Demo) -> None:
+        # An impossibly high min_players yields no fights.
+        assert stats.teamfights(demo, min_players=10_000).is_empty()
+
+    def test_radius_only_merges(self, demo: Demo) -> None:
+        # Removing spatial separation (huge radius) can only merge fights, never
+        # split them, so it yields fewer-or-equal fights than the default.
+        wide = stats.teamfights(demo, radius=1e12)
+        assert wide.height <= stats.teamfights(demo).height

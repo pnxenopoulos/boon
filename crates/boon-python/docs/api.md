@@ -104,6 +104,32 @@ determine pauses.
 
 **Returns:** `str` -- A formatted clock time string.
 
+#### `snapshots()`
+
+```python
+demo.snapshots(every=64)                          # ~1 row/sec of ticks
+demo.snapshots(ticks=[29000, 30000])              # specific ticks
+demo.snapshots(start_tick=29000, end_tick=30000)  # a contiguous window
+demo.snapshots("troopers", events="kills")        # troopers at kill ticks
+demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)  # -> dict
+```
+
+Sample per-tick state at *selected* ticks in a single parallel pass. The demo is
+decoded once (across full-packet keyframe segments, in parallel) but only the
+ticks you select are materialized — so `snapshots(every=64)` is far cheaper than
+pulling the full `player_ticks` frame and filtering it in Python.
+
+- **`datasets`** -- which snapshot dataset(s): `"player_ticks"` (default),
+  `"world_ticks"`, `"troopers"`, or a list.
+- **`ticks`** -- a specific tick or list of ticks.
+- **`every`** / **`seconds`** -- a periodic stride (mutually exclusive).
+- **`events`** -- sample at the ticks of these event datasets (e.g. `"kills"`).
+- **`start_tick`** / **`end_tick`** -- restrict to a contiguous window.
+
+Returns a single DataFrame for one dataset, or a dict keyed by name for several.
+With only a window and no other selector, every tick in the window is returned;
+specifying no selector at all raises `ValueError`.
+
 #### `summary()`
 
 ```python

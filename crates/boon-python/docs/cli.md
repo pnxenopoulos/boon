@@ -1,461 +1,176 @@
 # 💻 CLI
 
-Boon includes a command-line tool for inspecting demo files. It is built from the
-`boon` crate.
+Boon ships a `boon` command-line tool for inspecting demo files without writing
+any code. It comes in two flavors:
 
-## Installation
+- **Bundled with the Python package** — `pip install boon-deadlock` (or
+  `uv add boon-deadlock`) puts a `boon` executable on your PATH. It is a
+  [Typer](https://typer.tiangolo.com) app that runs the same parser as the
+  library and prints [Polars](https://pola.rs) DataFrames — the quickest way to
+  poke at a demo. Documented in [Python CLI](#python-cli) below.
+- **`boon-dev` (in-repo debugging tool)** — a low-level Rust CLI with a broader
+  set of format-inspection commands (entities, send tables, string tables, raw
+  messages, …). It is not shipped as a binary; build it from source. Documented
+  under [boon-dev](#boon-dev) below.
 
-Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
+The bundled command is invoked as `boon`, the debugging tool as `boon-dev`; both
+support `--help` on any command.
 
-Or build from source (requires Rust):
+## Python CLI
 
-```bash
-cd boon
-cargo build --release -p boon-cli
-# Binary is at target/release/boon
-```
-
-## Usage
-
-Run `boon --help` to see all available commands, and `boon <command> --help` for details on any specific command.
-
-## Commands
-
-### `verify`
-
-Check that a file is a valid demo.
+Installed with the `boon-deadlock` Python package:
 
 ```bash
-boon verify match.dem
+pip install boon-deadlock   # or: uv add boon-deadlock
 ```
 
----
+Run `boon --help` for the full list, or `boon <command> --help` for one command.
+Pass `--json` (where available) for machine-readable output.
 
 ### `info`
 
-Display file header and game information: build number, map, playback time, match ID,
-game mode, winner, and player list.
+Match metadata: map, mode, build, duration, and result.
 
 ```bash
 boon info match.dem
+boon info match.dem --json
 ```
 
 ---
 
-### `messages`
+### `players`
 
-List all commands in the demo file with metadata.
+The player roster (name, Steam ID, hero, team, start lane), with hero names resolved.
 
 ```bash
-boon messages match.dem
+boon players match.dem
+```
+
+---
+
+### `datasets`
+
+List every dataset that `show` can display.
+
+```bash
+boon datasets
+```
+
+---
+
+### `show`
+
+Load and print any dataset as a table (or JSON). Dataset names come from
+`boon datasets` (they mirror the `Demo` properties).
+
+```bash
+boon show match.dem kills --limit 20
+boon show match.dem player_ticks --tail --limit 5
+boon show match.dem objectives --json
 ```
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
-| `--cmd <TYPE>` | Filter by command type (substring match) |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-| `--min-size <BYTES>` | Minimum message size |
-| `--max-size <BYTES>` | Maximum message size |
-| `--limit <N>` | Maximum messages to display |
-
-**Example:**
-
-```bash
-# Show only full packets
-boon messages match.dem --cmd FullPacket
-
-# Show messages in a tick range
-boon messages match.dem --min-tick 1000 --max-tick 2000
-```
-
----
-
-### `classes`
-
-Display the class ID to network name mapping.
-
-```bash
-boon classes match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter by class name (substring) |
-| `--limit <N>` | Maximum classes to display |
-
-**Example:**
-
-```bash
-# Find all Citadel player-related classes
-boon classes match.dem --filter Player
-```
-
----
-
-### `send-tables`
-
-Display serializer (send table) definitions — the field schemas for each entity class.
-
-```bash
-boon send-tables match.dem --summary
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter by serializer name (substring) |
-| `--summary` | Show only names and field counts |
-| `--limit <N>` | Maximum serializers to display |
-
-**Example:**
-
-```bash
-# See all fields on the player pawn
-boon send-tables match.dem --filter CCitadelPlayerPawn
-```
-
----
-
-### `string-tables`
-
-Display string tables from the demo initialization.
-
-```bash
-boon string-tables match.dem --summary
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter by table name (substring) |
-| `--summary` | Show only names and entry counts |
-| `--limit <N>` | Maximum tables to display |
-
-**Example:**
-
-```bash
-# Inspect instance baselines
-boon string-tables match.dem --filter instancebaseline
-```
-
----
-
-### `events`
-
-List decoded game events from a demo file (user messages parsed from embedded packets).
-
-```bash
-boon events match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter events by name (substring match) |
-| `--summary` | Show only event names and counts |
-| `--tick <TICK>` | Maximum tick to parse up to |
-| `--limit <N>` | Maximum events to display |
-| `--inspect` | Decode and display full message contents |
-
-**Example:**
-
-```bash
-# Count all event types
-boon events match.dem --summary
-
-# Show only kill events
-boon events match.dem --filter HeroKilled
-
-# Inspect full message payloads for damage events
-boon events match.dem --filter Damage --inspect --limit 5
-```
+| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
+| `--tail` | Show the last rows instead of the first |
+| `--json` | Emit row-oriented JSON |
 
 ---
 
 ### `summary`
 
-Print a post-match summary extracted from the last-tick game event, including match
-overview, player stats with gold breakdowns, objectives, mid boss kills, and damage
-matrix info.
+The post-match summary. Choose a part with `--part`.
 
 ```bash
 boon summary match.dem
-```
-
----
-
-### `entities`
-
-Inspect entity state at a specific game tick.
-
-```bash
-boon entities match.dem --tick 10000 --summary
+boon summary match.dem --part objectives
 ```
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
-| `--tick <TICK>` | **(required)** Game tick to parse to |
-| `--filter <NAME>` | Filter by class name (substring) |
-| `--summary` | Show only class names and counts |
-| `--fields <N>` | Max fields per entity (default: 20) |
-| `--limit <N>` | Max entities to display |
-
-**Example:**
-
-```bash
-# Show all player controllers with full fields
-boon entities match.dem --tick 10000 --filter CCitadelPlayerController --fields 50
-
-# Count all entity types at a given tick
-boon entities match.dem --tick 10000 --summary
-```
+| `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, or `all` (default: `last_hits`) |
+| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
+| `--json` | Emit JSON |
 
 ---
 
-### `abilities`
+### `stats`
 
-List important ability usage events from a demo.
+Derived metrics from [`boon.stats`](api.md).
 
 ```bash
-boon abilities match.dem
+boon stats match.dem --metric kill-participation
+boon stats match.dem -m time-dead
 ```
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
-| `--filter <NAME>` | Filter abilities by name (substring) |
-| `--summary` | Show only ability names and counts |
-| `--limit <N>` | Maximum abilities to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
+| `--metric <M>` / `-m <M>` | `kill-participation`, `time-dead`, or `in-combat` |
+| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
+| `--json` | Emit JSON |
 
 ---
 
-### `ability-upgrades`
+### `verify`
 
-List hero ability point spending events (skill tier upgrades).
-
-```bash
-boon ability-upgrades match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter abilities by name (substring) |
-| `--summary` | Show only ability names and counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `shop-events`
-
-List item shop transactions (purchases, upgrades, sells, swaps).
+Check that a file is a valid Deadlock demo.
 
 ```bash
-boon shop-events match.dem
+boon verify match.dem
 ```
 
-**Options:**
+## boon-dev
 
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter by ability name or change type (substring) |
-| `--summary` | Show only ability+change combos and counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `chat`
-
-List in-game chat messages.
+`boon-dev` is a low-level debugging CLI, built from the `boon-dev` crate. It is
+**not shipped** — there are no release binaries and no crates.io package. Build
+it from source when you need it:
 
 ```bash
-boon chat match.dem
+cargo build --release -p boon-dev
+# Binary is at target/release/boon-dev
 ```
 
-**Options:**
+Run `boon-dev --help` for the full list, or `boon-dev <command> --help` for the
+flags on any command (most take `--filter`, `--summary`, `--limit`, and
+`--min-tick` / `--max-tick`, plus the global `--json`).
 
-| Flag | Description |
-|------|-------------|
-| `--filter <TEXT>` | Filter by text or chat type (substring) |
-| `--summary` | Show only hero message counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
+### Commands
 
----
+| Command | Description |
+|---------|-------------|
+| `verify` | Check that a file is a valid demo. |
+| `info` | File header and game info (build, map, playback time, match ID, mode, winner, players). |
+| `messages` | List every command/packet in the demo with metadata. |
+| `classes` | The class-id → network-name mapping. |
+| `send-tables` | Serializer (send table) field schemas per entity class. |
+| `string-tables` | String tables from demo initialization. |
+| `events` | Decoded game events (user messages); `--inspect` for full payloads. |
+| `summary` | Post-match summary from the last-tick event. |
+| `entities` | Entity state at a specific `--tick`. |
+| `abilities` | Important ability usage events. |
+| `ability-upgrades` | Hero ability-point spending (tier 1–3). |
+| `ability-ticks` | Ability cooldown / charge state changes (change-only). |
+| `shop-events` | Item shop transactions (purchase, upgrade, sell, swap). |
+| `chat` | In-game chat messages. |
+| `objectives` | Per-tick objective health (walkers, barracks, shrines, patron, mid boss). |
+| `mid-boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire). |
+| `troopers` | Alive lane trooper position/state per tick. |
+| `neutrals` | Neutral creep state changes (change-only). |
+| `stat-modifiers` | Permanent stat-bonus change events (urn / breakable pickups). |
+| `active-modifiers` | Active buff/debuff modifier events (applied/removed). |
 
-### `objectives`
-
-Track per-tick objective entity health (walkers, titans, barracks, mid boss).
+Example:
 
 ```bash
-boon objectives match.dem --summary
+# All player controllers at tick 10000, with up to 50 fields each
+boon-dev entities match.dem --tick 10000 --filter CCitadelPlayerController --fields 50
+
+# Count event types
+boon-dev events match.dem --summary
 ```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <TYPE>` | Filter by objective type (substring: walker, titan, barracks, mid_boss) |
-| `--summary` | Show only objective type/team/lane counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `mid-boss`
-
-List mid boss lifecycle events (spawn, kill, rejuvenator buff pickup/use/expire).
-
-```bash
-boon mid-boss match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <EVENT>` | Filter by event type (substring) |
-| `--summary` | Show only event type counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `troopers`
-
-Track alive lane trooper position and state per tick. Includes `CNPC_Trooper` and
-`CNPC_TrooperBoss` entities.
-
-```bash
-boon troopers match.dem --limit 20
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <TYPE>` | Filter by trooper type (substring: trooper, trooper_boss) |
-| `--summary` | Show only trooper type/team/lane counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `neutrals`
-
-Track neutral creep state changes. Only emits rows when state changes (health, position),
-significantly reducing output compared to per-tick tracking.
-
-```bash
-boon neutrals match.dem --summary
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <TYPE>` | Filter by neutral fields (substring) |
-| `--summary` | Show only neutral type/team counts |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `stat-modifiers`
-
-Track permanent stat bonus change events (urn and breakable pickups).
-
-```bash
-boon stat-modifiers match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter by stat name (substring) |
-| `--summary` | Show per-hero final stat values |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `active-modifiers`
-
-Track active buff/debuff modifiers on players (applied/removed events).
-
-```bash
-boon active-modifiers match.dem
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter by modifier or ability name (substring) |
-| `--summary` | Show applied event counts per ability per hero |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |
-
----
-
-### `ability-ticks`
-
-Track ability cooldown and charge state changes. Change-only: a row is printed
-for an ability only on the tick its cooldown or charge state changes. Each row
-shows the cooldown window (`CD Start` → `CD End`, where `CD End` is when the
-ability is available again), remaining charges (`Chg`), and the recharge window
-of the regenerating charge (`Rch Strt` → `Rch End`). `Slot` separates signature
-abilities (small values) from innate movement abilities (jump, dash, slide, …).
-
-```bash
-boon ability-ticks match.dem --filter lightning_ball
-boon ability-ticks match.dem --summary
-```
-
-**Options:**
-
-| Flag | Description |
-|------|-------------|
-| `--filter <NAME>` | Filter abilities by name (substring) |
-| `--summary` | Show state-change counts per ability per hero |
-| `--limit <N>` | Maximum entries to display |
-| `--tick <TICK>` | Filter by exact tick |
-| `--min-tick <TICK>` | Minimum tick |
-| `--max-tick <TICK>` | Maximum tick |

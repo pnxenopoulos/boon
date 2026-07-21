@@ -20,6 +20,9 @@ pub enum FieldValue {
     Vector2([f32; 2]),
     Vector3([f32; 3]),
     Vector4([f32; 4]),
+    /// Arbitrary-length float vector, for multi-component types that don't fit
+    /// the fixed vectors above (e.g. `Quaternion` = 4, `CTransform` = 6).
+    FloatVector(Vec<f32>),
     /// Euler angles (pitch, yaw, roll) in degrees.
     QAngle([f32; 3]),
 }
@@ -37,6 +40,7 @@ impl fmt::Debug for FieldValue {
             Self::Vector2(v) => write!(f, "[{}, {}]", v[0], v[1]),
             Self::Vector3(v) => write!(f, "[{}, {}, {}]", v[0], v[1], v[2]),
             Self::Vector4(v) => write!(f, "[{}, {}, {}, {}]", v[0], v[1], v[2], v[3]),
+            Self::FloatVector(v) => write!(f, "{v:?}"),
             Self::QAngle(v) => write!(f, "QAngle({}, {}, {})", v[0], v[1], v[2]),
         }
     }
@@ -64,6 +68,7 @@ impl serde::Serialize for FieldValue {
             Self::Vector2(v) => v.serialize(serializer),
             Self::Vector3(v) => v.serialize(serializer),
             Self::Vector4(v) => v.serialize(serializer),
+            Self::FloatVector(v) => v.serialize(serializer),
             Self::QAngle(v) => v.serialize(serializer),
         }
     }

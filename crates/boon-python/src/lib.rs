@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use boon_proto::proto::CitadelUserMessageIds as Msg;
 use polars::prelude::*;
 use prost::Message;
+use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyFileNotFoundError;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -32,6 +33,708 @@ fn to_py_err(e: boon_parser::Error) -> PyErr {
             InvalidDemoError::new_err(format!("Invalid demo file: {context}"))
         }
         other => InvalidDemoError::new_err(format!("{other}")),
+    }
+}
+
+// ─────────────────────────── Parallel player_ticks ───────────────────────────
+//
+// `player_ticks` is a per-tick full snapshot of player pawn + controller state.
+// Both classes are re-keyframed at every `DEM_FullPacket`, so the demo can be
+// split at those keyframes and each segment decoded on its own thread, then the
+// per-segment rows concatenated in order — identical to a single serial pass.
+// See `Parser::decode_segment` / `full_packet_offsets`.
+
+/// Number of keyframe segments to split the parallel `player_ticks` decode
+/// across: the CPU count, overridable via `BOON_TICK_SEGMENTS` (`1` disables
+/// parallelism; read fresh so tests can force the serial path).
+fn parallel_segments() -> usize {
+    std::env::var("BOON_TICK_SEGMENTS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .unwrap_or_else(|| {
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        })
+        .max(1)
+}
+
+/// Split the full-packet offsets into `n` contiguous `(start_offset, end_tick)`
+/// segments: segment 0 starts from the signon baseline (`None`), the rest
+/// cold-restart at an evenly spaced full packet.
+fn segment_ranges(offsets: &[(usize, i32)], n: usize) -> Vec<(Option<usize>, i32)> {
+    (0..n)
+        .map(|i| {
+            let start = (i != 0).then(|| offsets[i * offsets.len() / n].0);
+            let end_tick = if i == n - 1 {
+                i32::MAX
+            } else {
+                offsets[(i + 1) * offsets.len() / n].1
+            };
+            (start, end_tick)
+        })
+        .collect()
+}
+
+/// Field keys for the `player_ticks` snapshot, resolved once from the send-table
+/// serializers. `p_*` fields live on `CCitadelPlayerPawn`, `c_*` on
+/// `CCitadelPlayerController`.
+#[derive(Clone, Copy, Default)]
+struct PtKeys {
+    hero_id: Option<u64>,
+    vec_x: Option<u64>,
+    vec_y: Option<u64>,
+    vec_z: Option<u64>,
+    cell_x: Option<u64>,
+    cell_y: Option<u64>,
+    cell_z: Option<u64>,
+    camera: Option<u64>,
+    in_regen: Option<u64>,
+    in_item_shop: Option<u64>,
+    death_time: Option<u64>,
+    last_spawn: Option<u64>,
+    respawn: Option<u64>,
+    health: Option<u64>,
+    max_health: Option<u64>,
+    lifestate: Option<u64>,
+    souls: Option<u64>,
+    spent_souls: Option<u64>,
+    combat_end: Option<u64>,
+    combat_last_dmg: Option<u64>,
+    combat_start: Option<u64>,
+    dmg_dealt_end: Option<u64>,
+    dmg_dealt_last: Option<u64>,
+    dmg_dealt_start: Option<u64>,
+    dmg_taken_end: Option<u64>,
+    dmg_taken_last: Option<u64>,
+    dmg_taken_start: Option<u64>,
+    time_revealed: Option<u64>,
+    build_id: Option<u64>,
+    pawn_handle: Option<u64>,
+    health_max: Option<u64>,
+    alive: Option<u64>,
+    rebirth: Option<u64>,
+    rejuvenator: Option<u64>,
+    ultimate: Option<u64>,
+    health_regen: Option<u64>,
+    ult_cd_end: Option<u64>,
+    ult_cd_start: Option<u64>,
+    ap_nw: Option<u64>,
+    gold_nw: Option<u64>,
+    denies: Option<u64>,
+    hero_damage: Option<u64>,
+    hero_healing: Option<u64>,
+    obj_damage: Option<u64>,
+    self_healing: Option<u64>,
+    kill_streak: Option<u64>,
+    last_hits: Option<u64>,
+    level: Option<u64>,
+    kills: Option<u64>,
+    deaths: Option<u64>,
+    assists: Option<u64>,
+}
+
+impl PtKeys {
+    fn resolve(ctx: &boon_parser::Context) -> Self {
+        let pawn = ctx.serializers.get("CCitadelPlayerPawn");
+        let ctrl = ctx.serializers.get("CCitadelPlayerController");
+        let p = |name: &str| pawn.and_then(|s| s.resolve_field_key(name));
+        let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
+        Self {
+            hero_id: p("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"),
+            vec_x: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
+            vec_y: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
+            vec_z: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ"),
+            cell_x: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX"),
+            cell_y: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY"),
+            cell_z: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ"),
+            camera: p("m_angClientCamera"),
+            in_regen: p("m_bInRegenerationZone"),
+            in_item_shop: p("m_bInItemShopZone"),
+            death_time: p("m_flDeathTime"),
+            last_spawn: p("m_flLastSpawnTime"),
+            respawn: p("m_flRespawnTime"),
+            health: p("m_iHealth"),
+            max_health: p("m_iMaxHealth"),
+            lifestate: p("m_lifeState"),
+            souls: p("m_nCurrencies.m_nCurrencies"),
+            spent_souls: p("m_nSpentCurrencies.m_nSpentCurrencies"),
+            combat_end: p("m_sInCombat.m_flEndTime"),
+            combat_last_dmg: p("m_sInCombat.m_flLastDamageTime"),
+            combat_start: p("m_sInCombat.m_flStartTime"),
+            dmg_dealt_end: p("m_sPlayerDamageDealt.m_flEndTime"),
+            dmg_dealt_last: p("m_sPlayerDamageDealt.m_flLastDamageTime"),
+            dmg_dealt_start: p("m_sPlayerDamageDealt.m_flStartTime"),
+            dmg_taken_end: p("m_sPlayerDamageTaken.m_flEndTime"),
+            dmg_taken_last: p("m_sPlayerDamageTaken.m_flLastDamageTime"),
+            dmg_taken_start: p("m_sPlayerDamageTaken.m_flStartTime"),
+            time_revealed: p("m_timeRevealedOnMinimapByNPC"),
+            build_id: p("m_unHeroBuildID"),
+            pawn_handle: c("m_hPawn"),
+            health_max: c("m_PlayerDataGlobal.m_iHealthMax"),
+            alive: c("m_PlayerDataGlobal.m_bAlive"),
+            rebirth: c("m_PlayerDataGlobal.m_bHasRebirth"),
+            rejuvenator: c("m_PlayerDataGlobal.m_bHasRejuvenator"),
+            ultimate: c("m_PlayerDataGlobal.m_bUltimateTrained"),
+            health_regen: c("m_PlayerDataGlobal.m_flHealthRegen"),
+            ult_cd_end: c("m_PlayerDataGlobal.m_flUltimateCooldownEnd"),
+            ult_cd_start: c("m_PlayerDataGlobal.m_flUltimateCooldownStart"),
+            ap_nw: c("m_PlayerDataGlobal.m_iAPNetWorth"),
+            gold_nw: c("m_PlayerDataGlobal.m_iGoldNetWorth"),
+            denies: c("m_PlayerDataGlobal.m_iDenies"),
+            hero_damage: c("m_PlayerDataGlobal.m_iHeroDamage"),
+            hero_healing: c("m_PlayerDataGlobal.m_iHeroHealing"),
+            obj_damage: c("m_PlayerDataGlobal.m_iObjectiveDamage"),
+            self_healing: c("m_PlayerDataGlobal.m_iSelfHealing"),
+            kill_streak: c("m_PlayerDataGlobal.m_iKillStreak"),
+            last_hits: c("m_PlayerDataGlobal.m_iLastHits"),
+            level: c("m_PlayerDataGlobal.m_iLevel"),
+            kills: c("m_PlayerDataGlobal.m_iPlayerKills"),
+            deaths: c("m_PlayerDataGlobal.m_iDeaths"),
+            assists: c("m_PlayerDataGlobal.m_iPlayerAssists"),
+        }
+    }
+}
+
+/// Column vectors accumulated for `player_ticks`. One per output column; the
+/// order and names in [`into_columns`](PtCols::into_columns) must match the
+/// serial builder in `load()`.
+#[derive(Default)]
+struct PtCols {
+    tick: Vec<i32>,
+    hero_id: Vec<i64>,
+    x: Vec<f32>,
+    y: Vec<f32>,
+    z: Vec<f32>,
+    pitch: Vec<f32>,
+    yaw: Vec<f32>,
+    roll: Vec<f32>,
+    in_regen_zone: Vec<bool>,
+    in_item_shop: Vec<bool>,
+    death_time: Vec<f32>,
+    last_spawn_time: Vec<f32>,
+    respawn_time: Vec<f32>,
+    health: Vec<i64>,
+    max_health: Vec<i64>,
+    lifestate: Vec<i64>,
+    souls: Vec<i64>,
+    spent_souls: Vec<i64>,
+    combat_end: Vec<f32>,
+    combat_last_dmg: Vec<f32>,
+    combat_start: Vec<f32>,
+    dmg_dealt_end: Vec<f32>,
+    dmg_dealt_last: Vec<f32>,
+    dmg_dealt_start: Vec<f32>,
+    dmg_taken_end: Vec<f32>,
+    dmg_taken_last: Vec<f32>,
+    dmg_taken_start: Vec<f32>,
+    time_revealed: Vec<f32>,
+    build_id: Vec<i64>,
+    is_alive: Vec<bool>,
+    has_rebirth: Vec<bool>,
+    has_rejuvenator: Vec<bool>,
+    has_ultimate: Vec<bool>,
+    health_regen: Vec<f32>,
+    ult_cd_start: Vec<f32>,
+    ult_cd_end: Vec<f32>,
+    ap_nw: Vec<i64>,
+    gold_nw: Vec<i64>,
+    denies: Vec<i64>,
+    hero_damage: Vec<i64>,
+    hero_healing: Vec<i64>,
+    obj_damage: Vec<i64>,
+    self_healing: Vec<i64>,
+    kill_streak: Vec<i64>,
+    last_hits: Vec<i64>,
+    level: Vec<i64>,
+    kills: Vec<i64>,
+    deaths: Vec<i64>,
+    assists: Vec<i64>,
+}
+
+impl PtCols {
+    /// Append one snapshot row per live player at `ctx.tick` (mirrors the serial
+    /// collector in `load()`; must stay in sync with it).
+    fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &PtKeys) {
+        for (_, ctrl) in ctx
+            .entities
+            .iter()
+            .filter(|(_, e)| e.class_name == "CCitadelPlayerController")
+        {
+            let pawn = match ctrl
+                .get_handle(k.pawn_handle)
+                .and_then(|h| ctx.entities.get_by_handle(h))
+            {
+                Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
+                _ => continue,
+            };
+            let hid = pawn.get_i64(k.hero_id);
+            if hid == 0 {
+                continue;
+            }
+            self.tick.push(ctx.tick);
+            self.hero_id.push(hid);
+            let [x, y, z] =
+                pawn.world_position([k.cell_x, k.cell_y, k.cell_z], [k.vec_x, k.vec_y, k.vec_z]);
+            self.x.push(x);
+            self.y.push(y);
+            self.z.push(z);
+            let a = pawn.get_qangle(k.camera);
+            self.pitch.push(a[0]);
+            self.yaw.push(a[1]);
+            self.roll.push(a[2]);
+            self.in_regen_zone.push(pawn.get_bool(k.in_regen));
+            self.in_item_shop.push(pawn.get_bool(k.in_item_shop));
+            self.death_time.push(pawn.get_f32(k.death_time));
+            self.last_spawn_time.push(pawn.get_f32(k.last_spawn));
+            self.respawn_time.push(pawn.get_f32(k.respawn));
+            self.health.push(pawn.get_i64(k.health));
+            let eff = ctrl.get_i64(k.health_max);
+            self.max_health.push(if eff > 0 {
+                eff
+            } else {
+                pawn.get_i64(k.max_health)
+            });
+            self.lifestate.push(pawn.get_i64(k.lifestate));
+            self.souls.push(pawn.get_i64(k.souls));
+            self.spent_souls.push(pawn.get_i64(k.spent_souls));
+            self.combat_end.push(pawn.get_f32(k.combat_end));
+            self.combat_last_dmg.push(pawn.get_f32(k.combat_last_dmg));
+            self.combat_start.push(pawn.get_f32(k.combat_start));
+            self.dmg_dealt_end.push(pawn.get_f32(k.dmg_dealt_end));
+            self.dmg_dealt_last.push(pawn.get_f32(k.dmg_dealt_last));
+            self.dmg_dealt_start.push(pawn.get_f32(k.dmg_dealt_start));
+            self.dmg_taken_end.push(pawn.get_f32(k.dmg_taken_end));
+            self.dmg_taken_last.push(pawn.get_f32(k.dmg_taken_last));
+            self.dmg_taken_start.push(pawn.get_f32(k.dmg_taken_start));
+            self.time_revealed.push(pawn.get_f32(k.time_revealed));
+            self.build_id.push(pawn.get_i64(k.build_id));
+            self.is_alive.push(ctrl.get_bool(k.alive));
+            self.has_rebirth.push(ctrl.get_bool(k.rebirth));
+            self.has_rejuvenator.push(ctrl.get_bool(k.rejuvenator));
+            self.has_ultimate.push(ctrl.get_bool(k.ultimate));
+            self.health_regen.push(ctrl.get_f32(k.health_regen));
+            // Column start ← field CooldownEnd, column end ← field CooldownStart
+            // (kept identical to the serial builder).
+            self.ult_cd_start.push(ctrl.get_f32(k.ult_cd_end));
+            self.ult_cd_end.push(ctrl.get_f32(k.ult_cd_start));
+            self.ap_nw.push(ctrl.get_i64(k.ap_nw));
+            self.gold_nw.push(ctrl.get_i64(k.gold_nw));
+            self.denies.push(ctrl.get_i64(k.denies));
+            self.hero_damage.push(ctrl.get_i64(k.hero_damage));
+            self.hero_healing.push(ctrl.get_i64(k.hero_healing));
+            self.obj_damage.push(ctrl.get_i64(k.obj_damage));
+            self.self_healing.push(ctrl.get_i64(k.self_healing));
+            self.kill_streak.push(ctrl.get_i64(k.kill_streak));
+            self.last_hits.push(ctrl.get_i64(k.last_hits));
+            self.level.push(ctrl.get_i64(k.level));
+            self.kills.push(ctrl.get_i64(k.kills));
+            self.deaths.push(ctrl.get_i64(k.deaths));
+            self.assists.push(ctrl.get_i64(k.assists));
+        }
+    }
+
+    /// Append another segment's rows onto this one (segments are joined in order).
+    fn append(&mut self, mut o: PtCols) {
+        self.tick.append(&mut o.tick);
+        self.hero_id.append(&mut o.hero_id);
+        self.x.append(&mut o.x);
+        self.y.append(&mut o.y);
+        self.z.append(&mut o.z);
+        self.pitch.append(&mut o.pitch);
+        self.yaw.append(&mut o.yaw);
+        self.roll.append(&mut o.roll);
+        self.in_regen_zone.append(&mut o.in_regen_zone);
+        self.in_item_shop.append(&mut o.in_item_shop);
+        self.death_time.append(&mut o.death_time);
+        self.last_spawn_time.append(&mut o.last_spawn_time);
+        self.respawn_time.append(&mut o.respawn_time);
+        self.health.append(&mut o.health);
+        self.max_health.append(&mut o.max_health);
+        self.lifestate.append(&mut o.lifestate);
+        self.souls.append(&mut o.souls);
+        self.spent_souls.append(&mut o.spent_souls);
+        self.combat_end.append(&mut o.combat_end);
+        self.combat_last_dmg.append(&mut o.combat_last_dmg);
+        self.combat_start.append(&mut o.combat_start);
+        self.dmg_dealt_end.append(&mut o.dmg_dealt_end);
+        self.dmg_dealt_last.append(&mut o.dmg_dealt_last);
+        self.dmg_dealt_start.append(&mut o.dmg_dealt_start);
+        self.dmg_taken_end.append(&mut o.dmg_taken_end);
+        self.dmg_taken_last.append(&mut o.dmg_taken_last);
+        self.dmg_taken_start.append(&mut o.dmg_taken_start);
+        self.time_revealed.append(&mut o.time_revealed);
+        self.build_id.append(&mut o.build_id);
+        self.is_alive.append(&mut o.is_alive);
+        self.has_rebirth.append(&mut o.has_rebirth);
+        self.has_rejuvenator.append(&mut o.has_rejuvenator);
+        self.has_ultimate.append(&mut o.has_ultimate);
+        self.health_regen.append(&mut o.health_regen);
+        self.ult_cd_start.append(&mut o.ult_cd_start);
+        self.ult_cd_end.append(&mut o.ult_cd_end);
+        self.ap_nw.append(&mut o.ap_nw);
+        self.gold_nw.append(&mut o.gold_nw);
+        self.denies.append(&mut o.denies);
+        self.hero_damage.append(&mut o.hero_damage);
+        self.hero_healing.append(&mut o.hero_healing);
+        self.obj_damage.append(&mut o.obj_damage);
+        self.self_healing.append(&mut o.self_healing);
+        self.kill_streak.append(&mut o.kill_streak);
+        self.last_hits.append(&mut o.last_hits);
+        self.level.append(&mut o.level);
+        self.kills.append(&mut o.kills);
+        self.deaths.append(&mut o.deaths);
+        self.assists.append(&mut o.assists);
+    }
+
+    /// Build the `player_ticks` DataFrame. Column order/names must match `load()`.
+    fn into_dataframe(self) -> PyResult<DataFrame> {
+        df_from_columns(vec![
+            Column::new("tick".into(), self.tick),
+            Column::new("hero_id".into(), self.hero_id),
+            Column::new("x".into(), self.x),
+            Column::new("y".into(), self.y),
+            Column::new("z".into(), self.z),
+            Column::new("pitch".into(), self.pitch),
+            Column::new("yaw".into(), self.yaw),
+            Column::new("roll".into(), self.roll),
+            Column::new("in_regen_zone".into(), self.in_regen_zone),
+            Column::new("in_item_shop".into(), self.in_item_shop),
+            Column::new("death_time".into(), self.death_time),
+            Column::new("last_spawn_time".into(), self.last_spawn_time),
+            Column::new("respawn_time".into(), self.respawn_time),
+            Column::new("health".into(), self.health),
+            Column::new("max_health".into(), self.max_health),
+            Column::new("lifestate".into(), self.lifestate),
+            Column::new("souls".into(), self.souls),
+            Column::new("spent_souls".into(), self.spent_souls),
+            Column::new("in_combat_end_time".into(), self.combat_end),
+            Column::new("in_combat_last_damage_time".into(), self.combat_last_dmg),
+            Column::new("in_combat_start_time".into(), self.combat_start),
+            Column::new("player_damage_dealt_end_time".into(), self.dmg_dealt_end),
+            Column::new(
+                "player_damage_dealt_last_damage_time".into(),
+                self.dmg_dealt_last,
+            ),
+            Column::new(
+                "player_damage_dealt_start_time".into(),
+                self.dmg_dealt_start,
+            ),
+            Column::new("player_damage_taken_end_time".into(), self.dmg_taken_end),
+            Column::new(
+                "player_damage_taken_last_damage_time".into(),
+                self.dmg_taken_last,
+            ),
+            Column::new(
+                "player_damage_taken_start_time".into(),
+                self.dmg_taken_start,
+            ),
+            Column::new("time_revealed_by_npc".into(), self.time_revealed),
+            Column::new("build_id".into(), self.build_id),
+            Column::new("is_alive".into(), self.is_alive),
+            Column::new("has_rebirth".into(), self.has_rebirth),
+            Column::new("has_rejuvenator".into(), self.has_rejuvenator),
+            Column::new("has_ultimate_trained".into(), self.has_ultimate),
+            Column::new("health_regen".into(), self.health_regen),
+            Column::new("ultimate_cooldown_start".into(), self.ult_cd_start),
+            Column::new("ultimate_cooldown_end".into(), self.ult_cd_end),
+            Column::new("ap_net_worth".into(), self.ap_nw),
+            Column::new("gold_net_worth".into(), self.gold_nw),
+            Column::new("denies".into(), self.denies),
+            Column::new("hero_damage".into(), self.hero_damage),
+            Column::new("hero_healing".into(), self.hero_healing),
+            Column::new("objective_damage".into(), self.obj_damage),
+            Column::new("self_healing".into(), self.self_healing),
+            Column::new("kill_streak".into(), self.kill_streak),
+            Column::new("last_hits".into(), self.last_hits),
+            Column::new("level".into(), self.level),
+            Column::new("kills".into(), self.kills),
+            Column::new("deaths".into(), self.deaths),
+            Column::new("assists".into(), self.assists),
+        ])
+        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
+    }
+}
+
+/// `world_ticks` field keys (on `CCitadelGameRulesProxy`).
+#[derive(Clone, Copy, Default)]
+struct WkKeys {
+    is_paused: Option<u64>,
+    next_midboss: Option<u64>,
+}
+
+impl WkKeys {
+    fn resolve(ctx: &boon_parser::Context) -> Self {
+        let s = ctx.serializers.get("CCitadelGameRulesProxy");
+        Self {
+            is_paused: s.and_then(|s| s.resolve_field_key("m_pGameRules.m_bGamePaused")),
+            next_midboss: s
+                .and_then(|s| s.resolve_field_key("m_pGameRules.m_tNextMidBossSpawnTime")),
+        }
+    }
+}
+
+/// `world_ticks` column vectors (one row per tick).
+#[derive(Default)]
+struct WtCols {
+    tick: Vec<i32>,
+    is_paused: Vec<bool>,
+    next_midboss: Vec<f32>,
+}
+
+impl WtCols {
+    fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &WkKeys) {
+        if let Some((_, e)) = ctx
+            .entities
+            .iter()
+            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+        {
+            self.tick.push(ctx.tick);
+            self.is_paused.push(e.get_bool(k.is_paused));
+            self.next_midboss.push(e.get_f32(k.next_midboss));
+        }
+    }
+
+    fn append(&mut self, mut o: WtCols) {
+        self.tick.append(&mut o.tick);
+        self.is_paused.append(&mut o.is_paused);
+        self.next_midboss.append(&mut o.next_midboss);
+    }
+
+    fn into_dataframe(self) -> PyResult<DataFrame> {
+        df_from_columns(vec![
+            Column::new("tick".into(), self.tick),
+            Column::new("is_paused".into(), self.is_paused),
+            Column::new("next_midboss".into(), self.next_midboss),
+        ])
+        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
+    }
+}
+
+/// `troopers` field keys (on `CNPC_Trooper` / `CNPC_TrooperBoss`).
+#[derive(Clone, Copy, Default)]
+struct TkKeys {
+    health: Option<u64>,
+    max_health: Option<u64>,
+    team_num: Option<u64>,
+    lane: Option<u64>,
+    lifestate: Option<u64>,
+    vec_x: Option<u64>,
+    vec_y: Option<u64>,
+    vec_z: Option<u64>,
+    cell_x: Option<u64>,
+    cell_y: Option<u64>,
+    cell_z: Option<u64>,
+}
+
+impl TkKeys {
+    fn resolve(ctx: &boon_parser::Context) -> Self {
+        let s = ctx
+            .serializers
+            .get("CNPC_Trooper")
+            .or_else(|| ctx.serializers.get("CNPC_TrooperBoss"));
+        let f = |name: &str| s.and_then(|s| s.resolve_field_key(name));
+        Self {
+            health: f("m_iHealth"),
+            max_health: f("m_iMaxHealth"),
+            team_num: f("m_iTeamNum"),
+            lane: f("m_iLane"),
+            lifestate: f("m_lifeState"),
+            vec_x: f("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
+            vec_y: f("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
+            vec_z: f("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ"),
+            cell_x: f("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX"),
+            cell_y: f("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY"),
+            cell_z: f("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ"),
+        }
+    }
+}
+
+/// `troopers` column vectors (one row per alive lane trooper per tick).
+#[derive(Default)]
+struct TrCols {
+    tick: Vec<i32>,
+    ttype: Vec<String>,
+    team_num: Vec<i64>,
+    lane: Vec<i64>,
+    health: Vec<i64>,
+    max_health: Vec<i64>,
+    x: Vec<f32>,
+    y: Vec<f32>,
+    z: Vec<f32>,
+    entity_id: Vec<i32>,
+}
+
+impl TrCols {
+    fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &TkKeys) {
+        for (idx, e) in ctx.entities.iter() {
+            let ttype = match e.class_name.as_str() {
+                "CNPC_Trooper" => "trooper",
+                "CNPC_TrooperBoss" => "trooper_boss",
+                _ => continue,
+            };
+            let max_hp = e.get_i64(k.max_health);
+            if max_hp == 0 {
+                continue;
+            }
+            if e.get_i64(k.lifestate) != 0 {
+                continue;
+            }
+            self.tick.push(ctx.tick);
+            self.ttype.push(ttype.to_string());
+            self.team_num.push(e.get_i64(k.team_num));
+            self.lane.push(e.get_i64(k.lane));
+            self.health.push(e.get_i64(k.health));
+            self.max_health.push(max_hp);
+            let [x, y, z] =
+                e.world_position([k.cell_x, k.cell_y, k.cell_z], [k.vec_x, k.vec_y, k.vec_z]);
+            self.x.push(x);
+            self.y.push(y);
+            self.z.push(z);
+            self.entity_id.push(idx);
+        }
+    }
+
+    fn append(&mut self, mut o: TrCols) {
+        self.tick.append(&mut o.tick);
+        self.ttype.append(&mut o.ttype);
+        self.team_num.append(&mut o.team_num);
+        self.lane.append(&mut o.lane);
+        self.health.append(&mut o.health);
+        self.max_health.append(&mut o.max_health);
+        self.x.append(&mut o.x);
+        self.y.append(&mut o.y);
+        self.z.append(&mut o.z);
+        self.entity_id.append(&mut o.entity_id);
+    }
+
+    fn into_dataframe(self) -> PyResult<DataFrame> {
+        df_from_columns(vec![
+            Column::new("tick".into(), self.tick),
+            Column::new("trooper_type".into(), self.ttype),
+            Column::new("team_num".into(), self.team_num),
+            Column::new("lane".into(), self.lane),
+            Column::new("health".into(), self.health),
+            Column::new("max_health".into(), self.max_health),
+            Column::new("x".into(), self.x),
+            Column::new("y".into(), self.y),
+            Column::new("z".into(), self.z),
+            Column::new("entity_id".into(), self.entity_id),
+        ])
+        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
+    }
+}
+
+/// Which snapshot datasets a parallel pass should collect.
+#[derive(Clone, Copy, Default)]
+struct SnapWants {
+    player_ticks: bool,
+    world_ticks: bool,
+    troopers: bool,
+}
+
+impl SnapWants {
+    fn any(self) -> bool {
+        self.player_ticks || self.world_ticks || self.troopers
+    }
+}
+
+/// All snapshot field keys, resolved once from the send tables.
+struct SnapKeys {
+    pt: PtKeys,
+    wk: WkKeys,
+    tk: TkKeys,
+}
+
+/// One segment's accumulated snapshot columns.
+#[derive(Default)]
+struct SegSnap {
+    pt: PtCols,
+    wt: WtCols,
+    tr: TrCols,
+}
+
+impl SegSnap {
+    fn collect_tick(&mut self, ctx: &boon_parser::Context, keys: &SnapKeys, wants: SnapWants) {
+        if wants.player_ticks {
+            self.pt.collect_tick(ctx, &keys.pt);
+        }
+        if wants.world_ticks {
+            self.wt.collect_tick(ctx, &keys.wk);
+        }
+        if wants.troopers {
+            self.tr.collect_tick(ctx, &keys.tk);
+        }
+    }
+
+    fn append(&mut self, o: SegSnap) {
+        self.pt.append(o.pt);
+        self.wt.append(o.wt);
+        self.tr.append(o.tr);
+    }
+}
+
+/// Which ticks a snapshot pass collects rows at. Resolved up front so it is
+/// independent of how the demo is split into parallel segments.
+enum TickPredicate {
+    /// Every tick.
+    All,
+    /// Every tick within `[start, end]`.
+    Window { start: i32, end: i32 },
+    /// The explicit tick set, within `[start, end]`.
+    Set {
+        ticks: std::collections::HashSet<i32>,
+        start: i32,
+        end: i32,
+    },
+}
+
+impl TickPredicate {
+    #[inline]
+    fn matches(&self, t: i32) -> bool {
+        match self {
+            TickPredicate::All => true,
+            TickPredicate::Window { start, end } => t >= *start && t <= *end,
+            TickPredicate::Set { ticks, start, end } => {
+                t >= *start && t <= *end && ticks.contains(&t)
+            }
+        }
+    }
+}
+
+/// A `str` or `list[str]` Python argument (e.g. `datasets=`, `events=`).
+#[derive(FromPyObject)]
+enum StrOrList {
+    #[pyo3(transparent)]
+    One(String),
+    #[pyo3(transparent)]
+    Many(Vec<String>),
+}
+
+impl StrOrList {
+    fn into_vec(self) -> Vec<String> {
+        match self {
+            StrOrList::One(s) => vec![s],
+            StrOrList::Many(v) => v,
+        }
+    }
+}
+
+/// An `int` or `list[int]` Python argument (e.g. `ticks=`).
+#[derive(FromPyObject)]
+enum IntOrList {
+    #[pyo3(transparent)]
+    One(i32),
+    #[pyo3(transparent)]
+    Many(Vec<i32>),
+}
+
+impl IntOrList {
+    fn into_vec(self) -> Vec<i32> {
+        match self {
+            IntOrList::One(t) => vec![t],
+            IntOrList::Many(v) => v,
+        }
     }
 }
 
@@ -706,6 +1409,159 @@ impl Demo {
         Ok(dict.into_any().unbind())
     }
 
+    /// Snapshot per-tick state at selected ticks in a single parallel pass.
+    ///
+    /// Decodes the demo once (across keyframe segments, in parallel) and collects
+    /// rows only at the ticks you select, so sampling is far cheaper than pulling
+    /// a full per-tick frame and filtering in Python.
+    ///
+    /// Args:
+    ///     datasets: Which snapshot dataset(s) to return — ``"player_ticks"``
+    ///         (default), ``"world_ticks"``, ``"troopers"``, or a list of them.
+    ///     ticks: A specific tick or list of ticks.
+    ///     every: Sample every ``N`` ticks (gap-robust stride).
+    ///     seconds: Sample about once per ``seconds`` (converted via the tick rate).
+    ///         Mutually exclusive with ``every``.
+    ///     events: Sample at the ticks of these event datasets (e.g. ``"kills"``
+    ///         or ``["kills", "damage"]``).
+    ///     start_tick, end_tick: Restrict to a contiguous ``[start, end]`` window.
+    ///
+    /// With no stride/ticks/events but a window, every tick in the window is
+    /// returned; specifying none of them is an error. Returns a single DataFrame
+    /// when one dataset is requested, otherwise a dict keyed by dataset name.
+    ///
+    /// Example:
+    ///     >>> demo.snapshots(every=64)                     # ~1 row/sec of ticks
+    ///     >>> demo.snapshots(ticks=[29000, 30000])         # specific ticks
+    ///     >>> demo.snapshots("troopers", events="kills")   # troopers at kill ticks
+    ///     >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
+    #[pyo3(signature = (datasets=None, *, ticks=None, every=None, seconds=None, events=None, start_tick=None, end_tick=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn snapshots(
+        &mut self,
+        py: Python<'_>,
+        datasets: Option<StrOrList>,
+        ticks: Option<IntOrList>,
+        every: Option<i32>,
+        seconds: Option<f32>,
+        events: Option<StrOrList>,
+        start_tick: Option<i32>,
+        end_tick: Option<i32>,
+    ) -> PyResult<Py<PyAny>> {
+        // Requested datasets -> SnapWants (default player_ticks).
+        let names = datasets
+            .map(StrOrList::into_vec)
+            .unwrap_or_else(|| vec!["player_ticks".to_string()]);
+        if names.is_empty() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "snapshots(): `datasets` must not be empty",
+            ));
+        }
+        let mut wants = SnapWants::default();
+        for n in &names {
+            match n.as_str() {
+                "player_ticks" => wants.player_ticks = true,
+                "world_ticks" => wants.world_ticks = true,
+                "troopers" => wants.troopers = true,
+                other => {
+                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                        "snapshots(): datasets must be player_ticks / world_ticks / troopers, got '{other}'"
+                    )));
+                }
+            }
+        }
+
+        // Stride: `every` (ticks) or `seconds` (converted), mutually exclusive.
+        if every.is_some() && seconds.is_some() {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "snapshots(): pass either `every` or `seconds`, not both",
+            ));
+        }
+        let stride: Option<i32> = match (every, seconds) {
+            (Some(step), _) if step < 1 => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "snapshots(): `every` must be >= 1 tick",
+                ));
+            }
+            (Some(step), _) => Some(step),
+            (_, Some(secs)) if !secs.is_finite() || secs <= 0.0 => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "snapshots(): `seconds` must be a positive number",
+                ));
+            }
+            (_, Some(secs)) => Some(((secs * self.tick_rate as f32).round() as i32).max(1)),
+            (None, None) => None,
+        };
+
+        // Explicit + event ticks.
+        let explicit = ticks.map(IntOrList::into_vec).unwrap_or_default();
+        let mut tick_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
+        if let Some(events) = events {
+            tick_set = self.event_ticks(&events.into_vec())?;
+        }
+        tick_set.extend(&explicit);
+
+        let has_window = start_tick.is_some() || end_tick.is_some();
+        if stride.is_none() && tick_set.is_empty() && !has_window {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "snapshots(): specify at least one of `ticks`, `every`, `seconds`, \
+                 `events`, or `start_tick` / `end_tick`",
+            ));
+        }
+
+        // Fast path: a single tick with no stride or window seeks directly
+        // (`parse_to_tick`) instead of decoding the whole demo.
+        let (pt, wt, tr) = if stride.is_none() && !has_window && tick_set.len() == 1 {
+            let t = *tick_set.iter().next().expect("len == 1");
+            self.snapshot_at_tick(t, wants)?
+        } else {
+            // The tick predicate: the union of the stride-sampled ticks and the
+            // explicit/event ticks, restricted to the window. With no sampler,
+            // every tick in the window.
+            let start = start_tick.unwrap_or(i32::MIN);
+            let end = end_tick.unwrap_or(i32::MAX);
+            let pred = if stride.is_none() && tick_set.is_empty() {
+                TickPredicate::Window { start, end }
+            } else {
+                let mut sampled = tick_set;
+                if let Some(step) = stride {
+                    let mut last: Option<i32> = None;
+                    for t in self.parser.distinct_ticks().map_err(to_py_err)? {
+                        if last.is_none_or(|l| t - l >= step) {
+                            sampled.insert(t);
+                            last = Some(t);
+                        }
+                    }
+                }
+                TickPredicate::Set {
+                    ticks: sampled,
+                    start,
+                    end,
+                }
+            };
+            self.build_snapshots_parallel(wants, &pred)?
+        };
+        let frame_for = |name: &str| -> Option<DataFrame> {
+            match name {
+                "player_ticks" => pt.clone(),
+                "world_ticks" => wt.clone(),
+                "troopers" => tr.clone(),
+                _ => None,
+            }
+        };
+
+        if names.len() == 1 {
+            let df = frame_for(&names[0]).unwrap();
+            PyDataFrame(df).into_py_any(py)
+        } else {
+            let dict = PyDict::new(py);
+            for n in &names {
+                dict.set_item(n, PyDataFrame(frame_for(n).unwrap()))?;
+            }
+            Ok(dict.into_any().unbind())
+        }
+    }
+
     /// Convert a tick number to seconds elapsed, excluding paused time.
     ///
     /// Automatically loads ``world_ticks`` on first call to determine pauses.
@@ -745,88 +1601,23 @@ impl Demo {
             return Ok(PyDataFrame(df.clone()));
         }
 
-        // Parse to the last tick to get final game state
-        let last_tick = self.total_ticks;
-        let ctx = self.parser.parse_to_tick(last_tick).map_err(to_py_err)?;
+        // The roster (name / steam id / hero / team / lane) is set once the
+        // match is underway and never changes, so it can be snapshotted from a
+        // single tick. Prefer the game-over tick: it is late enough that every
+        // field is populated (heroes locked, lanes assigned) but before the
+        // post-game teardown that despawns the player controllers. Snapshotting
+        // there — rather than the final recorded tick — avoids both reading
+        // pre-game placeholders and finding the controllers (partially or
+        // fully) gone at the end. Fall back to the final tick only when a demo
+        // has no game-over event (e.g. an incomplete recording).
+        self.ensure_always_events_scanned()?;
+        let snapshot_tick = self.game_over.map_or(self.total_ticks, |(_, tick)| tick);
+        let mut df = self.collect_players_at(snapshot_tick)?;
 
-        let mut player_names: Vec<String> = Vec::new();
-        let mut steam_ids: Vec<u64> = Vec::new();
-        let mut hero_ids: Vec<i64> = Vec::new();
-        let mut team_nums: Vec<i64> = Vec::new();
-        let mut start_lanes: Vec<i64> = Vec::new();
-
-        // Resolve field keys once for CCitadelPlayerController
-        let player_serializer = ctx.serializers.get("CCitadelPlayerController");
-        let key_player_name = player_serializer
-            .as_ref()
-            .and_then(|s| s.resolve_field_key("m_iszPlayerName"));
-        let key_steam_id = player_serializer
-            .as_ref()
-            .and_then(|s| s.resolve_field_key("m_steamID"));
-        let key_hero_id = player_serializer
-            .as_ref()
-            .and_then(|s| s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID"));
-        let key_team_num = player_serializer
-            .as_ref()
-            .and_then(|s| s.resolve_field_key("m_iTeamNum"));
-        let key_start_lane = player_serializer
-            .as_ref()
-            .and_then(|s| s.resolve_field_key("m_nOriginalLaneAssignment"));
-
-        // Find all CCitadelPlayerController entities
-        for (_idx, entity) in ctx.entities.iter() {
-            if entity.class_name == "CCitadelPlayerController" {
-                // Extract player name
-                let player_name = key_player_name
-                    .and_then(|k| entity.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon_parser::FieldValue::String(bytes) => {
-                            Some(String::from_utf8_lossy(bytes).to_string())
-                        }
-                        _ => None,
-                    })
-                    .unwrap_or_default();
-
-                // Extract steam ID
-                let steam_id = key_steam_id
-                    .and_then(|k| entity.fields.get(&k))
-                    .and_then(|v| match v {
-                        boon_parser::FieldValue::U64(id) => Some(*id),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-
-                // Skip players with no steam ID
-                if steam_id == 0 {
-                    continue;
-                }
-
-                // Extract hero ID and name
-                let hero_id = entity.get_i64(key_hero_id);
-                // Extract team number
-                let team_num = entity.get_i64(key_team_num);
-
-                // Extract original lane assignment (I64).
-                // Values are CMsgLaneColor IDs: 1=yellow, 3=green, 4=blue, 6=purple, 0=none.
-                let start_lane = entity.get_i64(key_start_lane);
-
-                player_names.push(player_name);
-                steam_ids.push(steam_id);
-                hero_ids.push(hero_id);
-                team_nums.push(team_num);
-                start_lanes.push(start_lane);
-            }
+        // Defensive: if that tick somehow had no controllers, try the other.
+        if df.height() == 0 && snapshot_tick != self.total_ticks {
+            df = self.collect_players_at(self.total_ticks)?;
         }
-
-        // Build DataFrame
-        let df = df_from_columns(vec![
-            Column::new("player_name".into(), player_names),
-            Column::new("steam_id".into(), steam_ids),
-            Column::new("hero_id".into(), hero_ids),
-            Column::new("team_num".into(), team_nums),
-            Column::new("start_lane".into(), start_lanes),
-        ])
-        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
 
         self.cached_players = Some(df.clone());
         Ok(PyDataFrame(df))
@@ -936,6 +1727,35 @@ impl Demo {
             && !load_street_brawl_rounds
         {
             return Ok(());
+        }
+
+        // One-pass fast path: if everything still to load is a parallel-safe
+        // snapshot dataset (player_ticks / world_ticks / troopers), decode them
+        // together in a single parallel keyframe-segmented pass and skip the
+        // serial pass. (Each is re-keyframed at every full packet, so segmented
+        // decoding is byte-for-byte identical — verified in tests.)
+        let only_snapshots = !load_abilities
+            && !load_kills
+            && !load_damage
+            && !load_flex_slots
+            && !load_ability_upgrades
+            && !load_item_purchases
+            && !load_chat
+            && !load_objectives
+            && !load_mid_boss
+            && !load_neutrals
+            && !load_stat_modifier_events
+            && !load_active_modifiers
+            && !load_ability_ticks
+            && !load_urn
+            && !load_street_brawl_ticks
+            && !load_street_brawl_rounds;
+        if only_snapshots {
+            return self.ensure_snapshots(SnapWants {
+                player_ticks: load_player_ticks,
+                world_ticks: load_world_ticks,
+                troopers: load_troopers,
+            });
         }
 
         let need_events = load_abilities
@@ -1829,7 +2649,7 @@ impl Demo {
 
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
                 if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks) && !entity_to_hero_built {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for (idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerPawn" {
                             let hid = entity.get_i64(pk_hero_id);
                             if hid != 0 {
@@ -1842,7 +2662,7 @@ impl Demo {
 
                 // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
                 if (load_item_purchases || load_chat) && !slot_to_hero_built {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for (idx, entity) in $ctx.entities.iter() {
                         if entity.class_name == "CCitadelPlayerController" {
                             let hid = entity.get_i64(ck_hero_id);
                             if hid != 0 {
@@ -1858,7 +2678,7 @@ impl Demo {
 
                 // ── Collect ability_upgrades (entity change detection) ──
                 if load_ability_upgrades {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for (idx, entity) in $ctx.entities.iter() {
                         if entity.class_name != "CCitadelPlayerController" {
                             continue;
                         }
@@ -1945,7 +2765,7 @@ impl Demo {
 
                 // ── Collect troopers (lane troopers, per-tick alive only) ──
                 if load_troopers {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for (idx, entity) in $ctx.entities.iter() {
                         let ttype = match entity.class_name.as_str() {
                             "CNPC_Trooper" => "trooper",
                             "CNPC_TrooperBoss" => "trooper_boss",
@@ -1978,7 +2798,7 @@ impl Demo {
 
                 // ── Collect stat_modifiers (event-based change detection) ──
                 if load_stat_modifier_events {
-                    for (&idx, entity) in $ctx.entities.iter() {
+                    for (idx, entity) in $ctx.entities.iter() {
                         if entity.class_name != "CCitadelPlayerController" {
                             continue;
                         }
@@ -3045,9 +3865,10 @@ impl Demo {
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn player_ticks(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_player_ticks.is_none() {
-            self.load(vec!["player_ticks".to_string()])?;
-        }
+        self.ensure_snapshots(SnapWants {
+            player_ticks: true,
+            ..Default::default()
+        })?;
         Ok(PyDataFrame(self.cached_player_ticks.clone().unwrap()))
     }
 
@@ -3057,9 +3878,10 @@ impl Demo {
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn world_ticks(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_world_ticks.is_none() {
-            self.load(vec!["world_ticks".to_string()])?;
-        }
+        self.ensure_snapshots(SnapWants {
+            world_ticks: true,
+            ..Default::default()
+        })?;
         Ok(PyDataFrame(self.cached_world_ticks.clone().unwrap()))
     }
 
@@ -3201,9 +4023,10 @@ impl Demo {
     /// Access this property or call ``load("troopers")`` explicitly.
     #[getter]
     fn troopers(&mut self) -> PyResult<PyDataFrame> {
-        if self.cached_troopers.is_none() {
-            self.load(vec!["troopers".to_string()])?;
-        }
+        self.ensure_snapshots(SnapWants {
+            troopers: true,
+            ..Default::default()
+        })?;
         Ok(PyDataFrame(self.cached_troopers.clone().unwrap()))
     }
 
@@ -3505,6 +4328,307 @@ impl Demo {
         }
         self.game_over_scanned = true;
         Ok(())
+    }
+
+    /// Collect the player roster from the `CCitadelPlayerController` entities
+    /// present at `tick`. Players with no Steam ID (bots / empty slots) are
+    /// skipped. Returns an empty frame when no controllers exist at `tick`.
+    fn collect_players_at(&self, tick: i32) -> PyResult<DataFrame> {
+        let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
+
+        let mut player_names: Vec<String> = Vec::new();
+        let mut steam_ids: Vec<u64> = Vec::new();
+        let mut hero_ids: Vec<i64> = Vec::new();
+        let mut team_nums: Vec<i64> = Vec::new();
+        let mut start_lanes: Vec<i64> = Vec::new();
+
+        // Resolve field keys once for CCitadelPlayerController
+        let player_serializer = ctx.serializers.get("CCitadelPlayerController");
+        let key_player_name = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_iszPlayerName"));
+        let key_steam_id = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_steamID"));
+        let key_hero_id = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID"));
+        let key_team_num = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_iTeamNum"));
+        let key_start_lane = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_nOriginalLaneAssignment"));
+
+        // Find all CCitadelPlayerController entities
+        for (_idx, entity) in ctx.entities.iter() {
+            if entity.class_name == "CCitadelPlayerController" {
+                let player_name = key_player_name
+                    .and_then(|k| entity.fields.get(&k))
+                    .and_then(|v| match v {
+                        boon_parser::FieldValue::String(bytes) => {
+                            Some(String::from_utf8_lossy(bytes).to_string())
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+
+                let steam_id = key_steam_id
+                    .and_then(|k| entity.fields.get(&k))
+                    .and_then(|v| match v {
+                        boon_parser::FieldValue::U64(id) => Some(*id),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+
+                // Skip players with no steam ID
+                if steam_id == 0 {
+                    continue;
+                }
+
+                let hero_id = entity.get_i64(key_hero_id);
+                let team_num = entity.get_i64(key_team_num);
+                // Original lane assignment (CMsgLaneColor IDs: 1=yellow, 3=green,
+                // 4=blue, 6=purple, 0=none).
+                let start_lane = entity.get_i64(key_start_lane);
+
+                player_names.push(player_name);
+                steam_ids.push(steam_id);
+                hero_ids.push(hero_id);
+                team_nums.push(team_num);
+                start_lanes.push(start_lane);
+            }
+        }
+
+        df_from_columns(vec![
+            Column::new("player_name".into(), player_names),
+            Column::new("steam_id".into(), steam_ids),
+            Column::new("hero_id".into(), hero_ids),
+            Column::new("team_num".into(), team_nums),
+            Column::new("start_lane".into(), start_lanes),
+        ])
+        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
+    }
+
+    /// Decode the requested snapshot datasets in a SINGLE parallel pass across
+    /// full-packet keyframe segments, returning `(player_ticks, world_ticks,
+    /// troopers)` for whichever were requested. Player pawn/controller,
+    /// game-rules, and alive-trooper state are all re-keyframed at every full
+    /// packet, so the per-segment cold restarts stitch back into byte-for-byte
+    /// the same frames as a serial pass. Falls back to one serial decode when
+    /// parallelism is disabled (`BOON_TICK_SEGMENTS=1`) or the demo has ≤1
+    /// keyframe.
+    fn build_snapshots_parallel(
+        &self,
+        wants: SnapWants,
+        pred: &TickPredicate,
+    ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
+        let mut classes: Vec<&str> = Vec::new();
+        if wants.player_ticks {
+            classes.push("CCitadelPlayerPawn");
+            classes.push("CCitadelPlayerController");
+        }
+        if wants.world_ticks {
+            classes.push("CCitadelGameRulesProxy");
+        }
+        if wants.troopers {
+            classes.push("CNPC_Trooper");
+            classes.push("CNPC_TrooperBoss");
+        }
+        let filter: std::collections::HashSet<&str> = classes.into_iter().collect();
+
+        // Resolve all field keys once from the send-table serializers.
+        let init = self.parser.parse_init().map_err(to_py_err)?;
+        let keys = SnapKeys {
+            pt: PtKeys::resolve(&init),
+            wk: WkKeys::resolve(&init),
+            tk: TkKeys::resolve(&init),
+        };
+        drop(init);
+
+        let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
+        let n = parallel_segments().min(offsets.len().max(1));
+
+        let merged = if n <= 1 {
+            let mut cols = SegSnap::default();
+            self.parser
+                .decode_segment(None, i32::MAX, &filter, |ctx| {
+                    if pred.matches(ctx.tick) {
+                        cols.collect_tick(ctx, &keys, wants);
+                    }
+                })
+                .map_err(to_py_err)?;
+            cols
+        } else {
+            let segments = segment_ranges(&offsets, n);
+            let parser = &self.parser;
+            let filter = &filter;
+            let keys = &keys;
+            let parts: std::result::Result<Vec<SegSnap>, String> = std::thread::scope(|s| {
+                let handles: Vec<_> = segments
+                    .iter()
+                    .map(|&(start, end_tick)| {
+                        s.spawn(move || -> std::result::Result<SegSnap, String> {
+                            let mut cols = SegSnap::default();
+                            parser
+                                .decode_segment(start, end_tick, filter, |ctx| {
+                                    if pred.matches(ctx.tick) {
+                                        cols.collect_tick(ctx, keys, wants);
+                                    }
+                                })
+                                .map_err(|e| e.to_string())?;
+                            Ok(cols)
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|h| h.join().expect("snapshot segment thread panicked"))
+                    .collect()
+            });
+            let mut merged = SegSnap::default();
+            for part in parts.map_err(InvalidDemoError::new_err)? {
+                merged.append(part);
+            }
+            merged
+        };
+
+        let SegSnap { pt, wt, tr } = merged;
+        Ok((
+            if wants.player_ticks {
+                Some(pt.into_dataframe()?)
+            } else {
+                None
+            },
+            if wants.world_ticks {
+                Some(wt.into_dataframe()?)
+            } else {
+                None
+            },
+            if wants.troopers {
+                Some(tr.into_dataframe()?)
+            } else {
+                None
+            },
+        ))
+    }
+
+    /// Snapshot the requested datasets at a single tick via a direct
+    /// `parse_to_tick` seek instead of a full-demo decode. `tick` must be a real
+    /// emitted tick; otherwise empty frames are returned, matching the predicate
+    /// path (which emits nothing for a tick with no data). Exact for the same
+    /// reason the segmented decode is: these entities are re-keyframed at every
+    /// full packet, so the seek reconstructs the identical state at `tick`.
+    fn snapshot_at_tick(
+        &self,
+        tick: i32,
+        wants: SnapWants,
+    ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
+        let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
+        let mut cols = SegSnap::default();
+        if ctx.tick == tick {
+            let keys = SnapKeys {
+                pt: PtKeys::resolve(&ctx),
+                wk: WkKeys::resolve(&ctx),
+                tk: TkKeys::resolve(&ctx),
+            };
+            cols.collect_tick(&ctx, &keys, wants);
+        }
+        let SegSnap { pt, wt, tr } = cols;
+        Ok((
+            if wants.player_ticks {
+                Some(pt.into_dataframe()?)
+            } else {
+                None
+            },
+            if wants.world_ticks {
+                Some(wt.into_dataframe()?)
+            } else {
+                None
+            },
+            if wants.troopers {
+                Some(tr.into_dataframe()?)
+            } else {
+                None
+            },
+        ))
+    }
+
+    /// Populate the caches for the requested snapshot datasets that aren't
+    /// already loaded, using a single parallel decode pass over the demo.
+    fn ensure_snapshots(&mut self, mut wants: SnapWants) -> PyResult<()> {
+        if self.cached_player_ticks.is_some() {
+            wants.player_ticks = false;
+        }
+        if self.cached_world_ticks.is_some() {
+            wants.world_ticks = false;
+        }
+        if self.cached_troopers.is_some() {
+            wants.troopers = false;
+        }
+        if !wants.any() {
+            return Ok(());
+        }
+        let (pt, wt, tr) = self.build_snapshots_parallel(wants, &TickPredicate::All)?;
+        if let Some(df) = pt {
+            self.cached_player_ticks = Some(df);
+        }
+        if let Some(df) = wt {
+            self.cached_world_ticks = Some(df);
+        }
+        if let Some(df) = tr {
+            self.cached_troopers = Some(df);
+        }
+        Ok(())
+    }
+
+    /// The cached DataFrame for a loaded dataset, by name (for `snapshots(events=)`).
+    fn cached_frame(&self, name: &str) -> Option<&DataFrame> {
+        match name {
+            "abilities" => self.cached_abilities.as_ref(),
+            "ability_upgrades" => self.cached_ability_upgrades.as_ref(),
+            "ability_ticks" => self.cached_ability_ticks.as_ref(),
+            "chat" => self.cached_chat.as_ref(),
+            "mid_boss" => self.cached_mid_boss.as_ref(),
+            "objectives" => self.cached_objectives.as_ref(),
+            "player_ticks" => self.cached_player_ticks.as_ref(),
+            "world_ticks" => self.cached_world_ticks.as_ref(),
+            "kills" => self.cached_kills.as_ref(),
+            "damage" => self.cached_damage.as_ref(),
+            "flex_slots" => self.cached_flex_slots.as_ref(),
+            "item_purchases" => self.cached_item_purchases.as_ref(),
+            "troopers" => self.cached_troopers.as_ref(),
+            "neutrals" => self.cached_neutrals.as_ref(),
+            "stat_modifier_events" => self.cached_stat_modifier_events.as_ref(),
+            "active_modifiers" => self.cached_active_modifiers.as_ref(),
+            "urn" => self.cached_urn.as_ref(),
+            "street_brawl_ticks" => self.cached_street_brawl_ticks.as_ref(),
+            "street_brawl_rounds" => self.cached_street_brawl_rounds.as_ref(),
+            _ => None,
+        }
+    }
+
+    /// Union of the `tick` columns of the given event datasets (loading each if
+    /// needed), for `snapshots(events=)`.
+    fn event_ticks(&mut self, names: &[String]) -> PyResult<std::collections::HashSet<i32>> {
+        let mut set = std::collections::HashSet::new();
+        for name in names {
+            self.load(vec![name.clone()])?;
+            let df = self.cached_frame(name).ok_or_else(|| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "snapshots(events=): '{name}' is not an event dataset with a tick column"
+                ))
+            })?;
+            let tick = df.column("tick").and_then(|c| c.i32()).map_err(|_| {
+                pyo3::exceptions::PyValueError::new_err(format!(
+                    "snapshots(events=): '{name}' has no i32 `tick` column"
+                ))
+            })?;
+            for t in tick.into_iter().flatten() {
+                set.insert(t);
+            }
+        }
+        Ok(set)
     }
 }
 

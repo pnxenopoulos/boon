@@ -32,7 +32,7 @@ pub fn run(
         .with_context(|| format!("failed to open {}", file.display()))?;
     let ctx = parser.parse_to_tick(tick)?;
 
-    let mut entities: Vec<_> = ctx.entities.entities.iter().collect();
+    let mut entities: Vec<_> = ctx.entities.iter().collect();
     entities.sort_by_key(|(idx, _)| *idx);
 
     if let Some(ref f) = filter {
@@ -104,7 +104,7 @@ pub fn run(
                         })
                         .collect();
                     EntityOutput {
-                        index: **idx,
+                        index: *idx,
                         class_name: entity.class_name.clone(),
                         class_id: entity.class_id,
                         fields: resolved_fields,

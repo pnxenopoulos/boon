@@ -29,6 +29,7 @@ from boon import stats
 # ``boon.stats.kill_participation(demo)`` are the same computation.
 Demo.in_combat = stats.in_combat
 Demo.kill_participation = stats.kill_participation
+Demo.teamfights = stats.teamfights
 Demo.time_dead = stats.time_dead
 
 __all__ = [

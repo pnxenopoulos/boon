@@ -9,7 +9,7 @@ use super::class_info::ClassInfo;
 use super::field_decoder::FieldDecodeContext;
 use super::field_path::{self, FieldPath};
 use super::field_value::FieldValue;
-use super::serializers::{Serializer, SerializerContainer};
+use super::serializers::{Serializer, SerializerContainer, SerializerField};
 use super::string_tables::StringTableContainer;
 
 use boon_proto::proto::CsvcMsgPacketEntities;
@@ -22,6 +22,11 @@ use boon_proto::proto::CsvcMsgPacketEntities;
 const MAX_EDICT_BITS: u32 = 14;
 const NUM_ENT_ENTRY_BITS: u32 = MAX_EDICT_BITS + 1;
 const NUM_SERIAL_NUM_BITS: u32 = 32 - NUM_ENT_ENTRY_BITS;
+
+/// Largest valid entity-array index (0..=16383, a 14-bit edict index). Corrupt
+/// demos can drive the running delta past this; clamping to it avoids both an
+/// arithmetic overflow and a runaway slot-array allocation.
+const MAX_ENTITY_INDEX: i64 = (1i64 << MAX_EDICT_BITS) - 1;
 
 /// Mask that extracts the entity-array index from a networked `CHandle` value.
 ///
@@ -59,6 +64,41 @@ const DELTA_UPDATE: u8 = 0b00;
 const DELTA_CREATE: u8 = 0b10;
 const DELTA_LEAVE: u8 = 0b01;
 const DELTA_DELETE: u8 = 0b11;
+
+/// Walk a serializer hierarchy along a field path to the addressed field.
+///
+/// Returns an [`Error::Parse`] rather than panicking when any component indexes
+/// past its serializer's fields — the tell-tale symptom of a bitstream desync (a
+/// corrupted field path addressing a nonexistent field). Surfacing it as an
+/// error keeps one bad decode from taking down the whole parse.
+fn resolve_field_path<'a>(
+    serializer: &'a Serializer,
+    fp: &FieldPath,
+) -> Result<&'a SerializerField> {
+    let oob = || Error::Parse {
+        context: format!(
+            "field path out of range for serializer '{}' ({} fields)",
+            serializer.name,
+            serializer.fields.len()
+        ),
+    };
+
+    let mut field = serializer.fields.get(fp.get(0)).ok_or_else(oob)?;
+    for i in 1..=fp.last {
+        let idx = fp.get(i);
+        if field.is_dynamic_array() {
+            match field.field_serializer.as_ref() {
+                Some(fs) => field = fs.fields.first().ok_or_else(oob)?,
+                None => break,
+            }
+        } else if let Some(fs) = field.field_serializer.as_ref() {
+            field = fs.fields.get(idx).ok_or_else(oob)?;
+        } else {
+            break;
+        }
+    }
+    Ok(field)
+}
 
 /// A single entity with its class, fields, and current state.
 #[derive(Debug, Clone)]
@@ -98,22 +138,7 @@ impl Entity {
         field_path::read_field_paths(br, fp_buf)?;
 
         for fp_idx in 0..fp_buf.len() {
-            // Walk the serializer hierarchy to find the decoder (same as skip_update)
-            let fp_last = fp_buf[fp_idx].last;
-            let mut field = &serializer.fields[fp_buf[fp_idx].get(0)];
-
-            for i in 1..=fp_last {
-                let idx = fp_buf[fp_idx].get(i);
-                if field.is_dynamic_array() {
-                    if let Some(ref fs) = field.field_serializer {
-                        field = &fs.fields[0];
-                    }
-                } else if let Some(ref fs) = field.field_serializer {
-                    field = &fs.fields[idx];
-                } else {
-                    break;
-                }
-            }
+            let field = resolve_field_path(serializer, &fp_buf[fp_idx])?;
 
             let key = fp_buf[fp_idx].pack();
             let value = field
@@ -150,22 +175,7 @@ impl Entity {
         field_path::read_field_paths(br, fp_buf)?;
 
         for fp_idx in 0..fp_buf.len() {
-            // Walk the serializer hierarchy to find the decoder
-            let fp_last = fp_buf[fp_idx].last;
-            let mut field = &serializer.fields[fp_buf[fp_idx].get(0)];
-
-            for i in 1..=fp_last {
-                let idx = fp_buf[fp_idx].get(i);
-                if field.is_dynamic_array() {
-                    if let Some(ref fs) = field.field_serializer {
-                        field = &fs.fields[0];
-                    }
-                } else if let Some(ref fs) = field.field_serializer {
-                    field = &fs.fields[idx];
-                } else {
-                    break;
-                }
-            }
+            let field = resolve_field_path(serializer, &fp_buf[fp_idx])?;
 
             // Skip the value - just advances the bit reader without decoding
             field.metadata.decoder.skip(ctx, br)?;
@@ -299,10 +309,16 @@ impl Entity {
 /// Container managing all active entities.
 #[derive(Default)]
 pub struct EntityContainer {
-    pub entities: FxHashMap<i32, Entity>,
-    /// Tracks class_id for entities we're not fully tracking (for filtered parsing).
-    /// This lets us skip updates properly by knowing which serializer to use.
-    skipped_entity_classes: FxHashMap<i32, i32>,
+    /// Active entities, indexed **directly by entity index** — a dense slot
+    /// array rather than a hash map, so every `get` / `entity_mut` /
+    /// `get_by_handle` (which fire on essentially every entity update) is a
+    /// bounds-checked index instead of a hash lookup. Indices are `0..=16383`;
+    /// empty slots hold `None`.
+    pub entities: Vec<Option<Entity>>,
+    /// `class_id` per index for entities filtered out at create time, so a later
+    /// filtered update can pick the right serializer to advance past them. `-1`
+    /// means "no skipped entity here". Same dense-slot layout.
+    skipped_entity_classes: Vec<i32>,
     /// Indices of tracked entities created or updated since the last
     /// [`clear_updated`](Self::clear_updated). Accumulates across every packet in
     /// a tick so change-only consumers can process just what changed instead of
@@ -316,6 +332,63 @@ impl EntityContainer {
         Self::default()
     }
 
+    /// A slotted entity, mutably (`None` if the index is out of range or empty).
+    #[inline]
+    fn entity_mut(&mut self, index: i32) -> Option<&mut Entity> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.entities.get_mut(i))
+            .and_then(Option::as_mut)
+    }
+
+    /// Store an entity at its index, growing the slot array as needed.
+    #[inline]
+    fn put_entity(&mut self, index: i32, entity: Entity) {
+        let Ok(i) = usize::try_from(index) else {
+            return;
+        };
+        if i >= self.entities.len() {
+            self.entities.resize_with(i + 1, || None);
+        }
+        self.entities[i] = Some(entity);
+    }
+
+    /// Empty an entity's slot.
+    #[inline]
+    fn take_entity(&mut self, index: i32) {
+        if let Ok(i) = usize::try_from(index)
+            && let Some(slot) = self.entities.get_mut(i)
+        {
+            *slot = None;
+        }
+    }
+
+    /// The class_id of a skipped entity at `index`, if one was recorded.
+    #[inline]
+    fn skipped_class(&self, index: i32) -> Option<i32> {
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.skipped_entity_classes.get(i))
+            .copied()
+            .filter(|&c| c >= 0)
+    }
+
+    /// Record (or clear, with `None`) the class_id of a skipped entity at `index`.
+    #[inline]
+    fn set_skipped(&mut self, index: i32, class_id: Option<i32>) {
+        let Ok(i) = usize::try_from(index) else {
+            return;
+        };
+        let value = class_id.unwrap_or(-1);
+        if i >= self.skipped_entity_classes.len() {
+            if value < 0 {
+                return; // clearing an absent slot is a no-op
+            }
+            self.skipped_entity_classes.resize(i + 1, -1);
+        }
+        self.skipped_entity_classes[i] = value;
+    }
+
     /// Handle a CSVCMsg_PacketEntities message.
     pub fn handle_packet_entities(
         &mut self,
@@ -326,13 +399,20 @@ impl EntityContainer {
         field_decode_ctx: &mut FieldDecodeContext,
         fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
+        let has_pvs_vis_bits = msg.has_pvs_vis_bits_deprecated.unwrap_or(0);
         let entity_data = msg.entity_data.unwrap_or_default();
         let mut br = BitReader::new(&entity_data);
 
         let mut entity_index: i32 = -1;
 
         for _ in 0..msg.updated_entries.unwrap_or(0) {
-            entity_index += br.read_ubitvar()? as i32 + 1;
+            let next = entity_index as i64 + br.read_ubitvar()? as i64 + 1;
+            if !(0..=MAX_ENTITY_INDEX).contains(&next) {
+                return Err(Error::Parse {
+                    context: format!("entity index {next} out of range"),
+                });
+            }
+            entity_index = next as i32;
 
             // Read delta header (2 bits)
             let dh = br.read_bits(2)? as u8;
@@ -354,6 +434,12 @@ impl EntityContainer {
                     self.updated.push(entity_index);
                 }
                 DELTA_UPDATE => {
+                    // Legacy PVS-visibility bits (absent in modern demos): when
+                    // present, a set low bit means the entity was not actually
+                    // updated, so skip it.
+                    if has_pvs_vis_bits > 0 && (br.read_bits(2)? & 0x01) != 0 {
+                        continue;
+                    }
                     self.handle_update(
                         entity_index,
                         &mut br,
@@ -366,14 +452,14 @@ impl EntityContainer {
                         context: format!(
                             "entity update #{} (class: {:?}): {}",
                             entity_index,
-                            self.entities.get(&entity_index).map(|e| &e.class_name),
+                            self.get(entity_index).map(|e| &e.class_name),
                             e
                         ),
                     })?;
                     self.updated.push(entity_index);
                 }
                 DELTA_DELETE | DELTA_LEAVE => {
-                    self.entities.remove(&entity_index);
+                    self.take_entity(entity_index);
                 }
                 _ => {}
             }
@@ -395,13 +481,20 @@ impl EntityContainer {
         class_filter: &HashSet<&str>,
         fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
+        let has_pvs_vis_bits = msg.has_pvs_vis_bits_deprecated.unwrap_or(0);
         let entity_data = msg.entity_data.unwrap_or_default();
         let mut br = BitReader::new(&entity_data);
 
         let mut entity_index: i32 = -1;
 
         for _ in 0..msg.updated_entries.unwrap_or(0) {
-            entity_index += br.read_ubitvar()? as i32 + 1;
+            let next = entity_index as i64 + br.read_ubitvar()? as i64 + 1;
+            if !(0..=MAX_ENTITY_INDEX).contains(&next) {
+                return Err(Error::Parse {
+                    context: format!("entity index {next} out of range"),
+                });
+            }
+            entity_index = next as i32;
 
             // Read delta header (2 bits)
             let dh = br.read_bits(2)? as u8;
@@ -422,6 +515,10 @@ impl EntityContainer {
                     }
                 }
                 DELTA_UPDATE => {
+                    // Legacy PVS-visibility bits (see handle_packet_entities).
+                    if has_pvs_vis_bits > 0 && (br.read_bits(2)? & 0x01) != 0 {
+                        continue;
+                    }
                     if self.handle_update_filtered(
                         entity_index,
                         &mut br,
@@ -435,8 +532,8 @@ impl EntityContainer {
                     }
                 }
                 DELTA_DELETE | DELTA_LEAVE => {
-                    self.entities.remove(&entity_index);
-                    self.skipped_entity_classes.remove(&entity_index);
+                    self.take_entity(entity_index);
+                    self.set_skipped(entity_index, None);
                 }
                 _ => {}
             }
@@ -499,7 +596,7 @@ impl EntityContainer {
                     class_entry.network_name, class_id, err
                 ),
             })?;
-        self.entities.insert(index, entity);
+        self.put_entity(index, entity);
 
         Ok(())
     }
@@ -513,7 +610,7 @@ impl EntityContainer {
         field_decode_ctx: &mut FieldDecodeContext,
         fp_buf: &mut Vec<FieldPath>,
     ) -> Result<()> {
-        let entity = match self.entities.get_mut(&index) {
+        let entity = match self.entity_mut(index) {
             Some(e) => e,
             None => {
                 return Err(Error::Parse {
@@ -564,7 +661,7 @@ impl EntityContainer {
         if !class_filter.contains(class_entry.network_name.as_str()) {
             // Skip this entity - just advance the bit reader
             // But track its class_id so we can skip updates later
-            self.skipped_entity_classes.insert(index, class_id);
+            self.set_skipped(index, Some(class_id));
             Entity::skip_update(br, serializer, field_decode_ctx, fp_buf)?;
             return Ok(false);
         }
@@ -582,7 +679,7 @@ impl EntityContainer {
         }
 
         entity.apply_update(br, serializer, field_decode_ctx, fp_buf)?;
-        self.entities.insert(index, entity);
+        self.put_entity(index, entity);
 
         Ok(true)
     }
@@ -600,7 +697,7 @@ impl EntityContainer {
         fp_buf: &mut Vec<FieldPath>,
     ) -> Result<bool> {
         // Check if we're tracking this entity
-        if let Some(entity) = self.entities.get_mut(&index) {
+        if let Some(entity) = self.entity_mut(index) {
             let serializer = serializers
                 .get(&entity.class_name)
                 .ok_or_else(|| Error::Parse {
@@ -612,7 +709,7 @@ impl EntityContainer {
         }
 
         // Entity is not tracked - check if we know its class from skipped creates
-        if let Some(&class_id) = self.skipped_entity_classes.get(&index) {
+        if let Some(class_id) = self.skipped_class(index) {
             let class_entry = class_info.by_id(class_id).ok_or_else(|| Error::Parse {
                 context: format!("unknown class_id {}", class_id),
             })?;
@@ -635,7 +732,10 @@ impl EntityContainer {
 
     /// Look up an entity by its slot index.
     pub fn get(&self, index: i32) -> Option<&Entity> {
-        self.entities.get(&index)
+        usize::try_from(index)
+            .ok()
+            .and_then(|i| self.entities.get(i))
+            .and_then(Option::as_ref)
     }
 
     /// Resolve a networked `CHandle` to the entity it refers to, if still active.
@@ -647,9 +747,13 @@ impl EntityContainer {
         self.get((handle & ENTITY_HANDLE_INDEX_MASK) as i32)
     }
 
-    /// Iterate over all active entities as `(index, entity)` pairs.
-    pub fn iter(&self) -> impl Iterator<Item = (&i32, &Entity)> {
-        self.entities.iter()
+    /// Iterate over all active entities as `(index, entity)` pairs, in ascending
+    /// index order.
+    pub fn iter(&self) -> impl Iterator<Item = (i32, &Entity)> {
+        self.entities
+            .iter()
+            .enumerate()
+            .filter_map(|(i, slot)| slot.as_ref().map(|e| (i as i32, e)))
     }
 
     /// Indices of tracked entities created or updated during the current tick.
@@ -674,11 +778,11 @@ impl EntityContainer {
 
     /// Number of currently active entities.
     pub fn len(&self) -> usize {
-        self.entities.len()
+        self.entities.iter().filter(|slot| slot.is_some()).count()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.entities.is_empty()
+        self.entities.iter().all(Option::is_none)
     }
 }
 
@@ -705,7 +809,7 @@ mod tests {
     fn container_insert_and_iter() {
         let mut c = EntityContainer::new();
         let e = Entity::new(5, 10, "Hero".to_string());
-        c.entities.insert(5, e);
+        c.put_entity(5, e);
         assert_eq!(c.len(), 1);
         assert!(!c.is_empty());
         assert!(c.get(5).is_some());
@@ -715,9 +819,9 @@ mod tests {
     #[test]
     fn container_iter_yields_entries() {
         let mut c = EntityContainer::new();
-        c.entities.insert(1, Entity::new(1, 1, "A".to_string()));
-        c.entities.insert(2, Entity::new(2, 2, "B".to_string()));
-        let keys: Vec<i32> = c.iter().map(|(&k, _)| k).collect();
+        c.put_entity(1, Entity::new(1, 1, "A".to_string()));
+        c.put_entity(2, Entity::new(2, 2, "B".to_string()));
+        let keys: Vec<i32> = c.iter().map(|(k, _)| k).collect();
         assert_eq!(keys.len(), 2);
     }
 

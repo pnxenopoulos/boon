@@ -395,7 +395,7 @@ message CMsgServerSignoutData_DetailedStats {
 		optional uint32 destroyed_time_s = 3;
 	}
 
-	message UrnCapture {
+	message KothCapture {
 		optional .ECitadelLobbyTeam winning_team = 1 [default = k_ECitadelLobbyTeam_Team0];
 		optional .ECitadelLobbyTeam deposit_team = 2 [default = k_ECitadelLobbyTeam_Team0];
 		optional bool overtime = 3;
@@ -414,7 +414,7 @@ message CMsgServerSignoutData_DetailedStats {
 	repeated .CMsgServerSignoutData_DetailedStats.Player player_stats = 1;
 	repeated .CMsgServerSignoutData_DetailedStats.Objective objectives = 2;
 	repeated .CMsgServerSignoutData_DetailedStats.MidBoss mid_boss = 3;
-	repeated .CMsgServerSignoutData_DetailedStats.UrnCapture urn_captures = 4;
+	repeated .CMsgServerSignoutData_DetailedStats.KothCapture koth_captures = 4;
 }
 
 message CMsgServerSignoutData_PerfData {
@@ -792,6 +792,7 @@ message CMsgServerToGCEnterMatchmaking {
 	optional uint32 replay_group_id = 10;
 	optional bool allow_matches = 11;
 	optional bool allow_hideout = 12;
+	optional uint32 process_id = 13;
 }
 
 message CMsgGCToServerCancelAllocateForMatch {

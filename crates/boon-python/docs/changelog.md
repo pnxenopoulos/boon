@@ -1,5 +1,45 @@
 # 📝 Changelog
 
+## 0.6.0
+
+### boon-python
+
+- New `boon` command-line tool, bundled with the package. `pip install boon-deadlock` (or `uv add boon-deadlock`) now puts a `boon` executable on your PATH, built on [Typer](https://typer.tiangolo.com). It reads a demo through the same parser the library uses and prints Polars DataFrames, so you can inspect a match without writing any code:
+  - `boon info match.dem` — match metadata (map, mode, build, duration, winner).
+  - `boon players match.dem` — the roster, with hero names resolved.
+  - `boon datasets` — list every inspectable dataset.
+  - `boon show match.dem <dataset> [--limit N] [--tail] [--json]` — any dataset as a table (or JSON).
+  - `boon summary match.dem [--part ...]` — the post-match summary.
+  - `boon stats match.dem -m <metric>` — derived metrics (`kill-participation`, `time-dead`, `in-combat`).
+  - `boon verify match.dem` — validate a file.
+
+  (This is a separate tool from the standalone Rust `boon` binary on GitHub Releases, which keeps its own broader set of lower-level commands. Both are invoked as `boon`.)
+- Now built and tested against Python 3.11–3.14: `requires-python` is bounded to `>=3.11,<3.15` and 3.14 is advertised in the package classifiers.
+- **Fixed:** `demo.players` could return an empty (or, in principle, incomplete) DataFrame on recordings whose post-game tail outlives the player entities. The `CCitadelPlayerController` controllers are torn down a few seconds before the final recorded tick, and `players` snapshotted that final tick. It now snapshots the roster at the game-over tick — late enough that every field is populated (heroes locked, lanes assigned) but before the post-game teardown — and falls back to the final tick only when a demo has no game-over event. Rosters for unaffected demos are unchanged.
+- **Faster:** the per-tick snapshot datasets — `player_ticks`, `world_ticks`, and `troopers` — now decode across `DEM_FullPacket` keyframe segments in parallel (one thread per segment). Each entity class is re-keyframed at every full packet, so the per-segment cold restarts stitch back into byte-for-byte the same frames as a serial pass (~3.3× faster on an 8-core machine for `player_ticks`). Requesting several of them together via `demo.load("player_ticks", "world_ticks", "troopers")` collects them all in a **single** parallel pass rather than one per dataset. Set `BOON_TICK_SEGMENTS=1` to force the serial path, or to a fixed integer to pin the segment count.
+- New `demo.snapshots(...)` — sample per-tick state at *selected* ticks in the same single parallel pass, so you materialize only the ticks you need instead of the whole frame. Select ticks by `ticks=` (specific), `every=`/`seconds=` (stride), `start_tick`/`end_tick` (window), or `events="kills"` (aligned to an event dataset's ticks), and choose one or more of `player_ticks`/`world_ticks`/`troopers` via `datasets=`. Returns a DataFrame for a single dataset or a dict keyed by name for several. e.g. `demo.snapshots(every=64)` builds ~1 row/sec of ticks rather than all ~250k. A single-tick query (`demo.snapshots(ticks=T)`) seeks directly to that tick instead of decoding the whole demo (~11× faster).
+- New `boon.stats.teamfights(demo)` (`Demo.teamfights()`) — detects teamfights from hero-vs-hero damage clustered in **space and time**: a fight is a localized period where the teams trade damage (not merely where kills happen), which separates concurrent skirmishes in different lanes that time-only clustering would merge. Tunable `gap_seconds` / `radius` / `min_players`; one row per fight with its tick/second window, duration, centre, participants, total hero damage, and kills (each attributed to exactly one fight).
+
+### boon-proto
+
+- Synced protobuf definitions to the latest Deadlock build (`6580` → `6635`); `boon-proto` is now `0.2.10822189+6635`. **Breaking (proto field rename):** `CMsgServerSignoutData_DetailedStats.urn_captures` (message `UrnCapture`) was renamed `koth_captures` (`KothCapture`) upstream — update any code that read that post-match field. The sync also adds an optional `process_id` to `CMsgServerToGcEnterMatchmaking` and a `k_EPingMarkerInfo_NoMarkerYesSoundMiniMap` ping-marker enum variant; the remaining changes re-add a redundant `[default = 0]` to a few `uint32` fields (a no-op, since `0` is already the implicit default).
+
+### boon-cli → boon-dev
+
+- The standalone Rust CLI is renamed **`boon-dev`** and is **no longer published** — there are no more release binaries (the `boon-cli-v*` tag track and its GitHub Release workflow are removed). It stays in the repository as a low-level debugging tool you can build from source (`cargo build --release -p boon-dev`). Everyday demo inspection now lives in the Python `boon` command bundled with `boon-deadlock` (see above); the two no longer collide on the name `boon`.
+
+### boon
+
+Hardening and a decode optimization ported from the sibling CS2 parser (both are Source 2):
+
+- **Robustness:** the entity field-path walk now returns a parse error instead of panicking when a corrupted field path (a bitstream desync) addresses a nonexistent field, so one bad decode no longer takes down the whole parse.
+- **Robustness:** hardened several more parse paths against malformed/truncated demos — bounds-checked the serializer field and symbol indices, the packet-entities entity index (previously an unchecked add that could also trigger a runaway slot-array allocation), and the string-table user-data sizes. Fuzzing 1000+ corrupt inputs now yields clean errors rather than panics/aborts.
+- Added decoders for Source 2 field types the parser previously ignored — `Quaternion` / `CTransform` (multi-component float vectors, exposed as a new `FieldValue::FloatVector`), polymorphic pointer fields (e.g. game-mode rules), `CUtlBinaryBlock`, and the `CGlobalSymbol` / bare-`char` string types. These occur in Deadlock send tables, so decoding them keeps the bitstream aligned instead of risking a desync.
+- **Fixed:** a wide unaligned bit read (≥57 bits at a non-byte-aligned offset, e.g. a mid-stream 64-bit field) silently dropped its high bits; the missing bits are now pulled from the following byte.
+- Handle the legacy `has_pvs_vis_bits_deprecated` visibility bits in packet-entities updates (a no-op for modern demos, correct for old ones).
+- **Faster:** entities are stored in a flat slot array indexed directly by entity index (`Vec<Option<Entity>>`) rather than a hash map, so `get` / `get_by_handle` are O(1) bounds-checked indexing. Class-filtered decode (the path the datasets use) is ~3.6% quicker on the ability set with byte-for-byte identical output, and iteration is now in deterministic index order. **API:** `EntityContainer::iter()` now yields `(i32, &Entity)` (was `(&i32, &Entity)`).
+- New `Parser::full_packet_offsets()` and `Parser::decode_segment(start, end_tick, filter, cb)` primitives: decode one `DEM_FullPacket`-keyframe-delimited segment of the demo starting from that keyframe's snapshot. These are the building blocks for parallel per-tick decoding (used by the Python `player_ticks` above); `Parser` is `Sync`, so segments run on separate threads via `std::thread::scope`.
+
 ## 0.5.0
 
 ### boon-python

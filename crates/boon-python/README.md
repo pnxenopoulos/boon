@@ -15,10 +15,6 @@
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 [![crates.io Downloads](https://img.shields.io/crates/d/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
 
-**CLI** &nbsp;
-[![GitHub Release](https://img.shields.io/github/v/release/pnxenopoulos/boon?label=CLI)](https://github.com/pnxenopoulos/boon/releases)
-[![CLI Downloads](https://img.shields.io/github/downloads/pnxenopoulos/boon/total?label=CLI%20Downloads)](https://github.com/pnxenopoulos/boon/releases)
-
 </div>
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It returns [Polars](https://pola.rs) DataFrames for easy analysis.
@@ -37,7 +33,7 @@ You can also use pip:
 pip install boon-deadlock
 ```
 
-Requires Python 3.11+.
+Requires Python 3.11–3.14.
 
 ## Quick Start
 
@@ -87,12 +83,28 @@ active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 urn              = demo.urn               # urn lifecycle and delivery events
 ```
 
+## CLI
+
+Installing the package also puts a `boon` command on your PATH for inspecting a
+demo straight from the terminal — no code required:
+
+```bash
+boon info match.dem                    # match metadata
+boon players match.dem                 # roster, with hero names resolved
+boon show match.dem kills --limit 20   # any dataset as a table (or --json)
+boon summary match.dem                 # post-match summary
+boon stats match.dem -m kill-participation
+```
+
+Run `boon --help` for the full list. See the [CLI docs](https://boon.readthedocs.io/en/latest/cli.html) for details.
+
 ## Features
 
 - Parse Deadlock `.dem` demo files at native speed via Rust
 - 17 built-in datasets covering players, combat, economy, objectives, and map state
 - Access to match metadata, player info, entity state, game events, and post-match summaries
 - All data returned as [Polars](https://pola.rs) DataFrames
+- Bundled `boon` command-line tool for quick demo inspection
 
 ## Documentation
 

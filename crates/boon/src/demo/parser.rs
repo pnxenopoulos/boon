@@ -968,6 +968,202 @@ impl Parser {
         Ok(())
     }
 
+    /// Byte offset (relative to the post-`HEADER_SIZE` data) and tick of every
+    /// `DEM_FullPacket` keyframe, via a cheap header-only pre-scan.
+    ///
+    /// Full packets are periodic complete-state snapshots that the parallel tick
+    /// decoder cold-restarts from — each marks a segment boundary. Ascending order.
+    pub fn full_packet_offsets(&self) -> Result<Vec<(usize, i32)>> {
+        let data = &self.data()[HEADER_SIZE..];
+        let mut scan = ByteReader::new(data);
+        let mut offsets = Vec::new();
+        while scan.remaining() > 0 {
+            let pos = scan.position();
+            let header = match Self::read_cmd_header(&mut scan) {
+                Ok(h) => h,
+                Err(_) => break,
+            };
+            if header.cmd == dem::STOP {
+                break;
+            }
+            if header.cmd == dem::FULL_PACKET {
+                offsets.push((pos, header.tick));
+            }
+            scan.skip(header.body_size as usize)?;
+        }
+        Ok(offsets)
+    }
+
+    /// Decode one contiguous segment of the demo, for the parallel tick path.
+    ///
+    /// `start` selects where decoding begins: `None` starts from the signon
+    /// baseline (the first segment); `Some(offset)` cold-restarts at the
+    /// `DEM_FullPacket` at that byte offset (from [`full_packet_offsets`]),
+    /// applying its complete snapshot. `on_tick` fires once per completed tick
+    /// whose value is `< end_tick` (pass [`i32::MAX`] for the final segment).
+    ///
+    /// **Exact only for entities a full packet re-keyframes** (player pawns and
+    /// controllers). Those are snapshotted in full at every full packet, so a cold
+    /// restart reproduces their exact state — which is what lets the per-segment
+    /// decodes stitch back into the same result as one serial pass. "Sticky"
+    /// entities that carry state across full packets are not re-keyed and would
+    /// read stale from a cold restart, so this must not build datasets (e.g. the
+    /// change-only ones) that depend on that carried state.
+    ///
+    /// [`full_packet_offsets`]: Self::full_packet_offsets
+    pub fn decode_segment<F>(
+        &self,
+        start: Option<usize>,
+        end_tick: i32,
+        class_filter: &std::collections::HashSet<&str>,
+        mut on_tick: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Context),
+    {
+        let mut ctx = self.parse_init()?;
+        let data = &self.data()[HEADER_SIZE..];
+        let mut reader = match start {
+            Some(off) => ByteReader::new(&data[off..]),
+            None => {
+                // Skip past init (up to and including SyncTick).
+                let mut r = ByteReader::new(data);
+                loop {
+                    if r.remaining() == 0 {
+                        return Ok(());
+                    }
+                    let header = Self::read_cmd_header(&mut r)?;
+                    if header.cmd == dem::SYNC_TICK {
+                        r.skip(header.body_size as usize)?;
+                        break;
+                    }
+                    if header.cmd == dem::STOP {
+                        return Ok(());
+                    }
+                    r.skip(header.body_size as usize)?;
+                }
+                r
+            }
+        };
+
+        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut body_buf = Vec::with_capacity(BUF_SIZE);
+        let mut fp_buf = Vec::with_capacity(256);
+        let mut field_decode_ctx = FieldDecodeContext::new(ctx.tick_interval);
+
+        let mut last_tick: i32 = -1;
+        while reader.remaining() > 0 {
+            let header = Self::read_cmd_header(&mut reader)?;
+
+            // Reaching the next segment's first tick ends this one: emit the last
+            // completed tick, then stop.
+            if header.cmd != dem::STOP && header.tick >= end_tick {
+                if last_tick >= 0 {
+                    on_tick(&ctx);
+                }
+                return Ok(());
+            }
+
+            if header.tick != last_tick && last_tick >= 0 {
+                on_tick(&ctx);
+                ctx.string_tables.clear_dirty();
+                ctx.entities.clear_updated();
+            }
+            last_tick = header.tick;
+            ctx.tick = header.tick;
+
+            if header.cmd == dem::STOP {
+                if last_tick >= 0 {
+                    on_tick(&ctx);
+                }
+                break;
+            }
+
+            Self::read_cmd_body(&mut reader, &header, &mut body_buf)?;
+
+            match header.cmd {
+                dem::FULL_PACKET => {
+                    let cmd = CDemoFullPacket::decode(&body_buf[..])?;
+                    if let Some(st) = cmd.string_table {
+                        ctx.string_tables.do_full_update(st);
+                        ctx.string_tables.update_instance_baselines(&ctx.class_info);
+                    }
+                    if let Some(packet) = cmd.packet {
+                        let pkt_data = packet.data.unwrap_or_default();
+                        Self::process_packet_entities_filtered(
+                            &pkt_data,
+                            &mut ctx,
+                            &mut field_decode_ctx,
+                            &mut packet_buf,
+                            class_filter,
+                            &mut fp_buf,
+                        )?;
+                    }
+                }
+                dem::PACKET | dem::SIGNON_PACKET => {
+                    let cmd = CDemoPacket::decode(&body_buf[..])?;
+                    let pkt_data = cmd.data.unwrap_or_default();
+                    Self::process_packet_entities_filtered(
+                        &pkt_data,
+                        &mut ctx,
+                        &mut field_decode_ctx,
+                        &mut packet_buf,
+                        class_filter,
+                        &mut fp_buf,
+                    )?;
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Every distinct tick in the demo (ascending), from a header-only pre-scan
+    /// starting after `DEM_SyncTick` — i.e. the ticks a decode actually emits.
+    ///
+    /// Lets a sampled snapshot pass resolve which ticks to sample once, up front,
+    /// independent of how the demo is later split into parallel segments.
+    pub fn distinct_ticks(&self) -> Result<Vec<i32>> {
+        let data = &self.data()[HEADER_SIZE..];
+        let mut scan = ByteReader::new(data);
+
+        // Skip init up to and including SyncTick, matching the decode's start.
+        let mut past_sync = false;
+        while scan.remaining() > 0 {
+            let header = Self::read_cmd_header(&mut scan)?;
+            if header.cmd == dem::STOP {
+                return Ok(Vec::new());
+            }
+            scan.skip(header.body_size as usize)?;
+            if header.cmd == dem::SYNC_TICK {
+                past_sync = true;
+                break;
+            }
+        }
+        if !past_sync {
+            return Ok(Vec::new());
+        }
+
+        let mut ticks = Vec::new();
+        let mut last = i32::MIN;
+        while scan.remaining() > 0 {
+            let header = match Self::read_cmd_header(&mut scan) {
+                Ok(h) => h,
+                Err(_) => break,
+            };
+            if header.cmd == dem::STOP {
+                break;
+            }
+            if header.tick != last && header.tick >= 0 {
+                ticks.push(header.tick);
+                last = header.tick;
+            }
+            scan.skip(header.body_size as usize)?;
+        }
+        Ok(ticks)
+    }
+
     /// Parse the entire demo with entity class filtering AND event collection.
     /// Combines `run_to_end_filtered` with `process_packet_events` in a single pass.
     /// The callback receives both the entity context and accumulated events for the tick.

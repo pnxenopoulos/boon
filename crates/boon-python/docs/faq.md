@@ -46,7 +46,7 @@ The `damage` dataset includes all damage events in the game — hero vs hero, he
 
 ## Can I use boon without Python?
 
-Yes. The `boon-cli` command-line tool lets you inspect demos without writing code. See {doc}`cli`. The core parser is also available as a Rust crate (`boon-deadlock`) on [crates.io](https://crates.io/crates/boon-deadlock).
+Yes. The core parser is available as a Rust crate (`boon-deadlock`) on [crates.io](https://crates.io/crates/boon-deadlock), so you can parse demos from Rust with no Python involved. The repository also ships a low-level `boon-dev` debugging CLI you can build from source (`cargo build --release -p boon-dev`). See {doc}`cli`. (The `boon` command bundled with the Python package does require Python.)
 
 ## Something isn't working. Where do I report it?
 

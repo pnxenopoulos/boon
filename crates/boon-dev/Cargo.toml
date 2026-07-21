@@ -1,23 +1,16 @@
 [package]
-name = "boon-cli"
-version = "0.5.0"
+name = "boon-dev"
+version.workspace = true
 rust-version.workspace = true
 edition = "2024"
-description = "CLI tool for inspecting Deadlock demo files"
+publish = false
+description = "Low-level developer / debugging CLI for Deadlock demo files (in-repo only, not published)"
 license = "MIT"
 repository = "https://github.com/pnxenopoulos/boon"
 documentation = "https://boon.readthedocs.io/"
 authors = ["Peter Xenopoulos"]
 keywords = ["deadlock", "demo", "parser", "replay", "source2"]
 categories = ["command-line-utilities", "game-development"]
-
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/boon-cli-v{ version }/boon-{ version }-{ target }.tar.gz"
-pkg-fmt = "tgz"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-url = "{ repo }/releases/download/boon-cli-v{ version }/boon-{ version }-{ target }.zip"
-pkg-fmt = "zip"
 
 [dependencies]
 anyhow = "1.0"
@@ -33,11 +26,11 @@ prost = "0.14"
 criterion = "0.5"
 
 [lib]
-name = "boon_cli"
+name = "boon_dev"
 path = "src/lib.rs"
 
 [[bin]]
-name = "boon"
+name = "boon-dev"
 path = "src/main.rs"
 
 [[bench]]

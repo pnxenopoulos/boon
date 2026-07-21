@@ -64,7 +64,7 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (&idx, entity) in ctx.entities.iter() {
+            for (idx, entity) in ctx.entities.iter() {
                 if entity.class_name != "CCitadelPlayerController" {
                     continue;
                 }

@@ -3,10 +3,14 @@ use std::path::PathBuf;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 
-use boon_cli::commands;
+use boon_dev::commands;
 
 #[derive(Parser)]
-#[command(name = "boon", about = "Boon — Deadlock demo file parser", version)]
+#[command(
+    name = "boon-dev",
+    about = "Boon — low-level Deadlock demo debugging CLI",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

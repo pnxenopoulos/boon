@@ -41,6 +41,19 @@ pub enum Decoder {
     Vector3(Box<Decoder>),
     Vector3Normal,
     Vector4(Box<Decoder>),
+    /// Fixed-count float vector for types wider than 4 components (e.g.
+    /// `Quaternion` = 4, `CTransform` = 6). Each component uses `inner`.
+    FloatVecN {
+        count: usize,
+        inner: Box<Decoder>,
+    },
+    /// Length-prefixed byte blob (`CUtlBinaryBlock`): a varint byte count
+    /// followed by that many raw bytes.
+    BinaryBlock,
+    /// Polymorphic pointer leaf (e.g. `m_pGameModeRules`): a presence bool plus
+    /// a ubitvar selecting which concrete sub-serializer is active. We keep the
+    /// bool as the field value; the selector affects deeper field paths.
+    Poly,
     QAnglePitchYaw {
         bit_count: usize,
     },
@@ -102,6 +115,28 @@ impl Decoder {
             }
 
             Decoder::Vector3Normal => Ok(FieldValue::Vector3(br.read_bitvec3normal()?)),
+
+            Decoder::FloatVecN { count, inner } => {
+                let mut v = Vec::with_capacity(*count);
+                for _ in 0..*count {
+                    v.push(inner.decode_f32(ctx, br)?);
+                }
+                Ok(FieldValue::FloatVector(v))
+            }
+
+            Decoder::BinaryBlock => {
+                let n = br.read_uvarint32()? as usize;
+                ctx.string_buf.clear();
+                ctx.string_buf.resize(n, 0);
+                br.read_bytes(&mut ctx.string_buf)?;
+                Ok(FieldValue::String(ctx.string_buf.clone()))
+            }
+
+            Decoder::Poly => {
+                let present = br.read_bool()?;
+                let _poly_type_index = br.read_ubitvar()?;
+                Ok(FieldValue::Bool(present))
+            }
 
             Decoder::Vector4(inner) => {
                 let x = inner.decode_f32(ctx, br)?;
@@ -213,6 +248,22 @@ impl Decoder {
 
             Decoder::Vector3Normal => {
                 br.skip_bitvec3normal()?;
+            }
+
+            Decoder::FloatVecN { count, inner } => {
+                for _ in 0..*count {
+                    inner.skip(ctx, br)?;
+                }
+            }
+
+            Decoder::BinaryBlock => {
+                let n = br.read_uvarint32()? as usize;
+                br.skip_bits(n * 8)?;
+            }
+
+            Decoder::Poly => {
+                br.skip_bits(1)?;
+                br.read_ubitvar()?;
             }
 
             Decoder::Vector4(inner) => {
@@ -554,10 +605,36 @@ pub fn get_field_metadata(
         },
 
         // String types
-        "CUtlSymbolLarge" | "CUtlString" => FieldMetadata {
+        "CUtlSymbolLarge" | "CUtlString" | "CGlobalSymbol" | "char" => FieldMetadata {
             decoder: Decoder::String,
             special: None,
         },
+
+        // Length-prefixed byte blob.
+        "CUtlBinaryBlock" => FieldMetadata {
+            decoder: Decoder::BinaryBlock,
+            special: None,
+        },
+
+        // Wide float vectors (more than 4 components).
+        "Quaternion" | "CTransform" => {
+            let count = if trimmed == "CTransform" { 6 } else { 4 };
+            let inner = build_f32_decoder(
+                var_name,
+                bit_count,
+                low_value,
+                high_value,
+                encode_flags,
+                var_encoder,
+            );
+            FieldMetadata {
+                decoder: Decoder::FloatVecN {
+                    count,
+                    inner: Box::new(inner),
+                },
+                special: None,
+            }
+        }
 
         // Angle type
         "QAngle" => {

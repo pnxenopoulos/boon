@@ -248,7 +248,10 @@ impl SerializerContainer {
 
         let symbols = &msg.symbols;
 
-        let resolve_sym = |i: i32| -> &str { &symbols[i as usize] };
+        // Out-of-range symbol indices (corrupt/truncated send tables) resolve to
+        // an empty string rather than panicking.
+        let resolve_sym =
+            |i: i32| -> &str { symbols.get(i as usize).map(String::as_str).unwrap_or("") };
 
         // Build fields and serializers
         let mut field_cache: HashMap<i32, Arc<SerializerField>> = HashMap::new();
@@ -267,7 +270,14 @@ impl SerializerContainer {
                     continue;
                 }
 
-                let field_proto = &msg.fields[field_index as usize];
+                let field_proto = msg.fields.get(field_index as usize).ok_or_else(|| {
+                    crate::error::Error::Parse {
+                        context: format!(
+                            "serializer field index {field_index} out of range ({} fields)",
+                            msg.fields.len()
+                        ),
+                    }
+                })?;
 
                 let var_type = field_proto
                     .var_type_sym
@@ -290,7 +300,7 @@ impl SerializerContainer {
                     .map(String::from);
 
                 let field_type = parse_type(&var_type);
-                let metadata = field_decoder::get_field_metadata(
+                let mut metadata = field_decoder::get_field_metadata(
                     &var_type,
                     &var_name,
                     field_proto.bit_count,
@@ -300,6 +310,13 @@ impl SerializerContainer {
                     var_encoder.as_deref(),
                     field_serializer_name.is_some(),
                 );
+
+                // Polymorphic fields (e.g. `m_pGameModeRules`) encode a presence
+                // bool followed by a ubitvar selecting the concrete sub-type,
+                // rather than the plain presence bool of a normal pointer.
+                if !field_proto.polymorphic_types.is_empty() {
+                    metadata.decoder = field_decoder::Decoder::Poly;
+                }
 
                 // Resolve field serializer
                 let field_serializer = match &metadata {
