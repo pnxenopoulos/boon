@@ -49,7 +49,7 @@ Deadlock demo files contain a wealth of match data — player positions, kills, 
 - 📊 **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
 - 🎯 **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
 - 🗂️ **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
-- 💻 **CLI included.** A standalone command-line tool for quick inspection without writing any code.
+- 💻 **CLI included.** `pip install boon-deadlock` ships a `boon` command for quick inspection without writing any code.
 
 ## Installation
 
@@ -69,17 +69,17 @@ You can also use pip:
 pip install boon-deadlock
 ```
 
-Requires Python 3.11+.
+Requires Python 3.11–3.14.
 
 ### CLI
 
-Download a prebuilt binary from the [GitHub Releases](https://github.com/pnxenopoulos/boon/releases) page.
+`pip install boon-deadlock` (or `uv add boon-deadlock`) puts a `boon` command on your PATH automatically — see the [CLI docs](https://boon.readthedocs.io/en/latest/cli.html). A separate low-level `boon-dev` debugging tool also lives in the repo; build it from source with `cargo build --release -p boon-dev`.
 
 ### Rust library
 
 ```toml
 [dependencies]
-boon-deadlock = "0.3"
+boon-deadlock = "0.6"
 ```
 
 ## Quick Start
@@ -114,22 +114,26 @@ demo.kill_participation()    # (kills + assists) / team kills, per player
 
 ### CLI
 
+Bundled with the Python package (`pip install boon-deadlock`):
+
 ```bash
 # Match metadata
 boon info match.dem
 
-# Post-match summary (players, objectives, gold breakdowns)
+# Player roster
+boon players match.dem
+
+# Any dataset as a table (add --json for machine-readable output)
+boon show match.dem kills --limit 20
+
+# Post-match summary
 boon summary match.dem
-
-# Game events
-boon events match.dem --summary
-
-# Entity state at a specific tick
-boon entities match.dem --tick 10000 --filter CCitadelPlayerController
 
 # All available commands
 boon --help
 ```
+
+The in-repo `boon-dev` tool (build from source: `cargo build --release -p boon-dev`) adds lower-level commands (`entities`, `events`, `send-tables`, …); see the [CLI reference](https://boon.readthedocs.io/en/latest/cli.html).
 
 ## Available Datasets
 
@@ -162,7 +166,7 @@ Each dataset is a property on the `Demo` class that returns a [Polars](https://p
 |-------|-------------|
 | [`boon`](crates/boon) | Core parser library (published as `boon-deadlock` on crates.io) |
 | [`boon-proto`](crates/boon-proto) | Auto-generated Deadlock protobuf definitions |
-| [`boon-cli`](crates/boon-cli) | Command-line interface |
+| [`boon-dev`](crates/boon-dev) | Low-level developer / debugging CLI (in-repo only, not published) |
 | [`boon-python`](crates/boon-python) | Python bindings via PyO3 (published as `boon-deadlock` on PyPI) |
 
 ## Documentation

@@ -17514,8 +17514,8 @@ pub struct CMsgServerSignoutDataDetailedStats {
         c_msg_server_signout_data_detailed_stats::MidBoss,
     >,
     #[prost(message, repeated, tag = "4")]
-    pub urn_captures: ::prost::alloc::vec::Vec<
-        c_msg_server_signout_data_detailed_stats::UrnCapture,
+    pub koth_captures: ::prost::alloc::vec::Vec<
+        c_msg_server_signout_data_detailed_stats::KothCapture,
     >,
 }
 /// Nested message and enum types in `CMsgServerSignoutData_DetailedStats`.
@@ -17711,7 +17711,7 @@ pub mod c_msg_server_signout_data_detailed_stats {
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-    pub struct UrnCapture {
+    pub struct KothCapture {
         #[prost(
             enumeration = "super::ECitadelLobbyTeam",
             optional,
@@ -18726,6 +18726,8 @@ pub struct CMsgServerToGcEnterMatchmaking {
     pub allow_matches: ::core::option::Option<bool>,
     #[prost(bool, optional, tag = "12")]
     pub allow_hideout: ::core::option::Option<bool>,
+    #[prost(uint32, optional, tag = "13")]
+    pub process_id: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -21116,6 +21118,7 @@ pub enum ChatMsgPingMarkerInfo {
     KEPingMarkerInfoOnlyShowMarker = 3,
     KEPingMarkerInfoOnlyPlaySound = 4,
     KEPingMarkerInfoOnlyMiniMap = 5,
+    KEPingMarkerInfoNoMarkerYesSoundMiniMap = 6,
 }
 impl ChatMsgPingMarkerInfo {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -21136,6 +21139,9 @@ impl ChatMsgPingMarkerInfo {
             Self::KEPingMarkerInfoOnlyShowMarker => "k_EPingMarkerInfo_OnlyShowMarker",
             Self::KEPingMarkerInfoOnlyPlaySound => "k_EPingMarkerInfo_OnlyPlaySound",
             Self::KEPingMarkerInfoOnlyMiniMap => "k_EPingMarkerInfo_OnlyMiniMap",
+            Self::KEPingMarkerInfoNoMarkerYesSoundMiniMap => {
+                "k_EPingMarkerInfo_NoMarkerYesSoundMiniMap"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -21157,6 +21163,9 @@ impl ChatMsgPingMarkerInfo {
                 Some(Self::KEPingMarkerInfoOnlyPlaySound)
             }
             "k_EPingMarkerInfo_OnlyMiniMap" => Some(Self::KEPingMarkerInfoOnlyMiniMap),
+            "k_EPingMarkerInfo_NoMarkerYesSoundMiniMap" => {
+                Some(Self::KEPingMarkerInfoNoMarkerYesSoundMiniMap)
+            }
             _ => None,
         }
     }
@@ -26007,9 +26016,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1")]
+    #[prost(uint32, optional, tag = "1", default = "0")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -26813,7 +26822,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,

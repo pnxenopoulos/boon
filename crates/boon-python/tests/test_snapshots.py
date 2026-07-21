@@ -1,0 +1,83 @@
+"""`demo.snapshots(...)` — sampled per-tick snapshots in one parallel pass.
+
+Selecting a subset of ticks must give exactly the rows you'd get by building the
+full per-tick frame and filtering it — just far cheaper, since only the selected
+ticks are materialized. Skips when no `.dem` fixture is present.
+"""
+
+import polars as pl
+import pytest
+from boon import Demo
+
+from conftest import FIXTURES_DIR
+
+
+def _fixture() -> str:
+    dems = sorted(FIXTURES_DIR.glob("*.dem")) if FIXTURES_DIR.is_dir() else []
+    if not dems:
+        pytest.skip("No demo fixtures available")
+    return str(dems[0])
+
+
+@pytest.fixture(scope="module")
+def demo() -> Demo:
+    return Demo(_fixture())
+
+
+def test_specific_ticks_match_full_frame(demo: Demo) -> None:
+    full = demo.player_ticks
+    some = sorted(full["tick"].unique().to_list())[100:103]
+    snap = demo.snapshots(ticks=some)
+    expected = full.filter(pl.col("tick").is_in(some))
+    assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
+
+
+def test_single_tick_matches_full_frame(demo: Demo) -> None:
+    full = demo.player_ticks
+    t = sorted(full["tick"].unique().to_list())[500]
+    snap = demo.snapshots(ticks=t)
+    expected = full.filter(pl.col("tick") == t)
+    assert snap.sort("hero_id").equals(expected.sort("hero_id"))
+
+
+def test_window_matches_full_frame(demo: Demo) -> None:
+    full = demo.player_ticks
+    snap = demo.snapshots(start_tick=10000, end_tick=11000)
+    expected = full.filter((pl.col("tick") >= 10000) & (pl.col("tick") <= 11000))
+    assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
+
+
+def test_stride_downsamples_to_subset(demo: Demo) -> None:
+    full = demo.player_ticks
+    snap = demo.snapshots(every=640)
+    assert 0 < snap.height < full.height
+    # Every sampled row is a real row from the full frame.
+    assert snap.join(full, on=full.columns, how="semi").height == snap.height
+
+
+def test_events_align_to_event_ticks(demo: Demo) -> None:
+    snap = demo.snapshots(events="kills")
+    kill_ticks = set(demo.kills["tick"].to_list())
+    assert set(snap["tick"].unique().to_list()) <= kill_ticks
+
+
+def test_single_dataset_returns_frame(demo: Demo) -> None:
+    out = demo.snapshots("world_ticks", every=640)
+    assert isinstance(out, pl.DataFrame)
+
+
+def test_multiple_datasets_return_dict(demo: Demo) -> None:
+    out = demo.snapshots(["player_ticks", "world_ticks", "troopers"], every=640)
+    assert isinstance(out, dict)
+    assert set(out.keys()) == {"player_ticks", "world_ticks", "troopers"}
+
+
+def test_validation(demo: Demo) -> None:
+    with pytest.raises(ValueError):
+        demo.snapshots()  # no selector at all
+    with pytest.raises(ValueError):
+        demo.snapshots(every=64, seconds=1.0)  # mutually exclusive
+    with pytest.raises(ValueError):
+        demo.snapshots("not_a_dataset", every=64)
+    with pytest.raises(ValueError):
+        demo.snapshots(every=0)  # must be >= 1

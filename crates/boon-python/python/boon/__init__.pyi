@@ -237,6 +237,49 @@ class Demo:
         """
         ...
 
+    def snapshots(
+        self,
+        datasets: str | list[str] | None = ...,
+        *,
+        ticks: int | list[int] | None = ...,
+        every: int | None = ...,
+        seconds: float | None = ...,
+        events: str | list[str] | None = ...,
+        start_tick: int | None = ...,
+        end_tick: int | None = ...,
+    ) -> pl.DataFrame | dict[str, pl.DataFrame]:
+        """Snapshot per-tick state at selected ticks in a single parallel pass.
+
+        Decodes the demo once (across full-packet keyframe segments, in parallel)
+        and collects rows only at the ticks you select — far cheaper than
+        materializing a full per-tick frame and filtering it in Python.
+
+        Args:
+            datasets: Which snapshot dataset(s) to return: ``"player_ticks"``
+                (default), ``"world_ticks"``, ``"troopers"``, or a list of them.
+            ticks: A specific tick or list of ticks.
+            every: Sample every ``N`` ticks (gap-robust stride).
+            seconds: Sample about once per ``seconds`` (converted via the tick
+                rate). Mutually exclusive with ``every``.
+            events: Sample at the ticks of these event datasets (e.g. ``"kills"``
+                or ``["kills", "damage"]``).
+            start_tick: Restrict to ticks at or after this tick.
+            end_tick: Restrict to ticks at or before this tick.
+
+        Returns:
+            A single DataFrame when one dataset is requested, otherwise a dict
+            keyed by dataset name. With only a window and no other selector, every
+            tick in the window is returned; specifying no selector is a
+            ``ValueError``.
+
+        Example:
+            >>> demo.snapshots(every=64)                    # ~1 row/sec of ticks
+            >>> demo.snapshots(ticks=[29000, 30000])        # specific ticks
+            >>> demo.snapshots("troopers", events="kills")  # troopers at kills
+            >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
+        """
+        ...
+
     def in_combat(self) -> pl.DataFrame:
         """Whether each player is in combat, per tick.
 
@@ -267,6 +310,22 @@ class Demo:
         ``seconds_dead``, ``pct_regulation_dead``).
 
         Raises ``ValueError`` if the demo has no game-over event.
+        """
+        ...
+
+    def teamfights(
+        self, *, gap_seconds: float = ..., radius: float = ..., min_players: int = ...
+    ) -> pl.DataFrame:
+        """Detect teamfights from hero-vs-hero damage, clustered in space and time.
+
+        Convenience method delegating to :func:`boon.stats.teamfights`. Clusters
+        opposing hero-vs-hero damage events that are close in both time
+        (``gap_seconds``) and location (``radius`` map units) into fights of at
+        least ``min_players`` heroes, separating concurrent skirmishes in
+        different lanes. Returns one row per fight (``fight_id``, ``start_tick``,
+        ``end_tick``, ``start_seconds``, ``end_seconds``, ``duration_seconds``,
+        ``center_x``, ``center_y``, ``participants``, ``num_participants``,
+        ``hero_damage``, ``kills``).
         """
         ...
 

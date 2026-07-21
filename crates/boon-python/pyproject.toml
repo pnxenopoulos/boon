@@ -1,7 +1,7 @@
 [project]
 name = "boon-deadlock"
 description = "Boon is a powerful Deadlock demo / replay file parser."
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.15"
 license = "MIT"
 readme = "README.md"
 authors = [
@@ -17,11 +17,15 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Programming Language :: Rust",
     "Topic :: Games/Entertainment",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["polars>=1.0"]
+dependencies = ["polars>=1.0", "typer>=0.12"]
+
+[project.scripts]
+boon = "boon.cli:app"
 
 [project.urls]
 Homepage = "https://github.com/pnxenopoulos/boon"

@@ -45,7 +45,7 @@ jobs:
       - name: rustdoc
         env:
           RUSTDOCFLAGS: "-D warnings"
-        run: cargo doc --workspace --no-deps --all-features --exclude boon-cli --exclude boon-python
+        run: cargo doc --workspace --no-deps --all-features --exclude boon-dev --exclude boon-python
 
   deny:
     name: Dependency Check

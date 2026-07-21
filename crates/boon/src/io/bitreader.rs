@@ -81,8 +81,12 @@ impl<'a> BitReader<'a> {
 
     /// Internal: peek without bounds checking.
     ///
-    /// Reads a little-endian u64 from the byte at `position / 8`, shifts
-    /// right by the intra-byte bit offset, and masks to `n` bits.
+    /// Reads a little-endian u64 from the byte at `position / 8`, shifts right by
+    /// the intra-byte bit offset, and masks to `n` bits. The 8-byte window only
+    /// holds `64 - bit_offset` valid bits after the shift, so a read that needs
+    /// more (only possible for `n > 56` at a non-zero offset — e.g. a 64-bit read
+    /// mid-stream) pulls the extra high bits from the following byte; without that
+    /// they would be silently dropped.
     #[inline(always)]
     fn peek_bits_unchecked(&self, n: usize) -> u64 {
         let byte_pos = self.position / 8;
@@ -96,8 +100,13 @@ impl<'a> BitReader<'a> {
             buf[..remaining_bytes]
                 .copy_from_slice(&self.data[byte_pos..byte_pos + remaining_bytes]);
         }
-        let raw = u64::from_le_bytes(buf);
-        (raw >> bit_offset) & mask(n)
+        let low = u64::from_le_bytes(buf) >> bit_offset;
+        if bit_offset + n <= 64 {
+            return low & mask(n);
+        }
+        let taken = 64 - bit_offset;
+        let hi = self.data.get(byte_pos + 8).copied().unwrap_or(0) as u64 & mask(n - taken);
+        (low | (hi << taken)) & mask(n)
     }
 
     /// Read a single bit as a boolean.

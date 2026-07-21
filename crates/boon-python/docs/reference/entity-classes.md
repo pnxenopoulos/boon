@@ -1,11 +1,11 @@
 # Entity Classes
 
 Deadlock demos contain hundreds of entity classes. This page documents the most
-important ones for data analysis. Use the CLI to discover all classes in a specific
-demo:
+important ones for data analysis. Use the low-level `boon-dev` CLI (built from
+source, see {doc}`../cli`) to discover all classes in a specific demo:
 
 ```bash
-boon-cli classes match.dem --filter Citadel
+boon-dev classes match.dem --filter Citadel
 ```
 
 ## Player Entities

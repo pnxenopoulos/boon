@@ -5,18 +5,18 @@ exclude = [
 ]
 members = [
   "crates/boon",
-  "crates/boon-cli",
+  "crates/boon-dev",
   "crates/boon-proto",
   "crates/boon-python",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.5.0"
+version = "0.6.0"
 rust-version = "1.88.0"
 
 [workspace.dependencies]
-boon = { path = "crates/boon", package = "boon-deadlock", version = "0.5.0" }
+boon = { path = "crates/boon", package = "boon-deadlock", version = "0.6.0" }
 boon-proto = { path = "crates/boon-proto", version = "0.2" }
 
 [profile.dev]

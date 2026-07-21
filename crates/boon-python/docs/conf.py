@@ -13,6 +13,10 @@ extensions = [
     "myst_parser",
 ]
 
+# Generate anchor slugs for headings (levels 1-3) so in-page Markdown links
+# like ``[Python CLI](#python-cli)`` resolve to the matching heading.
+myst_heading_anchors = 3
+
 # Markdown support
 source_suffix = {
     ".rst": "restructuredtext",

@@ -11,6 +11,7 @@ frames (``players``, ``kills``, ``player_ticks``, ``summary()`` outputs, ...).
 
 from __future__ import annotations
 
+import warnings
 from typing import TYPE_CHECKING
 
 import polars as pl
@@ -18,7 +19,7 @@ import polars as pl
 if TYPE_CHECKING:
     from boon import Demo
 
-__all__ = ["in_combat", "kill_participation", "time_dead"]
+__all__ = ["in_combat", "kill_participation", "teamfights", "time_dead"]
 
 
 def in_combat(demo: Demo) -> pl.DataFrame:
@@ -253,4 +254,226 @@ def time_dead(demo: Demo) -> pl.DataFrame:
             "pct_regulation_dead",
         )
         .sort("team_num", "hero_id")
+    )
+
+
+def teamfights(
+    demo: Demo,
+    *,
+    gap_seconds: float = 5.0,
+    radius: float = 1500.0,
+    min_players: int = 3,
+) -> pl.DataFrame:
+    """Detect teamfights from hero-vs-hero damage, clustered in space and time.
+
+    A teamfight is a *localized* period in which the two teams deal damage to
+    each other — not just where kills happen (a fight can end with everyone
+    alive, and it starts well before the first kill). Hero-vs-hero, opposing-team
+    damage events are clustered so that events close in **both** time and
+    **location** form one fight; this separates concurrent skirmishes in
+    different lanes that pure time-clustering would merge into one long blob.
+
+    Each damage event is placed at the victim's position (falling back to the
+    attacker's). Events are swept in tick order: an event joins the nearest
+    "active" fight whose centroid is within ``radius`` and whose last event was
+    within ``gap_seconds``, otherwise it starts a new fight (a fight goes
+    inactive once no event has landed near it within ``gap_seconds``). Fights
+    with fewer than ``min_players`` distinct heroes are dropped as lone poke.
+
+    Args:
+        demo: The demo to compute over.
+        gap_seconds: Maximum lull, in seconds, before a fight goes inactive.
+        radius: Maximum distance (map units) between an event and a fight's
+            running centroid for the event to belong to that fight. Map-scale
+            dependent; the default suits Deadlock's coordinate scale.
+        min_players: Minimum distinct heroes (dealing or taking hero damage) for
+            a cluster to count as a teamfight.
+
+    Returns:
+        A Polars DataFrame with one row per teamfight, sorted by ``start_tick``:
+
+        - ``fight_id`` (*int*) -- Sequential fight number (1-indexed).
+        - ``start_tick`` / ``end_tick`` (*int*) -- First and last damage tick.
+        - ``start_seconds`` / ``end_seconds`` (*float*) -- Those ticks in elapsed
+          seconds (via :meth:`Demo.tick_to_seconds`, excluding paused time).
+        - ``duration_seconds`` (*float*) -- ``end_seconds - start_seconds``.
+        - ``center_x`` / ``center_y`` (*float*) -- Mean event position (the
+          fight's rough location).
+        - ``participants`` (*list[int]*) -- Hero IDs that dealt or took hero
+          damage in the fight (sorted).
+        - ``num_participants`` (*int*) -- ``len(participants)``.
+        - ``hero_damage`` (*int*) -- Total hero-vs-hero damage dealt in the fight.
+        - ``kills`` (*int*) -- Hero kills within the fight's tick window.
+
+    Raises:
+        ValueError: If the demo's tick rate is 0 (cannot cluster by time).
+    """
+    tick_rate = demo.tick_rate
+    if tick_rate == 0:
+        raise ValueError("tick_rate is 0: cannot cluster damage by time")
+
+    schema = {
+        "fight_id": pl.Int64,
+        "start_tick": pl.Int64,
+        "end_tick": pl.Int64,
+        "start_seconds": pl.Float64,
+        "end_seconds": pl.Float64,
+        "duration_seconds": pl.Float64,
+        "center_x": pl.Float64,
+        "center_y": pl.Float64,
+        "participants": pl.List(pl.Int64),
+        "num_participants": pl.Int64,
+        "hero_damage": pl.Int64,
+        "kills": pl.Int64,
+    }
+
+    teams = demo.players.select("hero_id", "team_num")
+    attacker_teams = teams.rename({"hero_id": "attacker_hero_id", "team_num": "at"})
+    victim_teams = teams.rename({"hero_id": "victim_hero_id", "team_num": "vt"})
+    pos = demo.player_ticks.select("tick", "hero_id", "x", "y")
+
+    # Hero-vs-hero damage between opposing teams -- the actual "fighting" signal --
+    # placed at the victim's position (falling back to the attacker's).
+    dmg = (
+        demo.damage.filter(
+            (pl.col("attacker_hero_id") != 0)
+            & (pl.col("victim_hero_id") != 0)
+            & (pl.col("attacker_hero_id") != pl.col("victim_hero_id"))
+        )
+        .join(attacker_teams, on="attacker_hero_id", how="inner")
+        .join(victim_teams, on="victim_hero_id", how="inner")
+        .filter(pl.col("at") != pl.col("vt"))
+        .join(
+            pos.rename({"hero_id": "victim_hero_id", "x": "vx", "y": "vy"}),
+            on=["tick", "victim_hero_id"],
+            how="left",
+        )
+        .join(
+            pos.rename({"hero_id": "attacker_hero_id", "x": "ax", "y": "ay"}),
+            on=["tick", "attacker_hero_id"],
+            how="left",
+        )
+        .with_columns(x=pl.coalesce("vx", "ax"), y=pl.coalesce("vy", "ay"))
+        .filter(pl.col("x").is_not_null())
+        .sort("tick")
+    )
+    if dmg.is_empty():
+        return pl.DataFrame(schema=schema)
+
+    # Sweep events in tick order, assigning each to the nearest active fight
+    # (centroid within `radius`, last event within `gap_seconds`) or a new one.
+    time_eps = max(1, round(gap_seconds * tick_rate))
+    r2 = radius * radius
+    ticks = dmg["tick"].to_list()
+    xs = dmg["x"].to_list()
+    ys = dmg["y"].to_list()
+    active: list[list[float]] = []  # [last_tick, cx, cy, count, label]
+    labels: list[int] = []
+    next_label = 0
+    for t, x, y in zip(ticks, xs, ys):
+        active = [f for f in active if t - f[0] <= time_eps]
+        best = None
+        best_d = r2
+        for f in active:
+            d = (x - f[1]) ** 2 + (y - f[2]) ** 2
+            if d <= best_d:
+                best = f
+                best_d = d
+        if best is None:
+            best = [t, x, y, 0, next_label]
+            active.append(best)
+            next_label += 1
+        n = best[3] + 1
+        best[0] = t
+        best[1] += (x - best[1]) / n  # running-mean centroid
+        best[2] += (y - best[2]) / n
+        best[3] = n
+        labels.append(int(best[4]))
+
+    dmg = dmg.with_columns(pl.Series("_fight", labels, dtype=pl.Int64))
+
+    windows = dmg.group_by("_fight").agg(
+        start_tick=pl.col("tick").min().cast(pl.Int64),
+        end_tick=pl.col("tick").max().cast(pl.Int64),
+        center_x=pl.col("x").mean().cast(pl.Float64),
+        center_y=pl.col("y").mean().cast(pl.Float64),
+        hero_damage=pl.col("damage").sum().cast(pl.Int64),
+    )
+    participants = (
+        dmg.select("_fight", "attacker_hero_id", "victim_hero_id")
+        .unpivot(
+            index="_fight",
+            on=["attacker_hero_id", "victim_hero_id"],
+            value_name="hero_id",
+        )
+        .group_by("_fight")
+        .agg(participants=pl.col("hero_id").unique())
+        .with_columns(
+            participants=pl.col("participants").list.sort(),
+            num_participants=pl.col("participants").list.len().cast(pl.Int64),
+        )
+    )
+
+    fights = (
+        windows.join(participants, on="_fight")
+        .filter(pl.col("num_participants") >= min_players)
+        .sort("start_tick")
+    )
+    if fights.is_empty():
+        return pl.DataFrame(schema=schema)
+
+    # Attribute each kill to the fight of the last hero damage to its victim at
+    # or before the kill (the fight that secured it), so concurrent fights with
+    # overlapping tick windows don't double-count kills.
+    victim_dmg = dmg.select("tick", "victim_hero_id", "_fight").sort("tick")
+    kills_sorted = demo.kills.select("tick", "victim_hero_id").sort("tick")
+    with warnings.catch_warnings():
+        # The frames are globally tick-sorted (hence per-victim-group sorted);
+        # polars just can't verify that cheaply with a `by` group.
+        warnings.filterwarnings(
+            "ignore", message="Sortedness of columns cannot be checked"
+        )
+        attributed = kills_sorted.join_asof(
+            victim_dmg, on="tick", by="victim_hero_id", strategy="backward"
+        )
+    kills_by_fight = (
+        attributed.drop_nulls("_fight")
+        .group_by("_fight")
+        .agg(kills=pl.len().cast(pl.Int64))
+    )
+    fights = (
+        fights.join(kills_by_fight, on="_fight", how="left")
+        .with_columns(pl.col("kills").fill_null(0))
+        .sort("start_tick")
+    )
+
+    starts = fights["start_tick"].to_list()
+    ends = fights["end_tick"].to_list()
+    return (
+        fights.with_columns(
+            fight_id=pl.int_range(1, pl.len() + 1, dtype=pl.Int64),
+            start_seconds=pl.Series(
+                [demo.tick_to_seconds(int(t)) for t in starts], dtype=pl.Float64
+            ),
+            end_seconds=pl.Series(
+                [demo.tick_to_seconds(int(t)) for t in ends], dtype=pl.Float64
+            ),
+        )
+        .with_columns(
+            (pl.col("end_seconds") - pl.col("start_seconds")).alias("duration_seconds")
+        )
+        .select(
+            "fight_id",
+            "start_tick",
+            "end_tick",
+            "start_seconds",
+            "end_seconds",
+            "duration_seconds",
+            "center_x",
+            "center_y",
+            "participants",
+            "num_participants",
+            "hero_damage",
+            "kills",
+        )
     )

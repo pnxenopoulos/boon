@@ -135,8 +135,18 @@ impl StringTable {
             let has_user_data = br.read_bool()?;
             let user_data = if has_user_data {
                 if self.user_data_fixed_size {
-                    br.read_bits_to_bytes(&mut user_data_buf, self.user_data_size_bits as usize)?;
-                    Some(user_data_buf[..self.user_data_size as usize].to_vec())
+                    let size = self.user_data_size as usize;
+                    let size_bits = self.user_data_size_bits as usize;
+                    if size > user_data_buf.len() || size_bits.div_ceil(8) > user_data_buf.len() {
+                        return Err(Error::Parse {
+                            context: format!(
+                                "string-table fixed user_data size ({size} bytes / {size_bits} bits) exceeds {} bytes",
+                                user_data_buf.len()
+                            ),
+                        });
+                    }
+                    br.read_bits_to_bytes(&mut user_data_buf, size_bits)?;
+                    Some(user_data_buf[..size].to_vec())
                 } else {
                     let mut is_compressed = false;
                     if (self.flags & 0x1) != 0 {
@@ -148,6 +158,14 @@ impl StringTable {
                     } else {
                         br.read_bits(MAX_USERDATA_BITS)? as usize
                     };
+                    if size > user_data_buf.len() {
+                        return Err(Error::Parse {
+                            context: format!(
+                                "string-table user_data size {size} exceeds {} bytes",
+                                user_data_buf.len()
+                            ),
+                        });
+                    }
 
                     br.read_bytes(&mut user_data_buf[..size])?;
 

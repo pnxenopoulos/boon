@@ -53,7 +53,7 @@ pub fn run(
             }
 
             if !slot_to_hero_built {
-                for (&idx, entity) in ctx.entities.iter() {
+                for (idx, entity) in ctx.entities.iter() {
                     if entity.class_name == "CCitadelPlayerController" {
                         let hid = entity.get_i64(ck_hero_id);
                         if hid != 0 {

@@ -64,13 +64,13 @@ fn bench_commands(c: &mut Criterion) {
         };
     }
 
-    bench_cmd!("abilities", boon_cli::commands::abilities);
-    bench_cmd!("objectives", boon_cli::commands::objectives);
-    bench_cmd!("troopers", boon_cli::commands::troopers);
-    bench_cmd!("neutrals", boon_cli::commands::neutrals);
-    bench_cmd!("stat_modifiers", boon_cli::commands::stat_modifiers);
-    bench_cmd!("active_modifiers", boon_cli::commands::active_modifiers);
-    bench_cmd!("ability_ticks", boon_cli::commands::ability_ticks);
+    bench_cmd!("abilities", boon_dev::commands::abilities);
+    bench_cmd!("objectives", boon_dev::commands::objectives);
+    bench_cmd!("troopers", boon_dev::commands::troopers);
+    bench_cmd!("neutrals", boon_dev::commands::neutrals);
+    bench_cmd!("stat_modifiers", boon_dev::commands::stat_modifiers);
+    bench_cmd!("active_modifiers", boon_dev::commands::active_modifiers);
+    bench_cmd!("ability_ticks", boon_dev::commands::ability_ticks);
 
     g.finish();
 }

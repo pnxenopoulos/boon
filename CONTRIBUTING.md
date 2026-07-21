@@ -14,7 +14,7 @@ Thanks for your interest in contributing to Boon! This guide covers setup, codin
 boon/
 ├── crates/
 │   ├── boon/           # Core parser library (Rust)
-│   ├── boon-cli/       # CLI tool
+│   ├── boon-dev/       # Low-level dev / debug CLI (in-repo only, not published)
 │   ├── boon-proto/     # Auto-generated protobuf definitions
 │   └── boon-python/    # Python bindings (PyO3 + pyo3-polars)
 ├── scripts/
@@ -36,8 +36,8 @@ cargo build --workspace
 # Run tests
 cargo nextest run --workspace --all-features
 
-# Build the CLI
-cargo build --release -p boon-cli
+# Build the dev / debug CLI
+cargo build --release -p boon-dev
 ```
 
 ### Python Development
@@ -120,19 +120,6 @@ git push origin main --tags
 
 **Secret required:** `CARGO_REGISTRY_TOKEN`
 
-### CLI (`boon-cli`) &mdash; `boon-cli-v*` tags
-
-Cross-compiles for Linux x86_64, macOS x86_64/aarch64, and Windows, then creates a GitHub Release with the binaries.
-
-```bash
-# 1. Bump version in crates/boon-cli/Cargo.toml
-# 2. Update changelog
-
-git commit -am "boon-cli 0.2.0"
-git tag boon-cli-v0.2.0
-git push origin main --tags
-```
-
 ### Python (`boon-python`) &mdash; `boon-python-v*` tags
 
 Builds wheels for Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows, then publishes to PyPI via trusted publishing.
@@ -152,8 +139,9 @@ git push origin main --tags
 ### Notes
 
 - Version bumps are manual &mdash; workflows verify the tag matches the version but don't bump it for you.
-- Tracks are independent &mdash; you can release the parser without releasing the CLI or Python package.
-- If the CLI or Python crate depends on a new parser feature, publish the parser first.
+- Tracks are independent &mdash; you can release the parser without releasing the Python package.
+- If the Python crate depends on a new parser feature, publish the parser first.
+- `boon-dev` (the low-level debugging CLI) is **not** released &mdash; it has no crates.io package and no release binaries. Build it locally with `cargo build --release -p boon-dev`.
 
 ## Test Fixtures
 

@@ -56,7 +56,7 @@ pub fn run(
 
             // Build entity_to_hero map once
             if !entity_to_hero_built {
-                for (&idx, entity) in ctx.entities.iter() {
+                for (idx, entity) in ctx.entities.iter() {
                     if entity.class_name == "CCitadelPlayerPawn" {
                         let hid = entity.get_i64(pk_hero_id);
                         if hid != 0 {
