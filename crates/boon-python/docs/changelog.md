@@ -1,5 +1,11 @@
 # 📝 Changelog
 
+## 0.6.1
+
+### boon
+
+- **Fixed:** a bare `char` entity field — a scalar 8-bit integer such as the count `m_nAvailableHelperCount` on `CCitadel_Ability_Familiar_HelpingHands` — was decoded as a null-terminated string (a mapping introduced in 0.6.0). On any nonzero value the string decoder over-read past the field, desyncing the packet-entities bitstream so that a later entity index decoded as garbage and the parse aborted with `entity index … out of range`. Some demos failed outright (e.g. on `demo.regulation_clock_time` / `boon info`, which build `world_ticks`). A bare `char` now decodes as an unsigned varint, matching pre-0.6.0 behavior; `char[N]` string buffers are unchanged. Added a regression test.
+
 ## 0.6.0
 
 ### boon-python

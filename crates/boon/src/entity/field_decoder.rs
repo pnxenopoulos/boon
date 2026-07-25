@@ -605,8 +605,19 @@ pub fn get_field_metadata(
         },
 
         // String types
-        "CUtlSymbolLarge" | "CUtlString" | "CGlobalSymbol" | "char" => FieldMetadata {
+        "CUtlSymbolLarge" | "CUtlString" | "CGlobalSymbol" => FieldMetadata {
             decoder: Decoder::String,
+            special: None,
+        },
+
+        // A bare `char` is a scalar 8-bit integer (e.g. a small count such as
+        // `m_nAvailableHelperCount`), NOT text — it is read as an unsigned
+        // varint like `uint8`. A char *string* is always `char[N]`, handled by
+        // the array branch above. Decoding a bare `char` as a null-terminated
+        // `String` reads until the next zero byte, which over-reads and
+        // desyncs the entity stream on any nonzero value.
+        "char" => FieldMetadata {
+            decoder: Decoder::U64,
             special: None,
         },
 
@@ -842,6 +853,23 @@ mod tests {
     fn char_array_is_string() {
         let m = meta("char[256]", "m_szName");
         assert!(matches!(m.decoder, Decoder::String));
+        assert!(!m.is_fixed_array());
+    }
+
+    #[test]
+    fn bare_char_is_scalar_int_not_string() {
+        // Regression (demo 95235849 desynced at ~tick 60000): a *bare* `char`
+        // field is a scalar 8-bit integer (e.g. the count `m_nAvailableHelperCount`
+        // on CCitadel_Ability_Familiar_HelpingHands), read as an unsigned varint.
+        // Decoding it as a null-terminated String reads until the next zero byte,
+        // over-reading and desyncing the packet-entities stream on any nonzero
+        // value. Only `char[N]` (above) is a string buffer.
+        let m = meta("char", "m_nAvailableHelperCount");
+        assert!(
+            matches!(m.decoder, Decoder::U64),
+            "bare char must decode as an integer varint, got {:?}",
+            m.decoder
+        );
         assert!(!m.is_fixed_array());
     }
 
