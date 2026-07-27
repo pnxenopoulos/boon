@@ -337,10 +337,11 @@ The name of the map the demo was recorded on.
 #### `match_id`
 
 ```python
-demo.match_id  # int
+demo.match_id  # int | None
 ```
 
-The match ID for this demo.
+The match ID for this demo, or `None` if the demo does not carry one (e.g. a
+partial capture or sandbox / custom content).
 
 ---
 

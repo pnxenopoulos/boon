@@ -177,8 +177,9 @@ class Demo:
         ...
 
     @property
-    def match_id(self) -> int:
-        """The match ID for this demo."""
+    def match_id(self) -> int | None:
+        """The match ID for this demo, or ``None`` if the demo does not carry
+        one (e.g. a partial capture or sandbox / custom content)."""
         ...
 
     @property

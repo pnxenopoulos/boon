@@ -138,8 +138,8 @@ class TestMetadata:
         assert isinstance(demo.map_name, str)
         assert len(demo.map_name) > 0
 
-    def test_match_id_positive(self, demo: Demo) -> None:
-        assert demo.match_id > 0
+    def test_match_id_positive_or_none(self, demo: Demo) -> None:
+        assert demo.match_id is None or demo.match_id > 0
 
     def test_tick_rate_positive(self, demo: Demo) -> None:
         assert demo.tick_rate > 0

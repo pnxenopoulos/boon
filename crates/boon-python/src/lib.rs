@@ -780,7 +780,7 @@ struct Demo {
     playback_time: f32,
     tick_rate: i32,
     // Cached info from first tick entities
-    match_id: u64,
+    match_id: Option<u64>,
     game_mode: i64,
     // Sorted ticks where the game was paused (lazily built from world_ticks)
     paused_ticks: Option<Vec<i32>>,
@@ -1200,29 +1200,34 @@ impl Demo {
             .playback_time
             .ok_or_else(|| DemoInfoError::new_err("missing playback time in file info"))?;
 
-        // Parse first tick to get match_id from CCitadelGameRulesProxy
+        // Parse the first tick and best-effort resolve match_id / game_mode from
+        // CCitadelGameRulesProxy. The match ID is optional: some demos (partial
+        // captures, sandbox / custom content) don't carry one, so we record it
+        // when present and leave it `None` otherwise rather than refusing to
+        // open the demo. game_mode defaults to 0 when unavailable.
         let ctx = parser.parse_to_tick(1).map_err(to_py_err)?;
 
-        // Resolve match_id and game_mode from CCitadelGameRulesProxy
         let game_rules = ctx
             .entities
             .iter()
             .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy");
-        let (match_id, game_mode) = game_rules
+
+        let match_id = game_rules.and_then(|(_, e)| {
+            let serializer = ctx.serializers.get(&e.class_name)?;
+            let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
+            match e.fields.get(&mid_key)? {
+                boon_parser::FieldValue::U64(id) => Some(*id),
+                boon_parser::FieldValue::I64(id) => Some(*id as u64),
+                _ => None,
+            }
+        });
+
+        let game_mode = game_rules
             .and_then(|(_, e)| {
                 let serializer = ctx.serializers.get(&e.class_name)?;
-                let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
-                let mid = match e.fields.get(&mid_key)? {
-                    boon_parser::FieldValue::U64(id) => *id,
-                    boon_parser::FieldValue::I64(id) => *id as u64,
-                    _ => return None,
-                };
-                let gm = e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode"));
-                Some((mid, gm))
+                Some(e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode")))
             })
-            .ok_or_else(|| {
-                DemoMessageError::new_err("could not resolve match ID from CCitadelGameRulesProxy")
-            })?;
+            .unwrap_or(0);
 
         let tick_rate = if playback_time > 0.0 {
             (total_ticks as f32 / playback_time).round() as i32
@@ -1322,9 +1327,10 @@ impl Demo {
         self.map_name.clone()
     }
 
-    /// The match ID for this demo.
+    /// The match ID for this demo, or ``None`` if the demo does not carry one
+    /// (e.g. a partial capture or sandbox / custom content).
     #[getter]
-    fn match_id(&self) -> u64 {
+    fn match_id(&self) -> Option<u64> {
         self.match_id
     }
 
