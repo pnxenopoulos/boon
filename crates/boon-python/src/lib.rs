@@ -2926,33 +2926,56 @@ impl Demo {
                                 continue;
                             };
 
-                            if let std::collections::hash_map::Entry::Vacant(e) = am_prev.entry(serial) {
-                                let mod_id = modifier.modifier_subclass.unwrap_or(0);
-                                let abil_id = modifier.ability_subclass.unwrap_or(0);
-                                let duration = modifier.duration.unwrap_or(-1.0);
-                                let caster_hero_id =
-                                    boon_parser::protobuf_handle_index(modifier.caster)
-                                        .and_then(|i| entity_to_hero.get(&i).copied())
-                                        .unwrap_or(0);
-                                let stacks = modifier.stack_count.unwrap_or(0);
+                            match am_prev.entry(serial) {
+                                std::collections::hash_map::Entry::Vacant(e) => {
+                                    let mod_id = modifier.modifier_subclass.unwrap_or(0);
+                                    let abil_id = modifier.ability_subclass.unwrap_or(0);
+                                    let duration = modifier.duration.unwrap_or(-1.0);
+                                    let caster_hero_id =
+                                        boon_parser::protobuf_handle_index(modifier.caster)
+                                            .and_then(|i| entity_to_hero.get(&i).copied())
+                                            .unwrap_or(0);
+                                    let stacks = modifier.stack_count.unwrap_or(0);
 
-                                am_tick.push($ctx.tick);
-                                am_hero_id.push(hero_id);
-                                am_event.push("applied".to_string());
-                                am_modifier_id.push(mod_id);
-                                am_ability_id.push(abil_id);
-                                am_duration.push(duration);
-                                am_caster_hero_id.push(caster_hero_id);
-                                am_stacks.push(stacks);
+                                    am_tick.push($ctx.tick);
+                                    am_hero_id.push(hero_id);
+                                    am_event.push("applied".to_string());
+                                    am_modifier_id.push(mod_id);
+                                    am_ability_id.push(abil_id);
+                                    am_duration.push(duration);
+                                    am_caster_hero_id.push(caster_hero_id);
+                                    am_stacks.push(stacks);
 
-                                e.insert(CachedMod {
-                                    hero_id,
-                                    modifier_id: mod_id,
-                                    ability_id: abil_id,
-                                    duration,
-                                    caster_hero_id,
-                                    stacks,
-                                });
+                                    e.insert(CachedMod {
+                                        hero_id,
+                                        modifier_id: mod_id,
+                                        ability_id: abil_id,
+                                        duration,
+                                        caster_hero_id,
+                                        stacks,
+                                    });
+                                }
+                                // Modifier already tracked: its string-table entry was
+                                // re-sent with updated fields. Emit a `changed` row when
+                                // the stack count moved (e.g. a stacking debuff accruing
+                                // headshots) and refresh the cache, so the live count is
+                                // visible and the eventual `removed` row reports the final
+                                // total rather than the value at first sighting.
+                                std::collections::hash_map::Entry::Occupied(mut e) => {
+                                    let stacks = modifier.stack_count.unwrap_or(0);
+                                    let cached = e.get_mut();
+                                    if stacks != cached.stacks {
+                                        am_tick.push($ctx.tick);
+                                        am_hero_id.push(cached.hero_id);
+                                        am_event.push("changed".to_string());
+                                        am_modifier_id.push(cached.modifier_id);
+                                        am_ability_id.push(cached.ability_id);
+                                        am_duration.push(cached.duration);
+                                        am_caster_hero_id.push(cached.caster_hero_id);
+                                        am_stacks.push(stacks);
+                                        cached.stacks = stacks;
+                                    }
+                                }
                             }
                         }
                     }
@@ -4075,7 +4098,9 @@ impl Demo {
     /// ``duration``, ``caster_hero_id``, ``stacks``.
     ///
     /// Events: ``"applied"`` when a modifier is first seen on a player,
-    /// ``"removed"`` when it disappears.
+    /// ``"changed"`` when its ``stacks`` count changes while active, and
+    /// ``"removed"`` when it disappears. The ``removed`` row reports the final
+    /// stack count.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn active_modifiers(&mut self) -> PyResult<PyDataFrame> {

@@ -1,5 +1,11 @@
 # 📝 Changelog
 
+## 0.6.2
+
+### boon
+
+- **Fixed:** `active_modifiers` under-reported modifier stack counts. The stack count was read once, when a modifier was first seen, and never updated — so a stacking modifier (e.g. the Spellslinger Headshots debuff accruing headshots) that climbed from 2 → 4 stacks kept reporting `2`, and its `removed` row echoed that stale value instead of the final total. In-place stack updates are now captured: a new `event` value **`"changed"`** is emitted on the tick a live modifier's `stacks` changes, and the `removed` row reports the final count. `applied`/`removed` semantics are otherwise unchanged. The `boon-dev active-modifiers` command gains the same `changed` events.
+
 ## 0.6.1
 
 ### boon

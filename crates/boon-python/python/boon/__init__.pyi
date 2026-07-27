@@ -683,12 +683,13 @@ class Demo:
         Columns:
             - **tick** (*int*) -- The game tick when the modifier event occurred.
             - **hero_id** (*int*) -- The affected player's hero ID.
-            - **event** (*str*) -- ``"applied"`` or ``"removed"``.
+            - **event** (*str*) -- ``"applied"``, ``"changed"`` (stack count
+              changed while active), or ``"removed"``.
             - **modifier_id** (*int*) -- Raw modifier subclass hash ID.
             - **ability_id** (*int*) -- Raw ability subclass hash ID.
             - **duration** (*float*) -- Modifier duration.
             - **caster_hero_id** (*int*) -- Hero ID of the caster.
-            - **stacks** (*int*) -- Number of stacks.
+            - **stacks** (*int*) -- Number of stacks. On ``removed``, the final count.
         """
         ...
 

@@ -772,8 +772,8 @@ Not loaded by default. Access this property or call `load("stat_modifier_events"
 demo.active_modifiers  # polars.DataFrame
 ```
 
-Active buff/debuff modifiers on players. Tracks applied and removed events
-for each modifier.
+Active buff/debuff modifiers on players. Tracks `applied`, `changed` (stack
+count changed while active), and `removed` events for each modifier.
 
 Not loaded by default. Access this property or call `load("active_modifiers")` explicitly.
 
@@ -781,7 +781,7 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the modifier event occurred |
 | `hero_id` | `int` | The affected player's hero ID |
-| `event` | `str` | `"applied"` or `"removed"` |
+| `event` | `str` | `"applied"`, `"changed"` (stacks changed while active), or `"removed"` |
 | `modifier_id` | `int` | Raw modifier subclass hash ID (use `modifier_names()` to resolve) |
 | `ability_id` | `int` | Raw ability subclass hash ID (use `ability_names()` to resolve) |
 | `duration` | `float` | Modifier duration |
