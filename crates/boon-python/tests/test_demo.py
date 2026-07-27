@@ -138,8 +138,8 @@ class TestMetadata:
         assert isinstance(demo.map_name, str)
         assert len(demo.map_name) > 0
 
-    def test_match_id_positive(self, demo: Demo) -> None:
-        assert demo.match_id > 0
+    def test_match_id_positive_or_none(self, demo: Demo) -> None:
+        assert demo.match_id is None or demo.match_id > 0
 
     def test_tick_rate_positive(self, demo: Demo) -> None:
         assert demo.tick_rate > 0
@@ -399,6 +399,38 @@ class TestAbilityTicks:
         names = boon.ability_names()
         seen = set(demo.ability_ticks["ability_id"].unique().to_list())
         assert len(seen & set(names)) > 0
+
+
+class TestActiveModifiers:
+    """Semantics of the active_modifiers event stream (applied/changed/removed)."""
+
+    INSTANCE_KEYS = ["hero_id", "modifier_id", "ability_id", "caster_hero_id"]
+
+    def test_event_values_in_domain(self, demo: Demo) -> None:
+        events = set(demo.active_modifiers["event"].unique().to_list())
+        assert events <= {"applied", "changed", "removed"}
+
+    def test_stacks_nonnegative(self, demo: Demo) -> None:
+        am = demo.active_modifiers
+        if len(am) > 0:
+            assert am["stacks"].min() >= 0
+
+    def test_changed_events_reflect_varying_stacks(self, demo: Demo) -> None:
+        # A "changed" row is emitted only when a live modifier's stack count
+        # moves (regression: stacks used to be frozen at first sighting, so a
+        # debuff climbing 2 -> 4 stayed reported as 2). Any modifier group with
+        # a "changed" event must therefore show more than one distinct stack
+        # value, and must have an "applied" event. Grouping by these keys can
+        # merge concurrent instances (there is no serial column), so this uses
+        # set/containment properties rather than row adjacency.
+        am = demo.active_modifiers
+        if "changed" not in am["event"].to_list():
+            pytest.skip("no stack-change events in this demo")
+        for _, grp in am.group_by(self.INSTANCE_KEYS):
+            events = grp["event"].to_list()
+            if "changed" in events:
+                assert "applied" in events, "changed event without an applied"
+                assert grp["stacks"].n_unique() > 1
 
 
 # ===================================================================

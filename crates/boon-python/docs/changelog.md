@@ -1,5 +1,15 @@
 # 📝 Changelog
 
+## 0.6.2
+
+### boon
+
+- **Fixed:** `active_modifiers` under-reported modifier stack counts. The stack count was read once, when a modifier was first seen, and never updated — so a stacking modifier (e.g. the Spellslinger Headshots debuff accruing headshots) that climbed from 2 → 4 stacks kept reporting `2`, and its `removed` row echoed that stale value instead of the final total. In-place stack updates are now captured: a new `event` value **`"changed"`** is emitted on the tick a live modifier's `stacks` changes, and the `removed` row reports the final count. `applied`/`removed` semantics are otherwise unchanged. The `boon-dev active-modifiers` command gains the same `changed` events.
+
+### boon-python
+
+- **Changed:** opening a demo no longer requires a match ID. `Demo(path)` previously raised `DemoMessageError: could not resolve match ID from CCitadelGameRulesProxy` when a demo didn't carry one on its first tick (e.g. partial captures or sandbox / custom content), even though the rest of the demo was fully parseable. `Demo.match_id` is now `int | None` — recorded when present, left `None` otherwise — and `Demo.game_mode` (previously resolved in the same step, so it failed together with the match ID) now falls back to `0` when the game-rules entity is unavailable. Such demos open normally instead of failing at construction.
+
 ## 0.6.1
 
 ### boon

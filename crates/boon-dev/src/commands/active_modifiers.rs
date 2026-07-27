@@ -161,40 +161,62 @@ pub fn run(
                         continue;
                     };
 
-                    // New modifier (not seen before)
-                    if let std::collections::hash_map::Entry::Vacant(e) =
-                        prev_modifiers.entry(serial)
-                    {
-                        let modifier_name =
-                            boon::modifier_name(modifier.modifier_subclass.unwrap_or(0))
-                                .to_string();
-                        let ability_name =
-                            boon::ability_name(modifier.ability_subclass.unwrap_or(0)).to_string();
-                        let duration = modifier.duration.unwrap_or(-1.0);
-                        let caster_hero_id = boon::protobuf_handle_index(modifier.caster)
-                            .and_then(|i| entity_to_hero.get(&i).copied())
-                            .unwrap_or(0);
-                        let stacks = modifier.stack_count.unwrap_or(0);
+                    match prev_modifiers.entry(serial) {
+                        // New modifier (not seen before)
+                        std::collections::hash_map::Entry::Vacant(e) => {
+                            let modifier_name =
+                                boon::modifier_name(modifier.modifier_subclass.unwrap_or(0))
+                                    .to_string();
+                            let ability_name =
+                                boon::ability_name(modifier.ability_subclass.unwrap_or(0))
+                                    .to_string();
+                            let duration = modifier.duration.unwrap_or(-1.0);
+                            let caster_hero_id = boon::protobuf_handle_index(modifier.caster)
+                                .and_then(|i| entity_to_hero.get(&i).copied())
+                                .unwrap_or(0);
+                            let stacks = modifier.stack_count.unwrap_or(0);
 
-                        events_out.push(ActiveModifierOutput {
-                            tick: ctx.tick,
-                            hero_id,
-                            event: "applied".to_string(),
-                            modifier: modifier_name.clone(),
-                            ability: ability_name.clone(),
-                            duration,
-                            caster_hero_id,
-                            stacks,
-                        });
+                            events_out.push(ActiveModifierOutput {
+                                tick: ctx.tick,
+                                hero_id,
+                                event: "applied".to_string(),
+                                modifier: modifier_name.clone(),
+                                ability: ability_name.clone(),
+                                duration,
+                                caster_hero_id,
+                                stacks,
+                            });
 
-                        e.insert(CachedModifier {
-                            hero_id,
-                            modifier: modifier_name,
-                            ability: ability_name,
-                            duration,
-                            caster_hero_id,
-                            stacks,
-                        });
+                            e.insert(CachedModifier {
+                                hero_id,
+                                modifier: modifier_name,
+                                ability: ability_name,
+                                duration,
+                                caster_hero_id,
+                                stacks,
+                            });
+                        }
+                        // Already tracked: entry re-sent with updated fields. Emit a
+                        // `changed` row when the stack count moved and refresh the cache,
+                        // so the live count is visible and the eventual `removed` row
+                        // reports the final total, not the value at first sighting.
+                        std::collections::hash_map::Entry::Occupied(mut e) => {
+                            let stacks = modifier.stack_count.unwrap_or(0);
+                            let cached = e.get_mut();
+                            if stacks != cached.stacks {
+                                events_out.push(ActiveModifierOutput {
+                                    tick: ctx.tick,
+                                    hero_id: cached.hero_id,
+                                    event: "changed".to_string(),
+                                    modifier: cached.modifier.clone(),
+                                    ability: cached.ability.clone(),
+                                    duration: cached.duration,
+                                    caster_hero_id: cached.caster_hero_id,
+                                    stacks,
+                                });
+                                cached.stacks = stacks;
+                            }
+                        }
                     }
                 }
             }

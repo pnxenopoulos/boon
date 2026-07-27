@@ -780,7 +780,7 @@ struct Demo {
     playback_time: f32,
     tick_rate: i32,
     // Cached info from first tick entities
-    match_id: u64,
+    match_id: Option<u64>,
     game_mode: i64,
     // Sorted ticks where the game was paused (lazily built from world_ticks)
     paused_ticks: Option<Vec<i32>>,
@@ -1200,29 +1200,34 @@ impl Demo {
             .playback_time
             .ok_or_else(|| DemoInfoError::new_err("missing playback time in file info"))?;
 
-        // Parse first tick to get match_id from CCitadelGameRulesProxy
+        // Parse the first tick and best-effort resolve match_id / game_mode from
+        // CCitadelGameRulesProxy. The match ID is optional: some demos (partial
+        // captures, sandbox / custom content) don't carry one, so we record it
+        // when present and leave it `None` otherwise rather than refusing to
+        // open the demo. game_mode defaults to 0 when unavailable.
         let ctx = parser.parse_to_tick(1).map_err(to_py_err)?;
 
-        // Resolve match_id and game_mode from CCitadelGameRulesProxy
         let game_rules = ctx
             .entities
             .iter()
             .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy");
-        let (match_id, game_mode) = game_rules
+
+        let match_id = game_rules.and_then(|(_, e)| {
+            let serializer = ctx.serializers.get(&e.class_name)?;
+            let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
+            match e.fields.get(&mid_key)? {
+                boon_parser::FieldValue::U64(id) => Some(*id),
+                boon_parser::FieldValue::I64(id) => Some(*id as u64),
+                _ => None,
+            }
+        });
+
+        let game_mode = game_rules
             .and_then(|(_, e)| {
                 let serializer = ctx.serializers.get(&e.class_name)?;
-                let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
-                let mid = match e.fields.get(&mid_key)? {
-                    boon_parser::FieldValue::U64(id) => *id,
-                    boon_parser::FieldValue::I64(id) => *id as u64,
-                    _ => return None,
-                };
-                let gm = e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode"));
-                Some((mid, gm))
+                Some(e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode")))
             })
-            .ok_or_else(|| {
-                DemoMessageError::new_err("could not resolve match ID from CCitadelGameRulesProxy")
-            })?;
+            .unwrap_or(0);
 
         let tick_rate = if playback_time > 0.0 {
             (total_ticks as f32 / playback_time).round() as i32
@@ -1322,9 +1327,10 @@ impl Demo {
         self.map_name.clone()
     }
 
-    /// The match ID for this demo.
+    /// The match ID for this demo, or ``None`` if the demo does not carry one
+    /// (e.g. a partial capture or sandbox / custom content).
     #[getter]
-    fn match_id(&self) -> u64 {
+    fn match_id(&self) -> Option<u64> {
         self.match_id
     }
 
@@ -2926,33 +2932,56 @@ impl Demo {
                                 continue;
                             };
 
-                            if let std::collections::hash_map::Entry::Vacant(e) = am_prev.entry(serial) {
-                                let mod_id = modifier.modifier_subclass.unwrap_or(0);
-                                let abil_id = modifier.ability_subclass.unwrap_or(0);
-                                let duration = modifier.duration.unwrap_or(-1.0);
-                                let caster_hero_id =
-                                    boon_parser::protobuf_handle_index(modifier.caster)
-                                        .and_then(|i| entity_to_hero.get(&i).copied())
-                                        .unwrap_or(0);
-                                let stacks = modifier.stack_count.unwrap_or(0);
+                            match am_prev.entry(serial) {
+                                std::collections::hash_map::Entry::Vacant(e) => {
+                                    let mod_id = modifier.modifier_subclass.unwrap_or(0);
+                                    let abil_id = modifier.ability_subclass.unwrap_or(0);
+                                    let duration = modifier.duration.unwrap_or(-1.0);
+                                    let caster_hero_id =
+                                        boon_parser::protobuf_handle_index(modifier.caster)
+                                            .and_then(|i| entity_to_hero.get(&i).copied())
+                                            .unwrap_or(0);
+                                    let stacks = modifier.stack_count.unwrap_or(0);
 
-                                am_tick.push($ctx.tick);
-                                am_hero_id.push(hero_id);
-                                am_event.push("applied".to_string());
-                                am_modifier_id.push(mod_id);
-                                am_ability_id.push(abil_id);
-                                am_duration.push(duration);
-                                am_caster_hero_id.push(caster_hero_id);
-                                am_stacks.push(stacks);
+                                    am_tick.push($ctx.tick);
+                                    am_hero_id.push(hero_id);
+                                    am_event.push("applied".to_string());
+                                    am_modifier_id.push(mod_id);
+                                    am_ability_id.push(abil_id);
+                                    am_duration.push(duration);
+                                    am_caster_hero_id.push(caster_hero_id);
+                                    am_stacks.push(stacks);
 
-                                e.insert(CachedMod {
-                                    hero_id,
-                                    modifier_id: mod_id,
-                                    ability_id: abil_id,
-                                    duration,
-                                    caster_hero_id,
-                                    stacks,
-                                });
+                                    e.insert(CachedMod {
+                                        hero_id,
+                                        modifier_id: mod_id,
+                                        ability_id: abil_id,
+                                        duration,
+                                        caster_hero_id,
+                                        stacks,
+                                    });
+                                }
+                                // Modifier already tracked: its string-table entry was
+                                // re-sent with updated fields. Emit a `changed` row when
+                                // the stack count moved (e.g. a stacking debuff accruing
+                                // headshots) and refresh the cache, so the live count is
+                                // visible and the eventual `removed` row reports the final
+                                // total rather than the value at first sighting.
+                                std::collections::hash_map::Entry::Occupied(mut e) => {
+                                    let stacks = modifier.stack_count.unwrap_or(0);
+                                    let cached = e.get_mut();
+                                    if stacks != cached.stacks {
+                                        am_tick.push($ctx.tick);
+                                        am_hero_id.push(cached.hero_id);
+                                        am_event.push("changed".to_string());
+                                        am_modifier_id.push(cached.modifier_id);
+                                        am_ability_id.push(cached.ability_id);
+                                        am_duration.push(cached.duration);
+                                        am_caster_hero_id.push(cached.caster_hero_id);
+                                        am_stacks.push(stacks);
+                                        cached.stacks = stacks;
+                                    }
+                                }
                             }
                         }
                     }
@@ -4075,7 +4104,9 @@ impl Demo {
     /// ``duration``, ``caster_hero_id``, ``stacks``.
     ///
     /// Events: ``"applied"`` when a modifier is first seen on a player,
-    /// ``"removed"`` when it disappears.
+    /// ``"changed"`` when its ``stacks`` count changes while active, and
+    /// ``"removed"`` when it disappears. The ``removed`` row reports the final
+    /// stack count.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
     fn active_modifiers(&mut self) -> PyResult<PyDataFrame> {

@@ -177,8 +177,9 @@ class Demo:
         ...
 
     @property
-    def match_id(self) -> int:
-        """The match ID for this demo."""
+    def match_id(self) -> int | None:
+        """The match ID for this demo, or ``None`` if the demo does not carry
+        one (e.g. a partial capture or sandbox / custom content)."""
         ...
 
     @property
@@ -683,12 +684,13 @@ class Demo:
         Columns:
             - **tick** (*int*) -- The game tick when the modifier event occurred.
             - **hero_id** (*int*) -- The affected player's hero ID.
-            - **event** (*str*) -- ``"applied"`` or ``"removed"``.
+            - **event** (*str*) -- ``"applied"``, ``"changed"`` (stack count
+              changed while active), or ``"removed"``.
             - **modifier_id** (*int*) -- Raw modifier subclass hash ID.
             - **ability_id** (*int*) -- Raw ability subclass hash ID.
             - **duration** (*float*) -- Modifier duration.
             - **caster_hero_id** (*int*) -- Hero ID of the caster.
-            - **stacks** (*int*) -- Number of stacks.
+            - **stacks** (*int*) -- Number of stacks. On ``removed``, the final count.
         """
         ...
 
