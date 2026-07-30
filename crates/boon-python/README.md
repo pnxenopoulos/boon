@@ -81,6 +81,7 @@ neutrals         = demo.neutrals          # neutral creep state changes
 stat_modifier_events = demo.stat_modifier_events  # permanent stat bonus change events
 active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 urn              = demo.urn               # urn lifecycle and delivery events
+rift             = demo.rift              # rift (koth) lifecycle, one row per rift
 ```
 
 ## CLI

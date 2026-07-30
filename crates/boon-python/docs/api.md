@@ -696,6 +696,50 @@ Auto-loads on first access.
 
 ---
 
+#### `rift`
+
+```python
+demo.rift  # polars.DataFrame
+```
+
+Rift lifecycle — one row per Rift. Auto-loads on first access.
+
+The Rift is a periodic king-of-the-hill objective (`Koth` in the game files). It
+is announced, becomes contestable, and then either is captured by a team — which
+grants that team buffed troopers in the Rift's lane — or expires uncaptured.
+
+Exactly one of `capture_tick` / `expire_tick` is set per row. Only completed
+Rifts appear: one still live when the demo ends is omitted.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `rift_num` | `int` | 1-based Rift index in the match. Entity indices are recycled between Rifts, so this is the stable identifier |
+| `announce_tick` | `int \| None` | Tick the spawner appeared, ahead of the Rift becoming contestable; `None` if not observed |
+| `active_tick` | `int` | Tick the Rift became contestable |
+| `capture_tick` | `int \| None` | Tick a team captured it, or `None` if it expired |
+| `expire_tick` | `int \| None` | Tick it expired uncaptured, or `None` if it was captured |
+| `winning_team` | `int \| None` | Team that captured it; `None` if it expired |
+| `lane` | `int` | Lane the Rift spawned in (`1`/`6` observed), or `0` when the location is not a known Rift site |
+| `x` | `float` | X position of the cash-in in world (Hammer) units |
+| `y` | `float` | Y position of the cash-in in world (Hammer) units |
+| `z` | `float` | Z position of the cash-in in world (Hammer) units |
+
+The winner comes from the game rules' scoring team, not from the Rift entity's
+own `m_iTeamNum` — that field tracks whoever last made capture progress and
+disagrees with the actual winner.
+
+```python
+demo.rift.select(["rift_num", "capture_tick", "winning_team", "lane"])
+# ┌──────────┬──────────────┬──────────────┬──────┐
+# │ rift_num ┆ capture_tick ┆ winning_team ┆ lane │
+# ╞══════════╪══════════════╪══════════════╪══════╡
+# │ 1        ┆ 48871        ┆ 3            ┆ 1    │
+# │ 2        ┆ 79884        ┆ 3            ┆ 6    │
+# └──────────┴──────────────┴──────────────┴──────┘
+```
+
+---
+
 #### `troopers`
 
 ```python

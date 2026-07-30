@@ -20,6 +20,7 @@ ALL_DATASETS = [
     "neutrals",
     "objectives",
     "player_ticks",
+    "rift",
     "stat_modifier_events",
     "troopers",
     "urn",

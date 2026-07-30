@@ -90,6 +90,11 @@ URN_COLUMNS = {
     "tick", "event", "hero_id", "team_num", "x", "y", "z",
 }
 
+RIFT_COLUMNS = {
+    "rift_num", "announce_tick", "active_tick", "capture_tick", "expire_tick",
+    "winning_team", "lane", "x", "y", "z",
+}
+
 ABILITY_TICKS_COLUMNS = {
     "tick", "hero_id", "ability_id", "slot", "cooldown_start", "cooldown_end",
     "remaining_charges", "charge_recharge_start", "charge_recharge_end",
@@ -118,6 +123,7 @@ DATASET_COLUMNS = {
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
     "ability_ticks": ABILITY_TICKS_COLUMNS,
     "urn": URN_COLUMNS,
+    "rift": RIFT_COLUMNS,
 }
 
 ALL_DATASETS = list(DATASET_COLUMNS.keys())
@@ -359,7 +365,8 @@ class TestDatasets:
         assert isinstance(df, pl.DataFrame)
 
     # Datasets that may be empty depending on game mode
-    POSSIBLY_EMPTY = {"ability_upgrades", "flex_slots", "mid_boss", "neutrals", "stat_modifier_events", "urn"}
+    # "rift" is empty on demos from builds predating the Rift objective.
+    POSSIBLY_EMPTY = {"ability_upgrades", "flex_slots", "mid_boss", "neutrals", "stat_modifier_events", "urn", "rift"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
@@ -431,6 +438,87 @@ class TestActiveModifiers:
             if "changed" in events:
                 assert "applied" in events, "changed event without an applied"
                 assert grp["stacks"].n_unique() > 1
+
+
+class TestRift:
+    """Semantics of the one-row-per-Rift lifecycle frame."""
+
+    def test_rift_num_is_sequential(self, demo: Demo) -> None:
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        assert rift["rift_num"].to_list() == list(range(1, len(rift) + 1))
+
+    def test_exactly_one_outcome_per_rift(self, demo: Demo) -> None:
+        # A Rift either gets captured or expires uncaptured, never both and
+        # never neither.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for row in rift.iter_rows(named=True):
+            captured = row["capture_tick"] is not None
+            expired = row["expire_tick"] is not None
+            assert captured != expired, f"rift {row['rift_num']} has both/neither outcome"
+
+    def test_winning_team_set_iff_captured(self, demo: Demo) -> None:
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for row in rift.iter_rows(named=True):
+            if row["capture_tick"] is not None:
+                assert row["winning_team"] in (2, 3)
+            else:
+                assert row["winning_team"] is None
+
+    def test_tick_ordering(self, demo: Demo) -> None:
+        # announce (when present) precedes active, which precedes the outcome.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for row in rift.iter_rows(named=True):
+            active = row["active_tick"]
+            assert active >= 0
+            if row["announce_tick"] is not None:
+                assert row["announce_tick"] <= active
+            outcome = row["capture_tick"] if row["capture_tick"] is not None else row["expire_tick"]
+            assert outcome >= active
+
+    def test_rifts_do_not_overlap(self, demo: Demo) -> None:
+        rift = demo.rift
+        if len(rift) < 2:
+            pytest.skip("fewer than two rifts in this demo")
+        rows = rift.iter_rows(named=True)
+        prev_end = -1
+        for row in rows:
+            assert row["active_tick"] > prev_end
+            outcome = row["capture_tick"] if row["capture_tick"] is not None else row["expire_tick"]
+            prev_end = outcome
+
+    def test_lane_in_domain(self, demo: Demo) -> None:
+        # 0 means "location is not a known Rift site"; otherwise it must be a
+        # real lane id.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        assert set(rift["lane"].unique().to_list()) <= {0, 1, 3, 4, 6}
+
+    def test_position_is_finite_and_on_map(self, demo: Demo) -> None:
+        # The game clears the cash-in location to FLT_MAX once a Rift resolves;
+        # a row must carry the real position, not that sentinel.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for axis in ("x", "y", "z"):
+            assert rift[axis].abs().max() < 1.0e6, f"{axis} looks like a sentinel"
+
+    def test_lane_resolves_when_position_known(self, demo: Demo) -> None:
+        # Every Rift site seen so far maps to a lane; a 0 here means a new site
+        # has appeared and RIFT_LANE_SITES needs extending.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        unmapped = rift.filter(pl.col("lane") == 0)
+        assert len(unmapped) == 0, f"unmapped rift site(s): {unmapped.select(['x', 'y']).to_dicts()}"
 
 
 # ===================================================================

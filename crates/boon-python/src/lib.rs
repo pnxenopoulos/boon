@@ -756,9 +756,45 @@ const VALID_DATASETS: &[&str] = &[
     "stat_modifier_events",
     "active_modifiers",
     "urn",
+    "rift",
 ];
 
 const VALID_STREET_BRAWL_DATASETS: &[&str] = &["street_brawl_ticks", "street_brawl_rounds"];
+
+/// Known Rift ("Koth") cash-in sites, as `([x, y], lane)`.
+///
+/// The Rift entities carry no `m_iLane` field, so the lane has to come from the
+/// cash-in location. Each site below was cross-checked against the lane of the
+/// buffed trooper cohort that spawns for the winning team after a capture. Only
+/// these two sites have been observed, so any other location resolves to lane
+/// `0` rather than being guessed at.
+const RIFT_LANE_SITES: &[([f32; 2], i64)] = &[([-7560.0, 0.0], 1), ([7612.0, 0.0], 6)];
+
+/// Match radius, in Hammer units, for associating a location with a known Rift
+/// site. The two known sites are ~15k units apart, so this is deliberately
+/// loose enough to absorb per-match jitter without ever matching both.
+const RIFT_LANE_TOLERANCE: f32 = 1024.0;
+
+/// Upper bound, in Hammer units, on a plausible map coordinate.
+///
+/// The game clears `m_vKothCashInCurrentLocation` to `FLT_MAX` rather than to
+/// zero once a Rift resolves. `FLT_MAX` is finite, so an `is_finite` check does
+/// not reject it — this bound does.
+const RIFT_COORD_SANITY: f32 = 1.0e6;
+
+/// The lane for a Rift cash-in location, or `0` when the location is not a
+/// known Rift site (see [`RIFT_LANE_SITES`]).
+fn rift_lane_for(x: f32, y: f32) -> i64 {
+    if !x.is_finite() || !y.is_finite() {
+        return 0;
+    }
+    for ([sx, sy], lane) in RIFT_LANE_SITES {
+        if (x - sx).abs() <= RIFT_LANE_TOLERANCE && (y - sy).abs() <= RIFT_LANE_TOLERANCE {
+            return *lane;
+        }
+    }
+    0
+}
 
 /// A Deadlock demo file.
 ///
@@ -809,6 +845,7 @@ struct Demo {
     cached_street_brawl_ticks: Option<DataFrame>,
     cached_street_brawl_rounds: Option<DataFrame>,
     cached_urn: Option<DataFrame>,
+    cached_rift: Option<DataFrame>,
 }
 
 /// The (gold, orbs) a player earned from a given source at a snapshot, or
@@ -1268,6 +1305,7 @@ impl Demo {
             cached_street_brawl_ticks: None,
             cached_street_brawl_rounds: None,
             cached_urn: None,
+            cached_rift: None,
         })
     }
 
@@ -1711,6 +1749,7 @@ impl Demo {
             && self.cached_street_brawl_ticks.is_none();
         let load_street_brawl_rounds = datasets.iter().any(|s| s == "street_brawl_rounds")
             && self.cached_street_brawl_rounds.is_none();
+        let load_rift = datasets.iter().any(|s| s == "rift") && self.cached_rift.is_none();
 
         if !load_abilities
             && !load_player_ticks
@@ -1731,6 +1770,7 @@ impl Demo {
             && !load_urn
             && !load_street_brawl_ticks
             && !load_street_brawl_rounds
+            && !load_rift
         {
             return Ok(());
         }
@@ -1755,7 +1795,8 @@ impl Demo {
             && !load_ability_ticks
             && !load_urn
             && !load_street_brawl_ticks
-            && !load_street_brawl_rounds;
+            && !load_street_brawl_rounds
+            && !load_rift;
         if only_snapshots {
             return self.ensure_snapshots(SnapWants {
                 player_ticks: load_player_ticks,
@@ -1798,7 +1839,7 @@ impl Demo {
             class_names.push("CCitadelPlayerPawn");
             class_names.push("CCitadelPlayerController");
         }
-        if load_world_ticks || load_street_brawl_ticks {
+        if load_world_ticks || load_street_brawl_ticks || load_rift {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
@@ -1829,6 +1870,11 @@ impl Demo {
         }
         if load_urn {
             class_names.push("CCitadelIdolReturnTrigger");
+        }
+        if load_rift {
+            // The spawner announces a Rift before it becomes contestable; the
+            // rest of the lifecycle comes off the game rules entity.
+            class_names.push("CCitadelItemKothSpawner");
         }
         if load_ability_ticks {
             // Pawns for the owner -> hero mapping, plus every ability class.
@@ -2049,6 +2095,39 @@ impl Demo {
         let mut urn_y: Vec<f32> = Vec::new();
         let mut urn_z: Vec<f32> = Vec::new();
 
+        // ── Column vectors for rift ──
+        let mut rift_num: Vec<i32> = Vec::new();
+        let mut rift_announce_tick: Vec<Option<i32>> = Vec::new();
+        let mut rift_active_tick: Vec<i32> = Vec::new();
+        let mut rift_capture_tick: Vec<Option<i32>> = Vec::new();
+        let mut rift_expire_tick: Vec<Option<i32>> = Vec::new();
+        let mut rift_winning_team: Vec<Option<i32>> = Vec::new();
+        let mut rift_lane: Vec<i64> = Vec::new();
+        let mut rift_x: Vec<f32> = Vec::new();
+        let mut rift_y: Vec<f32> = Vec::new();
+        let mut rift_z: Vec<f32> = Vec::new();
+
+        // Rift lifecycle state. One row is emitted per completed Rift, when the
+        // game rules entity clears the cash-in.
+        let mut rift_counter: i32 = 0;
+        let mut rift_live = false;
+        // Tick a spawner last appeared, consumed by the next Rift that opens.
+        let mut rift_pending_announce: Option<i32> = None;
+        let mut rift_cur_announce: Option<i32> = None;
+        let mut rift_cur_active_tick: i32 = 0;
+        let mut rift_cur_capture_tick: Option<i32> = None;
+        let mut rift_cur_winning_team: Option<i32> = None;
+        let mut rift_cur_loc: [f32; 3] = [0.0; 3];
+        // m_nKothScoringTeam holds the *previous* Rift's winner until the next
+        // one opens, so a positive value only counts as a capture once this Rift
+        // has been observed contested (-1). Without this a stale winner would
+        // register a capture on the same tick the Rift opened.
+        let mut rift_seen_contested = false;
+        let mut rift_spawners_prev: std::collections::HashSet<i32> =
+            std::collections::HashSet::new();
+        let mut rift_spawners_cur: std::collections::HashSet<i32> =
+            std::collections::HashSet::new();
+
         // Track active modifiers by serial_number for change detection
         struct CachedMod {
             hero_id: i64,
@@ -2243,6 +2322,11 @@ impl Demo {
         let mut sbk_next_state_time: Option<u64> = None;
         let mut sbk_state_start_time: Option<u64> = None;
         let mut sbk_non_combat_time: Option<u64> = None;
+
+        // Rift (Koth) keys, on the game rules entity
+        let mut rk_cashin_started: Option<u64> = None;
+        let mut rk_scoring_team: Option<u64> = None;
+        let mut rk_location: Option<u64> = None;
 
         // ── Single-pass callback logic (shared between both code paths) ──
         //
@@ -2537,6 +2621,16 @@ impl Demo {
                             sbk_non_combat_time = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_flStreetBrawlTotalNonCombatTime");
                         }
                     }
+                    if load_rift {
+                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                            rk_cashin_started =
+                                s.resolve_field_key("m_pGameRules.m_timeKothCashInStarted");
+                            rk_scoring_team =
+                                s.resolve_field_key("m_pGameRules.m_nKothScoringTeam");
+                            rk_location =
+                                s.resolve_field_key("m_pGameRules.m_vKothCashInCurrentLocation");
+                        }
+                    }
                     keys_resolved = true;
                 }
 
@@ -2649,6 +2743,90 @@ impl Demo {
                             sbt_next_state_time.push(entity.get_f32(sbk_next_state_time));
                             sbt_state_start_time.push(entity.get_f32(sbk_state_start_time));
                             sbt_non_combat_time.push(entity.get_f32(sbk_non_combat_time));
+                        }
+                    }
+                }
+
+                // ── Collect rift (Koth) lifecycle ──
+                if load_rift {
+                    // A spawner that was absent last tick announces the next
+                    // Rift. Entity indices get recycled and m_flCreateTime is not
+                    // transmitted, so presence-diffing is the only reliable way
+                    // to spot the spawn.
+                    for (idx, entity) in $ctx.entities.iter() {
+                        if entity.class_name == "CCitadelItemKothSpawner" {
+                            rift_spawners_cur.insert(idx);
+                            if !rift_spawners_prev.contains(&idx) && !rift_live {
+                                rift_pending_announce = Some($ctx.tick);
+                            }
+                        }
+                    }
+                    std::mem::swap(&mut rift_spawners_prev, &mut rift_spawners_cur);
+                    rift_spawners_cur.clear();
+
+                    if let Some((_, entity)) = $ctx
+                        .entities
+                        .iter()
+                        .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+                    {
+                        // m_timeKothCashInStarted holds a real GameTime_t while a
+                        // Rift is contestable and 0 otherwise. It is also re-armed
+                        // mid-Rift (resetting the give-up timer), so only the
+                        // 0 -> non-zero edge marks the start.
+                        let cashin_started = entity.get_f32(rk_cashin_started);
+                        let live = cashin_started > 0.0 && cashin_started.is_finite();
+                        let scoring_team = entity.get_i64(rk_scoring_team) as i32;
+
+                        if live && !rift_live {
+                            rift_live = true;
+                            rift_cur_announce = rift_pending_announce.take();
+                            rift_cur_active_tick = $ctx.tick;
+                            rift_cur_capture_tick = None;
+                            rift_cur_winning_team = None;
+                            rift_cur_loc = [0.0; 3];
+                            rift_seen_contested = scoring_team <= 0;
+                        }
+
+                        if rift_live {
+                            // Only read the location while the cash-in is still
+                            // live: it is cleared to FLT_MAX on the same tick the
+                            // Rift resolves, which would otherwise overwrite the
+                            // real position just before the row is emitted.
+                            if live {
+                                let loc = entity.get_vector3(rk_location);
+                                if loc != [0.0; 3]
+                                    && loc.iter().all(|c| c.abs() < RIFT_COORD_SANITY)
+                                {
+                                    rift_cur_loc = loc;
+                                }
+                            }
+                            if scoring_team <= 0 {
+                                rift_seen_contested = true;
+                            } else if rift_seen_contested && rift_cur_capture_tick.is_none() {
+                                rift_cur_capture_tick = Some($ctx.tick);
+                                rift_cur_winning_team = Some(scoring_team);
+                            }
+                        }
+
+                        if !live && rift_live {
+                            rift_live = false;
+                            rift_counter += 1;
+                            rift_num.push(rift_counter);
+                            rift_announce_tick.push(rift_cur_announce);
+                            rift_active_tick.push(rift_cur_active_tick);
+                            rift_capture_tick.push(rift_cur_capture_tick);
+                            // No winner by the time the Rift clears => it timed
+                            // out (see m_timeKothGiveUp).
+                            rift_expire_tick.push(if rift_cur_capture_tick.is_none() {
+                                Some($ctx.tick)
+                            } else {
+                                None
+                            });
+                            rift_winning_team.push(rift_cur_winning_team);
+                            rift_lane.push(rift_lane_for(rift_cur_loc[0], rift_cur_loc[1]));
+                            rift_x.push(rift_cur_loc[0]);
+                            rift_y.push(rift_cur_loc[1]);
+                            rift_z.push(rift_cur_loc[2]);
                         }
                     }
                 }
@@ -3884,6 +4062,23 @@ impl Demo {
             self.cached_street_brawl_rounds = Some(df);
         }
 
+        if load_rift {
+            let df = df_from_columns(vec![
+                Column::new("rift_num".into(), rift_num),
+                Column::new("announce_tick".into(), rift_announce_tick),
+                Column::new("active_tick".into(), rift_active_tick),
+                Column::new("capture_tick".into(), rift_capture_tick),
+                Column::new("expire_tick".into(), rift_expire_tick),
+                Column::new("winning_team".into(), rift_winning_team),
+                Column::new("lane".into(), rift_lane),
+                Column::new("x".into(), rift_x),
+                Column::new("y".into(), rift_y),
+                Column::new("z".into(), rift_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_rift = Some(df);
+        }
+
         Ok(())
     }
 
@@ -4038,6 +4233,24 @@ impl Demo {
             self.load(vec!["mid_boss".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_mid_boss.clone().unwrap()))
+    }
+
+    /// Rift lifecycle as a Polars DataFrame — one row per Rift.
+    ///
+    /// The Rift is a periodic king-of-the-hill objective (``Koth`` in the game
+    /// files); the team that wins one gets buffed troopers in that lane.
+    ///
+    /// Columns: ``rift_num``, ``announce_tick``, ``active_tick``,
+    /// ``capture_tick``, ``expire_tick``, ``winning_team``, ``lane``, ``x``,
+    /// ``y``, ``z``. Exactly one of ``capture_tick`` / ``expire_tick`` is set
+    /// per row; ``winning_team`` is null when the Rift expired uncaptured.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn rift(&mut self) -> PyResult<PyDataFrame> {
+        if self.cached_rift.is_none() {
+            self.load(vec!["rift".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_rift.clone().unwrap()))
     }
 
     /// Per-tick alive lane trooper state as a Polars DataFrame.
@@ -4635,6 +4848,7 @@ impl Demo {
             "urn" => self.cached_urn.as_ref(),
             "street_brawl_ticks" => self.cached_street_brawl_ticks.as_ref(),
             "street_brawl_rounds" => self.cached_street_brawl_rounds.as_ref(),
+            "rift" => self.cached_rift.as_ref(),
             _ => None,
         }
     }

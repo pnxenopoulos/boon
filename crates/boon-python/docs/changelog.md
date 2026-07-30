@@ -1,5 +1,22 @@
 # 📝 Changelog
 
+## 0.7.0
+
+### boon-python
+
+- New `rift` dataset (`demo.rift`) — the Rift, a periodic king-of-the-hill objective added to the game (`Koth` in the game files), whose winner gets buffed troopers in that lane. One row per Rift with `rift_num`, `announce_tick`, `active_tick`, `capture_tick`, `expire_tick`, `winning_team`, `lane`, and `x`/`y`/`z`; exactly one of `capture_tick`/`expire_tick` is set per row. The winner is taken from the game rules' scoring team (`m_nKothScoringTeam`) rather than the Rift entity's own `m_iTeamNum` — that field tracks whoever last made capture progress and reports the wrong team. `lane` is derived from the cash-in location, since the Rift entities carry no lane field, and is `0` at any location that isn't a known Rift site. Demos from builds without the Rift return an empty frame rather than failing.
+
+  Note: `expire_tick` is wired to the uncaptured path (the Rift clearing with no scoring team, per `m_timeKothGiveUp`) but is **untested against a real expiry** — every Rift in the demos on hand was captured.
+
+### boon
+
+- New `boon-dev rift` command, listing the same one-row-per-Rift lifecycle, with `--summary` for captured/expired counts.
+- New `Entity::get_vector3` accessor, for fields that carry a whole world coordinate in a single value (Source 2's `VectorWS`, e.g. `m_vKothCashInCurrentLocation`) as opposed to positions split across cell + offset halves.
+
+### boon-proto
+
+- Synced protobufs and the ability / modifier name tables to game build **6644** (`SourceRevision` 10861902). The protobuf definitions themselves are unchanged from the previous build; the modifier table gains `modifier_fencer_riposte_target_lifesteal`, `modifier_glitch_self_penalty`, and `modifier_spirit_burn_immunity`.
+
 ## 0.6.2
 
 ### boon

@@ -100,6 +100,9 @@ objectives = demo.objectives
 # Mid boss lifecycle (spawn, kill, rejuv buffs)
 mid_boss = demo.mid_boss
 
+# Rift (king of the hill) lifecycle — one row per rift, with winner and lane
+rift = demo.rift
+
 # Lane troopers and guardians (opt-in, large dataset)
 troopers = demo.troopers
 # trooper_type is "trooper" (lane creeps) or "trooper_boss" (lane guardian)

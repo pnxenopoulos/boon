@@ -255,6 +255,23 @@ impl Entity {
             .unwrap_or([0.0; 3])
     }
 
+    /// Read a field as a 3-component vector, returning `[0.0; 3]` when absent
+    /// or not a vector.
+    ///
+    /// Use this for fields that carry a full world coordinate in one value
+    /// (Source 2's `VectorWS`, e.g. `m_vKothCashInCurrentLocation`), as opposed
+    /// to positions split across cell + offset halves — those need
+    /// [`world_position`](Self::world_position) instead.
+    pub fn get_vector3(&self, key: Option<u64>) -> [f32; 3] {
+        key.and_then(|k| self.fields.get(&k))
+            .and_then(|v| match v {
+                FieldValue::Vector3(v) => Some(*v),
+                FieldValue::FloatVector(v) if v.len() >= 3 => Some([v[0], v[1], v[2]]),
+                _ => None,
+            })
+            .unwrap_or([0.0; 3])
+    }
+
     /// Combine cell + in-cell offset fields into a world-coordinate `[x, y, z]`.
     ///
     /// Source 2 splits each axis of an entity's position across two networked
