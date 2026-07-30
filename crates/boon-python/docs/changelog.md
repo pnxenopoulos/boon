@@ -8,6 +8,8 @@
 
   Note: `expire_tick` is wired to the uncaptured path (the Rift clearing with no scoring team, per `m_timeKothGiveUp`) but is **untested against a real expiry** — every Rift in the demos on hand was captured.
 
+- New `banned_heroes` property (`demo.banned_heroes`) — the heroes banned from a match, as `hero_id` (joins to `players.hero_id`) and resolved `hero_name`. Read from the one-shot `BannedHeroes` user message, which the server sends early in the demo and only when the match has bans. The message carries nothing but the hero IDs — no team, no banning player, and no pick/ban ordering — so it cannot be used to reconstruct a draft. An empty frame means no bans were recorded, which is indistinguishable from a build that never emits the message. Like `players` and `winning_team_num`, this is not a `load()` dataset: it shares the lightweight events-only scan with those properties, so it is free once any of them has been touched.
+
 ### boon
 
 - New `boon-dev rift` command, listing the same one-row-per-Rift lifecycle, with `--summary` for captured/expired counts.

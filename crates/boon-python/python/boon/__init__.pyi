@@ -409,6 +409,27 @@ class Demo:
         ...
 
     @property
+    def banned_heroes(self) -> pl.DataFrame:
+        """Heroes banned from this match as a Polars DataFrame.
+
+        Read from the one-shot ``BannedHeroes`` user message, which the server
+        sends early in the demo (before the match starts) only when the match
+        has bans. The message carries nothing but the hero IDs -- no team, no
+        banning player, and no pick/ban ordering -- so this cannot be used to
+        reconstruct a draft.
+
+        An empty DataFrame means no bans were recorded for this match. Demos
+        from builds that never emit the message are indistinguishable from
+        ban-free matches, so treat empty as "nothing recorded" rather than as
+        positive proof that nothing was banned.
+
+        Columns:
+            - **hero_id** (*int*) -- The banned hero's ID (joins to ``players.hero_id``).
+            - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID that predates the bundled hero table.
+        """
+        ...
+
+    @property
     def player_ticks(self) -> pl.DataFrame:
         """Per-tick, per-player state as a Polars DataFrame.
 

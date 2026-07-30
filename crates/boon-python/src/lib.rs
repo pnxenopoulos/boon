@@ -827,7 +827,10 @@ struct Demo {
     cached_damage: Option<DataFrame>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
-    game_over_scanned: bool,
+    // Hero IDs from the one-shot `BannedHeroes` message. `Some(vec![])` means
+    // the demo was scanned and carried no bans; `None` means not scanned yet.
+    banned_hero_ids: Option<Vec<u32>>,
+    always_events_scanned: bool,
     // Flex slot unlock events
     cached_flex_slots: Option<DataFrame>,
     cached_abilities: Option<DataFrame>,
@@ -1288,7 +1291,8 @@ impl Demo {
             cached_kills: None,
             cached_damage: None,
             game_over: None,
-            game_over_scanned: false,
+            banned_hero_ids: None,
+            always_events_scanned: false,
             cached_abilities: None,
             cached_flex_slots: None,
             cached_ability_upgrades: None,
@@ -1667,6 +1671,42 @@ impl Demo {
         Ok(PyDataFrame(df))
     }
 
+    /// Heroes banned from this match as a Polars DataFrame.
+    ///
+    /// Returns a DataFrame with columns:
+    /// - hero_id: The banned hero's ID (joins to ``players.hero_id``)
+    /// - hero_name: The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID
+    ///   that predates the bundled hero table
+    ///
+    /// Read from the one-shot ``BannedHeroes`` user message, which the server
+    /// sends early in the demo (before the match starts) only when the match
+    /// has bans. The message carries nothing but the hero IDs — no team, no
+    /// banning player, and no pick/ban ordering — so this cannot be used to
+    /// reconstruct a draft.
+    ///
+    /// An empty DataFrame means no bans were recorded for this match. Demos
+    /// from builds that never emit the message are indistinguishable from
+    /// ban-free matches, so treat empty as "nothing recorded" rather than as
+    /// positive proof that nothing was banned.
+    #[getter]
+    fn banned_heroes(&mut self) -> PyResult<PyDataFrame> {
+        self.ensure_always_events_scanned()?;
+        let ids: Vec<i64> = self
+            .banned_hero_ids
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|&id| id as i64)
+            .collect();
+        let names: Vec<&'static str> = ids.iter().map(|&id| boon_parser::hero_name(id)).collect();
+        let df = df_from_columns(vec![
+            Column::new("hero_id".into(), ids),
+            Column::new("hero_name".into(), names),
+        ])
+        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+        Ok(PyDataFrame(df))
+    }
+
     /// Return the list of dataset names that can be passed to ``load()`` or accessed as properties.
     ///
     /// Returns:
@@ -1961,6 +2001,7 @@ impl Demo {
         let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut entity_to_hero_built = false;
         let mut found_game_over: Option<(i32, i32)> = None;
+        let mut found_banned_heroes: Vec<u32> = Vec::new();
         let mut flex_ticks: Vec<i32> = Vec::new();
         let mut flex_team_nums: Vec<i32> = Vec::new();
         let mut ability_ticks: Vec<i32> = Vec::new();
@@ -3540,6 +3581,13 @@ impl Demo {
                         {
                             found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
                         }
+                        if event.msg_type == Msg::KEUserMsgBannedHeroes as u32
+                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
+                                event.payload.as_slice(),
+                            )
+                        {
+                            found_banned_heroes.extend(msg.banned_hero_ids);
+                        }
                         // Collect FlexSlotUnlocked events (msg_type 356)
                         if load_flex_slots
                             && event.msg_type == Msg::KEUserMsgFlexSlotUnlocked as u32
@@ -3673,9 +3721,10 @@ impl Demo {
         }
 
         // ── Store always-scanned events if found during events pass ──
-        if need_events && !self.game_over_scanned {
+        if need_events && !self.always_events_scanned {
             self.game_over = found_game_over;
-            self.game_over_scanned = true;
+            self.banned_hero_ids = Some(found_banned_heroes);
+            self.always_events_scanned = true;
         }
 
         // ── Build and cache DataFrames ──
@@ -4555,13 +4604,15 @@ impl Demo {
         (tick - paused).max(0)
     }
 
-    /// Scan for the GameOver event if not already done.
+    /// Scan for the always-collected one-shot messages (`GameOver`,
+    /// `BannedHeroes`) if not already done.
     /// Uses the lightweight events-only parser pass.
     fn ensure_always_events_scanned(&mut self) -> PyResult<()> {
-        if self.game_over_scanned {
+        if self.always_events_scanned {
             return Ok(());
         }
         let events = self.parser.events(None).map_err(to_py_err)?;
+        let mut banned: Vec<u32> = Vec::new();
         for event in &events {
             if event.msg_type == Msg::KEUserMsgGameOver as u32
                 && let Ok(msg) =
@@ -4569,8 +4620,17 @@ impl Demo {
             {
                 self.game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
             }
+            if event.msg_type == Msg::KEUserMsgBannedHeroes as u32
+                && let Ok(msg) =
+                    boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(event.payload.as_slice())
+            {
+                banned.extend(msg.banned_hero_ids);
+            }
         }
-        self.game_over_scanned = true;
+        // Always `Some` after a full scan, so an empty list reads as "this match
+        // had no bans" rather than "not looked at yet".
+        self.banned_hero_ids = Some(banned);
+        self.always_events_scanned = true;
         Ok(())
     }
 
