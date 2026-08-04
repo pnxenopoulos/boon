@@ -405,6 +405,7 @@ class Demo:
             - **hero_id** (*int*) -- The player's hero ID.
             - **team_num** (*int*) -- The player's raw team number.
             - **start_lane** (*int*) -- The player's original lane color (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the ``CMsgLaneColor`` proto enum).
+            - **rank** (*int*) -- The player's packed competitive display rank; 0 means unranked, calibrating, or unavailable.
         """
         ...
 

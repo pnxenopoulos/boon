@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use boon_proto::proto::CitadelUserMessageIds as Msg;
@@ -1424,7 +1424,10 @@ impl Demo {
     fn summary(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
 
-        let events = self.parser.events(None).map_err(to_py_err)?;
+        let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
+        let events = py
+            .detach(|| self.parser.events_filtered(None, &event_types))
+            .map_err(to_py_err)?;
         let event = events
             .iter()
             .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
@@ -1544,54 +1547,59 @@ impl Demo {
             (None, None) => None,
         };
 
-        // Explicit + event ticks.
         let explicit = ticks.map(IntOrList::into_vec).unwrap_or_default();
-        let mut tick_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
-        if let Some(events) = events {
-            tick_set = self.event_ticks(&events.into_vec())?;
-        }
-        tick_set.extend(&explicit);
+        let event_names = events.map(StrOrList::into_vec);
 
-        let has_window = start_tick.is_some() || end_tick.is_some();
-        if stride.is_none() && tick_set.is_empty() && !has_window {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "snapshots(): specify at least one of `ticks`, `every`, `seconds`, \
-                 `events`, or `start_tick` / `end_tick`",
-            ));
-        }
+        // Event-dataset loading, tick indexing, seeking, and the snapshot decode
+        // are all pure Rust work. Keep only the final Python object conversion
+        // under the interpreter lock.
+        let (pt, wt, tr) = py.detach(|| {
+            let mut tick_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
+            if let Some(names) = event_names.as_deref() {
+                tick_set = self.event_ticks(names)?;
+            }
+            tick_set.extend(explicit);
 
-        // Fast path: a single tick with no stride or window seeks directly
-        // (`parse_to_tick`) instead of decoding the whole demo.
-        let (pt, wt, tr) = if stride.is_none() && !has_window && tick_set.len() == 1 {
-            let t = *tick_set.iter().next().expect("len == 1");
-            self.snapshot_at_tick(t, wants)?
-        } else {
-            // The tick predicate: the union of the stride-sampled ticks and the
-            // explicit/event ticks, restricted to the window. With no sampler,
-            // every tick in the window.
-            let start = start_tick.unwrap_or(i32::MIN);
-            let end = end_tick.unwrap_or(i32::MAX);
-            let pred = if stride.is_none() && tick_set.is_empty() {
-                TickPredicate::Window { start, end }
+            let has_window = start_tick.is_some() || end_tick.is_some();
+            if stride.is_none() && tick_set.is_empty() && !has_window {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "snapshots(): specify at least one of `ticks`, `every`, `seconds`, \
+                     `events`, or `start_tick` / `end_tick`",
+                ));
+            }
+
+            // Fast path: a single tick with no stride or window seeks directly
+            // (`parse_to_tick`) instead of decoding the whole demo.
+            if stride.is_none() && !has_window && tick_set.len() == 1 {
+                let t = *tick_set.iter().next().expect("len == 1");
+                self.snapshot_at_tick(t, wants)
             } else {
-                let mut sampled = tick_set;
-                if let Some(step) = stride {
-                    let mut last: Option<i32> = None;
-                    for t in self.parser.distinct_ticks().map_err(to_py_err)? {
-                        if last.is_none_or(|l| t - l >= step) {
-                            sampled.insert(t);
-                            last = Some(t);
+                // The tick predicate is the union of stride-sampled and explicit
+                // event ticks, restricted to the requested window.
+                let start = start_tick.unwrap_or(i32::MIN);
+                let end = end_tick.unwrap_or(i32::MAX);
+                let pred = if stride.is_none() && tick_set.is_empty() {
+                    TickPredicate::Window { start, end }
+                } else {
+                    let mut sampled = tick_set;
+                    if let Some(step) = stride {
+                        let mut last: Option<i32> = None;
+                        for t in self.parser.distinct_ticks().map_err(to_py_err)? {
+                            if last.is_none_or(|l| t - l >= step) {
+                                sampled.insert(t);
+                                last = Some(t);
+                            }
                         }
                     }
-                }
-                TickPredicate::Set {
-                    ticks: sampled,
-                    start,
-                    end,
-                }
-            };
-            self.build_snapshots_parallel(wants, &pred)?
-        };
+                    TickPredicate::Set {
+                        ticks: sampled,
+                        start,
+                        end,
+                    }
+                };
+                self.build_snapshots_parallel(wants, &pred)
+            }
+        })?;
         let frame_for = |name: &str| -> Option<DataFrame> {
             match name {
                 "player_ticks" => pt.clone(),
@@ -1646,13 +1654,15 @@ impl Demo {
     /// - team_num: The player's raw team number
     /// - start_lane: The player's original lane color
     ///   (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum)
+    /// - rank: The player's packed competitive display rank (0 means unranked,
+    ///   calibrating, or unavailable)
     #[getter]
-    fn players(&mut self) -> PyResult<PyDataFrame> {
+    fn players(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if let Some(ref df) = self.cached_players {
             return Ok(PyDataFrame(df.clone()));
         }
 
-        // The roster (name / steam id / hero / team / lane) is set once the
+        // The roster (name / steam id / hero / team / lane / rank) is set once the
         // match is underway and never changes, so it can be snapshotted from a
         // single tick. Prefer the game-over tick: it is late enough that every
         // field is populated (heroes locked, lanes assigned) but before the
@@ -1661,13 +1671,13 @@ impl Demo {
         // pre-game placeholders and finding the controllers (partially or
         // fully) gone at the end. Fall back to the final tick only when a demo
         // has no game-over event (e.g. an incomplete recording).
-        self.ensure_always_events_scanned()?;
+        py.detach(|| self.ensure_always_events_scanned())?;
         let snapshot_tick = self.game_over.map_or(self.total_ticks, |(_, tick)| tick);
-        let mut df = self.collect_players_at(snapshot_tick)?;
+        let mut df = py.detach(|| self.collect_players_at(snapshot_tick))?;
 
         // Defensive: if that tick somehow had no controllers, try the other.
         if df.height() == 0 && snapshot_tick != self.total_ticks {
-            df = self.collect_players_at(self.total_ticks)?;
+            df = py.detach(|| self.collect_players_at(self.total_ticks))?;
         }
 
         self.cached_players = Some(df.clone());
@@ -1692,8 +1702,8 @@ impl Demo {
     /// ban-free matches, so treat empty as "nothing recorded" rather than as
     /// positive proof that nothing was banned.
     #[getter]
-    fn banned_heroes(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_always_events_scanned()?;
+    fn banned_heroes(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        py.detach(|| self.ensure_always_events_scanned())?;
         let ids: Vec<i64> = self
             .banned_hero_ids
             .as_deref()
@@ -1723,18 +1733,10 @@ impl Demo {
 
     /// Load one or more datasets from the demo file in a single pass.
     ///
-    /// Valid dataset names: see ``available_datasets()``.
-    /// Already-loaded datasets are skipped. Multiple datasets requested together
-    /// share a single parse pass over the file for efficiency.
-    ///
-    /// Args:
-    ///     *datasets: One or more dataset names to load.
-    ///
-    /// Raises:
-    ///     ValueError: If an unknown dataset name is provided.
-    ///     NotStreetBrawlError: If a street brawl dataset is requested on a non-street-brawl demo.
+    /// Already-loaded datasets are skipped, and datasets requested together
+    /// share one parse pass.
     #[pyo3(signature = (*datasets))]
-    fn load(&mut self, datasets: Vec<String>) -> PyResult<()> {
+    fn load(&mut self, py: Python<'_>, datasets: Vec<String>) -> PyResult<()> {
         // Validate dataset names
         for name in &datasets {
             if !VALID_DATASETS.contains(&name.as_str())
@@ -1841,10 +1843,12 @@ impl Demo {
             && !load_street_brawl_rounds
             && !load_rift;
         if only_snapshots {
-            return self.ensure_snapshots(SnapWants {
-                player_ticks: load_player_ticks,
-                world_ticks: load_world_ticks,
-                troopers: load_troopers,
+            return py.detach(|| {
+                self.ensure_snapshots(SnapWants {
+                    player_ticks: load_player_ticks,
+                    world_ticks: load_world_ticks,
+                    troopers: load_troopers,
+                })
             });
         }
 
@@ -1856,6 +1860,42 @@ impl Demo {
             || load_chat
             || load_mid_boss
             || load_street_brawl_rounds;
+
+        // Decode only the event types consumed by the requested datasets.
+        // Deadlock demos can contain hundreds of thousands of particle, sound,
+        // and combat events that would otherwise be allocated and immediately
+        // discarded by this pass.
+        let mut event_types = HashSet::new();
+        if !self.always_events_scanned {
+            event_types.insert(Msg::KEUserMsgGameOver as u32);
+            event_types.insert(Msg::KEUserMsgBannedHeroes as u32);
+        }
+        if load_kills {
+            event_types.insert(Msg::KEUserMsgHeroKilled as u32);
+        }
+        if load_damage {
+            event_types.insert(Msg::KEUserMsgDamage as u32);
+        }
+        if load_flex_slots {
+            event_types.insert(Msg::KEUserMsgFlexSlotUnlocked as u32);
+        }
+        if load_abilities {
+            event_types.insert(Msg::KEUserMsgImportantAbilityUsed as u32);
+        }
+        if load_item_purchases {
+            event_types.insert(Msg::KEUserMsgAbilitiesChanged as u32);
+        }
+        if load_chat {
+            event_types.insert(Msg::KEUserMsgChatMsg as u32);
+        }
+        if load_mid_boss {
+            event_types.insert(Msg::KEUserMsgMidBossSpawned as u32);
+            event_types.insert(Msg::KEUserMsgBossKilled as u32);
+            event_types.insert(Msg::KEUserMsgRejuvStatus as u32);
+        }
+        if load_street_brawl_rounds {
+            event_types.insert(Msg::KEUserMsgStreetBrawlScoring as u32);
+        }
 
         // ability_ticks needs every ability *entity* class decoded. There are
         // hundreds (one per ability), so collect their names from the send tables
@@ -1995,12 +2035,14 @@ impl Demo {
         let mut wt_next_midboss: Vec<f32> = Vec::with_capacity(wt_capacity);
 
         // ── Kill / damage event collection ──
-        struct RawEvent {
+        struct RawEvent<T> {
             tick: i32,
-            payload: Vec<u8>,
+            message: Result<T, prost::DecodeError>,
         }
-        let mut raw_kill_events: Vec<RawEvent> = Vec::new();
-        let mut raw_damage_events: Vec<RawEvent> = Vec::new();
+        let mut raw_kill_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMsgHeroKilled>> =
+            Vec::new();
+        let mut raw_damage_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMessageDamage>> =
+            Vec::new();
         let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut entity_to_hero_built = false;
         let mut found_game_over: Option<(i32, i32)> = None;
@@ -3562,51 +3604,60 @@ impl Demo {
 
         // ── Run the parse pass ──
         if need_events {
-            self.parser
-                .run_to_end_with_events_filtered(&class_filter, |ctx, events| {
-                    collect_entity_data!(ctx);
+            py.detach(|| {
+                self.parser.run_to_end_with_event_types_filtered(
+                    &class_filter,
+                    &event_types,
+                    |ctx, events| {
+                        collect_entity_data!(ctx);
 
-                    for event in events {
-                        if load_kills && event.msg_type == Msg::KEUserMsgHeroKilled as u32 {
-                            raw_kill_events.push(RawEvent {
-                                tick: event.tick,
-                                payload: event.payload.clone(),
-                            });
-                        }
-                        if load_damage && event.msg_type == Msg::KEUserMsgDamage as u32 {
-                            raw_damage_events.push(RawEvent {
-                                tick: event.tick,
-                                payload: event.payload.clone(),
-                            });
-                        }
-                        if found_game_over.is_none()
-                            && event.msg_type == Msg::KEUserMsgGameOver as u32
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMessageGameOver::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
-                        }
-                        if event.msg_type == Msg::KEUserMsgBannedHeroes as u32
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            found_banned_heroes.extend(msg.banned_hero_ids);
-                        }
-                        // Collect FlexSlotUnlocked events (msg_type 356)
-                        if load_flex_slots
-                            && event.msg_type == Msg::KEUserMsgFlexSlotUnlocked as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgFlexSlotUnlocked::decode(
-                                    event.payload.as_slice(),
-                                )
-                        {
-                            flex_ticks.push(event.tick);
-                            flex_team_nums.push(msg.team_number.unwrap_or(0));
-                        }
-                        // Collect ImportantAbilityUsed events (msg_type 365)
-                        if load_abilities
+                        for event in events {
+                            if load_kills && event.msg_type == Msg::KEUserMsgHeroKilled as u32 {
+                                raw_kill_events.push(RawEvent {
+                                    tick: event.tick,
+                                    message: boon_proto::proto::CCitadelUserMsgHeroKilled::decode(
+                                        event.payload.as_slice(),
+                                    ),
+                                });
+                            }
+                            if load_damage && event.msg_type == Msg::KEUserMsgDamage as u32 {
+                                raw_damage_events.push(RawEvent {
+                                    tick: event.tick,
+                                    message: boon_proto::proto::CCitadelUserMessageDamage::decode(
+                                        event.payload.as_slice(),
+                                    ),
+                                });
+                            }
+                            if found_game_over.is_none()
+                                && event.msg_type == Msg::KEUserMsgGameOver as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMessageGameOver::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
+                            }
+                            if event.msg_type == Msg::KEUserMsgBannedHeroes as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                found_banned_heroes.extend(msg.banned_hero_ids);
+                            }
+                            // Collect FlexSlotUnlocked events (msg_type 356)
+                            if load_flex_slots
+                                && event.msg_type == Msg::KEUserMsgFlexSlotUnlocked as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgFlexSlotUnlocked::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                flex_ticks.push(event.tick);
+                                flex_team_nums.push(msg.team_number.unwrap_or(0));
+                            }
+                            // Collect ImportantAbilityUsed events (msg_type 365)
+                            if load_abilities
                             && event.msg_type == Msg::KEUserMsgImportantAbilityUsed as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMessageImportantAbilityUsed::decode(
@@ -3620,110 +3671,113 @@ impl Demo {
                             ability_hero_ids.push(hero_id);
                             ability_names.push(msg.ability_name.unwrap_or_default());
                         }
-                        // Collect AbilitiesChanged events (msg_type 309) for item_purchases
-                        if load_item_purchases
-                            && event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
-                                    event.payload.as_slice(),
-                                )
-                        {
-                            let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
-                            let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
-                            let ability_id = msg.ability_id.unwrap_or(0);
-                            let change = match msg.change.unwrap_or(-1) {
-                                0 => "purchased",
-                                1 => "upgraded",
-                                2 => "sold",
-                                3 => "swapped",
-                                4 => "failure",
-                                _ => "unknown",
-                            };
-                            ip_ticks.push(event.tick);
-                            ip_hero_ids.push(hero_id);
-                            ip_ability_ids.push(ability_id);
-                            ip_changes.push(change.to_string());
-                        }
-                        // Collect ChatMsg events (msg_type 314)
-                        if load_chat
-                            && event.msg_type == Msg::KEUserMsgChatMsg as u32
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgChatMsg::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            let player_slot = msg.player_slot.unwrap_or(-1);
-                            let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
-                            let chat_type = if msg.all_chat.unwrap_or(false) {
-                                "all"
-                            } else {
-                                "team"
-                            };
-                            chat_ticks.push(event.tick);
-                            chat_hero_ids.push(hero_id);
-                            chat_texts.push(msg.text.unwrap_or_default());
-                            chat_types.push(chat_type.to_string());
-                        }
-                        // Collect mid_boss lifecycle events
-                        if load_mid_boss {
-                            if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
-                                mb_ticks.push(event.tick);
-                                mb_team_nums.push(0);
-                                mb_events.push("spawned".to_string());
-                            }
-                            if event.msg_type == Msg::KEUserMsgBossKilled as u32
+                            // Collect AbilitiesChanged events (msg_type 309) for item_purchases
+                            if load_item_purchases
+                                && event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
                                 && let Ok(msg) =
-                                    boon_proto::proto::CCitadelUserMsgBossKilled::decode(
-                                        event.payload.as_slice(),
-                                    )
-                                && msg.entity_killed_class.unwrap_or(0) == 8
-                            // mid_boss entity class
-                            {
-                                mb_ticks.push(event.tick);
-                                mb_team_nums.push(msg.objective_team.unwrap_or(0));
-                                mb_events.push("killed".to_string());
-                            }
-                            if event.msg_type == Msg::KEUserMsgRejuvStatus as u32
-                                && let Ok(msg) =
-                                    boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
+                                    boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
                                         event.payload.as_slice(),
                                     )
                             {
-                                // RejuvStatus event_type enum from proto
-                                let event_name = match msg.event_type.unwrap_or(0) {
-                                    6 => "picked_up", // rejuv buff picked up
-                                    7 => "used",      // rejuv buff consumed
-                                    8 => "expired",   // rejuv buff expired
+                                let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
+                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let ability_id = msg.ability_id.unwrap_or(0);
+                                let change = match msg.change.unwrap_or(-1) {
+                                    0 => "purchased",
+                                    1 => "upgraded",
+                                    2 => "sold",
+                                    3 => "swapped",
+                                    4 => "failure",
                                     _ => "unknown",
                                 };
-                                mb_ticks.push(event.tick);
-                                mb_team_nums.push(msg.user_team.unwrap_or(0));
-                                mb_events.push(event_name.to_string());
+                                ip_ticks.push(event.tick);
+                                ip_hero_ids.push(hero_id);
+                                ip_ability_ids.push(ability_id);
+                                ip_changes.push(change.to_string());
                             }
-                        }
-                        // Collect StreetBrawlScoring events (msg_type 362)
-                        if load_street_brawl_rounds
-                            && event.msg_type == Msg::KEUserMsgStreetBrawlScoring as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgStreetBrawlScoring::decode(
+                            // Collect ChatMsg events (msg_type 314)
+                            if load_chat
+                                && event.msg_type == Msg::KEUserMsgChatMsg as u32
+                                && let Ok(msg) = boon_proto::proto::CCitadelUserMsgChatMsg::decode(
                                     event.payload.as_slice(),
                                 )
-                        {
-                            sbr_round_counter += 1;
-                            sbr_round.push(sbr_round_counter);
-                            sbr_tick.push(event.tick);
-                            sbr_scoring_team.push(msg.scoring_team.unwrap_or(0));
-                            sbr_amber_score.push(msg.amber_score.unwrap_or(0));
-                            sbr_sapphire_score.push(msg.sapphire_score.unwrap_or(0));
+                            {
+                                let player_slot = msg.player_slot.unwrap_or(-1);
+                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let chat_type = if msg.all_chat.unwrap_or(false) {
+                                    "all"
+                                } else {
+                                    "team"
+                                };
+                                chat_ticks.push(event.tick);
+                                chat_hero_ids.push(hero_id);
+                                chat_texts.push(msg.text.unwrap_or_default());
+                                chat_types.push(chat_type.to_string());
+                            }
+                            // Collect mid_boss lifecycle events
+                            if load_mid_boss {
+                                if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
+                                    mb_ticks.push(event.tick);
+                                    mb_team_nums.push(0);
+                                    mb_events.push("spawned".to_string());
+                                }
+                                if event.msg_type == Msg::KEUserMsgBossKilled as u32
+                                    && let Ok(msg) =
+                                        boon_proto::proto::CCitadelUserMsgBossKilled::decode(
+                                            event.payload.as_slice(),
+                                        )
+                                    && msg.entity_killed_class.unwrap_or(0) == 8
+                                // mid_boss entity class
+                                {
+                                    mb_ticks.push(event.tick);
+                                    mb_team_nums.push(msg.objective_team.unwrap_or(0));
+                                    mb_events.push("killed".to_string());
+                                }
+                                if event.msg_type == Msg::KEUserMsgRejuvStatus as u32
+                                    && let Ok(msg) =
+                                        boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
+                                            event.payload.as_slice(),
+                                        )
+                                {
+                                    // RejuvStatus event_type enum from proto
+                                    let event_name = match msg.event_type.unwrap_or(0) {
+                                        6 => "picked_up", // rejuv buff picked up
+                                        7 => "used",      // rejuv buff consumed
+                                        8 => "expired",   // rejuv buff expired
+                                        _ => "unknown",
+                                    };
+                                    mb_ticks.push(event.tick);
+                                    mb_team_nums.push(msg.user_team.unwrap_or(0));
+                                    mb_events.push(event_name.to_string());
+                                }
+                            }
+                            // Collect StreetBrawlScoring events (msg_type 362)
+                            if load_street_brawl_rounds
+                                && event.msg_type == Msg::KEUserMsgStreetBrawlScoring as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgStreetBrawlScoring::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                sbr_round_counter += 1;
+                                sbr_round.push(sbr_round_counter);
+                                sbr_tick.push(event.tick);
+                                sbr_scoring_team.push(msg.scoring_team.unwrap_or(0));
+                                sbr_amber_score.push(msg.amber_score.unwrap_or(0));
+                                sbr_sapphire_score.push(msg.sapphire_score.unwrap_or(0));
+                            }
                         }
-                    }
-                })
-                .map_err(to_py_err)?;
+                    },
+                )
+            })
+            .map_err(to_py_err)?;
         } else {
-            self.parser
-                .run_to_end_filtered(&class_filter, |ctx| {
+            py.detach(|| {
+                self.parser.run_to_end_filtered(&class_filter, |ctx| {
                     collect_entity_data!(ctx);
                 })
-                .map_err(to_py_err)?;
+            })
+            .map_err(to_py_err)?;
         }
 
         // ── Store always-scanned events if found during events pass ──
@@ -3821,13 +3875,9 @@ impl Demo {
             );
 
             for raw in &raw_kill_events {
-                let msg =
-                    boon_proto::proto::CCitadelUserMsgHeroKilled::decode(raw.payload.as_slice())
-                        .map_err(|e| {
-                            DemoMessageError::new_err(format!(
-                                "Failed to decode HeroKilled event: {e}"
-                            ))
-                        })?;
+                let msg = raw.message.as_ref().map_err(|e| {
+                    DemoMessageError::new_err(format!("Failed to decode HeroKilled event: {e}"))
+                })?;
 
                 kill_tick.push(raw.tick);
                 victim_hero_id.push(
@@ -3877,11 +3927,9 @@ impl Demo {
             let mut dmg_victim_class: Vec<u32> = Vec::with_capacity(n);
 
             for raw in &raw_damage_events {
-                let msg =
-                    boon_proto::proto::CCitadelUserMessageDamage::decode(raw.payload.as_slice())
-                        .map_err(|e| {
-                            DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
-                        })?;
+                let msg = raw.message.as_ref().map_err(|e| {
+                    DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
+                })?;
 
                 dmg_tick.push(raw.tick);
                 dmg_damage.push(msg.damage.unwrap_or(0));
@@ -4143,11 +4191,14 @@ impl Demo {
     /// timers, kills, deaths, net worth, and more for every player at every tick.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn player_ticks(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots(SnapWants {
-            player_ticks: true,
-            ..Default::default()
-        })?;
+    fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        self.ensure_snapshots_detached(
+            py,
+            SnapWants {
+                player_ticks: true,
+                ..Default::default()
+            },
+        )?;
         Ok(PyDataFrame(self.cached_player_ticks.clone().unwrap()))
     }
 
@@ -4156,11 +4207,14 @@ impl Demo {
     /// Columns: ``tick``, ``is_paused``, ``next_midboss``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn world_ticks(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots(SnapWants {
-            world_ticks: true,
-            ..Default::default()
-        })?;
+    fn world_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        self.ensure_snapshots_detached(
+            py,
+            SnapWants {
+                world_ticks: true,
+                ..Default::default()
+            },
+        )?;
         Ok(PyDataFrame(self.cached_world_ticks.clone().unwrap()))
     }
 
@@ -4174,9 +4228,9 @@ impl Demo {
     ///
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn kills(&mut self) -> PyResult<PyDataFrame> {
+    fn kills(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_kills.is_none() {
-            self.load(vec!["kills".to_string()])?;
+            self.load(py, vec!["kills".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_kills.clone().unwrap()))
     }
@@ -4197,9 +4251,9 @@ impl Demo {
     ///
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn damage(&mut self) -> PyResult<PyDataFrame> {
+    fn damage(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_damage.is_none() {
-            self.load(vec!["damage".to_string()])?;
+            self.load(py, vec!["damage".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_damage.clone().unwrap()))
     }
@@ -4209,9 +4263,9 @@ impl Demo {
     /// Columns: ``tick``, ``team_num``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn flex_slots(&mut self) -> PyResult<PyDataFrame> {
+    fn flex_slots(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_flex_slots.is_none() {
-            self.load(vec!["flex_slots".to_string()])?;
+            self.load(py, vec!["flex_slots".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_flex_slots.clone().unwrap()))
     }
@@ -4221,9 +4275,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``ability``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn abilities(&mut self) -> PyResult<PyDataFrame> {
+    fn abilities(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_abilities.is_none() {
-            self.load(vec!["abilities".to_string()])?;
+            self.load(py, vec!["abilities".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_abilities.clone().unwrap()))
     }
@@ -4233,9 +4287,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``tier``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn ability_upgrades(&mut self) -> PyResult<PyDataFrame> {
+    fn ability_upgrades(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_ability_upgrades.is_none() {
-            self.load(vec!["ability_upgrades".to_string()])?;
+            self.load(py, vec!["ability_upgrades".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_ability_upgrades.clone().unwrap()))
     }
@@ -4245,9 +4299,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``change``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn item_purchases(&mut self) -> PyResult<PyDataFrame> {
+    fn item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_item_purchases.is_none() {
-            self.load(vec!["item_purchases".to_string()])?;
+            self.load(py, vec!["item_purchases".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_item_purchases.clone().unwrap()))
     }
@@ -4257,9 +4311,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``text``, ``chat_type``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn chat(&mut self) -> PyResult<PyDataFrame> {
+    fn chat(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_chat.is_none() {
-            self.load(vec!["chat".to_string()])?;
+            self.load(py, vec!["chat".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_chat.clone().unwrap()))
     }
@@ -4270,9 +4324,9 @@ impl Demo {
     /// Emits a row when an objective's health or max_health changes.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn objectives(&mut self) -> PyResult<PyDataFrame> {
+    fn objectives(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_objectives.is_none() {
-            self.load(vec!["objectives".to_string()])?;
+            self.load(py, vec!["objectives".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_objectives.clone().unwrap()))
     }
@@ -4283,9 +4337,9 @@ impl Demo {
     /// Events: ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn mid_boss(&mut self) -> PyResult<PyDataFrame> {
+    fn mid_boss(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_mid_boss.is_none() {
-            self.load(vec!["mid_boss".to_string()])?;
+            self.load(py, vec!["mid_boss".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_mid_boss.clone().unwrap()))
     }
@@ -4301,9 +4355,9 @@ impl Demo {
     /// per row; ``winning_team`` is null when the Rift expired uncaptured.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn rift(&mut self) -> PyResult<PyDataFrame> {
+    fn rift(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_rift.is_none() {
-            self.load(vec!["rift".to_string()])?;
+            self.load(py, vec!["rift".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_rift.clone().unwrap()))
     }
@@ -4319,11 +4373,14 @@ impl Demo {
     /// **Warning:** This dataset is large. It is not loaded by default.
     /// Access this property or call ``load("troopers")`` explicitly.
     #[getter]
-    fn troopers(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots(SnapWants {
-            troopers: true,
-            ..Default::default()
-        })?;
+    fn troopers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        self.ensure_snapshots_detached(
+            py,
+            SnapWants {
+                troopers: true,
+                ..Default::default()
+            },
+        )?;
         Ok(PyDataFrame(self.cached_troopers.clone().unwrap()))
     }
 
@@ -4339,9 +4396,9 @@ impl Demo {
     /// **Note:** Not loaded by default. Access this property or call
     /// ``load("neutrals")`` explicitly.
     #[getter]
-    fn neutrals(&mut self) -> PyResult<PyDataFrame> {
+    fn neutrals(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_neutrals.is_none() {
-            self.load(vec!["neutrals".to_string()])?;
+            self.load(py, vec!["neutrals".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_neutrals.clone().unwrap()))
     }
@@ -4357,9 +4414,9 @@ impl Demo {
     /// Emits a row whenever a stat total changes (idol/breakable pickups).
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn stat_modifier_events(&mut self) -> PyResult<PyDataFrame> {
+    fn stat_modifier_events(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_stat_modifier_events.is_none() {
-            self.load(vec!["stat_modifier_events".to_string()])?;
+            self.load(py, vec!["stat_modifier_events".to_string()])?;
         }
         Ok(PyDataFrame(
             self.cached_stat_modifier_events.clone().unwrap(),
@@ -4377,9 +4434,9 @@ impl Demo {
     /// stack count.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn active_modifiers(&mut self) -> PyResult<PyDataFrame> {
+    fn active_modifiers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_active_modifiers.is_none() {
-            self.load(vec!["active_modifiers".to_string()])?;
+            self.load(py, vec!["active_modifiers".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_active_modifiers.clone().unwrap()))
     }
@@ -4402,9 +4459,9 @@ impl Demo {
     /// Not loaded by default. Access this property or call
     /// ``load("ability_ticks")`` explicitly.
     #[getter]
-    fn ability_ticks(&mut self) -> PyResult<PyDataFrame> {
+    fn ability_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_ability_ticks.is_none() {
-            self.load(vec!["ability_ticks".to_string()])?;
+            self.load(py, vec!["ability_ticks".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_ability_ticks.clone().unwrap()))
     }
@@ -4422,9 +4479,9 @@ impl Demo {
     /// ``team_num``/``x``/``y``/``z`` are 0. For delivery events, ``hero_id`` is 0.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn urn(&mut self) -> PyResult<PyDataFrame> {
+    fn urn(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_urn.is_none() {
-            self.load(vec!["urn".to_string()])?;
+            self.load(py, vec!["urn".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_urn.clone().unwrap()))
     }
@@ -4441,14 +4498,14 @@ impl Demo {
     /// Raises:
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
     #[getter]
-    fn street_brawl_ticks(&mut self) -> PyResult<PyDataFrame> {
+    fn street_brawl_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.game_mode != 4 {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
         }
         if self.cached_street_brawl_ticks.is_none() {
-            self.load(vec!["street_brawl_ticks".to_string()])?;
+            self.load(py, vec!["street_brawl_ticks".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_street_brawl_ticks.clone().unwrap()))
     }
@@ -4464,14 +4521,14 @@ impl Demo {
     /// Raises:
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
     #[getter]
-    fn street_brawl_rounds(&mut self) -> PyResult<PyDataFrame> {
+    fn street_brawl_rounds(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.game_mode != 4 {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
         }
         if self.cached_street_brawl_rounds.is_none() {
-            self.load(vec!["street_brawl_rounds".to_string()])?;
+            self.load(py, vec!["street_brawl_rounds".to_string()])?;
         }
         Ok(PyDataFrame(
             self.cached_street_brawl_rounds.clone().unwrap(),
@@ -4575,6 +4632,10 @@ impl Demo {
 }
 
 impl Demo {
+    fn ensure_snapshots_detached(&mut self, py: Python<'_>, wants: SnapWants) -> PyResult<()> {
+        py.detach(|| self.ensure_snapshots(wants))
+    }
+
     /// Build the paused_ticks cache from world_ticks if not already done.
     fn ensure_paused_ticks_built(&mut self) -> PyResult<()> {
         if self.paused_ticks.is_some() {
@@ -4582,7 +4643,7 @@ impl Demo {
         }
         // Ensure world_ticks is loaded
         if self.cached_world_ticks.is_none() {
-            self.load(vec!["world_ticks".to_string()])?;
+            Python::attach(|py| self.load(py, vec!["world_ticks".to_string()]))?;
         }
         let wt = self.cached_world_ticks.as_ref().unwrap();
         let tick_col = wt.column("tick").unwrap();
@@ -4617,7 +4678,14 @@ impl Demo {
         if self.always_events_scanned {
             return Ok(());
         }
-        let events = self.parser.events(None).map_err(to_py_err)?;
+        let event_types = HashSet::from([
+            Msg::KEUserMsgGameOver as u32,
+            Msg::KEUserMsgBannedHeroes as u32,
+        ]);
+        let events = self
+            .parser
+            .events_filtered(None, &event_types)
+            .map_err(to_py_err)?;
         let mut banned: Vec<u32> = Vec::new();
         for event in &events {
             if event.msg_type == Msg::KEUserMsgGameOver as u32
@@ -4651,6 +4719,7 @@ impl Demo {
         let mut hero_ids: Vec<i64> = Vec::new();
         let mut team_nums: Vec<i64> = Vec::new();
         let mut start_lanes: Vec<i64> = Vec::new();
+        let mut ranks: Vec<i64> = Vec::new();
 
         // Resolve field keys once for CCitadelPlayerController
         let player_serializer = ctx.serializers().get("CCitadelPlayerController");
@@ -4669,6 +4738,9 @@ impl Demo {
         let key_start_lane = player_serializer
             .as_ref()
             .and_then(|s| s.resolve_field_key("m_nOriginalLaneAssignment"));
+        let key_rank = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_PlayerDataGlobal.m_unPackedRank"));
 
         // Find all CCitadelPlayerController entities
         for (_idx, entity) in ctx.entities().iter() {
@@ -4701,12 +4773,16 @@ impl Demo {
                 // Original lane assignment (CMsgLaneColor IDs: 1=yellow, 3=green,
                 // 4=blue, 6=purple, 0=none).
                 let start_lane = entity.get_i64(key_start_lane);
+                // Packed display-rank value used by the server's post-match
+                // `initial_display_rank`; 0 also covers calibration / no rank.
+                let rank = entity.get_i64(key_rank);
 
                 player_names.push(player_name);
                 steam_ids.push(steam_id);
                 hero_ids.push(hero_id);
                 team_nums.push(team_num);
                 start_lanes.push(start_lane);
+                ranks.push(rank);
             }
         }
 
@@ -4716,6 +4792,7 @@ impl Demo {
             Column::new("hero_id".into(), hero_ids),
             Column::new("team_num".into(), team_nums),
             Column::new("start_lane".into(), start_lanes),
+            Column::new("rank".into(), ranks),
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
@@ -4924,7 +5001,7 @@ impl Demo {
     fn event_ticks(&mut self, names: &[String]) -> PyResult<std::collections::HashSet<i32>> {
         let mut set = std::collections::HashSet::new();
         for name in names {
-            self.load(vec![name.clone()])?;
+            Python::attach(|py| self.load(py, vec![name.clone()]))?;
             let df = self.cached_frame(name).ok_or_else(|| {
                 pyo3::exceptions::PyValueError::new_err(format!(
                     "snapshots(events=): '{name}' is not an event dataset with a tick column"

@@ -7,7 +7,7 @@ use prost::Message;
 use crate::error::{Error, Result};
 use crate::io::{BitReader, ByteReader};
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Mutex, OnceLock};
 
 use super::adapter::CitadelAdapter;
@@ -26,8 +26,18 @@ const MAGIC: &[u8; 8] = b"PBDEMS2\0";
 /// File header: 8 bytes magic + 4 bytes fileinfo_offset + 4 bytes spawngroups_offset.
 const HEADER_SIZE: usize = 16;
 
-/// Scratch buffer size for decompressed command bodies and packet payloads.
+/// Scratch buffer size for decompressed command bodies.
 const BUF_SIZE: usize = 2 * 1024 * 1024;
+/// Initial capacity for selected inner-message payloads. The buffer grows for
+/// unusually large messages without eagerly zeroing 2 MiB on every scan.
+const PACKET_BUF_CAPACITY: usize = 64 * 1024;
+
+fn is_direct_event_type(message_type: u32) -> bool {
+    let message_type = message_type as i32;
+    CitadelUserMessageIds::try_from(message_type).is_ok()
+        || ECitadelGameEvents::try_from(message_type).is_ok()
+        || EBaseUserMessages::try_from(message_type).is_ok()
+}
 
 /// Information about a demo message in the command stream.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -323,11 +333,31 @@ impl Parser {
     /// `DEM_Packet`, `DEM_SignonPacket`, and `DEM_FullPacket` commands.
     /// If `max_tick` is set, stops parsing once the tick exceeds the limit.
     pub fn events(&self, max_tick: Option<i32>) -> Result<Vec<GameEvent>> {
+        self.decode_events(max_tick, None)
+    }
+
+    /// Parse only events whose final numeric message type is selected.
+    ///
+    /// Direct Citadel events can be rejected before their payload is copied.
+    /// Wrapped user messages require decoding their small outer envelope first.
+    pub fn events_filtered(
+        &self,
+        max_tick: Option<i32>,
+        event_types: &HashSet<u32>,
+    ) -> Result<Vec<GameEvent>> {
+        self.decode_events(max_tick, Some(event_types))
+    }
+
+    fn decode_events(
+        &self,
+        max_tick: Option<i32>,
+        event_types: Option<&HashSet<u32>>,
+    ) -> Result<Vec<GameEvent>> {
         self.verify()?;
         let data = &self.data()[HEADER_SIZE..];
         let mut reader = ByteReader::new(data);
         let mut body_buf = Vec::with_capacity(BUF_SIZE);
-        let mut packet_buf = vec![0u8; BUF_SIZE];
+        let mut packet_buf = Vec::with_capacity(PACKET_BUF_CAPACITY);
         let mut events = Vec::new();
         let mut descriptors: HashMap<i32, EventDescriptor> = HashMap::new();
 
@@ -358,6 +388,7 @@ impl Parser {
                         &mut descriptors,
                         &mut events,
                         &mut packet_buf,
+                        event_types,
                     )?;
                 }
                 dem::FULL_PACKET => {
@@ -371,6 +402,7 @@ impl Parser {
                             &mut descriptors,
                             &mut events,
                             &mut packet_buf,
+                            event_types,
                         )?;
                     }
                 }
@@ -390,12 +422,24 @@ impl Parser {
         descriptors: &mut HashMap<i32, EventDescriptor>,
         events: &mut Vec<GameEvent>,
         packet_buf: &mut Vec<u8>,
+        event_types: Option<&HashSet<u32>>,
     ) -> Result<()> {
         let mut br = BitReader::new(pkt_data);
 
         while br.bits_remaining() > 8 {
             let msg_type = br.read_ubitvar()?;
             let size = br.read_uvarint32()? as usize;
+
+            let selected = event_types.is_none_or(|types| types.contains(&msg_type));
+            let relevant = msg_type == ge::SOURCE1_LEGACY_GAME_EVENT_LIST
+                || (msg_type == ge::SOURCE1_LEGACY_GAME_EVENT && selected)
+                // The final type of a wrapped message is inside its envelope.
+                || msg_type == svc::USER_MESSAGE
+                || (selected && is_direct_event_type(msg_type));
+            if !relevant {
+                br.skip_bits(size * 8)?;
+                continue;
+            }
 
             if size > packet_buf.len() {
                 packet_buf.resize(size, 0);
@@ -445,6 +489,9 @@ impl Parser {
                 svc::USER_MESSAGE => {
                     let msg = CsvcMsgUserMessage::decode(msg_data)?;
                     let inner_type = msg.msg_type.unwrap_or_default();
+                    if event_types.is_some_and(|types| !types.contains(&(inner_type as u32))) {
+                        continue;
+                    }
                     let name = command::user_message_name(inner_type);
                     let inner_payload = msg.msg_data.unwrap_or_default();
                     events.push(GameEvent {

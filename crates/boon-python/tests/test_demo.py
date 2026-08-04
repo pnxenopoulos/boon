@@ -101,7 +101,7 @@ ABILITY_TICKS_COLUMNS = {
 }
 
 PLAYERS_COLUMNS = {
-    "player_name", "steam_id", "hero_id", "team_num", "start_lane",
+    "player_name", "steam_id", "hero_id", "team_num", "start_lane", "rank",
 }
 
 BANNED_HEROES_COLUMNS = {"hero_id", "hero_name"}
@@ -235,6 +235,9 @@ class TestPlayersAndTeams:
         team_nums = demo.players["team_num"].to_list()
         for t in team_nums:
             assert t in (1, 2, 3)
+
+    def test_player_ranks_nonnegative(self, demo: Demo) -> None:
+        assert all(rank >= 0 for rank in demo.players["rank"])
 
     def test_player_ticks_covers_all_players(self, demo: Demo) -> None:
         """Every hero in `players` must appear in `player_ticks`.

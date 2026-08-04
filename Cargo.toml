@@ -18,7 +18,7 @@ rust-version = "1.88.0"
 [workspace.dependencies]
 boon = { path = "crates/boon", package = "boon-deadlock", version = "0.6.2" }
 boon-proto = { path = "crates/boon-proto", version = "0.2" }
-pbdems2 = "0.2.1"
+pbdems2 = "0.2.2"
 
 [profile.dev]
 incremental = false   # boon-proto is a 28k-line generated crate; incremental bookkeeping

@@ -10,6 +10,19 @@
 
 - New `banned_heroes` property (`demo.banned_heroes`) — the heroes banned from a match, as `hero_id` (joins to `players.hero_id`) and resolved `hero_name`. Read from the one-shot `BannedHeroes` user message, which the server sends early in the demo and only when the match has bans. The message carries nothing but the hero IDs — no team, no banning player, and no pick/ban ordering — so it cannot be used to reconstruct a draft. An empty frame means no bans were recorded, which is indistinguishable from a build that never emits the message. Like `players` and `winning_team_num`, this is not a `load()` dataset: it shares the lightweight events-only scan with those properties, so it is free once any of them has been touched.
 
+- New `rank` column in `demo.players`, sourced from the player controller's packed competitive display rank. It matches the post-match `initial_display_rank` when rank metadata is present; `0` means unranked, calibrating, or unavailable.
+
+- **Faster:** event-backed datasets now tell the parser exactly which final
+  message types they consume. Unrelated particle, sound, and combat messages
+  are skipped before their payloads are copied or allocated; lightweight
+  metadata properties scan only `GameOver` and `BannedHeroes`, and `summary`
+  scans only `PostMatchDetails`. Kill and damage protobufs are decoded once
+  instead of cloning their payload for a second decode. Bulk and lazy dataset
+  parsing also release the Python interpreter so independent Python threads can
+  continue while Rust parses a demo. General `snapshots(...)` queries now
+  release the interpreter as well, including event-tick loading, sampling,
+  seeking, and parallel snapshot decoding.
+
 ### boon
 
 - New `boon-dev rift` command, listing the same one-row-per-Rift lifecycle, with `--summary` for captured/expired counts.
@@ -17,7 +30,7 @@
 
 ### boon-proto
 
-- Synced protobufs and the ability / modifier name tables to game build **6644** (`SourceRevision` 10861902). The protobuf definitions themselves are unchanged from the previous build; the modifier table gains `modifier_fencer_riposte_target_lifesteal`, `modifier_glitch_self_penalty`, and `modifier_spirit_burn_immunity`.
+- Synced protobufs and the ability / modifier name tables to game build **6668** (`SourceRevision` 10879761). The updated schema adds ranked matchmaking and per-player rank progression metadata, hero XP rewards, player match outcomes, and current GC/client/user messages. The refreshed name tables contain 794 abilities and 921 modifiers.
 
 ## 0.6.2
 

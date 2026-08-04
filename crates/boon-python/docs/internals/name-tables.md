@@ -73,12 +73,12 @@ modifiers live here, nested under the ability that grants them, **not** in
 
 ## Coverage
 
-As of game build `6557`, the tables hold:
+As of game build `6668`, the tables hold:
 
 | Table | Entries |
 |-------|---------|
 | Abilities | 794 |
-| Modifiers | 917 |
+| Modifiers | 921 |
 
 Many modifiers are registered in engine/C++ code and appear in **no** `.vdata` file. A
 demo can still reference those by token, but there is no name string to recover, so a

@@ -430,7 +430,8 @@ counterpart to `total_clock_time`. `None` if no game-over event was found.
 demo.players  # polars.DataFrame
 ```
 
-Player information. Computed from the final tick.
+Player information. Computed from a snapshot at game over (or the final tick
+when no game-over event is available).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -439,6 +440,7 @@ Player information. Computed from the final tick.
 | `hero_id` | `int` | The player's hero ID (use `hero_names()` to resolve) |
 | `team_num` | `int` | Raw team number (use `team_names()` to resolve) |
 | `start_lane` | `int` | Original lane color (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum) |
+| `rank` | `int` | Packed competitive display rank; `0` means unranked, calibrating, or unavailable |
 
 ---
 

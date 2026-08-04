@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use boon_proto::proto::{
     CDemoClassInfo, CDemoFullPacket, CDemoPacket, CDemoSendTables, CMsgSource1LegacyGameEvent,
@@ -47,6 +47,7 @@ pub(super) struct CitadelAdapter {
     descriptors: HashMap<i32, EventDescriptor>,
     tick_events: Vec<GameEvent>,
     collect_events: bool,
+    event_types: Option<HashSet<u32>>,
 }
 
 impl DemoAdapter for CitadelAdapter {
@@ -118,6 +119,20 @@ impl CheckpointAdapter for CitadelAdapter {
 impl CitadelAdapter {
     pub(super) fn enable_events(&mut self) {
         self.collect_events = true;
+        self.event_types = None;
+    }
+
+    pub(super) fn enable_event_types(&mut self, event_types: &HashSet<u32>) {
+        self.collect_events = true;
+        self.event_types = Some(event_types.clone());
+    }
+
+    fn wants_event_type(&self, message_type: u32) -> bool {
+        self.collect_events
+            && self
+                .event_types
+                .as_ref()
+                .is_none_or(|types| types.contains(&message_type))
     }
 
     pub(super) fn tick_events(&self) -> &[GameEvent] {
@@ -145,10 +160,16 @@ impl CitadelAdapter {
                     | svc::PACKET_ENTITIES
             );
             let is_descriptor = message_type == ge::SOURCE1_LEGACY_GAME_EVENT_LIST;
-            let is_collected_event = self.collect_events
-                && (message_type == ge::SOURCE1_LEGACY_GAME_EVENT
-                    || message_type == svc::USER_MESSAGE
-                    || direct_event_name(message_type).is_some());
+            let is_legacy_event = message_type == ge::SOURCE1_LEGACY_GAME_EVENT
+                && self.wants_event_type(message_type);
+            // Wrapped user messages expose their final type only after decoding
+            // the small outer envelope, so they remain candidates under a filter.
+            let is_wrapped_event = message_type == svc::USER_MESSAGE && self.collect_events;
+            let mut direct_name = self
+                .wants_event_type(message_type)
+                .then(|| direct_event_name(message_type))
+                .flatten();
+            let is_collected_event = is_legacy_event || is_wrapped_event || direct_name.is_some();
             if !(is_descriptor || is_collected_event || is_entity_message) {
                 continue;
             }
@@ -231,24 +252,24 @@ impl CitadelAdapter {
                 svc::USER_MESSAGE if self.collect_events => {
                     let message = CsvcMsgUserMessage::decode(payload)?;
                     let inner_type = message.msg_type.unwrap_or_default();
-                    self.tick_events.push(GameEvent {
-                        tick,
-                        name: boon_command::user_message_name(inner_type),
-                        msg_type: inner_type as u32,
-                        keys: Vec::new(),
-                        payload: message.msg_data.unwrap_or_default(),
-                    });
-                }
-                _ if self.collect_events => {
-                    if let Some(name) = direct_event_name(message_type) {
+                    if self.wants_event_type(inner_type as u32) {
                         self.tick_events.push(GameEvent {
                             tick,
-                            name,
-                            msg_type: message_type,
+                            name: boon_command::user_message_name(inner_type),
+                            msg_type: inner_type as u32,
                             keys: Vec::new(),
-                            payload: payload.to_vec(),
+                            payload: message.msg_data.unwrap_or_default(),
                         });
                     }
+                }
+                _ if direct_name.is_some() => {
+                    self.tick_events.push(GameEvent {
+                        tick,
+                        name: direct_name.take().expect("checked above"),
+                        msg_type: message_type,
+                        keys: Vec::new(),
+                        payload: payload.to_vec(),
+                    });
                 }
                 _ => {}
             }

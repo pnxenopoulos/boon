@@ -18,7 +18,7 @@ from conftest import FIXTURES_DIR
 
 FIXTURE_PATH = FIXTURES_DIR / "94366136.dem"
 
-PLAYERS_COLUMNS = ["player_name", "steam_id", "hero_id", "team_num", "start_lane"]
+PLAYERS_COLUMNS = ["player_name", "steam_id", "hero_id", "team_num", "start_lane", "rank"]
 
 
 @pytest.fixture(scope="module")

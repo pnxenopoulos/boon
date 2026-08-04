@@ -118,6 +118,26 @@ impl Parser {
         Ok(())
     }
 
+    /// Parse entities and only selected final event message types in one pass.
+    pub fn run_to_end_with_event_types_filtered<F>(
+        &self,
+        class_filter: &std::collections::HashSet<&str>,
+        event_types: &std::collections::HashSet<u32>,
+        mut on_tick: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Context, &[GameEvent]),
+    {
+        let parser = self.demo_parser()?;
+        let mut session = self.prepared()?.session(parser)?;
+        session.adapter_mut().enable_event_types(event_types);
+        session.run_to_end_filtered_with_adapter(class_filter, |state, adapter| {
+            on_tick(state, adapter.tick_events());
+            adapter.clear_tick_events();
+        })?;
+        Ok(())
+    }
+
     /// Parse entities and game events in one filtered pass.
     pub fn run_to_end_with_events_filtered<F>(
         &self,

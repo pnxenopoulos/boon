@@ -34,6 +34,8 @@ use std::time::Duration;
 
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 
+use boon_proto::proto::CitadelUserMessageIds as Msg;
+
 /// Resolve the demo file to benchmark against.
 ///
 /// Uses `$BOON_BENCH_DEMO` when set, otherwise the smallest `.dem` in the shared
@@ -165,6 +167,22 @@ fn bench_decode(c: &mut Criterion) {
             |bytes| {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.events(None).unwrap().len());
+            },
+            BatchSize::LargeInput,
+        );
+    });
+
+    // Decode only the event types used by the common kills + damage request.
+    let selected_events: HashSet<u32> =
+        [Msg::KEUserMsgHeroKilled as u32, Msg::KEUserMsgDamage as u32]
+            .into_iter()
+            .collect();
+    g.bench_function("events_filtered_kills_damage", |b| {
+        b.iter_batched(
+            || bytes.clone(),
+            |bytes| {
+                let p = boon::Parser::from_bytes(bytes);
+                black_box(p.events_filtered(None, &selected_events).unwrap().len());
             },
             BatchSize::LargeInput,
         );

@@ -59,9 +59,9 @@ print(modifier_names())  # {2059539911: "timer", ...}
 
 # Player info
 print(demo.players)
-# shape: (12, 5)
-# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┐
-# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane │
+# shape: (12, 6)
+# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┬──────┐
+# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane ┆ rank │
 # ...
 
 # Datasets (Polars DataFrames — all lazy-loaded on first access)
