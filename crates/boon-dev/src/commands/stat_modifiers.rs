@@ -81,7 +81,7 @@ pub fn run(
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
             if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CCitadelPlayerController") {
+                if let Some(s) = ctx.serializers().get("CCitadelPlayerController") {
                     ck_hero_id = s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
                     for i in 0..20 {
                         let mid = s.resolve_field_key(&format!(
@@ -99,8 +99,8 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (_, entity) in ctx.entities.iter() {
-                if entity.class_name != "CCitadelPlayerController" {
+            for (_, entity) in ctx.entities().iter() {
+                if entity.class_name.as_ref() != "CCitadelPlayerController" {
                     continue;
                 }
                 let hero_id = entity.get_i64(ck_hero_id);
@@ -127,7 +127,7 @@ pub fn run(
                 for i in 0..6 {
                     if sums[i] != prev[i] && sums[i] > prev[i] {
                         events_out.push(StatModifierOutput {
-                            tick: ctx.tick,
+                            tick: ctx.tick(),
                             hero_id,
                             stat: STAT_NAMES[i].to_string(),
                             value: sums[i],

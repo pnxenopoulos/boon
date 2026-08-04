@@ -136,8 +136,8 @@ struct PtKeys {
 
 impl PtKeys {
     fn resolve(ctx: &boon_parser::Context) -> Self {
-        let pawn = ctx.serializers.get("CCitadelPlayerPawn");
-        let ctrl = ctx.serializers.get("CCitadelPlayerController");
+        let pawn = ctx.serializers().get("CCitadelPlayerPawn");
+        let ctrl = ctx.serializers().get("CCitadelPlayerController");
         let p = |name: &str| pawn.and_then(|s| s.resolve_field_key(name));
         let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
         Self {
@@ -253,26 +253,26 @@ struct PtCols {
 }
 
 impl PtCols {
-    /// Append one snapshot row per live player at `ctx.tick` (mirrors the serial
+    /// Append one snapshot row per live player at `ctx.tick()` (mirrors the serial
     /// collector in `load()`; must stay in sync with it).
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &PtKeys) {
         for (_, ctrl) in ctx
-            .entities
+            .entities()
             .iter()
-            .filter(|(_, e)| e.class_name == "CCitadelPlayerController")
+            .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
         {
             let pawn = match ctrl
                 .get_handle(k.pawn_handle)
-                .and_then(|h| ctx.entities.get_by_handle(h))
+                .and_then(|h| ctx.entities().get_by_handle(h))
             {
-                Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
+                Some(p) if p.class_name.as_ref() == "CCitadelPlayerPawn" => p,
                 _ => continue,
             };
             let hid = pawn.get_i64(k.hero_id);
             if hid == 0 {
                 continue;
             }
-            self.tick.push(ctx.tick);
+            self.tick.push(ctx.tick());
             self.hero_id.push(hid);
             let [x, y, z] =
                 pawn.world_position([k.cell_x, k.cell_y, k.cell_z], [k.vec_x, k.vec_y, k.vec_z]);
@@ -465,7 +465,7 @@ struct WkKeys {
 
 impl WkKeys {
     fn resolve(ctx: &boon_parser::Context) -> Self {
-        let s = ctx.serializers.get("CCitadelGameRulesProxy");
+        let s = ctx.serializers().get("CCitadelGameRulesProxy");
         Self {
             is_paused: s.and_then(|s| s.resolve_field_key("m_pGameRules.m_bGamePaused")),
             next_midboss: s
@@ -485,11 +485,11 @@ struct WtCols {
 impl WtCols {
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &WkKeys) {
         if let Some((_, e)) = ctx
-            .entities
+            .entities()
             .iter()
-            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+            .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
         {
-            self.tick.push(ctx.tick);
+            self.tick.push(ctx.tick());
             self.is_paused.push(e.get_bool(k.is_paused));
             self.next_midboss.push(e.get_f32(k.next_midboss));
         }
@@ -530,9 +530,9 @@ struct TkKeys {
 impl TkKeys {
     fn resolve(ctx: &boon_parser::Context) -> Self {
         let s = ctx
-            .serializers
+            .serializers()
             .get("CNPC_Trooper")
-            .or_else(|| ctx.serializers.get("CNPC_TrooperBoss"));
+            .or_else(|| ctx.serializers().get("CNPC_TrooperBoss"));
         let f = |name: &str| s.and_then(|s| s.resolve_field_key(name));
         Self {
             health: f("m_iHealth"),
@@ -567,8 +567,8 @@ struct TrCols {
 
 impl TrCols {
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &TkKeys) {
-        for (idx, e) in ctx.entities.iter() {
-            let ttype = match e.class_name.as_str() {
+        for (idx, e) in ctx.entities().iter() {
+            let ttype = match e.class_name.as_ref() {
                 "CNPC_Trooper" => "trooper",
                 "CNPC_TrooperBoss" => "trooper_boss",
                 _ => continue,
@@ -580,7 +580,7 @@ impl TrCols {
             if e.get_i64(k.lifestate) != 0 {
                 continue;
             }
-            self.tick.push(ctx.tick);
+            self.tick.push(ctx.tick());
             self.ttype.push(ttype.to_string());
             self.team_num.push(e.get_i64(k.team_num));
             self.lane.push(e.get_i64(k.lane));
@@ -1248,12 +1248,12 @@ impl Demo {
         let ctx = parser.parse_to_tick(1).map_err(to_py_err)?;
 
         let game_rules = ctx
-            .entities
+            .entities()
             .iter()
-            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy");
+            .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy");
 
         let match_id = game_rules.and_then(|(_, e)| {
-            let serializer = ctx.serializers.get(&e.class_name)?;
+            let serializer = ctx.serializers().get(&e.class_name)?;
             let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
             match e.fields.get(&mid_key)? {
                 boon_parser::FieldValue::U64(id) => Some(*id),
@@ -1264,7 +1264,7 @@ impl Demo {
 
         let game_mode = game_rules
             .and_then(|(_, e)| {
-                let serializer = ctx.serializers.get(&e.class_name)?;
+                let serializer = ctx.serializers().get(&e.class_name)?;
                 Some(e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode")))
             })
             .unwrap_or(0);
@@ -1862,10 +1862,10 @@ impl Demo {
             self.parser
                 .parse_send_tables()
                 .map(|sc| {
-                    sc.serializers
-                        .keys()
-                        .filter(|n| n.contains("Ability"))
-                        .cloned()
+                    sc.iter()
+                        .map(|(name, _)| name)
+                        .filter(|name| name.contains("Ability"))
+                        .map(str::to_owned)
                         .collect()
                 })
                 .unwrap_or_default()
@@ -2377,7 +2377,7 @@ impl Demo {
             ($ctx:expr) => {
                 if !keys_resolved {
                     if load_abilities || load_player_ticks || load_kills || load_damage || load_active_modifiers || load_urn || load_ability_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerPawn") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
@@ -2435,7 +2435,7 @@ impl Demo {
                         }
                     }
                     if load_player_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             ck_pawn_handle = s.resolve_field_key("m_hPawn");
                             ck_alive = s.resolve_field_key("m_PlayerDataGlobal.m_bAlive");
                             ck_rebirth =
@@ -2483,13 +2483,13 @@ impl Demo {
                         }
                     }
                     if load_item_purchases || load_chat {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
                         }
                     }
                     if load_ability_upgrades {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             if ck_hero_id.is_none() {
                                 ck_hero_id =
                                     s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
@@ -2506,7 +2506,7 @@ impl Demo {
                         }
                     }
                     if load_stat_modifier_events {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             if ck_hero_id.is_none() {
                                 ck_hero_id =
                                     s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
@@ -2528,7 +2528,7 @@ impl Demo {
                     if load_objectives {
                         // NPC objective classes share field names; resolve from first found
                         for obj_class in &["CNPC_Boss_Tier2", "CNPC_Boss_Tier3", "CNPC_BarrackBoss", "CNPC_MidBoss"] {
-                            if let Some(s) = $ctx.serializers.get(*obj_class) {
+                            if let Some(s) = $ctx.serializers().get(*obj_class) {
                                 nk_health = s.resolve_field_key("m_iHealth");
                                 nk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 nk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2543,11 +2543,11 @@ impl Demo {
                             }
                         }
                         // Patron phase key
-                        if let Some(s) = $ctx.serializers.get("CNPC_Boss_Tier3") {
+                        if let Some(s) = $ctx.serializers().get("CNPC_Boss_Tier3") {
                             patron_phase_key = s.resolve_field_key("m_ePhase");
                         }
                         // Shrine has a different serializer with different field keys
-                        if let Some(s) = $ctx.serializers.get("CCitadel_Destroyable_Building") {
+                        if let Some(s) = $ctx.serializers().get("CCitadel_Destroyable_Building") {
                             shrine_health = s.resolve_field_key("m_iHealth");
                             shrine_max_health = s.resolve_field_key("m_iMaxHealth");
                             shrine_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2561,7 +2561,7 @@ impl Demo {
                     }
                     if load_troopers {
                         for tr_class in &["CNPC_Trooper", "CNPC_TrooperBoss"] {
-                            if let Some(s) = $ctx.serializers.get(*tr_class) {
+                            if let Some(s) = $ctx.serializers().get(*tr_class) {
                                 tk_health = s.resolve_field_key("m_iHealth");
                                 tk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 tk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2591,7 +2591,7 @@ impl Demo {
                     }
                     if load_neutrals {
                         for nt_class in &["CNPC_TrooperNeutral"] {
-                            if let Some(s) = $ctx.serializers.get(*nt_class) {
+                            if let Some(s) = $ctx.serializers().get(*nt_class) {
                                 ntk_health = s.resolve_field_key("m_iHealth");
                                 ntk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 ntk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2619,7 +2619,7 @@ impl Demo {
                         }
                     }
                     if load_world_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
                             wk_is_paused =
                                 s.resolve_field_key("m_pGameRules.m_bGamePaused");
                             wk_next_midboss =
@@ -2627,7 +2627,7 @@ impl Demo {
                         }
                     }
                     if load_urn {
-                        if let Some(s) = $ctx.serializers.get("CCitadelIdolReturnTrigger") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelIdolReturnTrigger") {
                             urnk_disabled = s.resolve_field_key("m_bDisabled");
                             urnk_team_num = s.resolve_field_key("m_iTeamNum");
                             urnk_vec_x = s.resolve_field_key(
@@ -2651,7 +2651,7 @@ impl Demo {
                         }
                     }
                     if load_street_brawl_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
                             sbk_round = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iRound");
                             sbk_state = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_eStreetBrawlState");
                             sbk_amber_score = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iTeamAmberScore");
@@ -2663,7 +2663,7 @@ impl Demo {
                         }
                     }
                     if load_rift {
-                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
                             rk_cashin_started =
                                 s.resolve_field_key("m_pGameRules.m_timeKothCashInStarted");
                             rk_scoring_team =
@@ -2678,17 +2678,17 @@ impl Demo {
                 // ── Collect player_ticks ──
                 if load_player_ticks {
                     let controllers: Vec<&boon_parser::Entity> = $ctx
-                        .entities
+                        .entities()
                         .iter()
-                        .filter(|(_, e)| e.class_name == "CCitadelPlayerController")
+                        .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
                         .map(|(_, e)| e)
                         .collect();
 
                     for ctrl in &controllers {
                         let pawn = match ctrl.get_handle(ck_pawn_handle)
-                            .and_then(|h| $ctx.entities.get_by_handle(h))
+                            .and_then(|h| $ctx.entities().get_by_handle(h))
                         {
-                            Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
+                            Some(p) if p.class_name.as_ref() == "CCitadelPlayerPawn" => p,
                             _ => continue,
                         };
 
@@ -2697,7 +2697,7 @@ impl Demo {
                             continue;
                         }
 
-                        pt_tick.push($ctx.tick);
+                        pt_tick.push($ctx.tick());
                         pt_hero_id.push(hid);
                         let [pawn_x, pawn_y, pawn_z] = pawn.world_position(
                             [pk_cell_x, pk_cell_y, pk_cell_z],
@@ -2765,17 +2765,17 @@ impl Demo {
                 // ── Collect world_ticks / street_brawl_ticks ──
                 if load_world_ticks || load_street_brawl_ticks {
                     if let Some((_, entity)) = $ctx
-                        .entities
+                        .entities()
                         .iter()
-                        .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+                        .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
                     {
                         if load_world_ticks {
-                            wt_tick.push($ctx.tick);
+                            wt_tick.push($ctx.tick());
                             wt_is_paused.push(entity.get_bool(wk_is_paused));
                             wt_next_midboss.push(entity.get_f32(wk_next_midboss));
                         }
                         if load_street_brawl_ticks {
-                            sbt_tick.push($ctx.tick);
+                            sbt_tick.push($ctx.tick());
                             sbt_round.push(entity.get_i64(sbk_round) as i32);
                             sbt_state.push(entity.get_i64(sbk_state) as i32);
                             sbt_amber_score.push(entity.get_i64(sbk_amber_score) as i32);
@@ -2794,11 +2794,11 @@ impl Demo {
                     // Rift. Entity indices get recycled and m_flCreateTime is not
                     // transmitted, so presence-diffing is the only reliable way
                     // to spot the spawn.
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name == "CCitadelItemKothSpawner" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() == "CCitadelItemKothSpawner" {
                             rift_spawners_cur.insert(idx);
                             if !rift_spawners_prev.contains(&idx) && !rift_live {
-                                rift_pending_announce = Some($ctx.tick);
+                                rift_pending_announce = Some($ctx.tick());
                             }
                         }
                     }
@@ -2806,9 +2806,9 @@ impl Demo {
                     rift_spawners_cur.clear();
 
                     if let Some((_, entity)) = $ctx
-                        .entities
+                        .entities()
                         .iter()
-                        .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+                        .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
                     {
                         // m_timeKothCashInStarted holds a real GameTime_t while a
                         // Rift is contestable and 0 otherwise. It is also re-armed
@@ -2821,7 +2821,7 @@ impl Demo {
                         if live && !rift_live {
                             rift_live = true;
                             rift_cur_announce = rift_pending_announce.take();
-                            rift_cur_active_tick = $ctx.tick;
+                            rift_cur_active_tick = $ctx.tick();
                             rift_cur_capture_tick = None;
                             rift_cur_winning_team = None;
                             rift_cur_loc = [0.0; 3];
@@ -2844,7 +2844,7 @@ impl Demo {
                             if scoring_team <= 0 {
                                 rift_seen_contested = true;
                             } else if rift_seen_contested && rift_cur_capture_tick.is_none() {
-                                rift_cur_capture_tick = Some($ctx.tick);
+                                rift_cur_capture_tick = Some($ctx.tick());
                                 rift_cur_winning_team = Some(scoring_team);
                             }
                         }
@@ -2859,7 +2859,7 @@ impl Demo {
                             // No winner by the time the Rift clears => it timed
                             // out (see m_timeKothGiveUp).
                             rift_expire_tick.push(if rift_cur_capture_tick.is_none() {
-                                Some($ctx.tick)
+                                Some($ctx.tick())
                             } else {
                                 None
                             });
@@ -2874,8 +2874,8 @@ impl Demo {
 
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
                 if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks) && !entity_to_hero_built {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name == "CCitadelPlayerPawn" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
                             let hid = entity.get_i64(pk_hero_id);
                             if hid != 0 {
                                 entity_to_hero.insert(idx, hid);
@@ -2887,8 +2887,8 @@ impl Demo {
 
                 // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
                 if (load_item_purchases || load_chat) && !slot_to_hero_built {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name == "CCitadelPlayerController" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() == "CCitadelPlayerController" {
                             let hid = entity.get_i64(ck_hero_id);
                             if hid != 0 {
                                 // userid is 0-based, controller entity index is 1-based
@@ -2903,8 +2903,8 @@ impl Demo {
 
                 // ── Collect ability_upgrades (entity change detection) ──
                 if load_ability_upgrades {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name != "CCitadelPlayerController" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() != "CCitadelPlayerController" {
                             continue;
                         }
                         let hero_id = entity.get_i64(ck_hero_id);
@@ -2932,7 +2932,7 @@ impl Demo {
                             if upgrade_bits != prev {
                                 au_prev_bits.insert(key, upgrade_bits);
                                 if upgrade_bits > prev {
-                                    au_ticks.push($ctx.tick);
+                                    au_ticks.push($ctx.tick());
                                     au_hero_ids.push(hero_id);
                                     au_ability_ids.push(ability_id);
                                     au_tier.push(upgrade_bits.count_ones() as i32 - 1);
@@ -2944,11 +2944,11 @@ impl Demo {
 
                 // ── Collect objectives (change detection on health/max_health/phase) ──
                 if load_objectives {
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
-                        let obj_class = entity.class_name.as_str();
+                        let obj_class = entity.class_name.as_ref();
                         let is_patron = obj_class == "CNPC_Boss_Tier3";
                         let (otype, hp_key, max_hp_key, team_key, lane_key, cell_keys, offset_keys) = match obj_class {
                             "CNPC_Boss_Tier2" => ("walker", nk_health, nk_max_health, nk_team_num, nk_lane, [nk_cell_x, nk_cell_y, nk_cell_z], [nk_vec_x, nk_vec_y, nk_vec_z]),
@@ -2971,7 +2971,7 @@ impl Demo {
                         };
                         if changed {
                             obj_prev.insert(idx, cur);
-                            obj_tick.push($ctx.tick);
+                            obj_tick.push($ctx.tick());
                             obj_type.push(otype.to_string());
                             obj_team_num.push(entity.get_i64(team_key));
                             obj_lane.push(entity.get_i64(lane_key));
@@ -2990,8 +2990,8 @@ impl Demo {
 
                 // ── Collect troopers (lane troopers, per-tick alive only) ──
                 if load_troopers {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        let ttype = match entity.class_name.as_str() {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        let ttype = match entity.class_name.as_ref() {
                             "CNPC_Trooper" => "trooper",
                             "CNPC_TrooperBoss" => "trooper_boss",
                             _ => continue,
@@ -3004,7 +3004,7 @@ impl Demo {
                         if lifestate != 0 {
                             continue;
                         }
-                        tr_tick.push($ctx.tick);
+                        tr_tick.push($ctx.tick());
                         tr_type.push(ttype.to_string());
                         tr_team_num.push(entity.get_i64(tk_team_num));
                         tr_lane.push(entity.get_i64(tk_lane));
@@ -3023,8 +3023,8 @@ impl Demo {
 
                 // ── Collect stat_modifiers (event-based change detection) ──
                 if load_stat_modifier_events {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name != "CCitadelPlayerController" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() != "CCitadelPlayerController" {
                             continue;
                         }
                         let hero_id = entity.get_i64(ck_hero_id);
@@ -3067,7 +3067,7 @@ impl Demo {
                                     172 => "ammo",
                                     _ => continue,
                                 };
-                                sm_tick.push($ctx.tick);
+                                sm_tick.push($ctx.tick());
                                 sm_hero_id.push(hero_id);
                                 sm_stat_type.push(stat_name.to_string());
                                 sm_amount.push(*total - prev);
@@ -3088,9 +3088,9 @@ impl Demo {
                 // because the table never shrinks and indices are stable (a serial
                 // only leaves the table when its slot is rewritten).
                 if load_active_modifiers {
-                    if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
+                    if let Some(table) = $ctx.string_tables().find_table("ActiveModifiers") {
                         for &idx in table.dirty_indices() {
-                            let Some(entry) = table.entries.get(idx) else {
+                            let Some(entry) = table.entries().get(idx) else {
                                 continue;
                             };
                             let data = match &entry.user_data {
@@ -3112,7 +3112,7 @@ impl Demo {
                                 && old_serial != serial
                                 && let Some(cached) = am_prev.remove(&old_serial)
                             {
-                                am_tick.push($ctx.tick);
+                                am_tick.push($ctx.tick());
                                 am_hero_id.push(cached.hero_id);
                                 am_event.push("removed".to_string());
                                 am_modifier_id.push(cached.modifier_id);
@@ -3127,7 +3127,7 @@ impl Demo {
                             if mod_entry_type == 2 {
                                 am_idx_serial.remove(&idx);
                                 if let Some(cached) = am_prev.remove(&serial) {
-                                    am_tick.push($ctx.tick);
+                                    am_tick.push($ctx.tick());
                                     am_hero_id.push(cached.hero_id);
                                     am_event.push("removed".to_string());
                                     am_modifier_id.push(cached.modifier_id);
@@ -3162,7 +3162,7 @@ impl Demo {
                                             .unwrap_or(0);
                                     let stacks = modifier.stack_count.unwrap_or(0);
 
-                                    am_tick.push($ctx.tick);
+                                    am_tick.push($ctx.tick());
                                     am_hero_id.push(hero_id);
                                     am_event.push("applied".to_string());
                                     am_modifier_id.push(mod_id);
@@ -3190,7 +3190,7 @@ impl Demo {
                                     let stacks = modifier.stack_count.unwrap_or(0);
                                     let cached = e.get_mut();
                                     if stacks != cached.stacks {
-                                        am_tick.push($ctx.tick);
+                                        am_tick.push($ctx.tick());
                                         am_hero_id.push(cached.hero_id);
                                         am_event.push("changed".to_string());
                                         am_modifier_id.push(cached.modifier_id);
@@ -3217,15 +3217,15 @@ impl Demo {
                 if load_ability_ticks {
                     // Only entities this tick changed: an ability's cooldown/charge
                     // state can only change on a tick it was updated.
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
                         if !entity.class_name.contains("Ability") {
                             continue;
                         }
-                        if !ability_keys_cache.contains_key(&entity.class_name) {
-                            let s = $ctx.serializers.get(&entity.class_name);
+                        if !ability_keys_cache.contains_key(entity.class_name.as_ref()) {
+                            let s = $ctx.serializers().get(&entity.class_name);
                             let r = |p: &str| s.and_then(|s| s.resolve_field_key(p));
                             let ak = AbilityKeys {
                                 subclass_id: r("m_nSubclassID"),
@@ -3237,9 +3237,9 @@ impl Demo {
                                 recharge_end: r("m_flChargeRechargeEnd"),
                                 owner: r("m_hOwnerEntity"),
                             };
-                            ability_keys_cache.insert(entity.class_name.clone(), ak);
+                            ability_keys_cache.insert(entity.class_name.to_string(), ak);
                         }
-                        let keys = &ability_keys_cache[&entity.class_name];
+                        let keys = &ability_keys_cache[entity.class_name.as_ref()];
                         // Capability gate: real abilities expose cooldown + charges.
                         if keys.cooldown_end.is_none() || keys.remaining_charges.is_none() {
                             continue;
@@ -3261,7 +3261,7 @@ impl Demo {
                         };
                         let changed = abil_prev.get(&idx).map(|p| *p != state).unwrap_or(true);
                         if changed {
-                            at_tick.push($ctx.tick);
+                            at_tick.push($ctx.tick());
                             at_hero_id.push(hero_id);
                             at_ability_id.push(entity.get_u32(keys.subclass_id));
                             at_slot.push(entity.get_i64(keys.slot) as i32);
@@ -3286,7 +3286,7 @@ impl Demo {
                 // full scan — and defer slot-reuse drops to a post-pass, mirroring
                 // the previous post-loop so per-tick ordering is unchanged.
                 if load_urn {
-                    if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
+                    if let Some(table) = $ctx.string_tables().find_table("ActiveModifiers") {
                         let mut dirty: Vec<usize> = table.dirty_indices().to_vec();
                         dirty.sort_unstable();
                         dirty.dedup();
@@ -3296,7 +3296,7 @@ impl Demo {
                         let mut urn_overwrite_gone: Vec<u32> = Vec::new();
 
                         for &idx in &dirty {
-                            let Some(entry) = table.entries.get(idx) else {
+                            let Some(entry) = table.entries().get(idx) else {
                                 continue;
                             };
                             let data = match &entry.user_data {
@@ -3337,7 +3337,7 @@ impl Demo {
                                         urn_hero_count.remove(&hero_id);
                                         let pawn = entity_to_hero.iter()
                                             .find(|(_, hid)| **hid == hero_id)
-                                            .and_then(|(idx, _)| $ctx.entities.get(*idx));
+                                            .and_then(|(idx, _)| $ctx.entities().get(*idx));
                                         let [drop_x, drop_y, drop_z] = pawn.map_or(
                                             [0.0, 0.0, 0.0],
                                             |e| e.world_position(
@@ -3345,7 +3345,7 @@ impl Demo {
                                                 [pk_vec_x, pk_vec_y, pk_vec_z],
                                             ),
                                         );
-                                        urn_tick.push($ctx.tick);
+                                        urn_tick.push($ctx.tick());
                                         urn_event.push("dropped".to_string());
                                         urn_hero_id.push(hero_id);
                                         urn_team_num.push(0);
@@ -3379,7 +3379,7 @@ impl Demo {
                             };
 
                             // Look up pawn position for hero events
-                            let pawn = $ctx.entities.get(parent_idx);
+                            let pawn = $ctx.entities().get(parent_idx);
                             let [hero_x, hero_y, hero_z] = pawn.map_or(
                                 [0.0, 0.0, 0.0],
                                 |e| e.world_position(
@@ -3396,7 +3396,7 @@ impl Demo {
                                 let count =
                                     urn_hero_count.entry(hero_id).or_insert(0);
                                 if *count == 0 {
-                                    urn_tick.push($ctx.tick);
+                                    urn_tick.push($ctx.tick());
                                     urn_event.push("picked_up".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
@@ -3413,15 +3413,15 @@ impl Demo {
                                     .get(&hero_id)
                                     .copied()
                                     .unwrap_or(-999);
-                                if $ctx.tick - last > 64 {
-                                    urn_tick.push($ctx.tick);
+                                if $ctx.tick() - last > 64 {
+                                    urn_tick.push($ctx.tick());
                                     urn_event.push("returned".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
                                     urn_x.push(hero_x);
                                     urn_y.push(hero_y);
                                     urn_z.push(hero_z);
-                                    urn_last_return_tick.insert(hero_id, $ctx.tick);
+                                    urn_last_return_tick.insert(hero_id, $ctx.tick());
                                 }
                             }
                         }
@@ -3436,7 +3436,7 @@ impl Demo {
                                     urn_hero_count.remove(&hero_id);
                                     let pawn = entity_to_hero.iter()
                                         .find(|(_, hid)| **hid == hero_id)
-                                        .and_then(|(idx, _)| $ctx.entities.get(*idx));
+                                        .and_then(|(idx, _)| $ctx.entities().get(*idx));
                                     let [drop_x, drop_y, drop_z] = pawn.map_or(
                                         [0.0, 0.0, 0.0],
                                         |e| e.world_position(
@@ -3444,7 +3444,7 @@ impl Demo {
                                             [pk_vec_x, pk_vec_y, pk_vec_z],
                                         ),
                                     );
-                                    urn_tick.push($ctx.tick);
+                                    urn_tick.push($ctx.tick());
                                     urn_event.push("dropped".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
@@ -3459,11 +3459,11 @@ impl Demo {
 
                 // ── Collect urn delivery triggers ──
                 if load_urn {
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
-                        if entity.class_name != "CCitadelIdolReturnTrigger" {
+                        if entity.class_name.as_ref() != "CCitadelIdolReturnTrigger" {
                             continue;
                         }
                         let disabled = entity.get_bool(urnk_disabled);
@@ -3481,7 +3481,7 @@ impl Demo {
                                 [urnk_vec_x, urnk_vec_y, urnk_vec_z],
                             );
                             if !disabled && team != 0 {
-                                urn_tick.push($ctx.tick);
+                                urn_tick.push($ctx.tick());
                                 urn_event.push("delivery_active".to_string());
                                 urn_hero_id.push(0);
                                 urn_team_num.push(team);
@@ -3492,7 +3492,7 @@ impl Demo {
                                 // Only emit inactive when transitioning from active
                                 if let Some((prev_disabled, _)) = prev {
                                     if !prev_disabled {
-                                        urn_tick.push($ctx.tick);
+                                        urn_tick.push($ctx.tick());
                                         urn_event.push("delivery_inactive".to_string());
                                         urn_hero_id.push(0);
                                         urn_team_num.push(team);
@@ -3508,11 +3508,11 @@ impl Demo {
 
                 // ── Collect neutrals (change-detected, only emit on state change) ──
                 if load_neutrals {
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
-                        if entity.class_name != "CNPC_TrooperNeutral" {
+                        if entity.class_name.as_ref() != "CNPC_TrooperNeutral" {
                             continue;
                         }
                         let max_hp = entity.get_i64(ntk_max_health);
@@ -3538,7 +3538,7 @@ impl Demo {
                         if changed {
                             nt_prev.insert(idx, cur);
                             if alive {
-                                nt_tick.push($ctx.tick);
+                                nt_tick.push($ctx.tick());
                                 nt_team_num.push(entity.get_i64(ntk_team_num));
                                 nt_health.push(hp);
                                 nt_max_health.push(max_hp);
@@ -4647,7 +4647,7 @@ impl Demo {
         let mut start_lanes: Vec<i64> = Vec::new();
 
         // Resolve field keys once for CCitadelPlayerController
-        let player_serializer = ctx.serializers.get("CCitadelPlayerController");
+        let player_serializer = ctx.serializers().get("CCitadelPlayerController");
         let key_player_name = player_serializer
             .as_ref()
             .and_then(|s| s.resolve_field_key("m_iszPlayerName"));
@@ -4665,8 +4665,8 @@ impl Demo {
             .and_then(|s| s.resolve_field_key("m_nOriginalLaneAssignment"));
 
         // Find all CCitadelPlayerController entities
-        for (_idx, entity) in ctx.entities.iter() {
-            if entity.class_name == "CCitadelPlayerController" {
+        for (_idx, entity) in ctx.entities().iter() {
+            if entity.class_name.as_ref() == "CCitadelPlayerController" {
                 let player_name = key_player_name
                     .and_then(|k| entity.fields.get(&k))
                     .and_then(|v| match v {
@@ -4757,7 +4757,7 @@ impl Demo {
             let mut cols = SegSnap::default();
             self.parser
                 .decode_segment(None, i32::MAX, &filter, |ctx| {
-                    if pred.matches(ctx.tick) {
+                    if pred.matches(ctx.tick()) {
                         cols.collect_tick(ctx, &keys, wants);
                     }
                 })
@@ -4776,7 +4776,7 @@ impl Demo {
                             let mut cols = SegSnap::default();
                             parser
                                 .decode_segment(start, end_tick, filter, |ctx| {
-                                    if pred.matches(ctx.tick) {
+                                    if pred.matches(ctx.tick()) {
                                         cols.collect_tick(ctx, keys, wants);
                                     }
                                 })
@@ -4830,7 +4830,7 @@ impl Demo {
     ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
         let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
         let mut cols = SegSnap::default();
-        if ctx.tick == tick {
+        if ctx.tick() == tick {
             let keys = SnapKeys {
                 pt: PtKeys::resolve(&ctx),
                 wk: WkKeys::resolve(&ctx),

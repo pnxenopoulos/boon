@@ -78,7 +78,7 @@ pub fn run(
             if !keys_resolved {
                 // All objective NPCs share the same base fields; resolve from the first one found
                 for class_name in OBJECTIVE_CLASSES {
-                    if let Some(s) = ctx.serializers.get(class_name) {
+                    if let Some(s) = ctx.serializers().get(class_name) {
                         nk_health = s.resolve_field_key("m_iHealth");
                         nk_max_health = s.resolve_field_key("m_iMaxHealth");
                         nk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -91,11 +91,11 @@ pub fn run(
 
             // Only entities this tick changed — objective health/phase can only
             // change on a tick the entity was updated.
-            for &idx in ctx.entities.updated_indices() {
-                let Some(entity) = ctx.entities.get(idx) else {
+            for &idx in ctx.entities().updated_indices() {
+                let Some(entity) = ctx.entities().get(idx) else {
                     continue;
                 };
-                if !OBJECTIVE_CLASSES.contains(&entity.class_name.as_str()) {
+                if !OBJECTIVE_CLASSES.contains(&entity.class_name.as_ref()) {
                     continue;
                 }
 
@@ -119,7 +119,7 @@ pub fn run(
                 prev_state.insert(idx, current);
 
                 rows.push(ObjectiveOutput {
-                    tick: ctx.tick,
+                    tick: ctx.tick(),
                     objective_type: objective_type(&entity.class_name),
                     team_num: current.team_num,
                     lane: current.lane,

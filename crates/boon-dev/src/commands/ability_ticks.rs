@@ -72,10 +72,10 @@ pub fn run(
     let ability_class_names: Vec<String> = parser
         .parse_send_tables()
         .map(|sc| {
-            sc.serializers
-                .keys()
-                .filter(|n| n.contains("Ability"))
-                .cloned()
+            sc.iter()
+                .map(|(name, _)| name)
+                .filter(|name| name.contains("Ability"))
+                .map(str::to_owned)
                 .collect()
         })
         .unwrap_or_default();
@@ -98,15 +98,15 @@ pub fn run(
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
             // Resolve pawn hero_id key once (retry until serializers available).
-            if !keys_resolved && let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
+            if !keys_resolved && let Some(s) = ctx.serializers().get("CCitadelPlayerPawn") {
                 pk_hero_id = s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID");
                 keys_resolved = true;
             }
 
             // Build entity_to_hero map (retry until populated).
             if !entity_to_hero_built {
-                for (idx, entity) in ctx.entities.iter() {
-                    if entity.class_name == "CCitadelPlayerPawn" {
+                for (idx, entity) in ctx.entities().iter() {
+                    if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
                         let hid = entity.get_i64(pk_hero_id);
                         if hid != 0 {
                             entity_to_hero.insert(idx, hid);
@@ -121,18 +121,18 @@ pub fn run(
             // Only the entities this tick actually changed — an ability's
             // cooldown/charge state can only change on a tick it was updated, so
             // scanning every active entity every tick is wasted work.
-            for &idx in ctx.entities.updated_indices() {
-                let Some(entity) = ctx.entities.get(idx) else {
+            for &idx in ctx.entities().updated_indices() {
+                let Some(entity) = ctx.entities().get(idx) else {
                     continue;
                 };
                 if !entity.class_name.contains("Ability") {
                     continue;
                 }
-                if !ability_keys_cache.contains_key(&entity.class_name) {
-                    let s = ctx.serializers.get(&entity.class_name);
+                if !ability_keys_cache.contains_key(entity.class_name.as_ref()) {
+                    let s = ctx.serializers().get(&entity.class_name);
                     let r = |p: &str| s.and_then(|s| s.resolve_field_key(p));
                     ability_keys_cache.insert(
-                        entity.class_name.clone(),
+                        entity.class_name.to_string(),
                         AbilityKeys {
                             subclass_id: r("m_nSubclassID"),
                             slot: r("m_eAbilitySlot"),
@@ -145,7 +145,7 @@ pub fn run(
                         },
                     );
                 }
-                let keys = &ability_keys_cache[&entity.class_name];
+                let keys = &ability_keys_cache[entity.class_name.as_ref()];
                 // Capability gate: real abilities expose cooldown + charges.
                 if keys.cooldown_end.is_none() || keys.remaining_charges.is_none() {
                     continue;
@@ -168,7 +168,7 @@ pub fn run(
                 let changed = prev.get(&idx).map(|p| *p != state).unwrap_or(true);
                 if changed {
                     events_out.push(AbilityTickOutput {
-                        tick: ctx.tick,
+                        tick: ctx.tick(),
                         hero_id,
                         ability: boon::ability_name(entity.get_u32(keys.subclass_id)).to_string(),
                         slot: entity.get_i64(keys.slot) as i32,

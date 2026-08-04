@@ -49,7 +49,7 @@ pub fn run(
         .run_to_end_filtered(&class_filter, |ctx| {
             // Resolve field keys once
             if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CCitadelPlayerController") {
+                if let Some(s) = ctx.serializers().get("CCitadelPlayerController") {
                     ck_hero_id = s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
                     for i in 0..8 {
                         let item_key = s.resolve_field_key(&format!(
@@ -64,8 +64,8 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (idx, entity) in ctx.entities.iter() {
-                if entity.class_name != "CCitadelPlayerController" {
+            for (idx, entity) in ctx.entities().iter() {
+                if entity.class_name.as_ref() != "CCitadelPlayerController" {
                     continue;
                 }
 
@@ -101,7 +101,7 @@ pub fn run(
                         // Only emit when bits increased (actual upgrade, not reset)
                         if upgrade_bits > prev {
                             upgrades.push(AbilityUpgradeOutput {
-                                tick: ctx.tick,
+                                tick: ctx.tick(),
                                 hero_id,
                                 ability_id,
                                 ability: boon::ability_name(ability_id).to_string(),

@@ -19,16 +19,16 @@ fn main() {
 
     println!(
         "Parsed to tick {}  ({} active entities)",
-        ctx.tick,
-        ctx.entities.len()
+        ctx.tick(),
+        ctx.entities().len()
     );
     println!();
 
     // Find all CCitadelPlayerPawn entities
     let mut pawns: Vec<_> = ctx
-        .entities
+        .entities()
         .iter()
-        .filter(|(_, e)| e.class_name == "CCitadelPlayerPawn")
+        .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerPawn")
         .collect();
     pawns.sort_by_key(|(idx, _)| *idx);
 
@@ -36,7 +36,7 @@ fn main() {
     println!("{}", "-".repeat(70));
 
     for (idx, entity) in &pawns {
-        let serializer = ctx.serializers.get(&entity.class_name);
+        let serializer = ctx.serializers().get(&entity.class_name);
         let ser = match serializer {
             Some(s) => s,
             None => continue,

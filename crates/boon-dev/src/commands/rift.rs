@@ -86,7 +86,7 @@ pub fn run(
 
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
-            if !keys_resolved && let Some(s) = ctx.serializers.get("CCitadelGameRulesProxy") {
+            if !keys_resolved && let Some(s) = ctx.serializers().get("CCitadelGameRulesProxy") {
                 rk_cashin_started = s.resolve_field_key("m_pGameRules.m_timeKothCashInStarted");
                 rk_scoring_team = s.resolve_field_key("m_pGameRules.m_nKothScoringTeam");
                 rk_location = s.resolve_field_key("m_pGameRules.m_vKothCashInCurrentLocation");
@@ -96,11 +96,11 @@ pub fn run(
             // A spawner absent last tick announces the next Rift. Entity indices
             // are recycled and m_flCreateTime is not transmitted, so
             // presence-diffing is the only reliable spawn signal.
-            for (idx, entity) in ctx.entities.iter() {
-                if entity.class_name == "CCitadelItemKothSpawner" {
+            for (idx, entity) in ctx.entities().iter() {
+                if entity.class_name.as_ref() == "CCitadelItemKothSpawner" {
                     spawners_cur.insert(idx);
                     if !spawners_prev.contains(&idx) && !live {
-                        pending_announce = Some(ctx.tick);
+                        pending_announce = Some(ctx.tick());
                     }
                 }
             }
@@ -108,9 +108,9 @@ pub fn run(
             spawners_cur.clear();
 
             let Some((_, entity)) = ctx
-                .entities
+                .entities()
                 .iter()
-                .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+                .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
             else {
                 return;
             };
@@ -125,7 +125,7 @@ pub fn run(
             if is_live && !live {
                 live = true;
                 cur_announce = pending_announce.take();
-                cur_active_tick = ctx.tick;
+                cur_active_tick = ctx.tick();
                 cur_capture_tick = None;
                 cur_winning_team = None;
                 cur_loc = [0.0; 3];
@@ -148,7 +148,7 @@ pub fn run(
                 if scoring_team <= 0 {
                     seen_contested = true;
                 } else if seen_contested && cur_capture_tick.is_none() {
-                    cur_capture_tick = Some(ctx.tick);
+                    cur_capture_tick = Some(ctx.tick());
                     cur_winning_team = Some(scoring_team);
                 }
             }
@@ -163,7 +163,7 @@ pub fn run(
                     capture_tick: cur_capture_tick,
                     // No winner by the time the Rift clears => it timed out.
                     expire_tick: if cur_capture_tick.is_none() {
-                        Some(ctx.tick)
+                        Some(ctx.tick())
                     } else {
                         None
                     },

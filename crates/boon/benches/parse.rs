@@ -132,10 +132,10 @@ fn bench_decode(c: &mut Criterion) {
     let ability_classes: Vec<String> = boon::Parser::from_bytes(bytes.clone())
         .parse_send_tables()
         .map(|sc| {
-            sc.serializers
-                .keys()
-                .filter(|n| n.contains("Ability"))
-                .cloned()
+            sc.iter()
+                .map(|(name, _)| name)
+                .filter(|name| name.contains("Ability"))
+                .map(str::to_owned)
                 .collect()
         })
         .unwrap_or_default();

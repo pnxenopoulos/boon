@@ -82,7 +82,7 @@ pub fn run(
         .run_to_end_filtered(&class_filter, |ctx| {
             if !keys_resolved {
                 for class_name in TROOPER_CLASSES {
-                    if let Some(s) = ctx.serializers.get(class_name) {
+                    if let Some(s) = ctx.serializers().get(class_name) {
                         nk_health = s.resolve_field_key("m_iHealth");
                         nk_max_health = s.resolve_field_key("m_iMaxHealth");
                         nk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -112,8 +112,8 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            for (idx, entity) in ctx.entities.iter() {
-                if !TROOPER_CLASSES.contains(&entity.class_name.as_str()) {
+            for (idx, entity) in ctx.entities().iter() {
+                if !TROOPER_CLASSES.contains(&entity.class_name.as_ref()) {
                     continue;
                 }
 
@@ -155,7 +155,7 @@ pub fn run(
                 }
 
                 rows.push(TrooperOutput {
-                    tick: ctx.tick,
+                    tick: ctx.tick(),
                     trooper_type: trooper_type(&entity.class_name),
                     team_num: current.team_num,
                     lane: current.lane,
