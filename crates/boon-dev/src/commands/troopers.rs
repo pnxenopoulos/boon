@@ -123,7 +123,7 @@ pub fn run(
                 }
 
                 let lifestate = entity.get_i64(nk_lifestate);
-                let alive = lifestate == 0;
+                let alive = entity.active && lifestate == 0;
 
                 let [x, y, z] = entity.world_position(
                     [nk_cell_x, nk_cell_y, nk_cell_z],

@@ -568,6 +568,9 @@ struct TrCols {
 impl TrCols {
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &TkKeys) {
         for (idx, e) in ctx.entities().iter() {
+            if !e.active {
+                continue;
+            }
             let ttype = match e.class_name.as_ref() {
                 "CNPC_Trooper" => "trooper",
                 "CNPC_TrooperBoss" => "trooper_boss",
@@ -2991,6 +2994,9 @@ impl Demo {
                 // ── Collect troopers (lane troopers, per-tick alive only) ──
                 if load_troopers {
                     for (idx, entity) in $ctx.entities().iter() {
+                        if !entity.active {
+                            continue;
+                        }
                         let ttype = match entity.class_name.as_ref() {
                             "CNPC_Trooper" => "trooper",
                             "CNPC_TrooperBoss" => "trooper_boss",
