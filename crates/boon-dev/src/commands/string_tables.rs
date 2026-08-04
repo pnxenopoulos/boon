@@ -30,10 +30,10 @@ pub fn run(
         .with_context(|| format!("failed to open {}", file.display()))?;
     let ctx = parser.parse_init()?;
 
-    let mut tables: Vec<_> = ctx.string_tables.tables().iter().collect();
+    let mut tables: Vec<_> = ctx.string_tables().tables().iter().collect();
 
     if let Some(ref f) = filter {
-        tables.retain(|t| t.name.contains(f.as_str()));
+        tables.retain(|t| t.name().contains(f.as_str()));
     }
 
     let limit = limit.unwrap_or(tables.len());
@@ -43,14 +43,14 @@ pub fn run(
             .iter()
             .take(limit)
             .map(|table| StringTableOutput {
-                name: table.name.clone(),
-                entry_count: table.entries.len(),
+                name: table.name().to_string(),
+                entry_count: table.entries().len(),
                 entries: if summary {
                     None
                 } else {
                     Some(
                         table
-                            .entries
+                            .entries()
                             .iter()
                             .enumerate()
                             .map(|(i, entry)| StringTableEntryOutput {
@@ -73,19 +73,19 @@ pub fn run(
         println!("{}", "-".repeat(50));
 
         for table in tables.iter().take(limit) {
-            println!("{:<40} {:>8}", table.name, table.entries.len());
+            println!("{:<40} {:>8}", table.name(), table.entries().len());
         }
     } else {
         // Detailed mode: show sample entries
         for table in tables.iter().take(limit) {
             println!(
                 "{} ({} entries)",
-                table.name.green().bold(),
-                table.entries.len()
+                table.name().green().bold(),
+                table.entries().len()
             );
 
             // Show up to 5 sample entries
-            for (i, entry) in table.entries.iter().enumerate().take(5) {
+            for (i, entry) in table.entries().iter().enumerate().take(5) {
                 let key = entry.string.as_deref().unwrap_or("<none>");
                 let data_len = entry
                     .user_data
@@ -95,8 +95,8 @@ pub fn run(
                 println!("  [{}] {} ({})", i, key, data_len.dimmed());
             }
 
-            if table.entries.len() > 5 {
-                println!("  ... and {} more", table.entries.len() - 5);
+            if table.entries().len() > 5 {
+                println!("  ... and {} more", table.entries().len() - 5);
             }
 
             println!();
@@ -105,7 +105,7 @@ pub fn run(
 
     println!(
         "\n{} string tables total{}",
-        ctx.string_tables.tables().len(),
+        ctx.string_tables().tables().len(),
         if limit < tables.len() {
             format!(" (showing {})", limit)
         } else {

@@ -67,7 +67,7 @@ pub fn run(
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
             if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CNPC_TrooperNeutral") {
+                if let Some(s) = ctx.serializers().get("CNPC_TrooperNeutral") {
                     nk_health = s.resolve_field_key("m_iHealth");
                     nk_max_health = s.resolve_field_key("m_iMaxHealth");
                     nk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -90,11 +90,11 @@ pub fn run(
 
             // Only entities this tick changed — a neutral's tracked state can
             // only change on a tick the entity was updated.
-            for &idx in ctx.entities.updated_indices() {
-                let Some(entity) = ctx.entities.get(idx) else {
+            for &idx in ctx.entities().updated_indices() {
+                let Some(entity) = ctx.entities().get(idx) else {
                     continue;
                 };
-                if entity.class_name != "CNPC_TrooperNeutral" {
+                if entity.class_name.as_ref() != "CNPC_TrooperNeutral" {
                     continue;
                 }
 
@@ -128,7 +128,7 @@ pub fn run(
                     prev_state.insert(idx, (alive, current));
                     if alive {
                         rows.push(NeutralOutput {
-                            tick: ctx.tick,
+                            tick: ctx.tick(),
                             team_num: entity.get_i64(nk_team_num),
                             health: current.health,
                             max_health: current.max_health,

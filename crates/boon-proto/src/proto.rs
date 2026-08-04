@@ -6858,6 +6858,21 @@ impl P2pMessages {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CMsgHeroXpGrant {
+    #[prost(uint32, optional, tag = "1")]
+    pub hero_id: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "2")]
+    pub xp_grant: ::core::option::Option<u32>,
+    #[prost(
+        enumeration = "EHeroXpGrantReason",
+        optional,
+        tag = "3",
+        default = "KEGrantWin"
+    )]
+    pub reason: ::core::option::Option<i32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CsoCitadelLobby {
     #[prost(uint64, optional, tag = "1")]
@@ -7198,6 +7213,25 @@ pub mod cso_citadel_party {
         pub duplicate_heroes_enabled: ::core::option::Option<bool>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct RankedScores {
+        #[prost(
+            enumeration = "super::ECitadelRankedType",
+            optional,
+            tag = "1",
+            default = "KECitadelRankedTypeInvalid"
+        )]
+        pub rank_type: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "2")]
+        pub rank_interval: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "3")]
+        pub rank_display_badge: ::core::option::Option<u32>,
+        #[prost(uint32, repeated, packed = "false", tag = "5")]
+        pub unlocked_heroes: ::prost::alloc::vec::Vec<u32>,
+        #[prost(bool, optional, tag = "6")]
+        pub in_calibration: ::core::option::Option<bool>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct Member {
         #[prost(uint32, optional, tag = "1")]
@@ -7236,6 +7270,8 @@ pub mod cso_citadel_party {
         pub owned_heroes: ::prost::alloc::vec::Vec<u32>,
         #[prost(uint32, optional, tag = "13")]
         pub low_priority_games_remaining: ::core::option::Option<u32>,
+        #[prost(message, repeated, tag = "14")]
+        pub ranked_scores: ::prost::alloc::vec::Vec<RankedScores>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -7618,6 +7654,26 @@ pub mod c_msg_match_player_damage_matrix {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CMsgMatchPlayerRankData {
+    #[prost(uint32, optional, tag = "1")]
+    pub initial_display_rank: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "2")]
+    pub initial_flat_progress: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "3")]
+    pub final_flat_progress: ::core::option::Option<u32>,
+    #[prost(int32, optional, tag = "4")]
+    pub desired_progress_change: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "6")]
+    pub initial_calibration_games: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "7")]
+    pub initial_demotion_protection_games: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "8")]
+    pub consumed_demotion_protection: ::core::option::Option<bool>,
+    #[prost(uint32, optional, tag = "9")]
+    pub initial_win_streak: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CMsgMatchMetaDataContents {
     #[prost(message, optional, tag = "2")]
@@ -7845,6 +7901,12 @@ pub mod c_msg_match_meta_data_contents {
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct HeroXpReward {
+        #[prost(message, optional, tag = "1")]
+        pub xp_grant: ::core::option::Option<super::CMsgHeroXpGrant>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
     pub struct PlayerAccolade {
         #[prost(uint32, optional, tag = "1")]
         pub accolade_id: ::core::option::Option<u32>,
@@ -7917,6 +7979,17 @@ pub mod c_msg_match_meta_data_contents {
         pub earned_holiday_award_2025: ::core::option::Option<bool>,
         #[prost(message, repeated, tag = "30")]
         pub power_up_buffs: ::prost::alloc::vec::Vec<PowerUpBuff>,
+        #[prost(message, repeated, tag = "31")]
+        pub hero_xp_rewards: ::prost::alloc::vec::Vec<HeroXpReward>,
+        #[prost(message, optional, tag = "32")]
+        pub player_rank_data: ::core::option::Option<super::CMsgMatchPlayerRankData>,
+        #[prost(
+            enumeration = "super::EPlayerMatchOutcome",
+            optional,
+            tag = "33",
+            default = "KEPlayerMatchOutcomeInvalid"
+        )]
+        pub player_match_outcome: ::core::option::Option<i32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -8111,6 +8184,15 @@ pub mod c_msg_match_meta_data_contents {
         pub bot_difficulty: ::core::option::Option<i32>,
         #[prost(message, repeated, tag = "33")]
         pub street_brawl_rounds: ::prost::alloc::vec::Vec<StreetBrawlRound>,
+        #[prost(
+            enumeration = "super::ECitadelRankedType",
+            optional,
+            tag = "34",
+            default = "KECitadelRankedTypeInvalid"
+        )]
+        pub ranked_type: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "35")]
+        pub rank_interval: ::core::option::Option<u32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
@@ -8481,7 +8563,7 @@ pub enum ECitadelMatchMode {
     KECitadelMatchModeServerTest = 5,
     KECitadelMatchModeTutorial = 6,
     KECitadelMatchModeHeroLabs = 7,
-    KECitadelMatchModeCalibration = 8,
+    KECitadelMatchModeNewPlayerPlacement = 8,
 }
 impl ECitadelMatchMode {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -8498,7 +8580,9 @@ impl ECitadelMatchMode {
             Self::KECitadelMatchModeServerTest => "k_ECitadelMatchMode_ServerTest",
             Self::KECitadelMatchModeTutorial => "k_ECitadelMatchMode_Tutorial",
             Self::KECitadelMatchModeHeroLabs => "k_ECitadelMatchMode_HeroLabs",
-            Self::KECitadelMatchModeCalibration => "k_ECitadelMatchMode_Calibration",
+            Self::KECitadelMatchModeNewPlayerPlacement => {
+                "k_ECitadelMatchMode_NewPlayerPlacement"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -8514,8 +8598,8 @@ impl ECitadelMatchMode {
             "k_ECitadelMatchMode_ServerTest" => Some(Self::KECitadelMatchModeServerTest),
             "k_ECitadelMatchMode_Tutorial" => Some(Self::KECitadelMatchModeTutorial),
             "k_ECitadelMatchMode_HeroLabs" => Some(Self::KECitadelMatchModeHeroLabs),
-            "k_ECitadelMatchMode_Calibration" => {
-                Some(Self::KECitadelMatchModeCalibration)
+            "k_ECitadelMatchMode_NewPlayerPlacement" => {
+                Some(Self::KECitadelMatchModeNewPlayerPlacement)
             }
             _ => None,
         }
@@ -8580,6 +8664,33 @@ impl ECitadelAccountStatMedal {
             "k_eBronze" => Some(Self::KEBronze),
             "k_eSilver" => Some(Self::KESilver),
             "k_eGold" => Some(Self::KEGold),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ECitadelRankedType {
+    KECitadelRankedTypeInvalid = 0,
+    KECitadelRankedTypeNormal = 1,
+}
+impl ECitadelRankedType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::KECitadelRankedTypeInvalid => "k_eCitadelRankedType_Invalid",
+            Self::KECitadelRankedTypeNormal => "k_eCitadelRankedType_Normal",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "k_eCitadelRankedType_Invalid" => Some(Self::KECitadelRankedTypeInvalid),
+            "k_eCitadelRankedType_Normal" => Some(Self::KECitadelRankedTypeNormal),
             _ => None,
         }
     }
@@ -9278,6 +9389,83 @@ impl EFeatureBanReason {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum EHeroXpGrantReason {
+    KEGrantWin = 0,
+    KEGrantLoss = 1,
+    KEGrantAward = 2,
+}
+impl EHeroXpGrantReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::KEGrantWin => "k_eGrant_Win",
+            Self::KEGrantLoss => "k_eGrant_Loss",
+            Self::KEGrantAward => "k_eGrant_Award",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "k_eGrant_Win" => Some(Self::KEGrantWin),
+            "k_eGrant_Loss" => Some(Self::KEGrantLoss),
+            "k_eGrant_Award" => Some(Self::KEGrantAward),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum EPlayerMatchOutcome {
+    KEPlayerMatchOutcomeInvalid = 0,
+    KEPlayerMatchOutcomeWin = 1,
+    KEPlayerMatchOutcomeLoss = 2,
+    KEPlayerMatchOutcomePenalized = 3,
+    KEPlayerMatchOutcomePenalizedParty = 4,
+    KEPlayerMatchOutcomeNotScored = 5,
+}
+impl EPlayerMatchOutcome {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::KEPlayerMatchOutcomeInvalid => "k_EPlayerMatchOutcome_Invalid",
+            Self::KEPlayerMatchOutcomeWin => "k_EPlayerMatchOutcome_Win",
+            Self::KEPlayerMatchOutcomeLoss => "k_EPlayerMatchOutcome_Loss",
+            Self::KEPlayerMatchOutcomePenalized => "k_EPlayerMatchOutcome_Penalized",
+            Self::KEPlayerMatchOutcomePenalizedParty => {
+                "k_EPlayerMatchOutcome_PenalizedParty"
+            }
+            Self::KEPlayerMatchOutcomeNotScored => "k_EPlayerMatchOutcome_NotScored",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "k_EPlayerMatchOutcome_Invalid" => Some(Self::KEPlayerMatchOutcomeInvalid),
+            "k_EPlayerMatchOutcome_Win" => Some(Self::KEPlayerMatchOutcomeWin),
+            "k_EPlayerMatchOutcome_Loss" => Some(Self::KEPlayerMatchOutcomeLoss),
+            "k_EPlayerMatchOutcome_Penalized" => {
+                Some(Self::KEPlayerMatchOutcomePenalized)
+            }
+            "k_EPlayerMatchOutcome_PenalizedParty" => {
+                Some(Self::KEPlayerMatchOutcomePenalizedParty)
+            }
+            "k_EPlayerMatchOutcome_NotScored" => {
+                Some(Self::KEPlayerMatchOutcomeNotScored)
+            }
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CCitadelClientMsgPause {}
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -9542,6 +9730,20 @@ pub struct CCitadelClientMsgHideoutSpawn {
 pub struct CCitadelClientMsgHideoutMatchmakingState {
     #[prost(bool, optional, tag = "1")]
     pub is_matchmaking: ::core::option::Option<bool>,
+    #[prost(
+        enumeration = "ECitadelMatchMode",
+        optional,
+        tag = "2",
+        default = "KECitadelMatchModeInvalid"
+    )]
+    pub match_mode: ::core::option::Option<i32>,
+    #[prost(
+        enumeration = "ECitadelGameMode",
+        optional,
+        tag = "3",
+        default = "KECitadelGameModeInvalid"
+    )]
+    pub game_mode: ::core::option::Option<i32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -10199,6 +10401,56 @@ impl ParticleSystemManagerMessage {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CsoRankedProgress {
+    #[prost(uint32, optional, tag = "1")]
+    pub account_id: ::core::option::Option<u32>,
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "2",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub rank_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "3")]
+    pub rank_interval: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "4")]
+    pub progress: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "5")]
+    pub max_progress: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "6")]
+    pub rank: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "7")]
+    pub max_rank: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "8")]
+    pub leaderboard_rank: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "9")]
+    pub max_leaderboard_rank: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "10")]
+    pub demote_protect_games: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "11")]
+    pub calibrate_games: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "12")]
+    pub win_bit_mask: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "13")]
+    pub match_count: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "14")]
+    pub last_match_hero_id: ::core::option::Option<u32>,
+    #[prost(
+        enumeration = "EPlayerMatchOutcome",
+        optional,
+        tag = "15",
+        default = "KEPlayerMatchOutcomeInvalid"
+    )]
+    pub last_match_outcome: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "16")]
+    pub last_match_kills: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "17")]
+    pub last_match_deaths: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "18")]
+    pub last_match_assists: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CsoGameAccountClient {
     #[prost(uint32, optional, tag = "1")]
     pub account_id: ::core::option::Option<u32>,
@@ -10621,6 +10873,8 @@ pub mod c_msg_client_to_gc_start_matchmaking_response {
         KEResultAccountLocked = 24,
         KEResultTooManyLimitedHeroes = 25,
         KEResultUnverifiedPgi = 26,
+        KEResultRankedInvalidPartySize = 27,
+        KEResultNoBrawlWhileInLowPri = 28,
     }
     impl EResultCode {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -10664,6 +10918,10 @@ pub mod c_msg_client_to_gc_start_matchmaking_response {
                 Self::KEResultAccountLocked => "k_EResult_AccountLocked",
                 Self::KEResultTooManyLimitedHeroes => "k_EResult_TooManyLimitedHeroes",
                 Self::KEResultUnverifiedPgi => "k_EResult_UnverifiedPGI",
+                Self::KEResultRankedInvalidPartySize => {
+                    "k_EResult_RankedInvalidPartySize"
+                }
+                Self::KEResultNoBrawlWhileInLowPri => "k_EResult_NoBrawlWhileInLowPri",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -10720,6 +10978,12 @@ pub mod c_msg_client_to_gc_start_matchmaking_response {
                     Some(Self::KEResultTooManyLimitedHeroes)
                 }
                 "k_EResult_UnverifiedPGI" => Some(Self::KEResultUnverifiedPgi),
+                "k_EResult_RankedInvalidPartySize" => {
+                    Some(Self::KEResultRankedInvalidPartySize)
+                }
+                "k_EResult_NoBrawlWhileInLowPri" => {
+                    Some(Self::KEResultNoBrawlWhileInLowPri)
+                }
                 _ => None,
             }
         }
@@ -10958,6 +11222,10 @@ pub struct CMsgGcToClientDevPlaytestStatus {
     pub roster_non_limited_heroes: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "23")]
     pub matches_per_priority_token: ::core::option::Option<u32>,
+    #[prost(message, repeated, tag = "24")]
+    pub active_ranked_modes: ::prost::alloc::vec::Vec<
+        c_msg_gc_to_client_dev_playtest_status::ActiveRankedMode,
+    >,
 }
 /// Nested message and enum types in `CMsgGCToClientDevPlaytestStatus`.
 pub mod c_msg_gc_to_client_dev_playtest_status {
@@ -10988,6 +11256,29 @@ pub mod c_msg_gc_to_client_dev_playtest_status {
             default = "KECitadelGameModeInvalid"
         )]
         pub game_mode: ::core::option::Option<i32>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct LeaderboardTier {
+        #[prost(uint32, optional, tag = "1")]
+        pub leaderboard_rank: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "2")]
+        pub required_progress: ::core::option::Option<u32>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, PartialEq, ::prost::Message)]
+    pub struct ActiveRankedMode {
+        #[prost(
+            enumeration = "super::ECitadelRankedType",
+            optional,
+            tag = "1",
+            default = "KECitadelRankedTypeInvalid"
+        )]
+        pub rank_type: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "2")]
+        pub rank_interval: ::core::option::Option<u32>,
+        #[prost(message, repeated, tag = "3")]
+        pub leaderboard_tiers: ::prost::alloc::vec::Vec<LeaderboardTier>,
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -11683,6 +11974,12 @@ pub mod c_msg_client_to_gc_party_set_mode_response {
         KENoHeroLabsWhileInLowPri = 23,
         KENoHighRangeFiveStack = 24,
         KEAccountLocked = 25,
+        KERankedInCalibration = 26,
+        KERankedInvalidPartySize = 27,
+        KERankedPartySkillRangeInvalid = 28,
+        KERankedMemberInLowPri = 29,
+        KERankedMemberCurrentlyBanned = 30,
+        KEBrawlMemberInLowPri = 31,
     }
     impl EResponse {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -11716,6 +12013,12 @@ pub mod c_msg_client_to_gc_party_set_mode_response {
                 Self::KENoHeroLabsWhileInLowPri => "k_eNoHeroLabsWhileInLowPri",
                 Self::KENoHighRangeFiveStack => "k_eNoHighRangeFiveStack",
                 Self::KEAccountLocked => "k_eAccountLocked",
+                Self::KERankedInCalibration => "k_eRankedInCalibration",
+                Self::KERankedInvalidPartySize => "k_eRankedInvalidPartySize",
+                Self::KERankedPartySkillRangeInvalid => "k_eRankedPartySkillRangeInvalid",
+                Self::KERankedMemberInLowPri => "k_eRankedMemberInLowPri",
+                Self::KERankedMemberCurrentlyBanned => "k_eRankedMemberCurrentlyBanned",
+                Self::KEBrawlMemberInLowPri => "k_eBrawlMemberInLowPri",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -11746,6 +12049,16 @@ pub mod c_msg_client_to_gc_party_set_mode_response {
                 "k_eNoHeroLabsWhileInLowPri" => Some(Self::KENoHeroLabsWhileInLowPri),
                 "k_eNoHighRangeFiveStack" => Some(Self::KENoHighRangeFiveStack),
                 "k_eAccountLocked" => Some(Self::KEAccountLocked),
+                "k_eRankedInCalibration" => Some(Self::KERankedInCalibration),
+                "k_eRankedInvalidPartySize" => Some(Self::KERankedInvalidPartySize),
+                "k_eRankedPartySkillRangeInvalid" => {
+                    Some(Self::KERankedPartySkillRangeInvalid)
+                }
+                "k_eRankedMemberInLowPri" => Some(Self::KERankedMemberInLowPri),
+                "k_eRankedMemberCurrentlyBanned" => {
+                    Some(Self::KERankedMemberCurrentlyBanned)
+                }
+                "k_eBrawlMemberInLowPri" => Some(Self::KEBrawlMemberInLowPri),
                 _ => None,
             }
         }
@@ -12248,6 +12561,15 @@ pub struct CMsgClientToGcGetMatchHistory {
         default = "KECitadelMatchModeInvalid"
     )]
     pub match_mode: ::core::option::Option<i32>,
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "6",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub ranked_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "7")]
+    pub rank_interval: ::core::option::Option<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -12334,6 +12656,21 @@ pub mod c_msg_client_to_gc_get_match_history_response {
         pub brawl_score_team1: ::core::option::Option<u32>,
         #[prost(uint32, optional, tag = "25")]
         pub brawl_avg_round_time_s: ::core::option::Option<u32>,
+        #[prost(
+            enumeration = "super::EPlayerMatchOutcome",
+            optional,
+            tag = "26",
+            default = "KEPlayerMatchOutcomeInvalid"
+        )]
+        pub player_match_outcome: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "27")]
+        pub ranked_display_badge: ::core::option::Option<u32>,
+        #[prost(int32, optional, tag = "28")]
+        pub ranked_delta: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "29")]
+        pub ranked_calibration_match: ::core::option::Option<u32>,
+        #[prost(bool, optional, tag = "30")]
+        pub ranked_used_demotion_protection: ::core::option::Option<bool>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
@@ -14741,8 +15078,6 @@ pub mod c_msg_client_to_gc_get_leaderboard_response {
         pub rank: ::core::option::Option<u32>,
         #[prost(uint32, repeated, packed = "false", tag = "3")]
         pub top_hero_ids: ::prost::alloc::vec::Vec<u32>,
-        #[prost(uint32, optional, tag = "4")]
-        pub badge_level: ::core::option::Option<u32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
@@ -15549,9 +15884,32 @@ pub struct CMsgPostGameProgressData {
         default = "KECitadelLobbyTeamTeam0"
     )]
     pub winning_team: ::core::option::Option<i32>,
-    #[prost(message, optional, tag = "3")]
+    #[prost(
+        enumeration = "ECitadelMatchMode",
+        optional,
+        tag = "3",
+        default = "KECitadelMatchModeInvalid"
+    )]
+    pub match_mode: ::core::option::Option<i32>,
+    #[prost(
+        enumeration = "ECitadelGameMode",
+        optional,
+        tag = "4",
+        default = "KECitadelGameModeInvalid"
+    )]
+    pub game_mode: ::core::option::Option<i32>,
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "5",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub ranked_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "6")]
+    pub rank_interval: ::core::option::Option<u32>,
+    #[prost(message, optional, tag = "7")]
     pub local_player: ::core::option::Option<c_msg_post_game_progress_data::PlayerData>,
-    #[prost(message, repeated, tag = "4")]
+    #[prost(message, repeated, tag = "8")]
     pub mvp_players: ::prost::alloc::vec::Vec<c_msg_post_game_progress_data::PlayerData>,
 }
 /// Nested message and enum types in `CMsgPostGameProgressData`.
@@ -15585,6 +15943,12 @@ pub mod c_msg_post_game_progress_data {
         pub award_class: ::core::option::Option<::prost::alloc::string::String>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct HeroXpReward {
+        #[prost(message, optional, tag = "1")]
+        pub xp_grant: ::core::option::Option<super::CMsgHeroXpGrant>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct PlayerData {
         #[prost(uint32, optional, tag = "1")]
@@ -15606,6 +15970,19 @@ pub mod c_msg_post_game_progress_data {
         pub accolades: ::prost::alloc::vec::Vec<PlayerAccolade>,
         #[prost(message, repeated, tag = "7")]
         pub awards: ::prost::alloc::vec::Vec<PlayerAward>,
+        #[prost(message, optional, tag = "8")]
+        pub hero_data: ::core::option::Option<super::CMsgPlayerHeroData>,
+        #[prost(message, repeated, tag = "9")]
+        pub hero_xp_rewards: ::prost::alloc::vec::Vec<HeroXpReward>,
+        #[prost(message, optional, tag = "10")]
+        pub player_rank_data: ::core::option::Option<super::CMsgMatchPlayerRankData>,
+        #[prost(
+            enumeration = "super::EPlayerMatchOutcome",
+            optional,
+            tag = "11",
+            default = "KEPlayerMatchOutcomeInvalid"
+        )]
+        pub player_match_outcome: ::core::option::Option<i32>,
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -15665,6 +16042,82 @@ pub mod c_msg_client_to_gc_set_account_privacy_setting_response {
             match value {
                 "k_eSuccess" => Some(Self::KESuccess),
                 "k_eInternalError" => Some(Self::KEInternalError),
+                _ => None,
+            }
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CMsgClientToGcStartRankedInterval {
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "1",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub rank_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "2")]
+    pub interval: ::core::option::Option<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CMsgClientToGcStartRankedIntervalResponse {
+    #[prost(
+        enumeration = "c_msg_client_to_gc_start_ranked_interval_response::EResponse",
+        optional,
+        tag = "1",
+        default = "KEInternalError"
+    )]
+    pub response: ::core::option::Option<i32>,
+}
+/// Nested message and enum types in `CMsgClientToGCStartRankedIntervalResponse`.
+pub mod c_msg_client_to_gc_start_ranked_interval_response {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum EResponse {
+        KEInternalError = 0,
+        KESuccess = 1,
+        KEIntervalInactive = 2,
+        KEAlreadyStarted = 3,
+        KENotEnoughMatchesPlayed = 4,
+        KENotEnoughHeroesUnlocked = 5,
+    }
+    impl EResponse {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::KEInternalError => "k_eInternalError",
+                Self::KESuccess => "k_eSuccess",
+                Self::KEIntervalInactive => "k_eIntervalInactive",
+                Self::KEAlreadyStarted => "k_eAlreadyStarted",
+                Self::KENotEnoughMatchesPlayed => "k_eNotEnoughMatchesPlayed",
+                Self::KENotEnoughHeroesUnlocked => "k_eNotEnoughHeroesUnlocked",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "k_eInternalError" => Some(Self::KEInternalError),
+                "k_eSuccess" => Some(Self::KESuccess),
+                "k_eIntervalInactive" => Some(Self::KEIntervalInactive),
+                "k_eAlreadyStarted" => Some(Self::KEAlreadyStarted),
+                "k_eNotEnoughMatchesPlayed" => Some(Self::KENotEnoughMatchesPlayed),
+                "k_eNotEnoughHeroesUnlocked" => Some(Self::KENotEnoughHeroesUnlocked),
                 _ => None,
             }
         }
@@ -15828,6 +16281,8 @@ pub enum EgcCitadelClientMessages {
     KEMsgGcToClientUpdateHeroReleaseVoteTally = 9281,
     KEMsgClientToGcSetAccountPrivacySetting = 9282,
     KEMsgClientToGcSetAccountPrivacySettingResponse = 9283,
+    KEMsgClientToGcStartRankedInterval = 9289,
+    KEMsgClientToGcStartRankedIntervalResponse = 9290,
 }
 impl EgcCitadelClientMessages {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -16179,6 +16634,12 @@ impl EgcCitadelClientMessages {
             }
             Self::KEMsgClientToGcSetAccountPrivacySettingResponse => {
                 "k_EMsgClientToGCSetAccountPrivacySettingResponse"
+            }
+            Self::KEMsgClientToGcStartRankedInterval => {
+                "k_EMsgClientToGCStartRankedInterval"
+            }
+            Self::KEMsgClientToGcStartRankedIntervalResponse => {
+                "k_EMsgClientToGCStartRankedIntervalResponse"
             }
         }
     }
@@ -16583,6 +17044,12 @@ impl EgcCitadelClientMessages {
             "k_EMsgClientToGCSetAccountPrivacySettingResponse" => {
                 Some(Self::KEMsgClientToGcSetAccountPrivacySettingResponse)
             }
+            "k_EMsgClientToGCStartRankedInterval" => {
+                Some(Self::KEMsgClientToGcStartRankedInterval)
+            }
+            "k_EMsgClientToGCStartRankedIntervalResponse" => {
+                Some(Self::KEMsgClientToGcStartRankedIntervalResponse)
+            }
             _ => None,
         }
     }
@@ -16779,7 +17246,7 @@ pub enum ECitadelClientAccountEvent {
     KESandboxViaHeroPage = 55,
     KEViewedSettingsSteamInput = 56,
     KEViewedSettingsSocial = 57,
-    KECalibrationMatch = 58,
+    KENewPlayerPlacementMatch = 58,
     KESandboxViaPlayMenu = 59,
     KEBotMatchMedium = 60,
     KESandboxViaHideoutTeleport = 61,
@@ -16848,7 +17315,7 @@ impl ECitadelClientAccountEvent {
             Self::KESandboxViaHeroPage => "k_eSandboxViaHeroPage",
             Self::KEViewedSettingsSteamInput => "k_eViewedSettings_SteamInput",
             Self::KEViewedSettingsSocial => "k_eViewedSettings_Social",
-            Self::KECalibrationMatch => "k_eCalibrationMatch",
+            Self::KENewPlayerPlacementMatch => "k_eNewPlayerPlacementMatch",
             Self::KESandboxViaPlayMenu => "k_eSandboxViaPlayMenu",
             Self::KEBotMatchMedium => "k_eBotMatch_Medium",
             Self::KESandboxViaHideoutTeleport => "k_eSandboxViaHideoutTeleport",
@@ -16914,7 +17381,7 @@ impl ECitadelClientAccountEvent {
             "k_eSandboxViaHeroPage" => Some(Self::KESandboxViaHeroPage),
             "k_eViewedSettings_SteamInput" => Some(Self::KEViewedSettingsSteamInput),
             "k_eViewedSettings_Social" => Some(Self::KEViewedSettingsSocial),
-            "k_eCalibrationMatch" => Some(Self::KECalibrationMatch),
+            "k_eNewPlayerPlacementMatch" => Some(Self::KENewPlayerPlacementMatch),
             "k_eSandboxViaPlayMenu" => Some(Self::KESandboxViaPlayMenu),
             "k_eBotMatch_Medium" => Some(Self::KEBotMatchMedium),
             "k_eSandboxViaHideoutTeleport" => Some(Self::KESandboxViaHideoutTeleport),
@@ -17225,6 +17692,15 @@ pub struct CsoCitadelServerStaticLobby {
     pub rewards_eligible: ::core::option::Option<bool>,
     #[prost(uint32, repeated, packed = "false", tag = "29")]
     pub banned_heroes: ::prost::alloc::vec::Vec<u32>,
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "30",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub rank_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "31")]
+    pub rank_interval: ::core::option::Option<u32>,
 }
 /// Nested message and enum types in `CSOCitadelServerStaticLobby`.
 pub mod cso_citadel_server_static_lobby {
@@ -17280,6 +17756,26 @@ pub mod cso_citadel_server_static_lobby {
         pub match_number: ::core::option::Option<u32>,
         #[prost(bool, optional, tag = "21")]
         pub randomed_hero: ::core::option::Option<bool>,
+        #[prost(uint32, repeated, packed = "false", tag = "26")]
+        pub unlocked_hero_ids: ::prost::alloc::vec::Vec<u32>,
+        #[prost(uint32, optional, tag = "27")]
+        pub ranked_calibration_matches: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "28")]
+        pub ranked_demote_protection_matches: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "29")]
+        pub ranked_progress: ::core::option::Option<u32>,
+        #[prost(int32, optional, tag = "30")]
+        pub ranked_delta_win: ::core::option::Option<i32>,
+        #[prost(int32, optional, tag = "31")]
+        pub ranked_delta_loss: ::core::option::Option<i32>,
+        #[prost(int32, optional, tag = "32")]
+        pub ranked_delta_abandon: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "33")]
+        pub rank_progress_badge: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "34")]
+        pub rank_display_badge: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "35")]
+        pub ranked_win_streak: ::core::option::Option<u32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -17400,7 +17896,7 @@ pub mod c_msg_server_signout_data_server_perf_stats {
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
-#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CMsgServerToGcUpdateMatchInfo {
     #[prost(uint64, optional, tag = "1")]
     pub lobby_id: ::core::option::Option<u64>,
@@ -17424,6 +17920,10 @@ pub struct CMsgServerToGcUpdateMatchInfo {
     pub brawl_score_team0: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "12")]
     pub brawl_score_team1: ::core::option::Option<u32>,
+    #[prost(uint32, repeated, tag = "13")]
+    pub changed_hero_slots: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, repeated, tag = "14")]
+    pub changed_hero_ids: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -17861,67 +18361,12 @@ pub struct CMsgServerSignoutDataHeroXpGrant {
 /// Nested message and enum types in `CMsgServerSignoutData_HeroXPGrant`.
 pub mod c_msg_server_signout_data_hero_xp_grant {
     #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-    pub struct HeroXpGrant {
-        #[prost(uint32, optional, tag = "1")]
-        pub hero_id: ::core::option::Option<u32>,
-        #[prost(uint32, optional, tag = "2")]
-        pub xp_grant: ::core::option::Option<u32>,
-        #[prost(
-            enumeration = "EGrantReason",
-            optional,
-            tag = "3",
-            default = "KEGrantWin"
-        )]
-        pub reason: ::core::option::Option<i32>,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct AccountXpGrant {
         #[prost(uint32, optional, tag = "1")]
         pub account_id: ::core::option::Option<u32>,
         #[prost(message, repeated, tag = "2")]
-        pub xp_grant: ::prost::alloc::vec::Vec<HeroXpGrant>,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(
-        Clone,
-        Copy,
-        Debug,
-        PartialEq,
-        Eq,
-        Hash,
-        PartialOrd,
-        Ord,
-        ::prost::Enumeration
-    )]
-    #[repr(i32)]
-    pub enum EGrantReason {
-        KEGrantWin = 0,
-        KEGrantLoss = 1,
-        KEGrantAward = 2,
-    }
-    impl EGrantReason {
-        /// String value of the enum field names used in the ProtoBuf definition.
-        ///
-        /// The values are not transformed in any way and thus are considered stable
-        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-        pub fn as_str_name(&self) -> &'static str {
-            match self {
-                Self::KEGrantWin => "k_eGrant_Win",
-                Self::KEGrantLoss => "k_eGrant_Loss",
-                Self::KEGrantAward => "k_eGrant_Award",
-            }
-        }
-        /// Creates an enum from field names used in the ProtoBuf definition.
-        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-            match value {
-                "k_eGrant_Win" => Some(Self::KEGrantWin),
-                "k_eGrant_Loss" => Some(Self::KEGrantLoss),
-                "k_eGrant_Award" => Some(Self::KEGrantAward),
-                _ => None,
-            }
-        }
+        pub xp_grant: ::prost::alloc::vec::Vec<super::CMsgHeroXpGrant>,
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -18206,6 +18651,69 @@ pub mod c_msg_server_signout_data_street_brawl_data {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CMsgServerSignoutDataHeroDraftData {
+    #[prost(message, repeated, tag = "1")]
+    pub hero_draft_attempts: ::prost::alloc::vec::Vec<
+        c_msg_server_signout_data_hero_draft_data::HeroDraftAttempt,
+    >,
+}
+/// Nested message and enum types in `CMsgServerSignoutData_HeroDraftData`.
+pub mod c_msg_server_signout_data_hero_draft_data {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+    pub struct HeroDraftAttempt {
+        #[prost(uint32, optional, tag = "1")]
+        pub player_slot: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "2")]
+        pub hero_id: ::core::option::Option<u32>,
+        #[prost(enumeration = "EDraftOutcome", optional, tag = "3", default = "KEError")]
+        pub outcome: ::core::option::Option<i32>,
+        #[prost(uint32, optional, tag = "4")]
+        pub time: ::core::option::Option<u32>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum EDraftOutcome {
+        KEError = 0,
+        KEAlreadyTaken = 1,
+        KESuccess = 2,
+    }
+    impl EDraftOutcome {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::KEError => "k_eError",
+                Self::KEAlreadyTaken => "k_eAlreadyTaken",
+                Self::KESuccess => "k_eSuccess",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "k_eError" => Some(Self::KEError),
+                "k_eAlreadyTaken" => Some(Self::KEAlreadyTaken),
+                "k_eSuccess" => Some(Self::KESuccess),
+                _ => None,
+            }
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CMsgServerSignoutDataPenalizedPlayers {
     #[prost(message, repeated, tag = "1")]
     pub penalized_players: ::prost::alloc::vec::Vec<
@@ -18352,6 +18860,15 @@ pub struct CMsgMatchData {
     pub forgive_existing_abandons: ::core::option::Option<bool>,
     #[prost(uint32, optional, tag = "23")]
     pub brawl_avg_round_time_s: ::core::option::Option<u32>,
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "25",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub rank_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "26")]
+    pub rank_interval: ::core::option::Option<u32>,
 }
 /// Nested message and enum types in `CMsgMatchData`.
 pub mod c_msg_match_data {
@@ -18515,6 +19032,15 @@ pub mod c_msg_match_data {
         pub new_player_score: ::core::option::Option<f32>,
         #[prost(float, optional, tag = "58")]
         pub hero_mmru_skill: ::core::option::Option<f32>,
+        #[prost(
+            enumeration = "super::EPlayerMatchOutcome",
+            optional,
+            tag = "61",
+            default = "KEPlayerMatchOutcomeInvalid"
+        )]
+        pub player_match_outcome: ::core::option::Option<i32>,
+        #[prost(int32, optional, tag = "62")]
+        pub rank_change_delta: ::core::option::Option<i32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -19348,6 +19874,7 @@ pub enum EgcServerSignoutData {
     KEServerSignoutDataMatchKills = 14,
     KEServerSignoutDataPlayerBehavior = 15,
     KEServerSignoutDataStreetBrawlData = 16,
+    KEServerSignoutDataHeroDraftData = 17,
 }
 impl EgcServerSignoutData {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -19387,6 +19914,9 @@ impl EgcServerSignoutData {
             }
             Self::KEServerSignoutDataStreetBrawlData => {
                 "k_EServerSignoutData_StreetBrawlData"
+            }
+            Self::KEServerSignoutDataHeroDraftData => {
+                "k_EServerSignoutData_HeroDraftData"
             }
         }
     }
@@ -19432,6 +19962,9 @@ impl EgcServerSignoutData {
             }
             "k_EServerSignoutData_StreetBrawlData" => {
                 Some(Self::KEServerSignoutDataStreetBrawlData)
+            }
+            "k_EServerSignoutData_HeroDraftData" => {
+                Some(Self::KEServerSignoutDataHeroDraftData)
             }
             _ => None,
         }
@@ -20552,6 +21085,8 @@ pub struct CCitadelUserMsgStaminaConsumed {
     pub stamina_max: ::core::option::Option<f32>,
     #[prost(float, optional, tag = "7")]
     pub gametime: ::core::option::Option<f32>,
+    #[prost(bool, optional, tag = "8")]
+    pub play_sound: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -20846,6 +21381,18 @@ pub struct CCitadelUserMsgBannedHeroes {
     pub banned_hero_ids: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CCitadelUserMsgChangeHeroStatus {
+    #[prost(bool, optional, tag = "1")]
+    pub success: ::core::option::Option<bool>,
+    #[prost(bool, optional, tag = "2")]
+    pub is_hero_locked: ::core::option::Option<bool>,
+    #[prost(uint32, repeated, packed = "false", tag = "3")]
+    pub lock_hero_ids: ::prost::alloc::vec::Vec<u32>,
+    #[prost(uint32, repeated, packed = "false", tag = "4")]
+    pub unlock_hero_ids: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CitadelUserMessageIds {
@@ -20909,6 +21456,7 @@ pub enum CitadelUserMessageIds {
     KEUserMsgItemDraftReaction = 364,
     KEUserMsgImportantAbilityUsed = 365,
     KEUserMsgBannedHeroes = 366,
+    KEUserMsgChangeHeroStatus = 370,
 }
 impl CitadelUserMessageIds {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -20989,6 +21537,7 @@ impl CitadelUserMessageIds {
             Self::KEUserMsgItemDraftReaction => "k_EUserMsg_ItemDraftReaction",
             Self::KEUserMsgImportantAbilityUsed => "k_EUserMsg_ImportantAbilityUsed",
             Self::KEUserMsgBannedHeroes => "k_EUserMsg_BannedHeroes",
+            Self::KEUserMsgChangeHeroStatus => "k_EUserMsg_ChangeHeroStatus",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -21076,6 +21625,7 @@ impl CitadelUserMessageIds {
                 Some(Self::KEUserMsgImportantAbilityUsed)
             }
             "k_EUserMsg_BannedHeroes" => Some(Self::KEUserMsgBannedHeroes),
+            "k_EUserMsg_ChangeHeroStatus" => Some(Self::KEUserMsgChangeHeroStatus),
             _ => None,
         }
     }
@@ -26016,9 +26566,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1", default = "0")]
+    #[prost(uint32, optional, tag = "1")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2", default = "0")]
+    #[prost(uint32, optional, tag = "2")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -26822,7 +27372,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2", default = "0")]
+    #[prost(uint32, optional, tag = "2")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,

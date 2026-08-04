@@ -33,7 +33,7 @@ pub fn run(
         .with_context(|| format!("failed to open {}", file.display()))?;
     let container = parser.parse_send_tables()?;
 
-    let mut serializers: Vec<_> = container.serializers.values().collect();
+    let mut serializers: Vec<_> = container.iter().map(|(_, serializer)| serializer).collect();
     serializers.sort_by(|a, b| a.name.cmp(&b.name));
 
     if let Some(ref f) = filter {
@@ -120,7 +120,7 @@ pub fn run(
 
     println!(
         "\n{} serializers total{}",
-        container.serializers.len(),
+        container.len(),
         if limit < serializers.len() {
             format!(" (showing {})", limit)
         } else {

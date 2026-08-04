@@ -405,6 +405,28 @@ class Demo:
             - **hero_id** (*int*) -- The player's hero ID.
             - **team_num** (*int*) -- The player's raw team number.
             - **start_lane** (*int*) -- The player's original lane color (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the ``CMsgLaneColor`` proto enum).
+            - **rank** (*int*) -- The player's packed competitive display rank; 0 means unranked, calibrating, or unavailable.
+        """
+        ...
+
+    @property
+    def banned_heroes(self) -> pl.DataFrame:
+        """Heroes banned from this match as a Polars DataFrame.
+
+        Read from the one-shot ``BannedHeroes`` user message, which the server
+        sends early in the demo (before the match starts) only when the match
+        has bans. The message carries nothing but the hero IDs -- no team, no
+        banning player, and no pick/ban ordering -- so this cannot be used to
+        reconstruct a draft.
+
+        An empty DataFrame means no bans were recorded for this match. Demos
+        from builds that never emit the message are indistinguishable from
+        ban-free matches, so treat empty as "nothing recorded" rather than as
+        positive proof that nothing was banned.
+
+        Columns:
+            - **hero_id** (*int*) -- The banned hero's ID (joins to ``players.hero_id``).
+            - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID that predates the bundled hero table.
         """
         ...
 
@@ -617,6 +639,41 @@ class Demo:
             - **tick** (*int*) -- The game tick.
             - **team_num** (*int*) -- The team involved.
             - **event** (*str*) -- ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
+        """
+        ...
+
+    @property
+    def rift(self) -> pl.DataFrame:
+        """Rift lifecycle as a Polars DataFrame -- one row per Rift.
+
+        The Rift is a periodic king-of-the-hill objective (``Koth`` in the game
+        files). It is announced, becomes contestable, and then either is captured
+        by a team -- which grants that team buffed troopers in the Rift's lane --
+        or expires uncaptured.
+
+        Exactly one of ``capture_tick`` / ``expire_tick`` is set per row. Only
+        completed Rifts appear: one still live when the demo ends is omitted.
+
+        Auto-loads on first access if not already loaded via :meth:`load`.
+
+        Columns:
+            - **rift_num** (*int*) -- 1-based Rift index in the match. Entity
+              indices are recycled between Rifts, so this is the stable
+              identifier.
+            - **announce_tick** (*int | None*) -- Tick the spawner appeared,
+              ahead of the Rift becoming contestable. ``None`` if not observed.
+            - **active_tick** (*int*) -- Tick the Rift became contestable.
+            - **capture_tick** (*int | None*) -- Tick a team captured it, or
+              ``None`` if it expired.
+            - **expire_tick** (*int | None*) -- Tick it expired uncaptured, or
+              ``None`` if it was captured.
+            - **winning_team** (*int | None*) -- Team that captured it, from the
+              game rules' scoring team. ``None`` if it expired.
+            - **lane** (*int*) -- Lane the Rift spawned in (``1``/``6``
+              observed), or ``0`` when the location is not a known Rift site.
+            - **x** (*float*) -- X position of the cash-in in world (Hammer) units.
+            - **y** (*float*) -- Y position of the cash-in in world (Hammer) units.
+            - **z** (*float*) -- Z position of the cash-in in world (Hammer) units.
         """
         ...
 

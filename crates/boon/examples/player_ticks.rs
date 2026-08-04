@@ -31,7 +31,7 @@ fn main() {
         .run_to_end_filtered(&filter, |ctx| {
             // Resolve field keys once from the serializer
             if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
+                if let Some(s) = ctx.serializers().get("CCitadelPlayerPawn") {
                     nk_health = s.resolve_field_key("m_iHealth");
                     nk_vec_x =
                         s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX");
@@ -51,8 +51,8 @@ fn main() {
 
             total_ticks += 1;
 
-            for (_, entity) in ctx.entities.iter() {
-                if entity.class_name != "CCitadelPlayerPawn" {
+            for (_, entity) in ctx.entities().iter() {
+                if entity.class_name.as_ref() != "CCitadelPlayerPawn" {
                     continue;
                 }
 
@@ -72,7 +72,12 @@ fn main() {
                 if total_ticks <= 20 {
                     println!(
                         "[tick {:>6}] pawn #{:<5} health={:<6} pos=({:.1}, {:.1}, {:.1})",
-                        ctx.tick, entity.index, health, x, y, z,
+                        ctx.tick(),
+                        entity.index,
+                        health,
+                        x,
+                        y,
+                        z,
                     );
                 }
 

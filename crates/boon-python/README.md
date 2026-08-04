@@ -59,9 +59,9 @@ print(modifier_names())  # {2059539911: "timer", ...}
 
 # Player info
 print(demo.players)
-# shape: (12, 5)
-# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┐
-# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane │
+# shape: (12, 6)
+# ┌─────────────┬──────────────┬─────────┬──────────┬────────────┬──────┐
+# │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane ┆ rank │
 # ...
 
 # Datasets (Polars DataFrames — all lazy-loaded on first access)
@@ -81,6 +81,7 @@ neutrals         = demo.neutrals          # neutral creep state changes
 stat_modifier_events = demo.stat_modifier_events  # permanent stat bonus change events
 active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 urn              = demo.urn               # urn lifecycle and delivery events
+rift             = demo.rift              # rift (koth) lifecycle, one row per rift
 ```
 
 ## CLI

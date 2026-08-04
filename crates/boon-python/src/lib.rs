@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use boon_proto::proto::CitadelUserMessageIds as Msg;
@@ -136,8 +136,8 @@ struct PtKeys {
 
 impl PtKeys {
     fn resolve(ctx: &boon_parser::Context) -> Self {
-        let pawn = ctx.serializers.get("CCitadelPlayerPawn");
-        let ctrl = ctx.serializers.get("CCitadelPlayerController");
+        let pawn = ctx.serializers().get("CCitadelPlayerPawn");
+        let ctrl = ctx.serializers().get("CCitadelPlayerController");
         let p = |name: &str| pawn.and_then(|s| s.resolve_field_key(name));
         let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
         Self {
@@ -253,26 +253,26 @@ struct PtCols {
 }
 
 impl PtCols {
-    /// Append one snapshot row per live player at `ctx.tick` (mirrors the serial
+    /// Append one snapshot row per live player at `ctx.tick()` (mirrors the serial
     /// collector in `load()`; must stay in sync with it).
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &PtKeys) {
         for (_, ctrl) in ctx
-            .entities
+            .entities()
             .iter()
-            .filter(|(_, e)| e.class_name == "CCitadelPlayerController")
+            .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
         {
             let pawn = match ctrl
                 .get_handle(k.pawn_handle)
-                .and_then(|h| ctx.entities.get_by_handle(h))
+                .and_then(|h| ctx.entities().get_by_handle(h))
             {
-                Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
+                Some(p) if p.class_name.as_ref() == "CCitadelPlayerPawn" => p,
                 _ => continue,
             };
             let hid = pawn.get_i64(k.hero_id);
             if hid == 0 {
                 continue;
             }
-            self.tick.push(ctx.tick);
+            self.tick.push(ctx.tick());
             self.hero_id.push(hid);
             let [x, y, z] =
                 pawn.world_position([k.cell_x, k.cell_y, k.cell_z], [k.vec_x, k.vec_y, k.vec_z]);
@@ -465,7 +465,7 @@ struct WkKeys {
 
 impl WkKeys {
     fn resolve(ctx: &boon_parser::Context) -> Self {
-        let s = ctx.serializers.get("CCitadelGameRulesProxy");
+        let s = ctx.serializers().get("CCitadelGameRulesProxy");
         Self {
             is_paused: s.and_then(|s| s.resolve_field_key("m_pGameRules.m_bGamePaused")),
             next_midboss: s
@@ -485,11 +485,11 @@ struct WtCols {
 impl WtCols {
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &WkKeys) {
         if let Some((_, e)) = ctx
-            .entities
+            .entities()
             .iter()
-            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+            .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
         {
-            self.tick.push(ctx.tick);
+            self.tick.push(ctx.tick());
             self.is_paused.push(e.get_bool(k.is_paused));
             self.next_midboss.push(e.get_f32(k.next_midboss));
         }
@@ -530,9 +530,9 @@ struct TkKeys {
 impl TkKeys {
     fn resolve(ctx: &boon_parser::Context) -> Self {
         let s = ctx
-            .serializers
+            .serializers()
             .get("CNPC_Trooper")
-            .or_else(|| ctx.serializers.get("CNPC_TrooperBoss"));
+            .or_else(|| ctx.serializers().get("CNPC_TrooperBoss"));
         let f = |name: &str| s.and_then(|s| s.resolve_field_key(name));
         Self {
             health: f("m_iHealth"),
@@ -567,8 +567,11 @@ struct TrCols {
 
 impl TrCols {
     fn collect_tick(&mut self, ctx: &boon_parser::Context, k: &TkKeys) {
-        for (idx, e) in ctx.entities.iter() {
-            let ttype = match e.class_name.as_str() {
+        for (idx, e) in ctx.entities().iter() {
+            if !e.active {
+                continue;
+            }
+            let ttype = match e.class_name.as_ref() {
                 "CNPC_Trooper" => "trooper",
                 "CNPC_TrooperBoss" => "trooper_boss",
                 _ => continue,
@@ -580,7 +583,7 @@ impl TrCols {
             if e.get_i64(k.lifestate) != 0 {
                 continue;
             }
-            self.tick.push(ctx.tick);
+            self.tick.push(ctx.tick());
             self.ttype.push(ttype.to_string());
             self.team_num.push(e.get_i64(k.team_num));
             self.lane.push(e.get_i64(k.lane));
@@ -756,9 +759,45 @@ const VALID_DATASETS: &[&str] = &[
     "stat_modifier_events",
     "active_modifiers",
     "urn",
+    "rift",
 ];
 
 const VALID_STREET_BRAWL_DATASETS: &[&str] = &["street_brawl_ticks", "street_brawl_rounds"];
+
+/// Known Rift ("Koth") cash-in sites, as `([x, y], lane)`.
+///
+/// The Rift entities carry no `m_iLane` field, so the lane has to come from the
+/// cash-in location. Each site below was cross-checked against the lane of the
+/// buffed trooper cohort that spawns for the winning team after a capture. Only
+/// these two sites have been observed, so any other location resolves to lane
+/// `0` rather than being guessed at.
+const RIFT_LANE_SITES: &[([f32; 2], i64)] = &[([-7560.0, 0.0], 1), ([7612.0, 0.0], 6)];
+
+/// Match radius, in Hammer units, for associating a location with a known Rift
+/// site. The two known sites are ~15k units apart, so this is deliberately
+/// loose enough to absorb per-match jitter without ever matching both.
+const RIFT_LANE_TOLERANCE: f32 = 1024.0;
+
+/// Upper bound, in Hammer units, on a plausible map coordinate.
+///
+/// The game clears `m_vKothCashInCurrentLocation` to `FLT_MAX` rather than to
+/// zero once a Rift resolves. `FLT_MAX` is finite, so an `is_finite` check does
+/// not reject it — this bound does.
+const RIFT_COORD_SANITY: f32 = 1.0e6;
+
+/// The lane for a Rift cash-in location, or `0` when the location is not a
+/// known Rift site (see [`RIFT_LANE_SITES`]).
+fn rift_lane_for(x: f32, y: f32) -> i64 {
+    if !x.is_finite() || !y.is_finite() {
+        return 0;
+    }
+    for ([sx, sy], lane) in RIFT_LANE_SITES {
+        if (x - sx).abs() <= RIFT_LANE_TOLERANCE && (y - sy).abs() <= RIFT_LANE_TOLERANCE {
+            return *lane;
+        }
+    }
+    0
+}
 
 /// A Deadlock demo file.
 ///
@@ -791,7 +830,10 @@ struct Demo {
     cached_damage: Option<DataFrame>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
-    game_over_scanned: bool,
+    // Hero IDs from the one-shot `BannedHeroes` message. `Some(vec![])` means
+    // the demo was scanned and carried no bans; `None` means not scanned yet.
+    banned_hero_ids: Option<Vec<u32>>,
+    always_events_scanned: bool,
     // Flex slot unlock events
     cached_flex_slots: Option<DataFrame>,
     cached_abilities: Option<DataFrame>,
@@ -809,6 +851,7 @@ struct Demo {
     cached_street_brawl_ticks: Option<DataFrame>,
     cached_street_brawl_rounds: Option<DataFrame>,
     cached_urn: Option<DataFrame>,
+    cached_rift: Option<DataFrame>,
 }
 
 /// The (gold, orbs) a player earned from a given source at a snapshot, or
@@ -1208,12 +1251,12 @@ impl Demo {
         let ctx = parser.parse_to_tick(1).map_err(to_py_err)?;
 
         let game_rules = ctx
-            .entities
+            .entities()
             .iter()
-            .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy");
+            .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy");
 
         let match_id = game_rules.and_then(|(_, e)| {
-            let serializer = ctx.serializers.get(&e.class_name)?;
+            let serializer = ctx.serializers().get(&e.class_name)?;
             let mid_key = serializer.resolve_field_key("m_pGameRules.m_unMatchID")?;
             match e.fields.get(&mid_key)? {
                 boon_parser::FieldValue::U64(id) => Some(*id),
@@ -1224,7 +1267,7 @@ impl Demo {
 
         let game_mode = game_rules
             .and_then(|(_, e)| {
-                let serializer = ctx.serializers.get(&e.class_name)?;
+                let serializer = ctx.serializers().get(&e.class_name)?;
                 Some(e.get_i64(serializer.resolve_field_key("m_pGameRules.m_eGameMode")))
             })
             .unwrap_or(0);
@@ -1251,7 +1294,8 @@ impl Demo {
             cached_kills: None,
             cached_damage: None,
             game_over: None,
-            game_over_scanned: false,
+            banned_hero_ids: None,
+            always_events_scanned: false,
             cached_abilities: None,
             cached_flex_slots: None,
             cached_ability_upgrades: None,
@@ -1268,6 +1312,7 @@ impl Demo {
             cached_street_brawl_ticks: None,
             cached_street_brawl_rounds: None,
             cached_urn: None,
+            cached_rift: None,
         })
     }
 
@@ -1379,7 +1424,10 @@ impl Demo {
     fn summary(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
 
-        let events = self.parser.events(None).map_err(to_py_err)?;
+        let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
+        let events = py
+            .detach(|| self.parser.events_filtered(None, &event_types))
+            .map_err(to_py_err)?;
         let event = events
             .iter()
             .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
@@ -1499,54 +1547,59 @@ impl Demo {
             (None, None) => None,
         };
 
-        // Explicit + event ticks.
         let explicit = ticks.map(IntOrList::into_vec).unwrap_or_default();
-        let mut tick_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
-        if let Some(events) = events {
-            tick_set = self.event_ticks(&events.into_vec())?;
-        }
-        tick_set.extend(&explicit);
+        let event_names = events.map(StrOrList::into_vec);
 
-        let has_window = start_tick.is_some() || end_tick.is_some();
-        if stride.is_none() && tick_set.is_empty() && !has_window {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "snapshots(): specify at least one of `ticks`, `every`, `seconds`, \
-                 `events`, or `start_tick` / `end_tick`",
-            ));
-        }
+        // Event-dataset loading, tick indexing, seeking, and the snapshot decode
+        // are all pure Rust work. Keep only the final Python object conversion
+        // under the interpreter lock.
+        let (pt, wt, tr) = py.detach(|| {
+            let mut tick_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
+            if let Some(names) = event_names.as_deref() {
+                tick_set = self.event_ticks(names)?;
+            }
+            tick_set.extend(explicit);
 
-        // Fast path: a single tick with no stride or window seeks directly
-        // (`parse_to_tick`) instead of decoding the whole demo.
-        let (pt, wt, tr) = if stride.is_none() && !has_window && tick_set.len() == 1 {
-            let t = *tick_set.iter().next().expect("len == 1");
-            self.snapshot_at_tick(t, wants)?
-        } else {
-            // The tick predicate: the union of the stride-sampled ticks and the
-            // explicit/event ticks, restricted to the window. With no sampler,
-            // every tick in the window.
-            let start = start_tick.unwrap_or(i32::MIN);
-            let end = end_tick.unwrap_or(i32::MAX);
-            let pred = if stride.is_none() && tick_set.is_empty() {
-                TickPredicate::Window { start, end }
+            let has_window = start_tick.is_some() || end_tick.is_some();
+            if stride.is_none() && tick_set.is_empty() && !has_window {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "snapshots(): specify at least one of `ticks`, `every`, `seconds`, \
+                     `events`, or `start_tick` / `end_tick`",
+                ));
+            }
+
+            // Fast path: a single tick with no stride or window seeks directly
+            // (`parse_to_tick`) instead of decoding the whole demo.
+            if stride.is_none() && !has_window && tick_set.len() == 1 {
+                let t = *tick_set.iter().next().expect("len == 1");
+                self.snapshot_at_tick(t, wants)
             } else {
-                let mut sampled = tick_set;
-                if let Some(step) = stride {
-                    let mut last: Option<i32> = None;
-                    for t in self.parser.distinct_ticks().map_err(to_py_err)? {
-                        if last.is_none_or(|l| t - l >= step) {
-                            sampled.insert(t);
-                            last = Some(t);
+                // The tick predicate is the union of stride-sampled and explicit
+                // event ticks, restricted to the requested window.
+                let start = start_tick.unwrap_or(i32::MIN);
+                let end = end_tick.unwrap_or(i32::MAX);
+                let pred = if stride.is_none() && tick_set.is_empty() {
+                    TickPredicate::Window { start, end }
+                } else {
+                    let mut sampled = tick_set;
+                    if let Some(step) = stride {
+                        let mut last: Option<i32> = None;
+                        for t in self.parser.distinct_ticks().map_err(to_py_err)? {
+                            if last.is_none_or(|l| t - l >= step) {
+                                sampled.insert(t);
+                                last = Some(t);
+                            }
                         }
                     }
-                }
-                TickPredicate::Set {
-                    ticks: sampled,
-                    start,
-                    end,
-                }
-            };
-            self.build_snapshots_parallel(wants, &pred)?
-        };
+                    TickPredicate::Set {
+                        ticks: sampled,
+                        start,
+                        end,
+                    }
+                };
+                self.build_snapshots_parallel(wants, &pred)
+            }
+        })?;
         let frame_for = |name: &str| -> Option<DataFrame> {
             match name {
                 "player_ticks" => pt.clone(),
@@ -1601,13 +1654,15 @@ impl Demo {
     /// - team_num: The player's raw team number
     /// - start_lane: The player's original lane color
     ///   (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum)
+    /// - rank: The player's packed competitive display rank (0 means unranked,
+    ///   calibrating, or unavailable)
     #[getter]
-    fn players(&mut self) -> PyResult<PyDataFrame> {
+    fn players(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if let Some(ref df) = self.cached_players {
             return Ok(PyDataFrame(df.clone()));
         }
 
-        // The roster (name / steam id / hero / team / lane) is set once the
+        // The roster (name / steam id / hero / team / lane / rank) is set once the
         // match is underway and never changes, so it can be snapshotted from a
         // single tick. Prefer the game-over tick: it is late enough that every
         // field is populated (heroes locked, lanes assigned) but before the
@@ -1616,16 +1671,52 @@ impl Demo {
         // pre-game placeholders and finding the controllers (partially or
         // fully) gone at the end. Fall back to the final tick only when a demo
         // has no game-over event (e.g. an incomplete recording).
-        self.ensure_always_events_scanned()?;
+        py.detach(|| self.ensure_always_events_scanned())?;
         let snapshot_tick = self.game_over.map_or(self.total_ticks, |(_, tick)| tick);
-        let mut df = self.collect_players_at(snapshot_tick)?;
+        let mut df = py.detach(|| self.collect_players_at(snapshot_tick))?;
 
         // Defensive: if that tick somehow had no controllers, try the other.
         if df.height() == 0 && snapshot_tick != self.total_ticks {
-            df = self.collect_players_at(self.total_ticks)?;
+            df = py.detach(|| self.collect_players_at(self.total_ticks))?;
         }
 
         self.cached_players = Some(df.clone());
+        Ok(PyDataFrame(df))
+    }
+
+    /// Heroes banned from this match as a Polars DataFrame.
+    ///
+    /// Returns a DataFrame with columns:
+    /// - hero_id: The banned hero's ID (joins to ``players.hero_id``)
+    /// - hero_name: The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID
+    ///   that predates the bundled hero table
+    ///
+    /// Read from the one-shot ``BannedHeroes`` user message, which the server
+    /// sends early in the demo (before the match starts) only when the match
+    /// has bans. The message carries nothing but the hero IDs — no team, no
+    /// banning player, and no pick/ban ordering — so this cannot be used to
+    /// reconstruct a draft.
+    ///
+    /// An empty DataFrame means no bans were recorded for this match. Demos
+    /// from builds that never emit the message are indistinguishable from
+    /// ban-free matches, so treat empty as "nothing recorded" rather than as
+    /// positive proof that nothing was banned.
+    #[getter]
+    fn banned_heroes(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        py.detach(|| self.ensure_always_events_scanned())?;
+        let ids: Vec<i64> = self
+            .banned_hero_ids
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|&id| id as i64)
+            .collect();
+        let names: Vec<&'static str> = ids.iter().map(|&id| boon_parser::hero_name(id)).collect();
+        let df = df_from_columns(vec![
+            Column::new("hero_id".into(), ids),
+            Column::new("hero_name".into(), names),
+        ])
+        .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
         Ok(PyDataFrame(df))
     }
 
@@ -1642,18 +1733,10 @@ impl Demo {
 
     /// Load one or more datasets from the demo file in a single pass.
     ///
-    /// Valid dataset names: see ``available_datasets()``.
-    /// Already-loaded datasets are skipped. Multiple datasets requested together
-    /// share a single parse pass over the file for efficiency.
-    ///
-    /// Args:
-    ///     *datasets: One or more dataset names to load.
-    ///
-    /// Raises:
-    ///     ValueError: If an unknown dataset name is provided.
-    ///     NotStreetBrawlError: If a street brawl dataset is requested on a non-street-brawl demo.
+    /// Already-loaded datasets are skipped, and datasets requested together
+    /// share one parse pass.
     #[pyo3(signature = (*datasets))]
-    fn load(&mut self, datasets: Vec<String>) -> PyResult<()> {
+    fn load(&mut self, py: Python<'_>, datasets: Vec<String>) -> PyResult<()> {
         // Validate dataset names
         for name in &datasets {
             if !VALID_DATASETS.contains(&name.as_str())
@@ -1711,6 +1794,7 @@ impl Demo {
             && self.cached_street_brawl_ticks.is_none();
         let load_street_brawl_rounds = datasets.iter().any(|s| s == "street_brawl_rounds")
             && self.cached_street_brawl_rounds.is_none();
+        let load_rift = datasets.iter().any(|s| s == "rift") && self.cached_rift.is_none();
 
         if !load_abilities
             && !load_player_ticks
@@ -1731,6 +1815,7 @@ impl Demo {
             && !load_urn
             && !load_street_brawl_ticks
             && !load_street_brawl_rounds
+            && !load_rift
         {
             return Ok(());
         }
@@ -1755,12 +1840,15 @@ impl Demo {
             && !load_ability_ticks
             && !load_urn
             && !load_street_brawl_ticks
-            && !load_street_brawl_rounds;
+            && !load_street_brawl_rounds
+            && !load_rift;
         if only_snapshots {
-            return self.ensure_snapshots(SnapWants {
-                player_ticks: load_player_ticks,
-                world_ticks: load_world_ticks,
-                troopers: load_troopers,
+            return py.detach(|| {
+                self.ensure_snapshots(SnapWants {
+                    player_ticks: load_player_ticks,
+                    world_ticks: load_world_ticks,
+                    troopers: load_troopers,
+                })
             });
         }
 
@@ -1773,6 +1861,42 @@ impl Demo {
             || load_mid_boss
             || load_street_brawl_rounds;
 
+        // Decode only the event types consumed by the requested datasets.
+        // Deadlock demos can contain hundreds of thousands of particle, sound,
+        // and combat events that would otherwise be allocated and immediately
+        // discarded by this pass.
+        let mut event_types = HashSet::new();
+        if !self.always_events_scanned {
+            event_types.insert(Msg::KEUserMsgGameOver as u32);
+            event_types.insert(Msg::KEUserMsgBannedHeroes as u32);
+        }
+        if load_kills {
+            event_types.insert(Msg::KEUserMsgHeroKilled as u32);
+        }
+        if load_damage {
+            event_types.insert(Msg::KEUserMsgDamage as u32);
+        }
+        if load_flex_slots {
+            event_types.insert(Msg::KEUserMsgFlexSlotUnlocked as u32);
+        }
+        if load_abilities {
+            event_types.insert(Msg::KEUserMsgImportantAbilityUsed as u32);
+        }
+        if load_item_purchases {
+            event_types.insert(Msg::KEUserMsgAbilitiesChanged as u32);
+        }
+        if load_chat {
+            event_types.insert(Msg::KEUserMsgChatMsg as u32);
+        }
+        if load_mid_boss {
+            event_types.insert(Msg::KEUserMsgMidBossSpawned as u32);
+            event_types.insert(Msg::KEUserMsgBossKilled as u32);
+            event_types.insert(Msg::KEUserMsgRejuvStatus as u32);
+        }
+        if load_street_brawl_rounds {
+            event_types.insert(Msg::KEUserMsgStreetBrawlScoring as u32);
+        }
+
         // ability_ticks needs every ability *entity* class decoded. There are
         // hundreds (one per ability), so collect their names from the send tables
         // (any networked class whose name contains "Ability") into an owned Vec
@@ -1781,10 +1905,10 @@ impl Demo {
             self.parser
                 .parse_send_tables()
                 .map(|sc| {
-                    sc.serializers
-                        .keys()
-                        .filter(|n| n.contains("Ability"))
-                        .cloned()
+                    sc.iter()
+                        .map(|(name, _)| name)
+                        .filter(|name| name.contains("Ability"))
+                        .map(str::to_owned)
                         .collect()
                 })
                 .unwrap_or_default()
@@ -1798,7 +1922,7 @@ impl Demo {
             class_names.push("CCitadelPlayerPawn");
             class_names.push("CCitadelPlayerController");
         }
-        if load_world_ticks || load_street_brawl_ticks {
+        if load_world_ticks || load_street_brawl_ticks || load_rift {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
@@ -1829,6 +1953,11 @@ impl Demo {
         }
         if load_urn {
             class_names.push("CCitadelIdolReturnTrigger");
+        }
+        if load_rift {
+            // The spawner announces a Rift before it becomes contestable; the
+            // rest of the lifecycle comes off the game rules entity.
+            class_names.push("CCitadelItemKothSpawner");
         }
         if load_ability_ticks {
             // Pawns for the owner -> hero mapping, plus every ability class.
@@ -1906,15 +2035,18 @@ impl Demo {
         let mut wt_next_midboss: Vec<f32> = Vec::with_capacity(wt_capacity);
 
         // ── Kill / damage event collection ──
-        struct RawEvent {
+        struct RawEvent<T> {
             tick: i32,
-            payload: Vec<u8>,
+            message: Result<T, prost::DecodeError>,
         }
-        let mut raw_kill_events: Vec<RawEvent> = Vec::new();
-        let mut raw_damage_events: Vec<RawEvent> = Vec::new();
+        let mut raw_kill_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMsgHeroKilled>> =
+            Vec::new();
+        let mut raw_damage_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMessageDamage>> =
+            Vec::new();
         let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut entity_to_hero_built = false;
         let mut found_game_over: Option<(i32, i32)> = None;
+        let mut found_banned_heroes: Vec<u32> = Vec::new();
         let mut flex_ticks: Vec<i32> = Vec::new();
         let mut flex_team_nums: Vec<i32> = Vec::new();
         let mut ability_ticks: Vec<i32> = Vec::new();
@@ -2048,6 +2180,39 @@ impl Demo {
         let mut urn_x: Vec<f32> = Vec::new();
         let mut urn_y: Vec<f32> = Vec::new();
         let mut urn_z: Vec<f32> = Vec::new();
+
+        // ── Column vectors for rift ──
+        let mut rift_num: Vec<i32> = Vec::new();
+        let mut rift_announce_tick: Vec<Option<i32>> = Vec::new();
+        let mut rift_active_tick: Vec<i32> = Vec::new();
+        let mut rift_capture_tick: Vec<Option<i32>> = Vec::new();
+        let mut rift_expire_tick: Vec<Option<i32>> = Vec::new();
+        let mut rift_winning_team: Vec<Option<i32>> = Vec::new();
+        let mut rift_lane: Vec<i64> = Vec::new();
+        let mut rift_x: Vec<f32> = Vec::new();
+        let mut rift_y: Vec<f32> = Vec::new();
+        let mut rift_z: Vec<f32> = Vec::new();
+
+        // Rift lifecycle state. One row is emitted per completed Rift, when the
+        // game rules entity clears the cash-in.
+        let mut rift_counter: i32 = 0;
+        let mut rift_live = false;
+        // Tick a spawner last appeared, consumed by the next Rift that opens.
+        let mut rift_pending_announce: Option<i32> = None;
+        let mut rift_cur_announce: Option<i32> = None;
+        let mut rift_cur_active_tick: i32 = 0;
+        let mut rift_cur_capture_tick: Option<i32> = None;
+        let mut rift_cur_winning_team: Option<i32> = None;
+        let mut rift_cur_loc: [f32; 3] = [0.0; 3];
+        // m_nKothScoringTeam holds the *previous* Rift's winner until the next
+        // one opens, so a positive value only counts as a capture once this Rift
+        // has been observed contested (-1). Without this a stale winner would
+        // register a capture on the same tick the Rift opened.
+        let mut rift_seen_contested = false;
+        let mut rift_spawners_prev: std::collections::HashSet<i32> =
+            std::collections::HashSet::new();
+        let mut rift_spawners_cur: std::collections::HashSet<i32> =
+            std::collections::HashSet::new();
 
         // Track active modifiers by serial_number for change detection
         struct CachedMod {
@@ -2244,6 +2409,11 @@ impl Demo {
         let mut sbk_state_start_time: Option<u64> = None;
         let mut sbk_non_combat_time: Option<u64> = None;
 
+        // Rift (Koth) keys, on the game rules entity
+        let mut rk_cashin_started: Option<u64> = None;
+        let mut rk_scoring_team: Option<u64> = None;
+        let mut rk_location: Option<u64> = None;
+
         // ── Single-pass callback logic (shared between both code paths) ──
         //
         // We use a macro to avoid duplicating the entity extraction code across
@@ -2252,7 +2422,7 @@ impl Demo {
             ($ctx:expr) => {
                 if !keys_resolved {
                     if load_abilities || load_player_ticks || load_kills || load_damage || load_active_modifiers || load_urn || load_ability_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerPawn") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
@@ -2310,7 +2480,7 @@ impl Demo {
                         }
                     }
                     if load_player_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             ck_pawn_handle = s.resolve_field_key("m_hPawn");
                             ck_alive = s.resolve_field_key("m_PlayerDataGlobal.m_bAlive");
                             ck_rebirth =
@@ -2358,13 +2528,13 @@ impl Demo {
                         }
                     }
                     if load_item_purchases || load_chat {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
                         }
                     }
                     if load_ability_upgrades {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             if ck_hero_id.is_none() {
                                 ck_hero_id =
                                     s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
@@ -2381,7 +2551,7 @@ impl Demo {
                         }
                     }
                     if load_stat_modifier_events {
-                        if let Some(s) = $ctx.serializers.get("CCitadelPlayerController") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             if ck_hero_id.is_none() {
                                 ck_hero_id =
                                     s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
@@ -2403,7 +2573,7 @@ impl Demo {
                     if load_objectives {
                         // NPC objective classes share field names; resolve from first found
                         for obj_class in &["CNPC_Boss_Tier2", "CNPC_Boss_Tier3", "CNPC_BarrackBoss", "CNPC_MidBoss"] {
-                            if let Some(s) = $ctx.serializers.get(*obj_class) {
+                            if let Some(s) = $ctx.serializers().get(*obj_class) {
                                 nk_health = s.resolve_field_key("m_iHealth");
                                 nk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 nk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2418,11 +2588,11 @@ impl Demo {
                             }
                         }
                         // Patron phase key
-                        if let Some(s) = $ctx.serializers.get("CNPC_Boss_Tier3") {
+                        if let Some(s) = $ctx.serializers().get("CNPC_Boss_Tier3") {
                             patron_phase_key = s.resolve_field_key("m_ePhase");
                         }
                         // Shrine has a different serializer with different field keys
-                        if let Some(s) = $ctx.serializers.get("CCitadel_Destroyable_Building") {
+                        if let Some(s) = $ctx.serializers().get("CCitadel_Destroyable_Building") {
                             shrine_health = s.resolve_field_key("m_iHealth");
                             shrine_max_health = s.resolve_field_key("m_iMaxHealth");
                             shrine_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2436,7 +2606,7 @@ impl Demo {
                     }
                     if load_troopers {
                         for tr_class in &["CNPC_Trooper", "CNPC_TrooperBoss"] {
-                            if let Some(s) = $ctx.serializers.get(*tr_class) {
+                            if let Some(s) = $ctx.serializers().get(*tr_class) {
                                 tk_health = s.resolve_field_key("m_iHealth");
                                 tk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 tk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2466,7 +2636,7 @@ impl Demo {
                     }
                     if load_neutrals {
                         for nt_class in &["CNPC_TrooperNeutral"] {
-                            if let Some(s) = $ctx.serializers.get(*nt_class) {
+                            if let Some(s) = $ctx.serializers().get(*nt_class) {
                                 ntk_health = s.resolve_field_key("m_iHealth");
                                 ntk_max_health = s.resolve_field_key("m_iMaxHealth");
                                 ntk_team_num = s.resolve_field_key("m_iTeamNum");
@@ -2494,7 +2664,7 @@ impl Demo {
                         }
                     }
                     if load_world_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
                             wk_is_paused =
                                 s.resolve_field_key("m_pGameRules.m_bGamePaused");
                             wk_next_midboss =
@@ -2502,7 +2672,7 @@ impl Demo {
                         }
                     }
                     if load_urn {
-                        if let Some(s) = $ctx.serializers.get("CCitadelIdolReturnTrigger") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelIdolReturnTrigger") {
                             urnk_disabled = s.resolve_field_key("m_bDisabled");
                             urnk_team_num = s.resolve_field_key("m_iTeamNum");
                             urnk_vec_x = s.resolve_field_key(
@@ -2526,7 +2696,7 @@ impl Demo {
                         }
                     }
                     if load_street_brawl_ticks {
-                        if let Some(s) = $ctx.serializers.get("CCitadelGameRulesProxy") {
+                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
                             sbk_round = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iRound");
                             sbk_state = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_eStreetBrawlState");
                             sbk_amber_score = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_iTeamAmberScore");
@@ -2537,23 +2707,33 @@ impl Demo {
                             sbk_non_combat_time = s.resolve_field_key("m_pGameRules.m_tStreetBrawl.m_flStreetBrawlTotalNonCombatTime");
                         }
                     }
+                    if load_rift {
+                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
+                            rk_cashin_started =
+                                s.resolve_field_key("m_pGameRules.m_timeKothCashInStarted");
+                            rk_scoring_team =
+                                s.resolve_field_key("m_pGameRules.m_nKothScoringTeam");
+                            rk_location =
+                                s.resolve_field_key("m_pGameRules.m_vKothCashInCurrentLocation");
+                        }
+                    }
                     keys_resolved = true;
                 }
 
                 // ── Collect player_ticks ──
                 if load_player_ticks {
                     let controllers: Vec<&boon_parser::Entity> = $ctx
-                        .entities
+                        .entities()
                         .iter()
-                        .filter(|(_, e)| e.class_name == "CCitadelPlayerController")
+                        .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
                         .map(|(_, e)| e)
                         .collect();
 
                     for ctrl in &controllers {
                         let pawn = match ctrl.get_handle(ck_pawn_handle)
-                            .and_then(|h| $ctx.entities.get_by_handle(h))
+                            .and_then(|h| $ctx.entities().get_by_handle(h))
                         {
-                            Some(p) if p.class_name == "CCitadelPlayerPawn" => p,
+                            Some(p) if p.class_name.as_ref() == "CCitadelPlayerPawn" => p,
                             _ => continue,
                         };
 
@@ -2562,7 +2742,7 @@ impl Demo {
                             continue;
                         }
 
-                        pt_tick.push($ctx.tick);
+                        pt_tick.push($ctx.tick());
                         pt_hero_id.push(hid);
                         let [pawn_x, pawn_y, pawn_z] = pawn.world_position(
                             [pk_cell_x, pk_cell_y, pk_cell_z],
@@ -2630,17 +2810,17 @@ impl Demo {
                 // ── Collect world_ticks / street_brawl_ticks ──
                 if load_world_ticks || load_street_brawl_ticks {
                     if let Some((_, entity)) = $ctx
-                        .entities
+                        .entities()
                         .iter()
-                        .find(|(_, e)| e.class_name == "CCitadelGameRulesProxy")
+                        .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
                     {
                         if load_world_ticks {
-                            wt_tick.push($ctx.tick);
+                            wt_tick.push($ctx.tick());
                             wt_is_paused.push(entity.get_bool(wk_is_paused));
                             wt_next_midboss.push(entity.get_f32(wk_next_midboss));
                         }
                         if load_street_brawl_ticks {
-                            sbt_tick.push($ctx.tick);
+                            sbt_tick.push($ctx.tick());
                             sbt_round.push(entity.get_i64(sbk_round) as i32);
                             sbt_state.push(entity.get_i64(sbk_state) as i32);
                             sbt_amber_score.push(entity.get_i64(sbk_amber_score) as i32);
@@ -2653,10 +2833,94 @@ impl Demo {
                     }
                 }
 
+                // ── Collect rift (Koth) lifecycle ──
+                if load_rift {
+                    // A spawner that was absent last tick announces the next
+                    // Rift. Entity indices get recycled and m_flCreateTime is not
+                    // transmitted, so presence-diffing is the only reliable way
+                    // to spot the spawn.
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() == "CCitadelItemKothSpawner" {
+                            rift_spawners_cur.insert(idx);
+                            if !rift_spawners_prev.contains(&idx) && !rift_live {
+                                rift_pending_announce = Some($ctx.tick());
+                            }
+                        }
+                    }
+                    std::mem::swap(&mut rift_spawners_prev, &mut rift_spawners_cur);
+                    rift_spawners_cur.clear();
+
+                    if let Some((_, entity)) = $ctx
+                        .entities()
+                        .iter()
+                        .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
+                    {
+                        // m_timeKothCashInStarted holds a real GameTime_t while a
+                        // Rift is contestable and 0 otherwise. It is also re-armed
+                        // mid-Rift (resetting the give-up timer), so only the
+                        // 0 -> non-zero edge marks the start.
+                        let cashin_started = entity.get_f32(rk_cashin_started);
+                        let live = cashin_started > 0.0 && cashin_started.is_finite();
+                        let scoring_team = entity.get_i64(rk_scoring_team) as i32;
+
+                        if live && !rift_live {
+                            rift_live = true;
+                            rift_cur_announce = rift_pending_announce.take();
+                            rift_cur_active_tick = $ctx.tick();
+                            rift_cur_capture_tick = None;
+                            rift_cur_winning_team = None;
+                            rift_cur_loc = [0.0; 3];
+                            rift_seen_contested = scoring_team <= 0;
+                        }
+
+                        if rift_live {
+                            // Only read the location while the cash-in is still
+                            // live: it is cleared to FLT_MAX on the same tick the
+                            // Rift resolves, which would otherwise overwrite the
+                            // real position just before the row is emitted.
+                            if live {
+                                let loc = entity.get_vector3(rk_location);
+                                if loc != [0.0; 3]
+                                    && loc.iter().all(|c| c.abs() < RIFT_COORD_SANITY)
+                                {
+                                    rift_cur_loc = loc;
+                                }
+                            }
+                            if scoring_team <= 0 {
+                                rift_seen_contested = true;
+                            } else if rift_seen_contested && rift_cur_capture_tick.is_none() {
+                                rift_cur_capture_tick = Some($ctx.tick());
+                                rift_cur_winning_team = Some(scoring_team);
+                            }
+                        }
+
+                        if !live && rift_live {
+                            rift_live = false;
+                            rift_counter += 1;
+                            rift_num.push(rift_counter);
+                            rift_announce_tick.push(rift_cur_announce);
+                            rift_active_tick.push(rift_cur_active_tick);
+                            rift_capture_tick.push(rift_cur_capture_tick);
+                            // No winner by the time the Rift clears => it timed
+                            // out (see m_timeKothGiveUp).
+                            rift_expire_tick.push(if rift_cur_capture_tick.is_none() {
+                                Some($ctx.tick())
+                            } else {
+                                None
+                            });
+                            rift_winning_team.push(rift_cur_winning_team);
+                            rift_lane.push(rift_lane_for(rift_cur_loc[0], rift_cur_loc[1]));
+                            rift_x.push(rift_cur_loc[0]);
+                            rift_y.push(rift_cur_loc[1]);
+                            rift_z.push(rift_cur_loc[2]);
+                        }
+                    }
+                }
+
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
                 if (load_abilities || load_kills || load_damage || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks) && !entity_to_hero_built {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name == "CCitadelPlayerPawn" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
                             let hid = entity.get_i64(pk_hero_id);
                             if hid != 0 {
                                 entity_to_hero.insert(idx, hid);
@@ -2668,8 +2932,8 @@ impl Demo {
 
                 // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
                 if (load_item_purchases || load_chat) && !slot_to_hero_built {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name == "CCitadelPlayerController" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() == "CCitadelPlayerController" {
                             let hid = entity.get_i64(ck_hero_id);
                             if hid != 0 {
                                 // userid is 0-based, controller entity index is 1-based
@@ -2684,8 +2948,8 @@ impl Demo {
 
                 // ── Collect ability_upgrades (entity change detection) ──
                 if load_ability_upgrades {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name != "CCitadelPlayerController" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() != "CCitadelPlayerController" {
                             continue;
                         }
                         let hero_id = entity.get_i64(ck_hero_id);
@@ -2713,7 +2977,7 @@ impl Demo {
                             if upgrade_bits != prev {
                                 au_prev_bits.insert(key, upgrade_bits);
                                 if upgrade_bits > prev {
-                                    au_ticks.push($ctx.tick);
+                                    au_ticks.push($ctx.tick());
                                     au_hero_ids.push(hero_id);
                                     au_ability_ids.push(ability_id);
                                     au_tier.push(upgrade_bits.count_ones() as i32 - 1);
@@ -2725,11 +2989,11 @@ impl Demo {
 
                 // ── Collect objectives (change detection on health/max_health/phase) ──
                 if load_objectives {
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
-                        let obj_class = entity.class_name.as_str();
+                        let obj_class = entity.class_name.as_ref();
                         let is_patron = obj_class == "CNPC_Boss_Tier3";
                         let (otype, hp_key, max_hp_key, team_key, lane_key, cell_keys, offset_keys) = match obj_class {
                             "CNPC_Boss_Tier2" => ("walker", nk_health, nk_max_health, nk_team_num, nk_lane, [nk_cell_x, nk_cell_y, nk_cell_z], [nk_vec_x, nk_vec_y, nk_vec_z]),
@@ -2752,7 +3016,7 @@ impl Demo {
                         };
                         if changed {
                             obj_prev.insert(idx, cur);
-                            obj_tick.push($ctx.tick);
+                            obj_tick.push($ctx.tick());
                             obj_type.push(otype.to_string());
                             obj_team_num.push(entity.get_i64(team_key));
                             obj_lane.push(entity.get_i64(lane_key));
@@ -2771,8 +3035,11 @@ impl Demo {
 
                 // ── Collect troopers (lane troopers, per-tick alive only) ──
                 if load_troopers {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        let ttype = match entity.class_name.as_str() {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if !entity.active {
+                            continue;
+                        }
+                        let ttype = match entity.class_name.as_ref() {
                             "CNPC_Trooper" => "trooper",
                             "CNPC_TrooperBoss" => "trooper_boss",
                             _ => continue,
@@ -2785,7 +3052,7 @@ impl Demo {
                         if lifestate != 0 {
                             continue;
                         }
-                        tr_tick.push($ctx.tick);
+                        tr_tick.push($ctx.tick());
                         tr_type.push(ttype.to_string());
                         tr_team_num.push(entity.get_i64(tk_team_num));
                         tr_lane.push(entity.get_i64(tk_lane));
@@ -2804,8 +3071,8 @@ impl Demo {
 
                 // ── Collect stat_modifiers (event-based change detection) ──
                 if load_stat_modifier_events {
-                    for (idx, entity) in $ctx.entities.iter() {
-                        if entity.class_name != "CCitadelPlayerController" {
+                    for (idx, entity) in $ctx.entities().iter() {
+                        if entity.class_name.as_ref() != "CCitadelPlayerController" {
                             continue;
                         }
                         let hero_id = entity.get_i64(ck_hero_id);
@@ -2848,7 +3115,7 @@ impl Demo {
                                     172 => "ammo",
                                     _ => continue,
                                 };
-                                sm_tick.push($ctx.tick);
+                                sm_tick.push($ctx.tick());
                                 sm_hero_id.push(hero_id);
                                 sm_stat_type.push(stat_name.to_string());
                                 sm_amount.push(*total - prev);
@@ -2869,9 +3136,9 @@ impl Demo {
                 // because the table never shrinks and indices are stable (a serial
                 // only leaves the table when its slot is rewritten).
                 if load_active_modifiers {
-                    if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
+                    if let Some(table) = $ctx.string_tables().find_table("ActiveModifiers") {
                         for &idx in table.dirty_indices() {
-                            let Some(entry) = table.entries.get(idx) else {
+                            let Some(entry) = table.entries().get(idx) else {
                                 continue;
                             };
                             let data = match &entry.user_data {
@@ -2893,7 +3160,7 @@ impl Demo {
                                 && old_serial != serial
                                 && let Some(cached) = am_prev.remove(&old_serial)
                             {
-                                am_tick.push($ctx.tick);
+                                am_tick.push($ctx.tick());
                                 am_hero_id.push(cached.hero_id);
                                 am_event.push("removed".to_string());
                                 am_modifier_id.push(cached.modifier_id);
@@ -2908,7 +3175,7 @@ impl Demo {
                             if mod_entry_type == 2 {
                                 am_idx_serial.remove(&idx);
                                 if let Some(cached) = am_prev.remove(&serial) {
-                                    am_tick.push($ctx.tick);
+                                    am_tick.push($ctx.tick());
                                     am_hero_id.push(cached.hero_id);
                                     am_event.push("removed".to_string());
                                     am_modifier_id.push(cached.modifier_id);
@@ -2943,7 +3210,7 @@ impl Demo {
                                             .unwrap_or(0);
                                     let stacks = modifier.stack_count.unwrap_or(0);
 
-                                    am_tick.push($ctx.tick);
+                                    am_tick.push($ctx.tick());
                                     am_hero_id.push(hero_id);
                                     am_event.push("applied".to_string());
                                     am_modifier_id.push(mod_id);
@@ -2971,7 +3238,7 @@ impl Demo {
                                     let stacks = modifier.stack_count.unwrap_or(0);
                                     let cached = e.get_mut();
                                     if stacks != cached.stacks {
-                                        am_tick.push($ctx.tick);
+                                        am_tick.push($ctx.tick());
                                         am_hero_id.push(cached.hero_id);
                                         am_event.push("changed".to_string());
                                         am_modifier_id.push(cached.modifier_id);
@@ -2998,15 +3265,15 @@ impl Demo {
                 if load_ability_ticks {
                     // Only entities this tick changed: an ability's cooldown/charge
                     // state can only change on a tick it was updated.
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
                         if !entity.class_name.contains("Ability") {
                             continue;
                         }
-                        if !ability_keys_cache.contains_key(&entity.class_name) {
-                            let s = $ctx.serializers.get(&entity.class_name);
+                        if !ability_keys_cache.contains_key(entity.class_name.as_ref()) {
+                            let s = $ctx.serializers().get(&entity.class_name);
                             let r = |p: &str| s.and_then(|s| s.resolve_field_key(p));
                             let ak = AbilityKeys {
                                 subclass_id: r("m_nSubclassID"),
@@ -3018,9 +3285,9 @@ impl Demo {
                                 recharge_end: r("m_flChargeRechargeEnd"),
                                 owner: r("m_hOwnerEntity"),
                             };
-                            ability_keys_cache.insert(entity.class_name.clone(), ak);
+                            ability_keys_cache.insert(entity.class_name.to_string(), ak);
                         }
-                        let keys = &ability_keys_cache[&entity.class_name];
+                        let keys = &ability_keys_cache[entity.class_name.as_ref()];
                         // Capability gate: real abilities expose cooldown + charges.
                         if keys.cooldown_end.is_none() || keys.remaining_charges.is_none() {
                             continue;
@@ -3042,7 +3309,7 @@ impl Demo {
                         };
                         let changed = abil_prev.get(&idx).map(|p| *p != state).unwrap_or(true);
                         if changed {
-                            at_tick.push($ctx.tick);
+                            at_tick.push($ctx.tick());
                             at_hero_id.push(hero_id);
                             at_ability_id.push(entity.get_u32(keys.subclass_id));
                             at_slot.push(entity.get_i64(keys.slot) as i32);
@@ -3067,7 +3334,7 @@ impl Demo {
                 // full scan — and defer slot-reuse drops to a post-pass, mirroring
                 // the previous post-loop so per-tick ordering is unchanged.
                 if load_urn {
-                    if let Some(table) = $ctx.string_tables.find_table("ActiveModifiers") {
+                    if let Some(table) = $ctx.string_tables().find_table("ActiveModifiers") {
                         let mut dirty: Vec<usize> = table.dirty_indices().to_vec();
                         dirty.sort_unstable();
                         dirty.dedup();
@@ -3077,7 +3344,7 @@ impl Demo {
                         let mut urn_overwrite_gone: Vec<u32> = Vec::new();
 
                         for &idx in &dirty {
-                            let Some(entry) = table.entries.get(idx) else {
+                            let Some(entry) = table.entries().get(idx) else {
                                 continue;
                             };
                             let data = match &entry.user_data {
@@ -3118,7 +3385,7 @@ impl Demo {
                                         urn_hero_count.remove(&hero_id);
                                         let pawn = entity_to_hero.iter()
                                             .find(|(_, hid)| **hid == hero_id)
-                                            .and_then(|(idx, _)| $ctx.entities.get(*idx));
+                                            .and_then(|(idx, _)| $ctx.entities().get(*idx));
                                         let [drop_x, drop_y, drop_z] = pawn.map_or(
                                             [0.0, 0.0, 0.0],
                                             |e| e.world_position(
@@ -3126,7 +3393,7 @@ impl Demo {
                                                 [pk_vec_x, pk_vec_y, pk_vec_z],
                                             ),
                                         );
-                                        urn_tick.push($ctx.tick);
+                                        urn_tick.push($ctx.tick());
                                         urn_event.push("dropped".to_string());
                                         urn_hero_id.push(hero_id);
                                         urn_team_num.push(0);
@@ -3160,7 +3427,7 @@ impl Demo {
                             };
 
                             // Look up pawn position for hero events
-                            let pawn = $ctx.entities.get(parent_idx);
+                            let pawn = $ctx.entities().get(parent_idx);
                             let [hero_x, hero_y, hero_z] = pawn.map_or(
                                 [0.0, 0.0, 0.0],
                                 |e| e.world_position(
@@ -3177,7 +3444,7 @@ impl Demo {
                                 let count =
                                     urn_hero_count.entry(hero_id).or_insert(0);
                                 if *count == 0 {
-                                    urn_tick.push($ctx.tick);
+                                    urn_tick.push($ctx.tick());
                                     urn_event.push("picked_up".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
@@ -3194,15 +3461,15 @@ impl Demo {
                                     .get(&hero_id)
                                     .copied()
                                     .unwrap_or(-999);
-                                if $ctx.tick - last > 64 {
-                                    urn_tick.push($ctx.tick);
+                                if $ctx.tick() - last > 64 {
+                                    urn_tick.push($ctx.tick());
                                     urn_event.push("returned".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
                                     urn_x.push(hero_x);
                                     urn_y.push(hero_y);
                                     urn_z.push(hero_z);
-                                    urn_last_return_tick.insert(hero_id, $ctx.tick);
+                                    urn_last_return_tick.insert(hero_id, $ctx.tick());
                                 }
                             }
                         }
@@ -3217,7 +3484,7 @@ impl Demo {
                                     urn_hero_count.remove(&hero_id);
                                     let pawn = entity_to_hero.iter()
                                         .find(|(_, hid)| **hid == hero_id)
-                                        .and_then(|(idx, _)| $ctx.entities.get(*idx));
+                                        .and_then(|(idx, _)| $ctx.entities().get(*idx));
                                     let [drop_x, drop_y, drop_z] = pawn.map_or(
                                         [0.0, 0.0, 0.0],
                                         |e| e.world_position(
@@ -3225,7 +3492,7 @@ impl Demo {
                                             [pk_vec_x, pk_vec_y, pk_vec_z],
                                         ),
                                     );
-                                    urn_tick.push($ctx.tick);
+                                    urn_tick.push($ctx.tick());
                                     urn_event.push("dropped".to_string());
                                     urn_hero_id.push(hero_id);
                                     urn_team_num.push(0);
@@ -3240,11 +3507,11 @@ impl Demo {
 
                 // ── Collect urn delivery triggers ──
                 if load_urn {
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
-                        if entity.class_name != "CCitadelIdolReturnTrigger" {
+                        if entity.class_name.as_ref() != "CCitadelIdolReturnTrigger" {
                             continue;
                         }
                         let disabled = entity.get_bool(urnk_disabled);
@@ -3262,7 +3529,7 @@ impl Demo {
                                 [urnk_vec_x, urnk_vec_y, urnk_vec_z],
                             );
                             if !disabled && team != 0 {
-                                urn_tick.push($ctx.tick);
+                                urn_tick.push($ctx.tick());
                                 urn_event.push("delivery_active".to_string());
                                 urn_hero_id.push(0);
                                 urn_team_num.push(team);
@@ -3273,7 +3540,7 @@ impl Demo {
                                 // Only emit inactive when transitioning from active
                                 if let Some((prev_disabled, _)) = prev {
                                     if !prev_disabled {
-                                        urn_tick.push($ctx.tick);
+                                        urn_tick.push($ctx.tick());
                                         urn_event.push("delivery_inactive".to_string());
                                         urn_hero_id.push(0);
                                         urn_team_num.push(team);
@@ -3289,11 +3556,11 @@ impl Demo {
 
                 // ── Collect neutrals (change-detected, only emit on state change) ──
                 if load_neutrals {
-                    for &idx in $ctx.entities.updated_indices() {
-                        let Some(entity) = $ctx.entities.get(idx) else {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
                             continue;
                         };
-                        if entity.class_name != "CNPC_TrooperNeutral" {
+                        if entity.class_name.as_ref() != "CNPC_TrooperNeutral" {
                             continue;
                         }
                         let max_hp = entity.get_i64(ntk_max_health);
@@ -3319,7 +3586,7 @@ impl Demo {
                         if changed {
                             nt_prev.insert(idx, cur);
                             if alive {
-                                nt_tick.push($ctx.tick);
+                                nt_tick.push($ctx.tick());
                                 nt_team_num.push(entity.get_i64(ntk_team_num));
                                 nt_health.push(hp);
                                 nt_max_health.push(max_hp);
@@ -3337,44 +3604,60 @@ impl Demo {
 
         // ── Run the parse pass ──
         if need_events {
-            self.parser
-                .run_to_end_with_events_filtered(&class_filter, |ctx, events| {
-                    collect_entity_data!(ctx);
+            py.detach(|| {
+                self.parser.run_to_end_with_event_types_filtered(
+                    &class_filter,
+                    &event_types,
+                    |ctx, events| {
+                        collect_entity_data!(ctx);
 
-                    for event in events {
-                        if load_kills && event.msg_type == Msg::KEUserMsgHeroKilled as u32 {
-                            raw_kill_events.push(RawEvent {
-                                tick: event.tick,
-                                payload: event.payload.clone(),
-                            });
-                        }
-                        if load_damage && event.msg_type == Msg::KEUserMsgDamage as u32 {
-                            raw_damage_events.push(RawEvent {
-                                tick: event.tick,
-                                payload: event.payload.clone(),
-                            });
-                        }
-                        if found_game_over.is_none()
-                            && event.msg_type == Msg::KEUserMsgGameOver as u32
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMessageGameOver::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
-                        }
-                        // Collect FlexSlotUnlocked events (msg_type 356)
-                        if load_flex_slots
-                            && event.msg_type == Msg::KEUserMsgFlexSlotUnlocked as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgFlexSlotUnlocked::decode(
-                                    event.payload.as_slice(),
-                                )
-                        {
-                            flex_ticks.push(event.tick);
-                            flex_team_nums.push(msg.team_number.unwrap_or(0));
-                        }
-                        // Collect ImportantAbilityUsed events (msg_type 365)
-                        if load_abilities
+                        for event in events {
+                            if load_kills && event.msg_type == Msg::KEUserMsgHeroKilled as u32 {
+                                raw_kill_events.push(RawEvent {
+                                    tick: event.tick,
+                                    message: boon_proto::proto::CCitadelUserMsgHeroKilled::decode(
+                                        event.payload.as_slice(),
+                                    ),
+                                });
+                            }
+                            if load_damage && event.msg_type == Msg::KEUserMsgDamage as u32 {
+                                raw_damage_events.push(RawEvent {
+                                    tick: event.tick,
+                                    message: boon_proto::proto::CCitadelUserMessageDamage::decode(
+                                        event.payload.as_slice(),
+                                    ),
+                                });
+                            }
+                            if found_game_over.is_none()
+                                && event.msg_type == Msg::KEUserMsgGameOver as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMessageGameOver::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                found_game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
+                            }
+                            if event.msg_type == Msg::KEUserMsgBannedHeroes as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                found_banned_heroes.extend(msg.banned_hero_ids);
+                            }
+                            // Collect FlexSlotUnlocked events (msg_type 356)
+                            if load_flex_slots
+                                && event.msg_type == Msg::KEUserMsgFlexSlotUnlocked as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgFlexSlotUnlocked::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                flex_ticks.push(event.tick);
+                                flex_team_nums.push(msg.team_number.unwrap_or(0));
+                            }
+                            // Collect ImportantAbilityUsed events (msg_type 365)
+                            if load_abilities
                             && event.msg_type == Msg::KEUserMsgImportantAbilityUsed as u32
                             && let Ok(msg) =
                                 boon_proto::proto::CCitadelUserMessageImportantAbilityUsed::decode(
@@ -3388,116 +3671,120 @@ impl Demo {
                             ability_hero_ids.push(hero_id);
                             ability_names.push(msg.ability_name.unwrap_or_default());
                         }
-                        // Collect AbilitiesChanged events (msg_type 309) for item_purchases
-                        if load_item_purchases
-                            && event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
-                                    event.payload.as_slice(),
-                                )
-                        {
-                            let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
-                            let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
-                            let ability_id = msg.ability_id.unwrap_or(0);
-                            let change = match msg.change.unwrap_or(-1) {
-                                0 => "purchased",
-                                1 => "upgraded",
-                                2 => "sold",
-                                3 => "swapped",
-                                4 => "failure",
-                                _ => "unknown",
-                            };
-                            ip_ticks.push(event.tick);
-                            ip_hero_ids.push(hero_id);
-                            ip_ability_ids.push(ability_id);
-                            ip_changes.push(change.to_string());
-                        }
-                        // Collect ChatMsg events (msg_type 314)
-                        if load_chat
-                            && event.msg_type == Msg::KEUserMsgChatMsg as u32
-                            && let Ok(msg) = boon_proto::proto::CCitadelUserMsgChatMsg::decode(
-                                event.payload.as_slice(),
-                            )
-                        {
-                            let player_slot = msg.player_slot.unwrap_or(-1);
-                            let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
-                            let chat_type = if msg.all_chat.unwrap_or(false) {
-                                "all"
-                            } else {
-                                "team"
-                            };
-                            chat_ticks.push(event.tick);
-                            chat_hero_ids.push(hero_id);
-                            chat_texts.push(msg.text.unwrap_or_default());
-                            chat_types.push(chat_type.to_string());
-                        }
-                        // Collect mid_boss lifecycle events
-                        if load_mid_boss {
-                            if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
-                                mb_ticks.push(event.tick);
-                                mb_team_nums.push(0);
-                                mb_events.push("spawned".to_string());
-                            }
-                            if event.msg_type == Msg::KEUserMsgBossKilled as u32
+                            // Collect AbilitiesChanged events (msg_type 309) for item_purchases
+                            if load_item_purchases
+                                && event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
                                 && let Ok(msg) =
-                                    boon_proto::proto::CCitadelUserMsgBossKilled::decode(
-                                        event.payload.as_slice(),
-                                    )
-                                && msg.entity_killed_class.unwrap_or(0) == 8
-                            // mid_boss entity class
-                            {
-                                mb_ticks.push(event.tick);
-                                mb_team_nums.push(msg.objective_team.unwrap_or(0));
-                                mb_events.push("killed".to_string());
-                            }
-                            if event.msg_type == Msg::KEUserMsgRejuvStatus as u32
-                                && let Ok(msg) =
-                                    boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
+                                    boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
                                         event.payload.as_slice(),
                                     )
                             {
-                                // RejuvStatus event_type enum from proto
-                                let event_name = match msg.event_type.unwrap_or(0) {
-                                    6 => "picked_up", // rejuv buff picked up
-                                    7 => "used",      // rejuv buff consumed
-                                    8 => "expired",   // rejuv buff expired
+                                let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
+                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let ability_id = msg.ability_id.unwrap_or(0);
+                                let change = match msg.change.unwrap_or(-1) {
+                                    0 => "purchased",
+                                    1 => "upgraded",
+                                    2 => "sold",
+                                    3 => "swapped",
+                                    4 => "failure",
                                     _ => "unknown",
                                 };
-                                mb_ticks.push(event.tick);
-                                mb_team_nums.push(msg.user_team.unwrap_or(0));
-                                mb_events.push(event_name.to_string());
+                                ip_ticks.push(event.tick);
+                                ip_hero_ids.push(hero_id);
+                                ip_ability_ids.push(ability_id);
+                                ip_changes.push(change.to_string());
                             }
-                        }
-                        // Collect StreetBrawlScoring events (msg_type 362)
-                        if load_street_brawl_rounds
-                            && event.msg_type == Msg::KEUserMsgStreetBrawlScoring as u32
-                            && let Ok(msg) =
-                                boon_proto::proto::CCitadelUserMsgStreetBrawlScoring::decode(
+                            // Collect ChatMsg events (msg_type 314)
+                            if load_chat
+                                && event.msg_type == Msg::KEUserMsgChatMsg as u32
+                                && let Ok(msg) = boon_proto::proto::CCitadelUserMsgChatMsg::decode(
                                     event.payload.as_slice(),
                                 )
-                        {
-                            sbr_round_counter += 1;
-                            sbr_round.push(sbr_round_counter);
-                            sbr_tick.push(event.tick);
-                            sbr_scoring_team.push(msg.scoring_team.unwrap_or(0));
-                            sbr_amber_score.push(msg.amber_score.unwrap_or(0));
-                            sbr_sapphire_score.push(msg.sapphire_score.unwrap_or(0));
+                            {
+                                let player_slot = msg.player_slot.unwrap_or(-1);
+                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let chat_type = if msg.all_chat.unwrap_or(false) {
+                                    "all"
+                                } else {
+                                    "team"
+                                };
+                                chat_ticks.push(event.tick);
+                                chat_hero_ids.push(hero_id);
+                                chat_texts.push(msg.text.unwrap_or_default());
+                                chat_types.push(chat_type.to_string());
+                            }
+                            // Collect mid_boss lifecycle events
+                            if load_mid_boss {
+                                if event.msg_type == Msg::KEUserMsgMidBossSpawned as u32 {
+                                    mb_ticks.push(event.tick);
+                                    mb_team_nums.push(0);
+                                    mb_events.push("spawned".to_string());
+                                }
+                                if event.msg_type == Msg::KEUserMsgBossKilled as u32
+                                    && let Ok(msg) =
+                                        boon_proto::proto::CCitadelUserMsgBossKilled::decode(
+                                            event.payload.as_slice(),
+                                        )
+                                    && msg.entity_killed_class.unwrap_or(0) == 8
+                                // mid_boss entity class
+                                {
+                                    mb_ticks.push(event.tick);
+                                    mb_team_nums.push(msg.objective_team.unwrap_or(0));
+                                    mb_events.push("killed".to_string());
+                                }
+                                if event.msg_type == Msg::KEUserMsgRejuvStatus as u32
+                                    && let Ok(msg) =
+                                        boon_proto::proto::CCitadelUserMsgRejuvStatus::decode(
+                                            event.payload.as_slice(),
+                                        )
+                                {
+                                    // RejuvStatus event_type enum from proto
+                                    let event_name = match msg.event_type.unwrap_or(0) {
+                                        6 => "picked_up", // rejuv buff picked up
+                                        7 => "used",      // rejuv buff consumed
+                                        8 => "expired",   // rejuv buff expired
+                                        _ => "unknown",
+                                    };
+                                    mb_ticks.push(event.tick);
+                                    mb_team_nums.push(msg.user_team.unwrap_or(0));
+                                    mb_events.push(event_name.to_string());
+                                }
+                            }
+                            // Collect StreetBrawlScoring events (msg_type 362)
+                            if load_street_brawl_rounds
+                                && event.msg_type == Msg::KEUserMsgStreetBrawlScoring as u32
+                                && let Ok(msg) =
+                                    boon_proto::proto::CCitadelUserMsgStreetBrawlScoring::decode(
+                                        event.payload.as_slice(),
+                                    )
+                            {
+                                sbr_round_counter += 1;
+                                sbr_round.push(sbr_round_counter);
+                                sbr_tick.push(event.tick);
+                                sbr_scoring_team.push(msg.scoring_team.unwrap_or(0));
+                                sbr_amber_score.push(msg.amber_score.unwrap_or(0));
+                                sbr_sapphire_score.push(msg.sapphire_score.unwrap_or(0));
+                            }
                         }
-                    }
-                })
-                .map_err(to_py_err)?;
+                    },
+                )
+            })
+            .map_err(to_py_err)?;
         } else {
-            self.parser
-                .run_to_end_filtered(&class_filter, |ctx| {
+            py.detach(|| {
+                self.parser.run_to_end_filtered(&class_filter, |ctx| {
                     collect_entity_data!(ctx);
                 })
-                .map_err(to_py_err)?;
+            })
+            .map_err(to_py_err)?;
         }
 
         // ── Store always-scanned events if found during events pass ──
-        if need_events && !self.game_over_scanned {
+        if need_events && !self.always_events_scanned {
             self.game_over = found_game_over;
-            self.game_over_scanned = true;
+            self.banned_hero_ids = Some(found_banned_heroes);
+            self.always_events_scanned = true;
         }
 
         // ── Build and cache DataFrames ──
@@ -3588,13 +3875,9 @@ impl Demo {
             );
 
             for raw in &raw_kill_events {
-                let msg =
-                    boon_proto::proto::CCitadelUserMsgHeroKilled::decode(raw.payload.as_slice())
-                        .map_err(|e| {
-                            DemoMessageError::new_err(format!(
-                                "Failed to decode HeroKilled event: {e}"
-                            ))
-                        })?;
+                let msg = raw.message.as_ref().map_err(|e| {
+                    DemoMessageError::new_err(format!("Failed to decode HeroKilled event: {e}"))
+                })?;
 
                 kill_tick.push(raw.tick);
                 victim_hero_id.push(
@@ -3644,11 +3927,9 @@ impl Demo {
             let mut dmg_victim_class: Vec<u32> = Vec::with_capacity(n);
 
             for raw in &raw_damage_events {
-                let msg =
-                    boon_proto::proto::CCitadelUserMessageDamage::decode(raw.payload.as_slice())
-                        .map_err(|e| {
-                            DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
-                        })?;
+                let msg = raw.message.as_ref().map_err(|e| {
+                    DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
+                })?;
 
                 dmg_tick.push(raw.tick);
                 dmg_damage.push(msg.damage.unwrap_or(0));
@@ -3884,6 +4165,23 @@ impl Demo {
             self.cached_street_brawl_rounds = Some(df);
         }
 
+        if load_rift {
+            let df = df_from_columns(vec![
+                Column::new("rift_num".into(), rift_num),
+                Column::new("announce_tick".into(), rift_announce_tick),
+                Column::new("active_tick".into(), rift_active_tick),
+                Column::new("capture_tick".into(), rift_capture_tick),
+                Column::new("expire_tick".into(), rift_expire_tick),
+                Column::new("winning_team".into(), rift_winning_team),
+                Column::new("lane".into(), rift_lane),
+                Column::new("x".into(), rift_x),
+                Column::new("y".into(), rift_y),
+                Column::new("z".into(), rift_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_rift = Some(df);
+        }
+
         Ok(())
     }
 
@@ -3893,11 +4191,14 @@ impl Demo {
     /// timers, kills, deaths, net worth, and more for every player at every tick.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn player_ticks(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots(SnapWants {
-            player_ticks: true,
-            ..Default::default()
-        })?;
+    fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        self.ensure_snapshots_detached(
+            py,
+            SnapWants {
+                player_ticks: true,
+                ..Default::default()
+            },
+        )?;
         Ok(PyDataFrame(self.cached_player_ticks.clone().unwrap()))
     }
 
@@ -3906,11 +4207,14 @@ impl Demo {
     /// Columns: ``tick``, ``is_paused``, ``next_midboss``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn world_ticks(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots(SnapWants {
-            world_ticks: true,
-            ..Default::default()
-        })?;
+    fn world_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        self.ensure_snapshots_detached(
+            py,
+            SnapWants {
+                world_ticks: true,
+                ..Default::default()
+            },
+        )?;
         Ok(PyDataFrame(self.cached_world_ticks.clone().unwrap()))
     }
 
@@ -3924,9 +4228,9 @@ impl Demo {
     ///
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn kills(&mut self) -> PyResult<PyDataFrame> {
+    fn kills(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_kills.is_none() {
-            self.load(vec!["kills".to_string()])?;
+            self.load(py, vec!["kills".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_kills.clone().unwrap()))
     }
@@ -3947,9 +4251,9 @@ impl Demo {
     ///
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn damage(&mut self) -> PyResult<PyDataFrame> {
+    fn damage(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_damage.is_none() {
-            self.load(vec!["damage".to_string()])?;
+            self.load(py, vec!["damage".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_damage.clone().unwrap()))
     }
@@ -3959,9 +4263,9 @@ impl Demo {
     /// Columns: ``tick``, ``team_num``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn flex_slots(&mut self) -> PyResult<PyDataFrame> {
+    fn flex_slots(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_flex_slots.is_none() {
-            self.load(vec!["flex_slots".to_string()])?;
+            self.load(py, vec!["flex_slots".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_flex_slots.clone().unwrap()))
     }
@@ -3971,9 +4275,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``ability``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn abilities(&mut self) -> PyResult<PyDataFrame> {
+    fn abilities(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_abilities.is_none() {
-            self.load(vec!["abilities".to_string()])?;
+            self.load(py, vec!["abilities".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_abilities.clone().unwrap()))
     }
@@ -3983,9 +4287,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``tier``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn ability_upgrades(&mut self) -> PyResult<PyDataFrame> {
+    fn ability_upgrades(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_ability_upgrades.is_none() {
-            self.load(vec!["ability_upgrades".to_string()])?;
+            self.load(py, vec!["ability_upgrades".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_ability_upgrades.clone().unwrap()))
     }
@@ -3995,9 +4299,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``change``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn item_purchases(&mut self) -> PyResult<PyDataFrame> {
+    fn item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_item_purchases.is_none() {
-            self.load(vec!["item_purchases".to_string()])?;
+            self.load(py, vec!["item_purchases".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_item_purchases.clone().unwrap()))
     }
@@ -4007,9 +4311,9 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``text``, ``chat_type``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn chat(&mut self) -> PyResult<PyDataFrame> {
+    fn chat(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_chat.is_none() {
-            self.load(vec!["chat".to_string()])?;
+            self.load(py, vec!["chat".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_chat.clone().unwrap()))
     }
@@ -4020,9 +4324,9 @@ impl Demo {
     /// Emits a row when an objective's health or max_health changes.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn objectives(&mut self) -> PyResult<PyDataFrame> {
+    fn objectives(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_objectives.is_none() {
-            self.load(vec!["objectives".to_string()])?;
+            self.load(py, vec!["objectives".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_objectives.clone().unwrap()))
     }
@@ -4033,11 +4337,29 @@ impl Demo {
     /// Events: ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn mid_boss(&mut self) -> PyResult<PyDataFrame> {
+    fn mid_boss(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_mid_boss.is_none() {
-            self.load(vec!["mid_boss".to_string()])?;
+            self.load(py, vec!["mid_boss".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_mid_boss.clone().unwrap()))
+    }
+
+    /// Rift lifecycle as a Polars DataFrame — one row per Rift.
+    ///
+    /// The Rift is a periodic king-of-the-hill objective (``Koth`` in the game
+    /// files); the team that wins one gets buffed troopers in that lane.
+    ///
+    /// Columns: ``rift_num``, ``announce_tick``, ``active_tick``,
+    /// ``capture_tick``, ``expire_tick``, ``winning_team``, ``lane``, ``x``,
+    /// ``y``, ``z``. Exactly one of ``capture_tick`` / ``expire_tick`` is set
+    /// per row; ``winning_team`` is null when the Rift expired uncaptured.
+    /// Auto-loads on first access if not already loaded via ``load()``.
+    #[getter]
+    fn rift(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        if self.cached_rift.is_none() {
+            self.load(py, vec!["rift".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_rift.clone().unwrap()))
     }
 
     /// Per-tick alive lane trooper state as a Polars DataFrame.
@@ -4051,11 +4373,14 @@ impl Demo {
     /// **Warning:** This dataset is large. It is not loaded by default.
     /// Access this property or call ``load("troopers")`` explicitly.
     #[getter]
-    fn troopers(&mut self) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots(SnapWants {
-            troopers: true,
-            ..Default::default()
-        })?;
+    fn troopers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        self.ensure_snapshots_detached(
+            py,
+            SnapWants {
+                troopers: true,
+                ..Default::default()
+            },
+        )?;
         Ok(PyDataFrame(self.cached_troopers.clone().unwrap()))
     }
 
@@ -4071,9 +4396,9 @@ impl Demo {
     /// **Note:** Not loaded by default. Access this property or call
     /// ``load("neutrals")`` explicitly.
     #[getter]
-    fn neutrals(&mut self) -> PyResult<PyDataFrame> {
+    fn neutrals(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_neutrals.is_none() {
-            self.load(vec!["neutrals".to_string()])?;
+            self.load(py, vec!["neutrals".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_neutrals.clone().unwrap()))
     }
@@ -4089,9 +4414,9 @@ impl Demo {
     /// Emits a row whenever a stat total changes (idol/breakable pickups).
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn stat_modifier_events(&mut self) -> PyResult<PyDataFrame> {
+    fn stat_modifier_events(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_stat_modifier_events.is_none() {
-            self.load(vec!["stat_modifier_events".to_string()])?;
+            self.load(py, vec!["stat_modifier_events".to_string()])?;
         }
         Ok(PyDataFrame(
             self.cached_stat_modifier_events.clone().unwrap(),
@@ -4109,9 +4434,9 @@ impl Demo {
     /// stack count.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn active_modifiers(&mut self) -> PyResult<PyDataFrame> {
+    fn active_modifiers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_active_modifiers.is_none() {
-            self.load(vec!["active_modifiers".to_string()])?;
+            self.load(py, vec!["active_modifiers".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_active_modifiers.clone().unwrap()))
     }
@@ -4134,9 +4459,9 @@ impl Demo {
     /// Not loaded by default. Access this property or call
     /// ``load("ability_ticks")`` explicitly.
     #[getter]
-    fn ability_ticks(&mut self) -> PyResult<PyDataFrame> {
+    fn ability_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_ability_ticks.is_none() {
-            self.load(vec!["ability_ticks".to_string()])?;
+            self.load(py, vec!["ability_ticks".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_ability_ticks.clone().unwrap()))
     }
@@ -4154,9 +4479,9 @@ impl Demo {
     /// ``team_num``/``x``/``y``/``z`` are 0. For delivery events, ``hero_id`` is 0.
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]
-    fn urn(&mut self) -> PyResult<PyDataFrame> {
+    fn urn(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_urn.is_none() {
-            self.load(vec!["urn".to_string()])?;
+            self.load(py, vec!["urn".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_urn.clone().unwrap()))
     }
@@ -4173,14 +4498,14 @@ impl Demo {
     /// Raises:
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
     #[getter]
-    fn street_brawl_ticks(&mut self) -> PyResult<PyDataFrame> {
+    fn street_brawl_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.game_mode != 4 {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
         }
         if self.cached_street_brawl_ticks.is_none() {
-            self.load(vec!["street_brawl_ticks".to_string()])?;
+            self.load(py, vec!["street_brawl_ticks".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_street_brawl_ticks.clone().unwrap()))
     }
@@ -4196,14 +4521,14 @@ impl Demo {
     /// Raises:
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
     #[getter]
-    fn street_brawl_rounds(&mut self) -> PyResult<PyDataFrame> {
+    fn street_brawl_rounds(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.game_mode != 4 {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
         }
         if self.cached_street_brawl_rounds.is_none() {
-            self.load(vec!["street_brawl_rounds".to_string()])?;
+            self.load(py, vec!["street_brawl_rounds".to_string()])?;
         }
         Ok(PyDataFrame(
             self.cached_street_brawl_rounds.clone().unwrap(),
@@ -4307,6 +4632,10 @@ impl Demo {
 }
 
 impl Demo {
+    fn ensure_snapshots_detached(&mut self, py: Python<'_>, wants: SnapWants) -> PyResult<()> {
+        py.detach(|| self.ensure_snapshots(wants))
+    }
+
     /// Build the paused_ticks cache from world_ticks if not already done.
     fn ensure_paused_ticks_built(&mut self) -> PyResult<()> {
         if self.paused_ticks.is_some() {
@@ -4314,7 +4643,7 @@ impl Demo {
         }
         // Ensure world_ticks is loaded
         if self.cached_world_ticks.is_none() {
-            self.load(vec!["world_ticks".to_string()])?;
+            Python::attach(|py| self.load(py, vec!["world_ticks".to_string()]))?;
         }
         let wt = self.cached_world_ticks.as_ref().unwrap();
         let tick_col = wt.column("tick").unwrap();
@@ -4342,13 +4671,22 @@ impl Demo {
         (tick - paused).max(0)
     }
 
-    /// Scan for the GameOver event if not already done.
+    /// Scan for the always-collected one-shot messages (`GameOver`,
+    /// `BannedHeroes`) if not already done.
     /// Uses the lightweight events-only parser pass.
     fn ensure_always_events_scanned(&mut self) -> PyResult<()> {
-        if self.game_over_scanned {
+        if self.always_events_scanned {
             return Ok(());
         }
-        let events = self.parser.events(None).map_err(to_py_err)?;
+        let event_types = HashSet::from([
+            Msg::KEUserMsgGameOver as u32,
+            Msg::KEUserMsgBannedHeroes as u32,
+        ]);
+        let events = self
+            .parser
+            .events_filtered(None, &event_types)
+            .map_err(to_py_err)?;
+        let mut banned: Vec<u32> = Vec::new();
         for event in &events {
             if event.msg_type == Msg::KEUserMsgGameOver as u32
                 && let Ok(msg) =
@@ -4356,8 +4694,17 @@ impl Demo {
             {
                 self.game_over = Some((msg.winning_team.unwrap_or(0), event.tick));
             }
+            if event.msg_type == Msg::KEUserMsgBannedHeroes as u32
+                && let Ok(msg) =
+                    boon_proto::proto::CCitadelUserMsgBannedHeroes::decode(event.payload.as_slice())
+            {
+                banned.extend(msg.banned_hero_ids);
+            }
         }
-        self.game_over_scanned = true;
+        // Always `Some` after a full scan, so an empty list reads as "this match
+        // had no bans" rather than "not looked at yet".
+        self.banned_hero_ids = Some(banned);
+        self.always_events_scanned = true;
         Ok(())
     }
 
@@ -4372,9 +4719,10 @@ impl Demo {
         let mut hero_ids: Vec<i64> = Vec::new();
         let mut team_nums: Vec<i64> = Vec::new();
         let mut start_lanes: Vec<i64> = Vec::new();
+        let mut ranks: Vec<i64> = Vec::new();
 
         // Resolve field keys once for CCitadelPlayerController
-        let player_serializer = ctx.serializers.get("CCitadelPlayerController");
+        let player_serializer = ctx.serializers().get("CCitadelPlayerController");
         let key_player_name = player_serializer
             .as_ref()
             .and_then(|s| s.resolve_field_key("m_iszPlayerName"));
@@ -4390,10 +4738,13 @@ impl Demo {
         let key_start_lane = player_serializer
             .as_ref()
             .and_then(|s| s.resolve_field_key("m_nOriginalLaneAssignment"));
+        let key_rank = player_serializer
+            .as_ref()
+            .and_then(|s| s.resolve_field_key("m_PlayerDataGlobal.m_unPackedRank"));
 
         // Find all CCitadelPlayerController entities
-        for (_idx, entity) in ctx.entities.iter() {
-            if entity.class_name == "CCitadelPlayerController" {
+        for (_idx, entity) in ctx.entities().iter() {
+            if entity.class_name.as_ref() == "CCitadelPlayerController" {
                 let player_name = key_player_name
                     .and_then(|k| entity.fields.get(&k))
                     .and_then(|v| match v {
@@ -4422,12 +4773,16 @@ impl Demo {
                 // Original lane assignment (CMsgLaneColor IDs: 1=yellow, 3=green,
                 // 4=blue, 6=purple, 0=none).
                 let start_lane = entity.get_i64(key_start_lane);
+                // Packed display-rank value used by the server's post-match
+                // `initial_display_rank`; 0 also covers calibration / no rank.
+                let rank = entity.get_i64(key_rank);
 
                 player_names.push(player_name);
                 steam_ids.push(steam_id);
                 hero_ids.push(hero_id);
                 team_nums.push(team_num);
                 start_lanes.push(start_lane);
+                ranks.push(rank);
             }
         }
 
@@ -4437,6 +4792,7 @@ impl Demo {
             Column::new("hero_id".into(), hero_ids),
             Column::new("team_num".into(), team_nums),
             Column::new("start_lane".into(), start_lanes),
+            Column::new("rank".into(), ranks),
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
@@ -4484,7 +4840,7 @@ impl Demo {
             let mut cols = SegSnap::default();
             self.parser
                 .decode_segment(None, i32::MAX, &filter, |ctx| {
-                    if pred.matches(ctx.tick) {
+                    if pred.matches(ctx.tick()) {
                         cols.collect_tick(ctx, &keys, wants);
                     }
                 })
@@ -4503,7 +4859,7 @@ impl Demo {
                             let mut cols = SegSnap::default();
                             parser
                                 .decode_segment(start, end_tick, filter, |ctx| {
-                                    if pred.matches(ctx.tick) {
+                                    if pred.matches(ctx.tick()) {
                                         cols.collect_tick(ctx, keys, wants);
                                     }
                                 })
@@ -4557,7 +4913,7 @@ impl Demo {
     ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
         let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
         let mut cols = SegSnap::default();
-        if ctx.tick == tick {
+        if ctx.tick() == tick {
             let keys = SnapKeys {
                 pt: PtKeys::resolve(&ctx),
                 wk: WkKeys::resolve(&ctx),
@@ -4635,6 +4991,7 @@ impl Demo {
             "urn" => self.cached_urn.as_ref(),
             "street_brawl_ticks" => self.cached_street_brawl_ticks.as_ref(),
             "street_brawl_rounds" => self.cached_street_brawl_rounds.as_ref(),
+            "rift" => self.cached_rift.as_ref(),
             _ => None,
         }
     }
@@ -4644,7 +5001,7 @@ impl Demo {
     fn event_ticks(&mut self, names: &[String]) -> PyResult<std::collections::HashSet<i32>> {
         let mut set = std::collections::HashSet::new();
         for name in names {
-            self.load(vec![name.clone()])?;
+            Python::attach(|py| self.load(py, vec![name.clone()]))?;
             let df = self.cached_frame(name).ok_or_else(|| {
                 pyo3::exceptions::PyValueError::new_err(format!(
                     "snapshots(events=): '{name}' is not an event dataset with a tick column"

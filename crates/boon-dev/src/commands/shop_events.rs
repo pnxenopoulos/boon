@@ -60,7 +60,7 @@ pub fn run(
         .run_to_end_with_events_filtered(&class_filter, |ctx, events| {
             // Resolve field keys once
             if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CCitadelPlayerController") {
+                if let Some(s) = ctx.serializers().get("CCitadelPlayerController") {
                     ck_hero_id = s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
                 }
                 keys_resolved = true;
@@ -68,8 +68,8 @@ pub fn run(
 
             // Build slot_to_hero map once
             if !slot_to_hero_built {
-                for (idx, entity) in ctx.entities.iter() {
-                    if entity.class_name == "CCitadelPlayerController" {
+                for (idx, entity) in ctx.entities().iter() {
+                    if entity.class_name.as_ref() == "CCitadelPlayerController" {
                         let hid = entity.get_i64(ck_hero_id);
                         if hid != 0 {
                             // userid is 0-based, controller entity index is 1-based

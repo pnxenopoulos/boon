@@ -64,15 +64,15 @@ pub fn run(
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
             // Resolve pawn hero_id key once (retry until serializers available)
-            if !keys_resolved && let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
+            if !keys_resolved && let Some(s) = ctx.serializers().get("CCitadelPlayerPawn") {
                 pk_hero_id = s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID");
                 keys_resolved = true;
             }
 
             // Build entity_to_hero map (retry until populated)
             if !entity_to_hero_built {
-                for (idx, entity) in ctx.entities.iter() {
-                    if entity.class_name == "CCitadelPlayerPawn" {
+                for (idx, entity) in ctx.entities().iter() {
+                    if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
                         let hid = entity.get_i64(pk_hero_id);
                         if hid != 0 {
                             entity_to_hero.insert(idx, hid);
@@ -92,9 +92,9 @@ pub fn run(
             // entry_type == 2 entry behind). Processing only changed indices,
             // with an index -> serial map to catch slot reuse, reports each
             // modifier exactly once applied and once removed.
-            if let Some(table) = ctx.string_tables.find_table("ActiveModifiers") {
+            if let Some(table) = ctx.string_tables().find_table("ActiveModifiers") {
                 for &idx in table.dirty_indices() {
-                    let Some(entry) = table.entries.get(idx) else {
+                    let Some(entry) = table.entries().get(idx) else {
                         continue;
                     };
                     let data = match &entry.user_data {
@@ -119,7 +119,7 @@ pub fn run(
                         && let Some(cached) = prev_modifiers.remove(&old_serial)
                     {
                         events_out.push(ActiveModifierOutput {
-                            tick: ctx.tick,
+                            tick: ctx.tick(),
                             hero_id: cached.hero_id,
                             event: "removed".to_string(),
                             modifier: cached.modifier,
@@ -137,7 +137,7 @@ pub fn run(
                         idx_serial.remove(&idx);
                         if let Some(cached) = prev_modifiers.remove(&serial) {
                             events_out.push(ActiveModifierOutput {
-                                tick: ctx.tick,
+                                tick: ctx.tick(),
                                 hero_id: cached.hero_id,
                                 event: "removed".to_string(),
                                 modifier: cached.modifier,
@@ -177,7 +177,7 @@ pub fn run(
                             let stacks = modifier.stack_count.unwrap_or(0);
 
                             events_out.push(ActiveModifierOutput {
-                                tick: ctx.tick,
+                                tick: ctx.tick(),
                                 hero_id,
                                 event: "applied".to_string(),
                                 modifier: modifier_name.clone(),
@@ -205,7 +205,7 @@ pub fn run(
                             let cached = e.get_mut();
                             if stacks != cached.stacks {
                                 events_out.push(ActiveModifierOutput {
-                                    tick: ctx.tick,
+                                    tick: ctx.tick(),
                                     hero_id: cached.hero_id,
                                     event: "changed".to_string(),
                                     modifier: cached.modifier.clone(),

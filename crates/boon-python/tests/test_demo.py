@@ -19,7 +19,7 @@ from boon import (
     team_names,
 )
 
-from conftest import _require_demo_fixture
+from conftest import FIXTURES_DIR, _require_demo_fixture
 
 # ---------------------------------------------------------------------------
 # Expected columns per dataset
@@ -90,13 +90,33 @@ URN_COLUMNS = {
     "tick", "event", "hero_id", "team_num", "x", "y", "z",
 }
 
+RIFT_COLUMNS = {
+    "rift_num", "announce_tick", "active_tick", "capture_tick", "expire_tick",
+    "winning_team", "lane", "x", "y", "z",
+}
+
 ABILITY_TICKS_COLUMNS = {
     "tick", "hero_id", "ability_id", "slot", "cooldown_start", "cooldown_end",
     "remaining_charges", "charge_recharge_start", "charge_recharge_end",
 }
 
 PLAYERS_COLUMNS = {
-    "player_name", "steam_id", "hero_id", "team_num", "start_lane",
+    "player_name", "steam_id", "hero_id", "team_num", "start_lane", "rank",
+}
+
+BANNED_HEROES_COLUMNS = {"hero_id", "hero_name"}
+
+# Bans are recorded per match, so the expected values are per fixture. Demos
+# absent from this map are only checked against the schema-level invariants.
+# `84133142` and `70537442` are the demos observed to carry the one-shot
+# `BannedHeroes` message; `70555151` shares a server version with `70537442`
+# and carries no bans, which is what makes the empty case a real match state
+# rather than an unsupported build.
+EXPECTED_BANS = {
+    "84133142.dem": [69, 63],
+    "70537442.dem": [2, 69],
+    "70555151.dem": [],
+    "94366136.dem": [],
 }
 
 # Maps dataset name -> expected column set for parameterized tests.
@@ -118,6 +138,7 @@ DATASET_COLUMNS = {
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
     "ability_ticks": ABILITY_TICKS_COLUMNS,
     "urn": URN_COLUMNS,
+    "rift": RIFT_COLUMNS,
 }
 
 ALL_DATASETS = list(DATASET_COLUMNS.keys())
@@ -214,6 +235,9 @@ class TestPlayersAndTeams:
         team_nums = demo.players["team_num"].to_list()
         for t in team_nums:
             assert t in (1, 2, 3)
+
+    def test_player_ranks_nonnegative(self, demo: Demo) -> None:
+        assert all(rank >= 0 for rank in demo.players["rank"])
 
     def test_player_ticks_covers_all_players(self, demo: Demo) -> None:
         """Every hero in `players` must appear in `player_ticks`.
@@ -359,7 +383,8 @@ class TestDatasets:
         assert isinstance(df, pl.DataFrame)
 
     # Datasets that may be empty depending on game mode
-    POSSIBLY_EMPTY = {"ability_upgrades", "flex_slots", "mid_boss", "neutrals", "stat_modifier_events", "urn"}
+    # "rift" is empty on demos from builds predating the Rift objective.
+    POSSIBLY_EMPTY = {"ability_upgrades", "flex_slots", "mid_boss", "neutrals", "stat_modifier_events", "urn", "rift"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
@@ -431,6 +456,180 @@ class TestActiveModifiers:
             if "changed" in events:
                 assert "applied" in events, "changed event without an applied"
                 assert grp["stacks"].n_unique() > 1
+
+
+class TestRift:
+    """Semantics of the one-row-per-Rift lifecycle frame."""
+
+    def test_rift_num_is_sequential(self, demo: Demo) -> None:
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        assert rift["rift_num"].to_list() == list(range(1, len(rift) + 1))
+
+    def test_exactly_one_outcome_per_rift(self, demo: Demo) -> None:
+        # A Rift either gets captured or expires uncaptured, never both and
+        # never neither.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for row in rift.iter_rows(named=True):
+            captured = row["capture_tick"] is not None
+            expired = row["expire_tick"] is not None
+            assert captured != expired, f"rift {row['rift_num']} has both/neither outcome"
+
+    def test_winning_team_set_iff_captured(self, demo: Demo) -> None:
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for row in rift.iter_rows(named=True):
+            if row["capture_tick"] is not None:
+                assert row["winning_team"] in (2, 3)
+            else:
+                assert row["winning_team"] is None
+
+    def test_tick_ordering(self, demo: Demo) -> None:
+        # announce (when present) precedes active, which precedes the outcome.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for row in rift.iter_rows(named=True):
+            active = row["active_tick"]
+            assert active >= 0
+            if row["announce_tick"] is not None:
+                assert row["announce_tick"] <= active
+            outcome = row["capture_tick"] if row["capture_tick"] is not None else row["expire_tick"]
+            assert outcome >= active
+
+    def test_rifts_do_not_overlap(self, demo: Demo) -> None:
+        rift = demo.rift
+        if len(rift) < 2:
+            pytest.skip("fewer than two rifts in this demo")
+        rows = rift.iter_rows(named=True)
+        prev_end = -1
+        for row in rows:
+            assert row["active_tick"] > prev_end
+            outcome = row["capture_tick"] if row["capture_tick"] is not None else row["expire_tick"]
+            prev_end = outcome
+
+    def test_lane_in_domain(self, demo: Demo) -> None:
+        # 0 means "location is not a known Rift site"; otherwise it must be a
+        # real lane id.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        assert set(rift["lane"].unique().to_list()) <= {0, 1, 3, 4, 6}
+
+    def test_position_is_finite_and_on_map(self, demo: Demo) -> None:
+        # The game clears the cash-in location to FLT_MAX once a Rift resolves;
+        # a row must carry the real position, not that sentinel.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        for axis in ("x", "y", "z"):
+            assert rift[axis].abs().max() < 1.0e6, f"{axis} looks like a sentinel"
+
+    def test_lane_resolves_when_position_known(self, demo: Demo) -> None:
+        # Every Rift site seen so far maps to a lane; a 0 here means a new site
+        # has appeared and RIFT_LANE_SITES needs extending.
+        rift = demo.rift
+        if len(rift) == 0:
+            pytest.skip("no rifts in this demo")
+        unmapped = rift.filter(pl.col("lane") == 0)
+        assert len(unmapped) == 0, f"unmapped rift site(s): {unmapped.select(['x', 'y']).to_dicts()}"
+
+
+# ===================================================================
+# Banned heroes
+# ===================================================================
+
+
+class TestBannedHeroes:
+    """Semantics of the banned-hero frame."""
+
+    def test_columns(self, demo: Demo) -> None:
+        assert set(demo.banned_heroes.columns) == BANNED_HEROES_COLUMNS
+
+    def test_dtypes(self, demo: Demo) -> None:
+        # hero_id must stay Int64 so it joins to `players.hero_id` without a
+        # cast, including on the empty (no-bans) frame.
+        banned = demo.banned_heroes
+        assert banned.schema["hero_id"] == pl.Int64
+        assert banned.schema["hero_name"] == pl.String
+
+    def test_matches_expected_bans(self, demo: Demo) -> None:
+        name = Path(demo.path).name
+        if name not in EXPECTED_BANS:
+            pytest.skip(f"no recorded ban expectation for {name}")
+        assert demo.banned_heroes["hero_id"].to_list() == EXPECTED_BANS[name]
+
+    def test_hero_names_match_lookup(self, demo: Demo) -> None:
+        names = hero_names()
+        for row in demo.banned_heroes.iter_rows(named=True):
+            assert row["hero_name"] == names.get(row["hero_id"], "HERO_NOT_FOUND")
+
+    def test_hero_ids_are_known(self, demo: Demo) -> None:
+        # A HERO_NOT_FOUND here means a ban referenced a hero the bundled table
+        # doesn't have, i.e. heroes.rs needs regenerating.
+        unknown = demo.banned_heroes.filter(pl.col("hero_name") == "HERO_NOT_FOUND")
+        assert len(unknown) == 0, f"unknown banned hero id(s): {unknown['hero_id'].to_list()}"
+
+    def test_no_duplicate_bans(self, demo: Demo) -> None:
+        ids = demo.banned_heroes["hero_id"].to_list()
+        assert len(ids) == len(set(ids))
+
+    def test_banned_heroes_were_not_played(self, demo: Demo) -> None:
+        # The point of a ban is that the hero is unavailable, so no banned hero
+        # may appear on the roster. This is the check that would catch the
+        # message being misread as something other than a ban list.
+        banned = set(demo.banned_heroes["hero_id"].to_list())
+        played = set(demo.players["hero_id"].to_list())
+        assert banned & played == set(), f"banned hero(es) also played: {banned & played}"
+
+    def test_repeated_access_is_stable(self, demo: Demo) -> None:
+        assert demo.banned_heroes.equals(demo.banned_heroes)
+
+
+class TestBannedHeroesScanPaths:
+    """The two code paths that populate bans must agree.
+
+    Bans are collected either by the lightweight events-only scan (a bare
+    property access) or opportunistically by the full ``load()`` entity pass.
+    The ban message is sent very early — before the match starts — so a pass
+    that skipped signon-era packets would silently return no bans, which is
+    indistinguishable from a ban-free match. These build fresh ``Demo``
+    instances rather than using the session fixture, which has already loaded
+    everything.
+    """
+
+    @staticmethod
+    def _fixture_with_bans() -> Path:
+        for name, ids in EXPECTED_BANS.items():
+            path = FIXTURES_DIR / name
+            if ids and path.is_file():
+                return path
+        pytest.skip("no fixture with recorded bans available")
+
+    def test_load_pass_agrees_with_events_scan(self) -> None:
+        path = self._fixture_with_bans()
+        expected = EXPECTED_BANS[path.name]
+
+        # Bare property access -> events-only scan.
+        assert Demo(str(path)).banned_heroes["hero_id"].to_list() == expected
+
+        # After a load() that needs events -> the entity pass collects them.
+        loaded = Demo(str(path))
+        loaded.load("kills")
+        assert loaded.banned_heroes["hero_id"].to_list() == expected
+
+    def test_load_that_skips_events_still_resolves(self) -> None:
+        # `world_ticks` needs no user messages, so the entity pass collects no
+        # bans. The property must fall back to its own scan instead of caching
+        # an empty result from that pass.
+        path = self._fixture_with_bans()
+        demo = Demo(str(path))
+        demo.load("world_ticks")
+        assert demo.banned_heroes["hero_id"].to_list() == EXPECTED_BANS[path.name]
 
 
 # ===================================================================

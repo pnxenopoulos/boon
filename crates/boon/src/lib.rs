@@ -35,8 +35,8 @@
 //!
 //! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
 //! parser.run_to_end(|ctx| {
-//!     for (idx, entity) in ctx.entities.iter() {
-//!         if entity.class_name == "CCitadelPlayerPawn" {
+//!     for (idx, entity) in ctx.entities().iter() {
+//!         if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
 //!             // Access entity fields by resolved key
 //!         }
 //!     }

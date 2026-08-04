@@ -279,6 +279,26 @@ enum Commands {
         #[arg(long, value_name = "TICK")]
         max_tick: Option<i32>,
     },
+    /// Rift (Koth) lifecycle — one row per Rift, with winner and lane
+    Rift {
+        /// Path to the demo file
+        file: PathBuf,
+        /// Show only captured/expired counts
+        #[arg(long)]
+        summary: bool,
+        /// Maximum number of entries to display
+        #[arg(long)]
+        limit: Option<usize>,
+        /// Filter by exact tick (equivalent to --min-tick N --max-tick N)
+        #[arg(long)]
+        tick: Option<i32>,
+        /// Filter by minimum tick (on active_tick)
+        #[arg(long, value_name = "TICK")]
+        min_tick: Option<i32>,
+        /// Filter by maximum tick (on active_tick)
+        #[arg(long, value_name = "TICK")]
+        max_tick: Option<i32>,
+    },
     /// Track neutral creep state changes (only emits rows when state changes)
     Neutrals {
         /// Path to the demo file
@@ -526,6 +546,18 @@ fn main() -> Result<()> {
             let min_tick = tick.or(min_tick);
             let max_tick = tick.or(max_tick);
             commands::mid_boss(&file, filter, summary, limit, min_tick, max_tick, json)
+        }
+        Commands::Rift {
+            file,
+            summary,
+            limit,
+            tick,
+            min_tick,
+            max_tick,
+        } => {
+            let min_tick = tick.or(min_tick);
+            let max_tick = tick.or(max_tick);
+            commands::rift(&file, summary, limit, min_tick, max_tick, json)
         }
         Commands::Neutrals {
             file,

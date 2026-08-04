@@ -47,7 +47,7 @@ pub fn run(
         .run_to_end_with_events_filtered(&class_filter, |ctx, events| {
             // Resolve field keys once
             if !keys_resolved {
-                if let Some(s) = ctx.serializers.get("CCitadelPlayerPawn") {
+                if let Some(s) = ctx.serializers().get("CCitadelPlayerPawn") {
                     pk_hero_id =
                         s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID");
                 }
@@ -56,8 +56,8 @@ pub fn run(
 
             // Build entity_to_hero map once
             if !entity_to_hero_built {
-                for (idx, entity) in ctx.entities.iter() {
-                    if entity.class_name == "CCitadelPlayerPawn" {
+                for (idx, entity) in ctx.entities().iter() {
+                    if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
                         let hid = entity.get_i64(pk_hero_id);
                         if hid != 0 {
                             entity_to_hero.insert(idx, hid);

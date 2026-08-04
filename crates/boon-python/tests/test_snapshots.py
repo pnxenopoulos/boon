@@ -5,6 +5,8 @@ full per-tick frame and filtering it — just far cheaper, since only the select
 ticks are materialized. Skips when no `.dem` fixture is present.
 """
 
+import threading
+
 import polars as pl
 import pytest
 from boon import Demo
@@ -81,3 +83,32 @@ def test_validation(demo: Demo) -> None:
         demo.snapshots("not_a_dataset", every=64)
     with pytest.raises(ValueError):
         demo.snapshots(every=0)  # must be >= 1
+
+
+def test_snapshots_release_gil() -> None:
+    parsed = Demo(_fixture())
+    ready = threading.Event()
+    stop = threading.Event()
+    progress = [0]
+
+    def worker() -> None:
+        ready.set()
+        while not stop.is_set():
+            progress[0] += 1
+
+    thread = threading.Thread(target=worker)
+    thread.start()
+    assert ready.wait(timeout=5)
+    before = progress[0]
+    try:
+        parsed.snapshots(
+            ["player_ticks", "world_ticks", "troopers"],
+            every=640,
+        )
+        after = progress[0]
+    finally:
+        stop.set()
+        thread.join(timeout=5)
+
+    assert not thread.is_alive()
+    assert after > before

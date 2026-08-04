@@ -32,7 +32,7 @@ pub fn run(
         .with_context(|| format!("failed to open {}", file.display()))?;
     let ctx = parser.parse_to_tick(tick)?;
 
-    let mut entities: Vec<_> = ctx.entities.iter().collect();
+    let mut entities: Vec<_> = ctx.entities().iter().collect();
     entities.sort_by_key(|(idx, _)| *idx);
 
     if let Some(ref f) = filter {
@@ -43,7 +43,7 @@ pub fn run(
         // Summary mode: count entities by class name
         let mut class_counts: HashMap<&str, usize> = HashMap::new();
         for (_, entity) in &entities {
-            *class_counts.entry(entity.class_name.as_str()).or_insert(0) += 1;
+            *class_counts.entry(entity.class_name.as_ref()).or_insert(0) += 1;
         }
 
         let mut counts: Vec<_> = class_counts.into_iter().collect();
@@ -91,7 +91,7 @@ pub fn run(
                 .iter()
                 .take(limit)
                 .map(|(idx, entity)| {
-                    let serializer = ctx.serializers.get(&entity.class_name);
+                    let serializer = ctx.serializers().get(&entity.class_name);
                     let resolved_fields: HashMap<String, boon::FieldValue> = entity
                         .fields
                         .iter()
@@ -105,7 +105,7 @@ pub fn run(
                         .collect();
                     EntityOutput {
                         index: *idx,
-                        class_name: entity.class_name.clone(),
+                        class_name: entity.class_name.to_string(),
                         class_id: entity.class_id,
                         fields: resolved_fields,
                     }
@@ -124,7 +124,7 @@ pub fn run(
             );
 
             // Resolve field names using the serializer
-            let serializer = ctx.serializers.get(&entity.class_name);
+            let serializer = ctx.serializers().get(&entity.class_name);
             let mut resolved_fields: Vec<(String, &boon::FieldValue)> = entity
                 .fields
                 .iter()
@@ -151,7 +151,7 @@ pub fn run(
 
         println!(
             "{} entities at tick {}{}",
-            ctx.entities.entities.len(),
+            ctx.entities().len(),
             tick,
             if limit < entities.len() {
                 format!(" (showing {})", limit)

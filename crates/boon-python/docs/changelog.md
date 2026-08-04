@@ -1,5 +1,37 @@
 # 📝 Changelog
 
+## 0.7.0
+
+### boon-python
+
+- New `rift` dataset (`demo.rift`) — the Rift, a periodic king-of-the-hill objective added to the game (`Koth` in the game files), whose winner gets buffed troopers in that lane. One row per Rift with `rift_num`, `announce_tick`, `active_tick`, `capture_tick`, `expire_tick`, `winning_team`, `lane`, and `x`/`y`/`z`; exactly one of `capture_tick`/`expire_tick` is set per row. The winner is taken from the game rules' scoring team (`m_nKothScoringTeam`) rather than the Rift entity's own `m_iTeamNum` — that field tracks whoever last made capture progress and reports the wrong team. `lane` is derived from the cash-in location, since the Rift entities carry no lane field, and is `0` at any location that isn't a known Rift site. Demos from builds without the Rift return an empty frame rather than failing.
+
+  Note: `expire_tick` is wired to the uncaptured path (the Rift clearing with no scoring team, per `m_timeKothGiveUp`) but is **untested against a real expiry** — every Rift in the demos on hand was captured.
+
+- New `banned_heroes` property (`demo.banned_heroes`) — the heroes banned from a match, as `hero_id` (joins to `players.hero_id`) and resolved `hero_name`. Read from the one-shot `BannedHeroes` user message, which the server sends early in the demo and only when the match has bans. The message carries nothing but the hero IDs — no team, no banning player, and no pick/ban ordering — so it cannot be used to reconstruct a draft. An empty frame means no bans were recorded, which is indistinguishable from a build that never emits the message. Like `players` and `winning_team_num`, this is not a `load()` dataset: it shares the lightweight events-only scan with those properties, so it is free once any of them has been touched.
+
+- New `rank` column in `demo.players`, sourced from the player controller's packed competitive display rank. It matches the post-match `initial_display_rank` when rank metadata is present; `0` means unranked, calibrating, or unavailable.
+
+- **Faster:** event-backed datasets now tell the parser exactly which final
+  message types they consume. Unrelated particle, sound, and combat messages
+  are skipped before their payloads are copied or allocated; lightweight
+  metadata properties scan only `GameOver` and `BannedHeroes`, and `summary`
+  scans only `PostMatchDetails`. Kill and damage protobufs are decoded once
+  instead of cloning their payload for a second decode. Bulk and lazy dataset
+  parsing also release the Python interpreter so independent Python threads can
+  continue while Rust parses a demo. General `snapshots(...)` queries now
+  release the interpreter as well, including event-tick loading, sampling,
+  seeking, and parallel snapshot decoding.
+
+### boon
+
+- New `boon-dev rift` command, listing the same one-row-per-Rift lifecycle, with `--summary` for captured/expired counts.
+- New `Entity::get_vector3` accessor, for fields that carry a whole world coordinate in a single value (Source 2's `VectorWS`, e.g. `m_vKothCashInCurrentLocation`) as opposed to positions split across cell + offset halves.
+
+### boon-proto
+
+- Synced protobufs and the ability / modifier name tables to game build **6668** (`SourceRevision` 10879761). The updated schema adds ranked matchmaking and per-player rank progression metadata, hero XP rewards, player match outcomes, and current GC/client/user messages. The refreshed name tables contain 794 abilities and 921 modifiers.
+
 ## 0.6.2
 
 ### boon

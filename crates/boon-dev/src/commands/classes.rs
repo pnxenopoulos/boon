@@ -8,7 +8,7 @@ pub fn run(file: &Path, filter: Option<String>, limit: Option<usize>, json: bool
         .with_context(|| format!("failed to open {}", file.display()))?;
     let class_info = parser.parse_class_info()?;
 
-    let mut classes: Vec<_> = class_info.classes.iter().collect();
+    let mut classes: Vec<_> = class_info.classes().iter().collect();
     classes.sort_by_key(|c| c.class_id);
 
     if let Some(ref f) = filter {
@@ -40,8 +40,8 @@ pub fn run(file: &Path, filter: Option<String>, limit: Option<usize>, json: bool
 
     println!(
         "\n{} classes total (encoding bits: {}){}",
-        class_info.classes.len(),
-        class_info.bits,
+        class_info.classes().len(),
+        class_info.bits(),
         if limit < classes.len() {
             format!(" (showing {})", limit)
         } else {
