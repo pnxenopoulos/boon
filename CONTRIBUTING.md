@@ -103,45 +103,55 @@ cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 
 ## Release Strategy
 
-Boon has three independent version tracks, each with its own tag pattern and CD workflow:
+Boon has three independent release tracks. All releases are started manually
+from the **Release Boon** workflow on the `main` branch; maintainers do not
+create or push release tags themselves. The workflow verifies the selected
+version, uploads it to the relevant package index, and only then creates the
+tag and GitHub Release.
 
-### Parser (`boon` + `boon-proto`) &mdash; `boon-v*` tags
+| Workflow selection | Package index | Tag |
+| --- | --- | --- |
+| `boon-proto` | crates.io (`boon-proto`) | `boon-proto-v<version>` |
+| `boon` | crates.io (`boon-deadlock`) | `boon-v<version>` |
+| `boon-python` | PyPI (`boon-deadlock`) | `boon-python-v<version>` |
 
-Publishes both `boon-proto` and `boon-deadlock` to crates.io (in dependency order).
+For a coordinated release, run the workflow three times in this order:
 
-```bash
-# 1. Bump version in Cargo.toml [workspace.package] and [workspace.dependencies]
-# 2. Update changelog
+1. `boon-proto`
+2. `boon`
+3. `boon-python`
 
-git commit -am "boon 0.2.0"
-git tag boon-v0.2.0
-git push origin main --tags
-```
+This order is enforced. A `boon` release requires the repository's exact
+`boon-proto` version to exist on crates.io, and a `boon-python` release
+requires the exact `boon-deadlock` version to exist there.
 
-**Secret required:** `CARGO_REGISTRY_TOKEN`
+Before dispatching a release:
 
-### Python (`boon-python`) &mdash; `boon-python-v*` tags
+1. Bump the selected package version and update the changelog.
+   - `boon-proto` uses its build-derived version in
+     `crates/boon-proto/Cargo.toml`.
+   - `boon` uses `[workspace.package].version` and the `boon` entry under
+     `[workspace.dependencies]` in the root `Cargo.toml`.
+   - `boon-python` uses `crates/boon-python/Cargo.toml`; the documentation
+     reads this value automatically.
+2. Merge the version bump into `main` and wait for **CI Check** to pass on that
+   exact commit.
+3. Open **Actions > Release Boon > Run workflow**, select the component, enter
+   its version without a leading `v`, and dispatch it from `main`.
 
-Builds wheels for Linux x86_64/aarch64, macOS x86_64/aarch64, and Windows, then publishes to PyPI via trusted publishing.
+Publishing is idempotent: rerunning a partially completed release skips an
+identical version already present on crates.io or PyPI. A tag that already
+points at the release commit is also a no-op; the workflow refuses to move a tag
+that points anywhere else.
 
-```bash
-# 1. Bump version in crates/boon-python/Cargo.toml (pyproject.toml reads it automatically)
-# 2. Bump version in crates/boon-python/docs/conf.py
-# 3. Update changelog
+The workflow uses trusted publishing through the GitHub environment `release`.
+Configure both crates.io packages and the PyPI project to trust
+`.github/workflows/release.yml` with that environment. Optional hand-written
+GitHub release notes can be stored at
+`.github/release-notes/<tag>.md`; otherwise GitHub generates them.
 
-git commit -am "boon-python 0.2.0"
-git tag boon-python-v0.2.0
-git push origin main --tags
-```
-
-**Setup required:** Configure [trusted publishing](https://docs.pypi.org/trusted-publishers/) on PyPI and create a `pypi` environment in GitHub repo settings.
-
-### Notes
-
-- Version bumps are manual &mdash; workflows verify the tag matches the version but don't bump it for you.
-- Tracks are independent &mdash; you can release the parser without releasing the Python package.
-- If the Python crate depends on a new parser feature, publish the parser first.
-- `boon-dev` (the low-level debugging CLI) is **not** released &mdash; it has no crates.io package and no release binaries. Build it locally with `cargo build --release -p boon-dev`.
+`boon-dev` is not released: it has no crates.io package or release binary and
+is built locally with `cargo build --release -p boon-dev`.
 
 ## Test Fixtures
 
