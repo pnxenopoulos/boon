@@ -144,12 +144,6 @@ identical version already present on crates.io or PyPI. A tag that already
 points at the release commit is also a no-op; the workflow refuses to move a tag
 that points anywhere else.
 
-The workflow uses trusted publishing through the GitHub environment `release`.
-Configure both crates.io packages and the PyPI project to trust
-`.github/workflows/release.yml` with that environment. Optional hand-written
-GitHub release notes can be stored at
-`.github/release-notes/<tag>.md`; otherwise GitHub generates them.
-
 `boon-dev` is not released: it has no crates.io package or release binary and
 is built locally with `cargo build --release -p boon-dev`.
 

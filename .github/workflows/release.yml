@@ -283,7 +283,7 @@ jobs:
     needs: ci-gate
     if: inputs.component == 'boon-proto' || inputs.component == 'boon'
     runs-on: ubuntu-latest
-    environment: release
+    environment: crates
     permissions:
       contents: read
       id-token: write
@@ -316,7 +316,7 @@ jobs:
     needs: [ci-gate, build-linux, build-macos, build-windows, build-sdist]
     if: inputs.component == 'boon-python'
     runs-on: ubuntu-latest
-    environment: release
+    environment: pypi
     permissions:
       contents: read
       id-token: write
