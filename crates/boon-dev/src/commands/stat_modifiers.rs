@@ -6,24 +6,40 @@ use anyhow::{Context, Result};
 use colored::Colorize;
 use serde::Serialize;
 
-// eValType → stat name mapping (from misc.vdata pickup definitions)
-const EVAL_HEALTH: u32 = 31;
-const EVAL_SPIRIT_POWER: u32 = 51;
-const EVAL_FIRE_RATE: u32 = 79;
-const EVAL_WEAPON_DAMAGE: u32 = 18;
-const EVAL_COOLDOWN_REDUCTION: u32 = 109;
-const EVAL_AMMO: u32 = 172;
+// eValType (the game's `EModifierValue` enum) → stat name mapping.
+//
+// EModifierValue's numeric values are reassigned between game builds as new
+// entries are inserted, so each permanent-stat pickup is identified by more
+// than one value across the builds boon supports. Values confirmed from demos:
+//   * build <= 10725: health 31, spirit 51, fire_rate 79, weapon 18,
+//                     cooldown 109, ammo 172
+//   * build 10854:    health 43, spirit 158, fire_rate 91, weapon 19,
+//                     cooldown 98, ammo 63
+// A pickup only ever populates one of these six stats and the value sets are
+// disjoint, so recognising every value is unambiguous.
+const EVAL_HEALTH: &[u32] = &[31, 43];
+const EVAL_SPIRIT_POWER: &[u32] = &[51, 158];
+const EVAL_FIRE_RATE: &[u32] = &[79, 91];
+const EVAL_WEAPON_DAMAGE: &[u32] = &[18, 19];
+const EVAL_COOLDOWN_REDUCTION: &[u32] = &[109, 98];
+const EVAL_AMMO: &[u32] = &[172, 63];
 
 /// Index into the 6-stat array by eValType
 fn stat_index(val_type: u32) -> Option<usize> {
-    match val_type {
-        EVAL_HEALTH => Some(0),
-        EVAL_SPIRIT_POWER => Some(1),
-        EVAL_FIRE_RATE => Some(2),
-        EVAL_WEAPON_DAMAGE => Some(3),
-        EVAL_COOLDOWN_REDUCTION => Some(4),
-        EVAL_AMMO => Some(5),
-        _ => None,
+    if EVAL_HEALTH.contains(&val_type) {
+        Some(0)
+    } else if EVAL_SPIRIT_POWER.contains(&val_type) {
+        Some(1)
+    } else if EVAL_FIRE_RATE.contains(&val_type) {
+        Some(2)
+    } else if EVAL_WEAPON_DAMAGE.contains(&val_type) {
+        Some(3)
+    } else if EVAL_COOLDOWN_REDUCTION.contains(&val_type) {
+        Some(4)
+    } else if EVAL_AMMO.contains(&val_type) {
+        Some(5)
+    } else {
+        None
     }
 }
 
@@ -249,4 +265,46 @@ pub fn run(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{STAT_NAMES, stat_index};
+
+    #[test]
+    fn maps_pre_10854_evaltypes() {
+        // EModifierValue values used up to build 10725.
+        assert_eq!(stat_index(31), Some(0)); // health
+        assert_eq!(stat_index(51), Some(1)); // spirit_power
+        assert_eq!(stat_index(79), Some(2)); // fire_rate
+        assert_eq!(stat_index(18), Some(3)); // weapon_damage
+        assert_eq!(stat_index(109), Some(4)); // cooldown_reduction
+        assert_eq!(stat_index(172), Some(5)); // ammo
+    }
+
+    #[test]
+    fn maps_build_10854_evaltypes() {
+        // EModifierValue was renumbered in build 10854. Before this fix these
+        // values were unmapped, so stat_modifier_events was silently empty.
+        assert_eq!(stat_index(43), Some(0)); // MODIFIER_VALUE_HEALTH_MAX
+        assert_eq!(stat_index(158), Some(1)); // MODIFIER_VALUE_TECH_POWER
+        assert_eq!(stat_index(91), Some(2)); // MODIFIER_VALUE_FIRE_RATE
+        assert_eq!(stat_index(19), Some(3)); // MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE
+        assert_eq!(stat_index(98), Some(4)); // MODIFIER_VALUE_COOLDOWN_REDUCTION_PERCENTAGE
+        assert_eq!(stat_index(63), Some(5)); // MODIFIER_VALUE_AMMO_CLIP_SIZE_PERCENT
+    }
+
+    #[test]
+    fn ammo_pickup_resolves_to_ammo_stat() {
+        // Regression for demo 99471204 (build 10854): the golden-statue +5% max
+        // ammo pickup carries eValType 63, which must resolve to the ammo stat.
+        assert_eq!(stat_index(63), Some(5));
+        assert_eq!(STAT_NAMES[5], "ammo");
+    }
+
+    #[test]
+    fn unknown_evaltype_is_ignored() {
+        assert_eq!(stat_index(0), None);
+        assert_eq!(stat_index(255), None);
+    }
 }

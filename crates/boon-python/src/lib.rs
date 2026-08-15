@@ -3106,13 +3106,18 @@ impl Demo {
                             let prev = sm_prev.get(&key).copied().unwrap_or(0.0);
                             if (*total - prev).abs() > f32::EPSILON {
                                 sm_prev.insert(key, *total);
+                                // eValType (the game's EModifierValue enum) is
+                                // renumbered between builds, so each pickup stat
+                                // matches every value seen across supported
+                                // builds: build <= 10725 first, then build 10854.
+                                // Kept in sync with boon-dev's stat_modifiers.
                                 let stat_name = match *vt_val {
-                                    31 => "health",
-                                    51 => "spirit_power",
-                                    79 => "fire_rate",
-                                    18 => "weapon_damage",
-                                    109 => "cooldown_reduction",
-                                    172 => "ammo",
+                                    31 | 43 => "health",
+                                    51 | 158 => "spirit_power",
+                                    79 | 91 => "fire_rate",
+                                    18 | 19 => "weapon_damage",
+                                    109 | 98 => "cooldown_reduction",
+                                    172 | 63 => "ammo",
                                     _ => continue,
                                 };
                                 sm_tick.push($ctx.tick());
