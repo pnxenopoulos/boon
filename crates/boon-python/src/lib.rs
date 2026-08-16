@@ -1105,6 +1105,29 @@ fn is_category_source(name: &str) -> bool {
     name.chars().next().is_some_and(char::is_uppercase) && !name.contains('_')
 }
 
+/// ``citadel_type`` value that marks a hit as melee damage.
+const MELEE_CITADEL_TYPE: i32 = 3;
+
+/// Whether a damage row is a light/heavy melee attack: a melee-type hit
+/// (``citadel_type == 3``) dealt with a melee ability (one whose name contains
+/// ``melee``). This is the melee a hero throws, against any target including
+/// troopers and denizens. Excluded are melee-typed abilities such as uppercut
+/// and hook (``citadel_type == 3`` but abilities, not melee attacks) and
+/// ownerless auto-melees with no ability (``ability_id == 0``, e.g. a trooper's
+/// own swing), which cannot be attributed to a hero.
+fn is_melee_damage(citadel_type: i32, ability_id: u32) -> bool {
+    use std::sync::OnceLock;
+    static MELEE_IDS: OnceLock<std::collections::HashSet<u32>> = OnceLock::new();
+    let melee_ids = MELEE_IDS.get_or_init(|| {
+        boon_parser::all_abilities()
+            .iter()
+            .filter(|&&(_, name)| name.contains("melee"))
+            .map(|&(id, _)| id)
+            .collect()
+    });
+    citadel_type == MELEE_CITADEL_TYPE && melee_ids.contains(&ability_id)
+}
+
 /// Build the post-match ``damage`` DataFrame from the damage matrix: one row per
 /// (``dealer_player_slot``, ``target_player_slot``, ``source_name``,
 /// ``sample_time_s``). ``dealer_hero_id``/``target_hero_id`` resolve the slots
@@ -3925,6 +3948,10 @@ impl Demo {
             let mut dmg_crit_damage: Vec<f32> = Vec::with_capacity(n);
             let mut dmg_attacker_class: Vec<u32> = Vec::with_capacity(n);
             let mut dmg_victim_class: Vec<u32> = Vec::with_capacity(n);
+            let mut dmg_ability_id: Vec<u32> = Vec::with_capacity(n);
+            let mut dmg_type: Vec<i32> = Vec::with_capacity(n);
+            let mut dmg_citadel_type: Vec<i32> = Vec::with_capacity(n);
+            let mut dmg_is_melee: Vec<bool> = Vec::with_capacity(n);
 
             for raw in &raw_damage_events {
                 let msg = raw.message.as_ref().map_err(|e| {
@@ -3951,6 +3978,12 @@ impl Demo {
                 dmg_crit_damage.push(msg.crit_damage.unwrap_or(0.0));
                 dmg_attacker_class.push(msg.attacker_class.unwrap_or(0));
                 dmg_victim_class.push(msg.victim_class.unwrap_or(0));
+                let ability_id = msg.ability_id.unwrap_or(0);
+                let citadel_type = msg.citadel_type.unwrap_or(0);
+                dmg_ability_id.push(ability_id);
+                dmg_type.push(msg.r#type.unwrap_or(0));
+                dmg_citadel_type.push(citadel_type);
+                dmg_is_melee.push(is_melee_damage(citadel_type, ability_id));
             }
 
             let df = df_from_columns(vec![
@@ -3964,6 +3997,10 @@ impl Demo {
                 Column::new("crit_damage".into(), dmg_crit_damage),
                 Column::new("attacker_class".into(), dmg_attacker_class),
                 Column::new("victim_class".into(), dmg_victim_class),
+                Column::new("ability_id".into(), dmg_ability_id),
+                Column::new("damage_type".into(), dmg_type),
+                Column::new("citadel_type".into(), dmg_citadel_type),
+                Column::new("is_melee".into(), dmg_is_melee),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_damage = Some(df);
@@ -4248,6 +4285,14 @@ impl Demo {
     /// - crit_damage: Critical damage amount
     /// - attacker_class: The attacker's entity class ID
     /// - victim_class: The victim's entity class ID
+    /// - ability_id: The ability/weapon that dealt the hit (0 if none; resolve
+    ///   with ``ability_names()``)
+    /// - damage_type: Raw ``type`` bitfield from the damage message
+    /// - citadel_type: Deadlock damage-type category (``3`` is melee damage)
+    /// - is_melee: True for a basic light/heavy melee attack: ``citadel_type ==
+    ///   3`` with no named ability or a melee ability. Excludes melee-typed
+    ///   abilities such as uppercut and hook. Covers melee against or by any
+    ///   target (heroes, troopers, denizens).
     ///
     /// Auto-loads on first access if not already loaded via ``load()``.
     #[getter]

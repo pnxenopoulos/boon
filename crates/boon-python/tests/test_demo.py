@@ -50,6 +50,7 @@ DAMAGE_COLUMNS = {
     "tick", "damage", "pre_damage", "victim_hero_id", "attacker_hero_id",
     "victim_health_new", "hitgroup_id", "crit_damage",
     "attacker_class", "victim_class",
+    "ability_id", "damage_type", "citadel_type", "is_melee",
 }
 
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
@@ -404,6 +405,35 @@ class TestDatasets:
         df = getattr(demo, dataset)
         if "tick" in df.columns and len(df) > 0:
             assert df["tick"].min() >= 0  # type: ignore[operator]
+
+
+class TestDamageMelee:
+    """Damage fields ability_id/damage_type/citadel_type and the is_melee flag."""
+
+    def test_fields_present_and_typed(self, demo: Demo) -> None:
+        df = demo.damage
+        assert df["ability_id"].dtype == pl.UInt32
+        assert df["damage_type"].dtype == pl.Int32
+        assert df["citadel_type"].dtype == pl.Int32
+        assert df["is_melee"].dtype == pl.Boolean
+
+    def test_some_ability_ids_resolve(self, demo: Demo) -> None:
+        # Non-zero ability_ids map to known ability names via ability_names().
+        names = ability_names()
+        ids = [i for i in demo.damage["ability_id"].unique().to_list() if i]
+        assert any(i in names for i in ids)
+
+    def test_is_melee_is_a_melee_ability_hit(self, demo: Demo) -> None:
+        # is_melee is exactly a melee-type hit (citadel_type == 3) dealt with a
+        # melee ability (name contains "melee"). Melee-typed abilities such as
+        # uppercut and hook, and ownerless auto-melees (ability_id == 0), stay
+        # unflagged.
+        names = ability_names()
+        melee_ids = [aid for aid, name in names.items() if "melee" in name]
+        df = demo.damage
+        expected = (df["citadel_type"] == 3) & df["ability_id"].is_in(melee_ids)
+        assert (df["is_melee"] == expected).all()
+        assert int(df["is_melee"].sum()) > 0
 
 
 class TestAbilityTicks:
