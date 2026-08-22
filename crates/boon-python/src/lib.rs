@@ -756,6 +756,7 @@ const VALID_DATASETS: &[&str] = &[
     "item_purchases",
     "troopers",
     "neutrals",
+    "breakables",
     "stat_modifier_events",
     "active_modifiers",
     "urn",
@@ -844,6 +845,7 @@ struct Demo {
     cached_mid_boss: Option<DataFrame>,
     cached_troopers: Option<DataFrame>,
     cached_neutrals: Option<DataFrame>,
+    cached_breakables: Option<DataFrame>,
     cached_stat_modifier_events: Option<DataFrame>,
     cached_active_modifiers: Option<DataFrame>,
     cached_ability_ticks: Option<DataFrame>,
@@ -1305,6 +1307,7 @@ impl Demo {
             cached_mid_boss: None,
             cached_troopers: None,
             cached_neutrals: None,
+            cached_breakables: None,
             cached_stat_modifier_events: None,
             cached_active_modifiers: None,
             cached_ability_ticks: None,
@@ -1783,6 +1786,8 @@ impl Demo {
             datasets.iter().any(|s| s == "troopers") && self.cached_troopers.is_none();
         let load_neutrals =
             datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
+        let load_breakables =
+            datasets.iter().any(|s| s == "breakables") && self.cached_breakables.is_none();
         let load_stat_modifier_events = datasets.iter().any(|s| s == "stat_modifier_events")
             && self.cached_stat_modifier_events.is_none();
         let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
@@ -1809,6 +1814,7 @@ impl Demo {
             && !load_mid_boss
             && !load_troopers
             && !load_neutrals
+            && !load_breakables
             && !load_stat_modifier_events
             && !load_active_modifiers
             && !load_ability_ticks
@@ -1835,6 +1841,7 @@ impl Demo {
             && !load_objectives
             && !load_mid_boss
             && !load_neutrals
+            && !load_breakables
             && !load_stat_modifier_events
             && !load_active_modifiers
             && !load_ability_ticks
@@ -1950,6 +1957,9 @@ impl Demo {
         }
         if load_neutrals {
             class_names.push("CNPC_TrooperNeutral");
+        }
+        if load_breakables {
+            class_names.push("CCitadel_BreakableProp");
         }
         if load_urn {
             class_names.push("CCitadelIdolReturnTrigger");
@@ -2119,6 +2129,21 @@ impl Demo {
         let mut nt_entity_id: Vec<i32> = Vec::new();
         // Change detection: entity_index → (was_alive, health, max_health, x_bits, y_bits, z_bits)
         let mut nt_prev: HashMap<i32, (bool, i64, i64, u32, u32, u32)> = HashMap::new();
+
+        // ── Column vectors for breakables (change-detected; break rows kept) ──
+        let mut bk_tick: Vec<i32> = Vec::new();
+        let mut bk_entity_id: Vec<i32> = Vec::new();
+        let mut bk_team_num: Vec<i64> = Vec::new();
+        let mut bk_health: Vec<i64> = Vec::new();
+        let mut bk_max_health: Vec<i64> = Vec::new();
+        let mut bk_lifestate: Vec<i64> = Vec::new();
+        let mut bk_x: Vec<f32> = Vec::new();
+        let mut bk_y: Vec<f32> = Vec::new();
+        let mut bk_z: Vec<f32> = Vec::new();
+        // Live tracked props: entity_index → (x, y, z, max_health, team_num). A break
+        // is a disappearance (leave/delete), not a field update, so it can't come off
+        // updated_indices — we detect it when a tracked index goes inactive/gone.
+        let mut bk_live: HashMap<i32, (f32, f32, f32, i64, i64)> = HashMap::new();
 
         // ── Column vectors for stat_modifiers (event-based change detection) ──
         let mut sm_tick: Vec<i32> = Vec::new();
@@ -2381,6 +2406,18 @@ impl Demo {
         let mut ntk_cell_x: Option<u64> = None;
         let mut ntk_cell_y: Option<u64> = None;
         let mut ntk_cell_z: Option<u64> = None;
+
+        // Breakable prop keys (map boxes / golden statues: CCitadel_BreakableProp)
+        let mut bkk_health: Option<u64> = None;
+        let mut bkk_max_health: Option<u64> = None;
+        let mut bkk_team_num: Option<u64> = None;
+        let mut bkk_lifestate: Option<u64> = None;
+        let mut bkk_vec_x: Option<u64> = None;
+        let mut bkk_vec_y: Option<u64> = None;
+        let mut bkk_vec_z: Option<u64> = None;
+        let mut bkk_cell_x: Option<u64> = None;
+        let mut bkk_cell_y: Option<u64> = None;
+        let mut bkk_cell_z: Option<u64> = None;
 
         // StatViewerModifierValues keys for indices 0..20: (modifier_id, val_type, value)
         let mut smk_keys: Vec<(Option<u64>, Option<u64>, Option<u64>)> = Vec::new();
@@ -2661,6 +2698,32 @@ impl Demo {
                                 );
                                 break;
                             }
+                        }
+                    }
+                    if load_breakables {
+                        if let Some(s) = $ctx.serializers().get("CCitadel_BreakableProp") {
+                            bkk_health = s.resolve_field_key("m_iHealth");
+                            bkk_max_health = s.resolve_field_key("m_iMaxHealth");
+                            bkk_team_num = s.resolve_field_key("m_iTeamNum");
+                            bkk_lifestate = s.resolve_field_key("m_lifeState");
+                            bkk_vec_x = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
+                            );
+                            bkk_vec_y = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
+                            );
+                            bkk_vec_z = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                            );
+                            bkk_cell_x = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
+                            );
+                            bkk_cell_y = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
+                            );
+                            bkk_cell_z = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
+                            );
                         }
                     }
                     if load_world_ticks {
@@ -3599,6 +3662,67 @@ impl Demo {
                     }
                 }
 
+                // ── Collect breakables: a spawn row when a prop is first seen, and a
+                //    break row when a tracked prop disappears (leave/delete). The break
+                //    is the event of interest for boxing; props are ~1-HP and vanish on
+                //    break rather than reporting health→0, so we detect the disappearance.
+                if load_breakables {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
+                            continue;
+                        };
+                        if entity.class_name.as_ref() != "CCitadel_BreakableProp" {
+                            continue;
+                        }
+                        let max_hp = entity.get_i64(bkk_max_health);
+                        if max_hp == 0 {
+                            continue;
+                        }
+                        let team = entity.get_i64(bkk_team_num);
+                        let [x, y, z] = entity.world_position(
+                            [bkk_cell_x, bkk_cell_y, bkk_cell_z],
+                            [bkk_vec_x, bkk_vec_y, bkk_vec_z],
+                        );
+                        // First sighting = spawn (props are static; ignore later updates).
+                        if bk_live.insert(idx, (x, y, z, max_hp, team)).is_none() {
+                            bk_tick.push($ctx.tick());
+                            bk_entity_id.push(idx);
+                            bk_team_num.push(team);
+                            bk_health.push(entity.get_i64(bkk_health));
+                            bk_max_health.push(max_hp);
+                            bk_lifestate.push(entity.get_i64(bkk_lifestate));
+                            bk_x.push(x);
+                            bk_y.push(y);
+                            bk_z.push(z);
+                        }
+                    }
+                    // A tracked prop that is gone / inactive / replaced at its index this
+                    // tick just broke — emit the break row at its last-known position.
+                    let broken: Vec<i32> = bk_live
+                        .keys()
+                        .copied()
+                        .filter(|&idx| match $ctx.entities().get(idx) {
+                            None => true,
+                            Some(e) => {
+                                !e.active
+                                    || e.class_name.as_ref() != "CCitadel_BreakableProp"
+                            }
+                        })
+                        .collect();
+                    for idx in broken {
+                        let (x, y, z, max_hp, team) = bk_live.remove(&idx).unwrap();
+                        bk_tick.push($ctx.tick());
+                        bk_entity_id.push(idx);
+                        bk_team_num.push(team);
+                        bk_health.push(0);
+                        bk_max_health.push(max_hp);
+                        bk_lifestate.push(2); // LifeState_t: dead
+                        bk_x.push(x);
+                        bk_y.push(y);
+                        bk_z.push(z);
+                    }
+                }
+
             };
         }
 
@@ -4081,6 +4205,22 @@ impl Demo {
             self.cached_neutrals = Some(df);
         }
 
+        if load_breakables {
+            let df = df_from_columns(vec![
+                Column::new("tick".into(), bk_tick),
+                Column::new("entity_id".into(), bk_entity_id),
+                Column::new("team_num".into(), bk_team_num),
+                Column::new("health".into(), bk_health),
+                Column::new("max_health".into(), bk_max_health),
+                Column::new("lifestate".into(), bk_lifestate),
+                Column::new("x".into(), bk_x),
+                Column::new("y".into(), bk_y),
+                Column::new("z".into(), bk_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_breakables = Some(df);
+        }
+
         if load_stat_modifier_events {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), sm_tick),
@@ -4401,6 +4541,27 @@ impl Demo {
             self.load(py, vec!["neutrals".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_neutrals.clone().unwrap()))
+    }
+
+    /// Breakable map props (soul crates / golden statues) as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``entity_id``, ``team_num``, ``health``,
+    /// ``max_health``, ``lifestate``, ``x``, ``y``, ``z``.
+    ///
+    /// Tracks ``CCitadel_BreakableProp`` (the ~1-HP breakables scattered on the
+    /// map). Emits a row whenever a prop's state changes — its spawn and, unlike
+    /// ``neutrals``, its **break** (the ``health``→0 / ``lifestate``→dead row),
+    /// which is the event of interest. A break paired with a nearby hero and a
+    /// soul gain is a boxing hit.
+    ///
+    /// **Note:** Not loaded by default. Access this property or call
+    /// ``load("breakables")`` explicitly.
+    #[getter]
+    fn breakables(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        if self.cached_breakables.is_none() {
+            self.load(py, vec!["breakables".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_breakables.clone().unwrap()))
     }
 
     /// Permanent stat bonus change events as a Polars DataFrame.
@@ -4986,6 +5147,7 @@ impl Demo {
             "item_purchases" => self.cached_item_purchases.as_ref(),
             "troopers" => self.cached_troopers.as_ref(),
             "neutrals" => self.cached_neutrals.as_ref(),
+            "breakables" => self.cached_breakables.as_ref(),
             "stat_modifier_events" => self.cached_stat_modifier_events.as_ref(),
             "active_modifiers" => self.cached_active_modifiers.as_ref(),
             "urn" => self.cached_urn.as_ref(),

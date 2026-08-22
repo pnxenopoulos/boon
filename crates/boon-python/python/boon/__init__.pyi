@@ -717,6 +717,30 @@ class Demo:
         ...
 
     @property
+    def breakables(self) -> pl.DataFrame:
+        """Breakable map props (soul crates / golden statues) as a Polars DataFrame.
+
+        Tracks ``CCitadel_BreakableProp`` (the ~1-HP breakables on the map).
+        Emits a row on each state change, including the **break** (the
+        ``health``→0 / ``lifestate``→dead row) -- unlike ``neutrals``, which drops
+        dead rows. A break near the hero, with a soul gain, is a boxing hit.
+
+        Not loaded by default. Access this property or call ``load("breakables")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the state changed.
+            - **entity_id** (*int*) -- Entity index (stable per prop across ticks).
+            - **team_num** (*int*) -- The prop's team.
+            - **health** (*int*) -- Current health (0 on the break row).
+            - **max_health** (*int*) -- Maximum health.
+            - **lifestate** (*int*) -- Source 2 ``LifeState_t`` (0 = alive).
+            - **x** (*float*) -- X position.
+            - **y** (*float*) -- Y position.
+            - **z** (*float*) -- Z position.
+        """
+        ...
+
+    @property
     def stat_modifier_events(self) -> pl.DataFrame:
         """Permanent stat bonus change events as a Polars DataFrame.
 

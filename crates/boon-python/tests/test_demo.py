@@ -79,6 +79,11 @@ NEUTRALS_COLUMNS = {
     "x", "y", "z", "entity_id",
 }
 
+BREAKABLES_COLUMNS = {
+    "tick", "entity_id", "team_num", "health", "max_health", "lifestate",
+    "x", "y", "z",
+}
+
 STAT_MODIFIER_EVENTS_COLUMNS = {"tick", "hero_id", "stat_type", "amount"}
 
 ACTIVE_MODIFIERS_COLUMNS = {
@@ -134,6 +139,7 @@ DATASET_COLUMNS = {
     "mid_boss": MID_BOSS_COLUMNS,
     "troopers": TROOPERS_COLUMNS,
     "neutrals": NEUTRALS_COLUMNS,
+    "breakables": BREAKABLES_COLUMNS,
     "stat_modifier_events": STAT_MODIFIER_EVENTS_COLUMNS,
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
     "ability_ticks": ABILITY_TICKS_COLUMNS,
@@ -537,6 +543,31 @@ class TestRift:
             pytest.skip("no rifts in this demo")
         unmapped = rift.filter(pl.col("lane") == 0)
         assert len(unmapped) == 0, f"unmapped rift site(s): {unmapped.select(['x', 'y']).to_dicts()}"
+
+
+# ===================================================================
+# Breakables
+# ===================================================================
+
+
+class TestBreakables:
+    """The breakables dataset: prop state changes, including the break row."""
+
+    def test_schema(self, demo: Demo) -> None:
+        assert set(demo.breakables.columns) == BREAKABLES_COLUMNS
+
+    def test_has_break_rows(self, demo: Demo) -> None:
+        # Props get broken over a match, so there are health==0 (break) rows,
+        # and max_health is always positive.
+        df = demo.breakables
+        assert df.height > 0
+        assert (df["max_health"] > 0).all()
+        assert df.filter(pl.col("health") == 0).height > 0
+
+    def test_positions_finite(self, demo: Demo) -> None:
+        df = demo.breakables
+        assert df["x"].is_finite().all()
+        assert df["y"].is_finite().all()
 
 
 # ===================================================================
