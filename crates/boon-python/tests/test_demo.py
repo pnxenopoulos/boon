@@ -84,6 +84,11 @@ BREAKABLES_COLUMNS = {
     "x", "y", "z",
 }
 
+SINNERS_SACRIFICE_COLUMNS = {
+    "tick", "entity_id", "team_num", "health", "max_health", "lifestate",
+    "x", "y", "z",
+}
+
 STAT_MODIFIER_EVENTS_COLUMNS = {"tick", "hero_id", "stat_type", "amount"}
 
 ACTIVE_MODIFIERS_COLUMNS = {
@@ -140,6 +145,7 @@ DATASET_COLUMNS = {
     "troopers": TROOPERS_COLUMNS,
     "neutrals": NEUTRALS_COLUMNS,
     "breakables": BREAKABLES_COLUMNS,
+    "sinners_sacrifice": SINNERS_SACRIFICE_COLUMNS,
     "stat_modifier_events": STAT_MODIFIER_EVENTS_COLUMNS,
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
     "ability_ticks": ABILITY_TICKS_COLUMNS,
@@ -568,6 +574,18 @@ class TestBreakables:
         df = demo.breakables
         assert df["x"].is_finite().all()
         assert df["y"].is_finite().all()
+
+
+class TestSinnersSacrifice:
+    """The sinners_sacrifice dataset: machine spawn + health-change rows."""
+
+    def test_schema(self, demo: Demo) -> None:
+        assert set(demo.sinners_sacrifice.columns) == SINNERS_SACRIFICE_COLUMNS
+
+    def test_max_health_positive(self, demo: Demo) -> None:
+        df = demo.sinners_sacrifice
+        if df.height:
+            assert (df["max_health"] > 0).all()
 
 
 # ===================================================================

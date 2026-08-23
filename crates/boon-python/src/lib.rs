@@ -757,6 +757,7 @@ const VALID_DATASETS: &[&str] = &[
     "troopers",
     "neutrals",
     "breakables",
+    "sinners_sacrifice",
     "stat_modifier_events",
     "active_modifiers",
     "urn",
@@ -846,6 +847,7 @@ struct Demo {
     cached_troopers: Option<DataFrame>,
     cached_neutrals: Option<DataFrame>,
     cached_breakables: Option<DataFrame>,
+    cached_sinners_sacrifice: Option<DataFrame>,
     cached_stat_modifier_events: Option<DataFrame>,
     cached_active_modifiers: Option<DataFrame>,
     cached_ability_ticks: Option<DataFrame>,
@@ -1308,6 +1310,7 @@ impl Demo {
             cached_troopers: None,
             cached_neutrals: None,
             cached_breakables: None,
+            cached_sinners_sacrifice: None,
             cached_stat_modifier_events: None,
             cached_active_modifiers: None,
             cached_ability_ticks: None,
@@ -1788,6 +1791,8 @@ impl Demo {
             datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
         let load_breakables =
             datasets.iter().any(|s| s == "breakables") && self.cached_breakables.is_none();
+        let load_sinners_sacrifice =
+            datasets.iter().any(|s| s == "sinners_sacrifice") && self.cached_sinners_sacrifice.is_none();
         let load_stat_modifier_events = datasets.iter().any(|s| s == "stat_modifier_events")
             && self.cached_stat_modifier_events.is_none();
         let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
@@ -1815,6 +1820,7 @@ impl Demo {
             && !load_troopers
             && !load_neutrals
             && !load_breakables
+            && !load_sinners_sacrifice
             && !load_stat_modifier_events
             && !load_active_modifiers
             && !load_ability_ticks
@@ -1842,6 +1848,7 @@ impl Demo {
             && !load_mid_boss
             && !load_neutrals
             && !load_breakables
+            && !load_sinners_sacrifice
             && !load_stat_modifier_events
             && !load_active_modifiers
             && !load_ability_ticks
@@ -1960,6 +1967,9 @@ impl Demo {
         }
         if load_breakables {
             class_names.push("CCitadel_BreakableProp");
+        }
+        if load_sinners_sacrifice {
+            class_names.push("CNPC_Neutral_SinnersSacrifice");
         }
         if load_urn {
             class_names.push("CCitadelIdolReturnTrigger");
@@ -2144,6 +2154,20 @@ impl Demo {
         // is a disappearance (leave/delete), not a field update, so it can't come off
         // updated_indices — we detect it when a tracked index goes inactive/gone.
         let mut bk_live: HashMap<i32, (f32, f32, f32, i64, i64)> = HashMap::new();
+        // ── Column vectors for breakables (change-detected; break rows kept) ──
+        let mut sn_tick: Vec<i32> = Vec::new();
+        let mut sn_entity_id: Vec<i32> = Vec::new();
+        let mut sn_team_num: Vec<i64> = Vec::new();
+        let mut sn_health: Vec<i64> = Vec::new();
+        let mut sn_max_health: Vec<i64> = Vec::new();
+        let mut sn_lifestate: Vec<i64> = Vec::new();
+        let mut sn_x: Vec<f32> = Vec::new();
+        let mut sn_y: Vec<f32> = Vec::new();
+        let mut sn_z: Vec<f32> = Vec::new();
+        // Live tracked props: entity_index → (x, y, z, max_health, team_num). A break
+        // is a disappearance (leave/delete), not a field update, so it can't come off
+        // updated_indices — we detect it when a tracked index goes inactive/gone.
+        let mut sn_live: HashMap<i32, (f32, f32, f32, i64, i64)> = HashMap::new();
 
         // ── Column vectors for stat_modifiers (event-based change detection) ──
         let mut sm_tick: Vec<i32> = Vec::new();
@@ -2418,6 +2442,17 @@ impl Demo {
         let mut bkk_cell_x: Option<u64> = None;
         let mut bkk_cell_y: Option<u64> = None;
         let mut bkk_cell_z: Option<u64> = None;
+        // Breakable prop keys (map boxes / golden statues: CNPC_Neutral_SinnersSacrifice)
+        let mut snk_health: Option<u64> = None;
+        let mut snk_max_health: Option<u64> = None;
+        let mut snk_team_num: Option<u64> = None;
+        let mut snk_lifestate: Option<u64> = None;
+        let mut snk_vec_x: Option<u64> = None;
+        let mut snk_vec_y: Option<u64> = None;
+        let mut snk_vec_z: Option<u64> = None;
+        let mut snk_cell_x: Option<u64> = None;
+        let mut snk_cell_y: Option<u64> = None;
+        let mut snk_cell_z: Option<u64> = None;
 
         // StatViewerModifierValues keys for indices 0..20: (modifier_id, val_type, value)
         let mut smk_keys: Vec<(Option<u64>, Option<u64>, Option<u64>)> = Vec::new();
@@ -2722,6 +2757,32 @@ impl Demo {
                                 "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
                             );
                             bkk_cell_z = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
+                            );
+                        }
+                    }
+                    if load_sinners_sacrifice {
+                        if let Some(s) = $ctx.serializers().get("CNPC_Neutral_SinnersSacrifice") {
+                            snk_health = s.resolve_field_key("m_iHealth");
+                            snk_max_health = s.resolve_field_key("m_iMaxHealth");
+                            snk_team_num = s.resolve_field_key("m_iTeamNum");
+                            snk_lifestate = s.resolve_field_key("m_lifeState");
+                            snk_vec_x = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
+                            );
+                            snk_vec_y = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
+                            );
+                            snk_vec_z = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
+                            );
+                            snk_cell_x = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
+                            );
+                            snk_cell_y = s.resolve_field_key(
+                                "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
+                            );
+                            snk_cell_z = s.resolve_field_key(
                                 "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
                             );
                         }
@@ -3722,6 +3783,49 @@ impl Demo {
                         bk_z.push(z);
                     }
                 }
+                // ── Collect sinners' sacrifice machines: a row on spawn and on every
+                //    health change. Unlike breakables (which vanish), these 500-HP machines
+                //    report their health as they are meleed down (500 -> ... -> 1) and only
+                //    despawn ~25s later, so the health-change rows are what align with the
+                //    player's meleeing; the break is the row where health bottoms out.
+                if load_sinners_sacrifice {
+                    for &idx in $ctx.entities().updated_indices() {
+                        let Some(entity) = $ctx.entities().get(idx) else {
+                            continue;
+                        };
+                        if entity.class_name.as_ref() != "CNPC_Neutral_SinnersSacrifice" {
+                            continue;
+                        }
+                        let max_hp = entity.get_i64(snk_max_health);
+                        if max_hp == 0 {
+                            continue;
+                        }
+                        let hp = entity.get_i64(snk_health);
+                        let team = entity.get_i64(snk_team_num);
+                        let lifestate = entity.get_i64(snk_lifestate);
+                        let [x, y, z] = entity.world_position(
+                            [snk_cell_x, snk_cell_y, snk_cell_z],
+                            [snk_vec_x, snk_vec_y, snk_vec_z],
+                        );
+                        // sn_live stores (x, y, z, max_hp, last_health); emit on spawn or a
+                        // health change.
+                        let changed = match sn_live.insert(idx, (x, y, z, max_hp, hp)) {
+                            None => true,
+                            Some((.., prev_hp)) => prev_hp != hp,
+                        };
+                        if changed {
+                            sn_tick.push($ctx.tick());
+                            sn_entity_id.push(idx);
+                            sn_team_num.push(team);
+                            sn_health.push(hp);
+                            sn_max_health.push(max_hp);
+                            sn_lifestate.push(lifestate);
+                            sn_x.push(x);
+                            sn_y.push(y);
+                            sn_z.push(z);
+                        }
+                    }
+                }
 
             };
         }
@@ -4220,6 +4324,21 @@ impl Demo {
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_breakables = Some(df);
         }
+        if load_sinners_sacrifice {
+            let df = df_from_columns(vec![
+                Column::new("tick".into(), sn_tick),
+                Column::new("entity_id".into(), sn_entity_id),
+                Column::new("team_num".into(), sn_team_num),
+                Column::new("health".into(), sn_health),
+                Column::new("max_health".into(), sn_max_health),
+                Column::new("lifestate".into(), sn_lifestate),
+                Column::new("x".into(), sn_x),
+                Column::new("y".into(), sn_y),
+                Column::new("z".into(), sn_z),
+            ])
+            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
+            self.cached_sinners_sacrifice = Some(df);
+        }
 
         if load_stat_modifier_events {
             let df = df_from_columns(vec![
@@ -4562,6 +4681,26 @@ impl Demo {
             self.load(py, vec!["breakables".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_breakables.clone().unwrap()))
+    }
+
+    /// Sinner's Sacrifice machines as a Polars DataFrame.
+    ///
+    /// Columns: ``tick``, ``entity_id``, ``team_num``, ``health``,
+    /// ``max_health``, ``lifestate``, ``x``, ``y``, ``z``.
+    ///
+    /// Tracks ``CNPC_Neutral_SinnersSacrifice`` (the 500-HP melee-only jackpot
+    /// machines). Emits a spawn row and a row on every health change as the
+    /// machine is meleed down (~50 / ~100 per light / heavy melee). A health drop
+    /// near a hero is that hero hitting the machine.
+    ///
+    /// **Note:** Not loaded by default. Access this property or call
+    /// ``load("sinners_sacrifice")`` explicitly.
+    #[getter]
+    fn sinners_sacrifice(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        if self.cached_sinners_sacrifice.is_none() {
+            self.load(py, vec!["sinners_sacrifice".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_sinners_sacrifice.clone().unwrap()))
     }
 
     /// Permanent stat bonus change events as a Polars DataFrame.
@@ -5148,6 +5287,7 @@ impl Demo {
             "troopers" => self.cached_troopers.as_ref(),
             "neutrals" => self.cached_neutrals.as_ref(),
             "breakables" => self.cached_breakables.as_ref(),
+            "sinners_sacrifice" => self.cached_sinners_sacrifice.as_ref(),
             "stat_modifier_events" => self.cached_stat_modifier_events.as_ref(),
             "active_modifiers" => self.cached_active_modifiers.as_ref(),
             "urn" => self.cached_urn.as_ref(),

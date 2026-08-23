@@ -741,6 +741,21 @@ class Demo:
         ...
 
     @property
+    def sinners_sacrifice(self) -> pl.DataFrame:
+        """Sinner's Sacrifice machines as a Polars DataFrame.
+
+        Tracks ``CNPC_Neutral_SinnersSacrifice`` (500-HP melee-only jackpot machines).
+        Emits a spawn row and a row on every health change as the machine is meleed down
+        (~50 / ~100 per light / heavy melee). A health drop near a hero is that hero hitting it.
+
+        Not loaded by default. Access this property or call ``load("sinners_sacrifice")`` explicitly.
+
+        Columns: ``tick``, ``entity_id``, ``team_num``, ``health``, ``max_health``,
+        ``lifestate``, ``x``, ``y``, ``z``.
+        """
+        ...
+
+    @property
     def stat_modifier_events(self) -> pl.DataFrame:
         """Permanent stat bonus change events as a Polars DataFrame.
 
