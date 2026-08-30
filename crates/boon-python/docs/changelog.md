@@ -1,5 +1,77 @@
 # 📝 Changelog
 
+## 0.8.0 (unreleased)
+
+0.8.0 is under development.
+
+### boon-python
+
+- New `demo.stat_ticks(...)` selectively tracks native, persistent baseline,
+  and tick-effective player stats for bullet/spirit resistance, spirit power,
+  fire rate, weapon damage, cooldown reduction, status resistance, and both
+  lifesteal types. It supports explicit ticks, ranges, strides, seconds, and
+  event-aligned sampling; requested stats share one parallel modifier/entity
+  pass and include a per-stat completeness flag.
+- New `demo.stat_effects(...)` change-only provenance frame explains generated
+  item and modifier contributions, including layer, operation, resolved value,
+  ability/modifier identity, runtime serial, caster/provider, stacks, duration,
+  active state, and formula completeness.
+- **Fixed:** `active_modifiers`, barrier snapshots, and effective stat tracking
+  now consume one shared full-protobuf modifier state. Partial string-table
+  updates preserve omitted fields, while removals, slot reuse, serial changes,
+  aura range, and keyframe rebuilds are handled consistently.
+
+- New `barrier` column in `demo.player_ticks` and sampled player snapshots. It
+  reports the player's current barrier remaining from the
+  `modifier_barrier_tracker` entry; older demos without that tracker return
+  `0.0`.
+- New `bullet_resist_baseline` and `spirit_resist_baseline` columns in
+  `demo.player_ticks` and sampled player snapshots. They reconstruct the
+  baseline percentage from hero
+  VData progression, spirit scaling, and unconditional stats on the player's
+  equipped items, using Deadlock's multiplicative resistance stacking. Temporary
+  buffs, barriers, auras, and enemy resistance reductions are not included.
+- **Faster:** `teamfights()` now batch-loads damage and kills in one filtered
+  event pass and snapshots player positions only at relevant damage ticks
+  instead of materializing all of `player_ticks`. On a 115 MB demo this reduced
+  end-to-end runtime from 20.2s to 12.1s (about 40%) with identical output.
+- **Faster:** `in_combat()` and `time_dead()` request `player_ticks` and
+  `world_ticks` together, collecting both in one parallel snapshot pass on a
+  cold `Demo`. The paired input load fell from 4.23s to 2.49s on the same demo.
+- **Faster:** mixed `Demo.load(...)` requests keep `player_ticks`,
+  `world_ticks`, and `troopers` on their parallel keyframe-segmented path
+  while event/entity datasets share a separate filtered pass. A mixed request
+  no longer makes heavy snapshot datasets fall back to serial decoding.
+- **Faster:** the change-only `ability_upgrades` and `stat_modifier_events`
+  datasets process only player controllers updated on the current tick rather
+  than rescanning every controller.
+- **Fixed:** `active_modifiers` now distinguishes concurrent raw modifier
+  instances with a `serial` column and emits `"changed"` when a live
+  modifier's duration or application timestamp changes, as well as when its
+  stack count changes. A single ability may create multiple internal modifier
+  instances (for example, an attached effect plus a kill-check window), so row
+  count must not be treated as stack count; `stacks` remains authoritative.
+- **Faster:** `summary()` caches its decoded post-match message and four
+  DataFrames after the first call. The scan, protobuf decode, and frame builds
+  release the Python interpreter; repeated calls return shallow frame clones
+  without reparsing (about 0.35ms on the benchmark demo).
+
+### boon
+
+- New fixed-size `StatBlock` / `StatMask` engine and explicit `StatId`,
+  `StatOperation`, and native/baseline/effective layer semantics.
+- The VData name-table generator now emits a compact catalog of unconditional
+  item effects and live modifier effects, keyed primarily by ability and
+  modifier ID with guarded cross-build fallbacks.
+- New reusable `ModifierState` reconstructs complete `ActiveModifiers` entries
+  from partial protobuf deltas and emits typed applied/changed/removed events.
+
+### Release process
+
+- Releases are now manual and component-scoped. `boon-proto`, `boon`, and
+  `boon-python` are published independently, and each component is tagged only
+  after its package-index upload succeeds.
+
 ## 0.7.0
 
 ### boon-python

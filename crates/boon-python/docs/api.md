@@ -130,6 +130,54 @@ Returns a single DataFrame for one dataset, or a dict keyed by name for several.
 With only a window and no other selector, every tick in the window is returned;
 specifying no selector at all raises `ValueError`.
 
+#### `stat_ticks()`
+
+```python
+demo.stat_ticks(
+    ["bullet_resist", "spirit_resist", "fire_rate_bonus"],
+    every=64,
+)
+```
+
+Sample derived player stats without adding wide columns to every
+`player_ticks` row. The tick selectors are the same as `snapshots()`:
+`ticks`, `every` / `seconds`, `events`, and a `start_tick` / `end_tick`
+window. Several requested stats share one entity and modifier pass, and
+keyframe segments are decoded in parallel.
+
+Supported stat names are `bullet_resist`, `spirit_resist`, `spirit_power`,
+`fire_rate_bonus`, `weapon_damage_bonus`, `cooldown_reduction`,
+`status_resist`, `bullet_lifesteal`, and `spirit_lifesteal`. Percentage
+stats are returned in percentage points; spirit power is returned in points.
+
+For every requested stat the frame contains four columns:
+
+- `*_native`: the hero value at the current level;
+- `*_baseline`: native plus persistent progression and purchased items;
+- `*_effective`: baseline plus applicable live modifiers at that tick;
+- `*_complete`: whether every known contribution used a supported formula.
+
+An unsupported stack rule is never guessed: Boon applies one copy and sets
+`*_complete` to false. Modifiers with `in_aura_range == false` do not apply.
+A permanent item modifier is deduplicated from the item contribution already
+in the baseline.
+
+#### `stat_effects()`
+
+```python
+demo.stat_effects(["bullet_resist", "spirit_resist"])
+```
+
+Return the change-only provenance behind generated stat contributions. Each
+row identifies the player, stat, lifecycle event, operation, resolved value,
+baseline/effective layer, item or modifier source, ability and modifier
+IDs/names, runtime serial, caster/provider, stacks, duration, active state,
+and completeness. With no `stats` argument, all supported stats are included.
+
+This dataset is designed for auditing formulas and joining changes to
+`stat_ticks`; it is not part of `load()` and is computed on demand while the
+Python interpreter lock is released.
+
 #### `summary()`
 
 ```python
@@ -510,6 +558,9 @@ Auto-loads on first access if not already loaded via `load()`.
 | `respawn_time` | `float` | Time until respawn |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
+| `barrier` | `float` | Current barrier remaining; `0.0` when no tracker is present |
+| `bullet_resist_baseline` | `float` | Baseline bullet/gun resistance from hero progression and unconditional equipped-item stats |
+| `spirit_resist_baseline` | `float` | Baseline spirit resistance from hero progression and unconditional equipped-item stats |
 | `lifestate` | `int` | Life state value (use `lifestate_names()` to resolve) |
 | `souls` | `int` | Current souls (currency) |
 | `spent_souls` | `int` | Total spent souls |
@@ -845,8 +896,8 @@ Not loaded by default. Access this property or call `load("stat_modifier_events"
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the stat changed |
 | `hero_id` | `int` | The player's hero ID |
-| `stat_type` | `str` | `"health"`, `"spirit_power"`, `"fire_rate"`, `"weapon_damage"`, `"cooldown_reduction"`, or `"ammo"` |
-| `amount` | `float` | The increase from this event |
+| `stat_type` | `str` | `"health"`, `"spirit_power"`, `"fire_rate"`, `"weapon_damage"`, `"cooldown_reduction"`, `"ammo"`, `"bullet_resist"`, or `"spirit_resist"` |
+| `amount` | `float` | The signed change from this event |
 
 ---
 
@@ -856,8 +907,13 @@ Not loaded by default. Access this property or call `load("stat_modifier_events"
 demo.active_modifiers  # polars.DataFrame
 ```
 
-Active buff/debuff modifiers on players. Tracks `applied`, `changed` (stack
-count changed while active), and `removed` events for each modifier.
+Raw active buff/debuff modifier instances on players. Tracks `applied`,
+`changed` (stacks, duration, or application time changed while active), and
+`removed` events for each Source 2 modifier serial.
+
+One ability can create several internal modifier instances at once. Do not
+interpret the number of rows as a stack count; use `stacks`. Use `serial` to
+reconstruct an individual instance's lifecycle.
 
 Not loaded by default. Access this property or call `load("active_modifiers")` explicitly.
 
@@ -865,10 +921,11 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the modifier event occurred |
 | `hero_id` | `int` | The affected player's hero ID |
-| `event` | `str` | `"applied"`, `"changed"` (stacks changed while active), or `"removed"` |
+| `event` | `str` | `"applied"`, `"changed"` (live state changed), or `"removed"` |
+| `serial` | `int` | Source 2 modifier serial identifying one lifecycle |
 | `modifier_id` | `int` | Raw modifier subclass hash ID (use `modifier_names()` to resolve) |
 | `ability_id` | `int` | Raw ability subclass hash ID (use `ability_names()` to resolve) |
-| `duration` | `float` | Modifier duration |
+| `duration` | `float` | Current modifier duration in seconds (`-1` when indefinite) |
 | `caster_hero_id` | `int` | Hero ID of the caster |
 | `stacks` | `int` | Number of stacks |
 

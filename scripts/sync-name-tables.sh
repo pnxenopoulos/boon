@@ -27,7 +27,7 @@ VDATA_DIR="game/citadel/pak01_dir/scripts"
 # modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers are
 # nested as modifier subclasses inside abilities.vdata (see
 # scripts/generate-name-tables/main.rs).
-VDATA_FILES=(abilities.vdata modifiers.vdata)
+VDATA_FILES=(abilities.vdata modifiers.vdata heroes.vdata)
 
 DEADLOCK_REF="${DEADLOCK_REF:-}"
 
@@ -100,7 +100,7 @@ main() {
   copy_vdata
   generate_tables
   format_tables
-  echo "Done. Updated crates/boon/src/abilities.rs and crates/boon/src/modifiers.rs"
+  echo "Done. Updated abilities.rs, modifiers.rs, and resistances.rs"
 }
 
 main "$@"

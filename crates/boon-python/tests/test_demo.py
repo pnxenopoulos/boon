@@ -8,6 +8,7 @@ import polars as pl
 import pytest
 from boon import (
     Demo,
+    DemoMessageError,
     InvalidDemoError,
     ability_names,
     game_mode_names,
@@ -29,7 +30,9 @@ PLAYER_TICKS_COLUMNS = {
     "tick", "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
     "in_regen_zone", "in_item_shop",
     "death_time", "last_spawn_time", "respawn_time",
-    "health", "max_health", "lifestate", "souls", "spent_souls",
+    "health", "max_health", "barrier", "bullet_resist_baseline",
+    "spirit_resist_baseline",
+    "lifestate", "souls", "spent_souls",
     "in_combat_end_time", "in_combat_last_damage_time", "in_combat_start_time",
     "player_damage_dealt_end_time", "player_damage_dealt_last_damage_time",
     "player_damage_dealt_start_time", "player_damage_taken_end_time",
@@ -82,8 +85,8 @@ NEUTRALS_COLUMNS = {
 STAT_MODIFIER_EVENTS_COLUMNS = {"tick", "hero_id", "stat_type", "amount"}
 
 ACTIVE_MODIFIERS_COLUMNS = {
-    "tick", "hero_id", "event", "modifier_id", "ability_id",
-    "duration", "caster_hero_id", "stacks",
+    "tick", "hero_id", "event", "serial", "modifier_id",
+    "ability_id", "duration", "caster_hero_id", "stacks",
 }
 
 URN_COLUMNS = {
@@ -429,8 +432,6 @@ class TestAbilityTicks:
 class TestActiveModifiers:
     """Semantics of the active_modifiers event stream (applied/changed/removed)."""
 
-    INSTANCE_KEYS = ["hero_id", "modifier_id", "ability_id", "caster_hero_id"]
-
     def test_event_values_in_domain(self, demo: Demo) -> None:
         events = set(demo.active_modifiers["event"].unique().to_list())
         assert events <= {"applied", "changed", "removed"}
@@ -440,22 +441,18 @@ class TestActiveModifiers:
         if len(am) > 0:
             assert am["stacks"].min() >= 0
 
-    def test_changed_events_reflect_varying_stacks(self, demo: Demo) -> None:
-        # A "changed" row is emitted only when a live modifier's stack count
-        # moves (regression: stacks used to be frozen at first sighting, so a
-        # debuff climbing 2 -> 4 stayed reported as 2). Any modifier group with
-        # a "changed" event must therefore show more than one distinct stack
-        # value, and must have an "applied" event. Grouping by these keys can
-        # merge concurrent instances (there is no serial column), so this uses
-        # set/containment properties rather than row adjacency.
+    def test_serial_identifies_one_lifecycle(self, demo: Demo) -> None:
         am = demo.active_modifiers
-        if "changed" not in am["event"].to_list():
-            pytest.skip("no stack-change events in this demo")
-        for _, grp in am.group_by(self.INSTANCE_KEYS):
+        if len(am) == 0:
+            pytest.skip("no modifier events in this demo")
+        assert am["serial"].min() > 0
+        for _, grp in am.group_by("serial", maintain_order=True):
             events = grp["event"].to_list()
-            if "changed" in events:
-                assert "applied" in events, "changed event without an applied"
-                assert grp["stacks"].n_unique() > 1
+            assert events[0] == "applied"
+            assert events.count("applied") == 1
+            assert events.count("removed") <= 1
+            if "removed" in events:
+                assert events[-1] == "removed"
 
 
 class TestRift:
@@ -709,3 +706,16 @@ class TestErrors:
 
     def test_not_street_brawl_error_importable(self) -> None:
         from boon import NotStreetBrawlError  # noqa: F401
+
+
+def test_summary_repeated_access_is_stable() -> None:
+    demo = Demo(str(_require_demo_fixture()))
+    try:
+        first = demo.summary()
+    except DemoMessageError:
+        pytest.skip("demo has no post-match summary")
+
+    second = demo.summary()
+    assert set(first) == {"snapshots", "last_hits", "objectives", "damage"}
+    for name in first:
+        assert first[name].equals(second[name]), name

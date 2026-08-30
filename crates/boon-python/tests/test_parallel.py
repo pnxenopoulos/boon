@@ -42,20 +42,22 @@ def test_parallel_matches_serial(
     assert serial.equals(parallel)
 
 
-def test_batched_snapshot_load_is_one_pass_and_exact(
+def test_mixed_load_keeps_snapshots_parallel_and_exact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     demo_path = _fixture()
 
-    # Reference: original serial run_to_end_filtered. Requesting a non-snapshot
-    # dataset (kills) forces the serial pass rather than the parallel one.
-    ref = Demo(demo_path)
-    ref.load(*SNAPSHOT_DATASETS, "kills")
+    # Serial reference for both planner groups.
+    monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")
+    serial = Demo(demo_path)
+    serial.load(*SNAPSHOT_DATASETS, "kills")
 
-    # Parallel: a single keyframe-segmented pass collects all three snapshots.
+    # A mixed request must keep the snapshots on their parallel segmented path
+    # while kills uses the filtered event/entity pass.
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "4")
-    par = Demo(demo_path)
-    par.load(*SNAPSHOT_DATASETS)
+    mixed = Demo(demo_path)
+    mixed.load(*SNAPSHOT_DATASETS, "kills")
 
     for ds in SNAPSHOT_DATASETS:
-        assert getattr(ref, ds).equals(getattr(par, ds)), ds
+        assert getattr(serial, ds).equals(getattr(mixed, ds)), ds
+    assert serial.kills.equals(mixed.kills)

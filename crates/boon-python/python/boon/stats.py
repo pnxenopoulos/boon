@@ -55,6 +55,10 @@ def in_combat(demo: Demo) -> pl.DataFrame:
     if tick_rate == 0:
         raise ValueError("tick_rate is 0: cannot reconstruct the game clock")
 
+    # Both inputs are full per-tick snapshots. Request them together so Boon
+    # collects them in one parallel keyframe-segmented pass on a cold Demo.
+    demo.load("player_ticks", "world_ticks")
+
     # Elapsed game seconds per tick, excluding paused time (same basis as
     # Demo.tick_to_seconds): cumulative count of non-paused ticks / tick_rate.
     clock = (
@@ -209,6 +213,10 @@ def time_dead(demo: Demo) -> pl.DataFrame:
         ValueError: If the demo has no game-over event, in which case regulation
             time (and therefore this metric) is undefined.
     """
+    # Both inputs are full per-tick snapshots. Request them together so Boon
+    # collects them in one parallel keyframe-segmented pass on a cold Demo.
+    demo.load("player_ticks", "world_ticks")
+
     game_over_tick = demo.game_over_tick
     regulation_ticks = demo.regulation_ticks
     tick_rate = demo.tick_rate
@@ -312,6 +320,12 @@ def teamfights(
     if tick_rate == 0:
         raise ValueError("tick_rate is 0: cannot cluster damage by time")
 
+    # Damage and kills share one filtered event pass; world_ticks is collected
+    # on the parallel snapshot path and later backs the tick-to-seconds calls.
+    # Loading these before players also populates the game-over cache used to
+    # choose the roster snapshot tick.
+    demo.load("damage", "kills", "world_ticks")
+
     schema = {
         "fight_id": pl.Int64,
         "start_tick": pl.Int64,
@@ -330,7 +344,6 @@ def teamfights(
     teams = demo.players.select("hero_id", "team_num")
     attacker_teams = teams.rename({"hero_id": "attacker_hero_id", "team_num": "at"})
     victim_teams = teams.rename({"hero_id": "victim_hero_id", "team_num": "vt"})
-    pos = demo.player_ticks.select("tick", "hero_id", "x", "y")
 
     # Hero-vs-hero damage between opposing teams -- the actual "fighting" signal --
     # placed at the victim's position (falling back to the attacker's).
@@ -343,7 +356,17 @@ def teamfights(
         .join(attacker_teams, on="attacker_hero_id", how="inner")
         .join(victim_teams, on="victim_hero_id", how="inner")
         .filter(pl.col("at") != pl.col("vt"))
-        .join(
+    )
+    if dmg.is_empty():
+        return pl.DataFrame(schema=schema)
+
+    # Only positions at relevant damage ticks can contribute to a fight. This
+    # avoids materializing the full player_ticks frame merely to discard most
+    # of it during the two joins below.
+    damage_ticks = dmg.get_column("tick").unique().to_list()
+    pos = demo.snapshots(ticks=damage_ticks).select("tick", "hero_id", "x", "y")
+    dmg = (
+        dmg.join(
             pos.rename({"hero_id": "victim_hero_id", "x": "vx", "y": "vy"}),
             on=["tick", "victim_hero_id"],
             how="left",

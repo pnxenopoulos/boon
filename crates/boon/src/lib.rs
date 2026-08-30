@@ -63,9 +63,13 @@ pub mod heroes;
 pub mod hitgroups;
 pub mod io;
 pub mod lifestates;
+pub mod modifier_state;
 pub mod modifiers;
 pub mod patron_phases;
 pub mod position;
+pub mod resistances;
+pub mod stat_catalog;
+pub mod stats;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
@@ -83,7 +87,15 @@ pub use game_modes::{all_game_modes, game_mode_name};
 pub use heroes::{all_heroes, hero_name};
 pub use hitgroups::{all_hitgroups, hitgroup_name};
 pub use lifestates::{all_lifestates, lifestate_name};
+pub use modifier_state::{ModifierChange, ModifierChangeKind, ModifierState};
 pub use modifiers::{all_modifiers, modifier_name};
 pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
+pub use resistances::{
+    HeroResistanceStats, ItemResistanceStats, hero_resistance_stats, item_resistance_stats,
+};
+pub use stats::{
+    STAT_COUNT, StatBlock, StatEffect, StatId, StatLayers, StatMask, StatOperation,
+    combine_resistance, evaluate_player_stats,
+};
 pub use teams::{all_teams, team_name};

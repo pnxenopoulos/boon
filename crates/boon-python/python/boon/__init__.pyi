@@ -123,12 +123,13 @@ class Demo:
         ...
 
     def load(self, *datasets: str) -> None:
-        """Load one or more datasets from the demo file in a single pass.
+        """Load and cache one or more datasets using compatible parser passes.
 
         Valid dataset names: see :meth:`available_datasets`.
 
-        Already-loaded datasets are skipped. Multiple datasets requested together
-        share a single parse pass over the file for efficiency.
+        Already-loaded datasets are skipped. Event/entity datasets requested
+        together share one filtered pass; snapshot datasets share one parallel
+        keyframe-segmented pass, including in mixed requests.
 
         Args:
             *datasets: One or more dataset names to load.
@@ -233,6 +234,9 @@ class Demo:
           to ``is_category == False`` for the complete, non-overlapping
           breakdown.
 
+        The decoded message and all four frames are cached after the first call;
+        repeated calls do not parse the demo or rebuild the frames.
+
         Raises ``DemoMessageError`` if the demo contains no post-match details
         (for example, an incomplete recording).
         """
@@ -278,6 +282,36 @@ class Demo:
             >>> demo.snapshots(ticks=[29000, 30000])        # specific ticks
             >>> demo.snapshots("troopers", events="kills")  # troopers at kills
             >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
+        """
+        ...
+
+    def stat_ticks(
+        self,
+        stats: str | list[str],
+        *,
+        ticks: int | list[int] | None = ...,
+        every: int | None = ...,
+        seconds: float | None = ...,
+        events: str | list[str] | None = ...,
+        start_tick: int | None = ...,
+        end_tick: int | None = ...,
+    ) -> pl.DataFrame:
+        """Sample derived player stats at selected ticks.
+
+        Each requested stat produces _native, _baseline, _effective, and
+        _complete columns. Percentage stats use percentage points. Tick
+        selectors match those supported by snapshots().
+        """
+        ...
+
+    def stat_effects(
+        self, stats: str | list[str] | None = ...
+    ) -> pl.DataFrame:
+        """Return change-only provenance for generated stat contributions.
+
+        Rows describe item and modifier apply/change/remove events, their layer,
+        operation, resolved value, source IDs/names, caster/provider, stacks,
+        duration, active state, and whether the value is complete.
         """
         ...
 
@@ -456,6 +490,14 @@ class Demo:
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Effective maximum health (level + items +
               buffs), from the controller's ``m_iHealthMax``.
+            - **barrier** (*float*) -- Current barrier remaining. Returns ``0.0`` when
+              the demo does not contain a barrier tracker for this player.
+            - **bullet_resist_baseline** (*float*) -- Baseline bullet/gun damage
+              resistance in percentage points from hero progression and
+              unconditional equipped-item stats.
+            - **spirit_resist_baseline** (*float*) -- Baseline spirit damage
+              resistance in percentage points from hero progression and
+              unconditional equipped-item stats.
             - **lifestate** (*int*) -- Life state value (use ``lifestate_names()`` to resolve).
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.
@@ -727,8 +769,8 @@ class Demo:
         Columns:
             - **tick** (*int*) -- The game tick when the stat changed.
             - **hero_id** (*int*) -- The player's hero ID.
-            - **stat_type** (*str*) -- ``"health"``, ``"spirit_power"``, ``"fire_rate"``, ``"weapon_damage"``, ``"cooldown_reduction"``, or ``"ammo"``.
-            - **amount** (*float*) -- The increase from this event.
+            - **stat_type** (*str*) -- ``"health"``, ``"spirit_power"``, ``"fire_rate"``, ``"weapon_damage"``, ``"cooldown_reduction"``, ``"ammo"``, ``"bullet_resist"``, or ``"spirit_resist"``.
+            - **amount** (*float*) -- The signed change from this event.
         """
         ...
 

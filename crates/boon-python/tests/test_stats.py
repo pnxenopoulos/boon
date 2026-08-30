@@ -3,6 +3,33 @@
 import polars as pl
 from boon import Demo, stats
 
+from conftest import _require_demo_fixture
+
+
+class _TrackedDemo:
+    """Delegate to a real Demo while recording parser-planning API calls."""
+
+    def __init__(self, demo: Demo) -> None:
+        self._demo = demo
+        self.load_calls: list[tuple[str, ...]] = []
+        self.snapshot_calls: list[dict[str, object]] = []
+        self.attribute_reads: list[str] = []
+
+    def load(self, *datasets: str) -> None:
+        self.load_calls.append(datasets)
+        self._demo.load(*datasets)
+
+    def snapshots(self, *args: object, **kwargs: object) -> pl.DataFrame:
+        self.snapshot_calls.append(kwargs)
+        result = self._demo.snapshots(*args, **kwargs)
+        assert isinstance(result, pl.DataFrame)
+        return result
+
+    def __getattr__(self, name: str) -> object:
+        self.attribute_reads.append(name)
+        return getattr(self._demo, name)
+
+
 KP_COLUMNS = [
     "hero_id",
     "team_num",
@@ -188,3 +215,27 @@ class TestTeamfights:
         # split them, so it yields fewer-or-equal fights than the default.
         wide = stats.teamfights(demo, radius=1e12)
         assert wide.height <= stats.teamfights(demo).height
+
+
+def test_in_combat_batches_snapshot_inputs() -> None:
+    tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
+    stats.in_combat(tracked)  # type: ignore[arg-type]
+    assert tracked.load_calls == [("player_ticks", "world_ticks")]
+
+
+def test_time_dead_batches_snapshot_inputs() -> None:
+    tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
+    stats.time_dead(tracked)  # type: ignore[arg-type]
+    assert tracked.load_calls == [("player_ticks", "world_ticks")]
+
+
+def test_teamfights_uses_batched_events_and_selected_positions() -> None:
+    tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
+    stats.teamfights(tracked)  # type: ignore[arg-type]
+
+    assert tracked.load_calls == [("damage", "kills", "world_ticks")]
+    assert len(tracked.snapshot_calls) == 1
+    ticks = tracked.snapshot_calls[0]["ticks"]
+    assert isinstance(ticks, list)
+    assert ticks
+    assert "player_ticks" not in tracked.attribute_reads
