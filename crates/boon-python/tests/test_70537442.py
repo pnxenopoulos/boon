@@ -64,6 +64,12 @@ class TestGameResult:
     def test_game_over_tick(self, demo: Demo) -> None:
         assert demo.game_over_tick == 30697
 
+    def test_default_match_clock_uses_active_tick_fallback(
+        self, demo: Demo
+    ) -> None:
+        assert demo.regulation_ticks == 30_697
+        assert demo.regulation_seconds == pytest.approx(30_697 / 64)
+        assert demo.regulation_clock_time == "7:59"
 
 # ===================================================================
 # Players and teams

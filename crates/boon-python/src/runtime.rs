@@ -448,7 +448,12 @@ impl Demo {
         }
 
         let seconds = game_rules.get_f32(Some(key));
-        if seconds.is_finite() && seconds >= 0.0 {
+        // Old builds can replicate the field with its default value. A match
+        // that has ended must have a positive clock, so use the active-tick
+        // fallback when the value is zero.
+        // This fallback can include pregame recording time, so it might not
+        // match the HUD clock exactly.
+        if seconds.is_finite() && seconds > 0.0 {
             Ok(Some(seconds))
         } else {
             Ok(None)

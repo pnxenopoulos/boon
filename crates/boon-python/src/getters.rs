@@ -434,8 +434,10 @@ impl Demo {
     /// The number of match-clock ticks at game over.
     ///
     /// Uses the replicated HUD match clock. This excludes pregame, pauses, and
-    /// post-game time. Old demos that do not contain the clock field use active
-    /// demo ticks as a fallback.
+    /// post-game time. Old demos that omit the clock or set it to zero use
+    /// active demo ticks as a fallback. The fallback excludes pauses and
+    /// post-game time, but it can include pregame recording time. Therefore,
+    /// it might not match the HUD clock exactly.
     ///
     /// Returns ``None`` if no game-over event was found.
     #[getter]
@@ -448,8 +450,10 @@ impl Demo {
 
     /// The HUD match-clock value at game over, in seconds.
     ///
-    /// This excludes pregame, pauses, and post-game time. Old demos that do not
-    /// contain the clock field use active demo ticks as a fallback.
+    /// This excludes pregame, pauses, and post-game time. Old demos that omit
+    /// the clock or set it to zero use active demo ticks as a fallback. The
+    /// fallback excludes pauses and post-game time, but it can include pregame
+    /// recording time. Therefore, it might not match the HUD clock exactly.
     ///
     /// Returns ``None`` if no game-over event was found.
     #[getter]

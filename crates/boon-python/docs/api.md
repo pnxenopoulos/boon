@@ -448,8 +448,10 @@ demo.regulation_ticks  # int | None
 
 The number of match-clock ticks at the game-over event. Boon uses the
 replicated HUD match clock, so this value excludes pregame, pauses, and
-post-game time. Old demos without the clock field use active demo ticks as a
-fallback. `None` if no game-over event was found.
+post-game time. Old demos that omit the clock or set it to zero use active demo
+ticks as a fallback. The fallback excludes pauses and post-game time, but it can
+include pregame recording time. Therefore, it might not match the HUD clock
+exactly. `None` if no game-over event was found.
 
 ---
 
