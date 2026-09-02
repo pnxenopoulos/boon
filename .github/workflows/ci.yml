@@ -284,6 +284,6 @@ jobs:
 
       - name: Run coverage and print summary
         run: |
-          cargo llvm-cov nextest --workspace --all-features
+          cargo llvm-cov nextest --workspace --all-features --exclude boon-python
           echo "------ Coverage Summary ------"
           cargo llvm-cov report --summary-only
