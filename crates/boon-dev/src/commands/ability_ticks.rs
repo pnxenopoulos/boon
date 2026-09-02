@@ -50,10 +50,10 @@ struct AbilityTickSummary {
 
 /// List ability cooldown/charge state changes from a demo.
 ///
-/// Change-only: a row is emitted for an ability only on the tick its cooldown or
-/// charge state changes. Each ability is its own networked entity, so we walk the
-/// decoded ability entities each tick, resolving their per-class field keys once
-/// and linking each back to its owning hero via `m_hOwnerEntity`.
+/// Emit a row only when the cooldown or charge state changes. Each ability has
+/// a separate networked entity. Read the decoded ability entities for each tick.
+/// Resolve the field keys for each class one time. Use `m_hOwnerEntity` to link
+/// each ability to its hero.
 pub fn run(
     file: &Path,
     filter: Option<String>,

@@ -17,10 +17,11 @@ Part of the [Boon](https://github.com/pnxenopoulos/boon) project.
 
 - Memory-mapped, zero-copy parsing for maximum throughput
 - Match metadata (map, players, duration, build number)
-- Full entity state at any tick via snapshot seeking
+- Full entity state at any tick with snapshot seeking
+- Stable entity identities and typed update/PVS-leave/delete lifecycle events
 - Game event extraction with protobuf decoding
 - Filtered tick streaming for efficient per-entity-class analysis
-- Ability and modifier name lookups
+- Ability/modifier token, English ability/item, and breakable subclass lookups
 
 ## Installation
 
@@ -28,7 +29,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon-deadlock = "0.3"
+boon-deadlock = "0.8"
 ```
 
 Requires Rust 1.88+ (edition 2024).
@@ -98,7 +99,10 @@ let x = entity.get_by_name(
 ### Helper Functions
 
 - `ability_name(id)` &mdash; resolve an ability hash to its name
+- `ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
+- `breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
 - `modifier_name(id)` &mdash; resolve a modifier hash to its name
+- `decode_stat_modifier_value_type(value_type)` &mdash; normalize observed cross-build stat-modifier enum values
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload
 
 ## Examples
@@ -128,7 +132,8 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 
 ## Performance
 
-For best throughput when you only need specific entity types, use `run_to_end_filtered` with a class filter. This skips field decoding for entities outside the filter set.
+Use `run_to_end_filtered` with a class filter when you need specific entity
+types. Boon does not decode fields for entities outside the filter.
 
 ```rust,ignore
 use std::collections::HashSet;
@@ -136,7 +141,7 @@ use std::collections::HashSet;
 let filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
 parser.run_to_end_filtered(&filter, |ctx| {
     for (_, entity) in ctx.entities.iter() {
-        // Only CCitadelPlayerPawn entities are tracked
+        // Track only CCitadelPlayerPawn entities.
     }
 }).unwrap();
 ```

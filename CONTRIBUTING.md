@@ -1,10 +1,10 @@
 # Contributing to Boon
 
-Thanks for your interest in contributing to Boon! This guide covers setup, coding standards, and how to submit changes.
+Thank you for your interest in Boon. This guide explains how to set up the project, test changes, and submit changes.
 
 ## Prerequisites
 
-- **Rust** (stable) &mdash; install via [rustup](https://rustup.rs)
+- **Rust** (stable) &mdash; install with [rustup](https://rustup.rs)
 - **Python 3.11+** &mdash; for the Python bindings
 - **maturin** &mdash; `pip install maturin` (or `uv add maturin`)
 
@@ -56,7 +56,7 @@ uv run maturin develop --release
 
 ## Code Quality
 
-Before submitting a PR, make sure all checks pass locally. CI runs these same checks:
+Run these checks before you submit a pull request. CI runs the same checks.
 
 ```bash
 # Formatting
@@ -68,6 +68,23 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 # Tests
 cargo nextest run --workspace --all-features
 ```
+
+## Writing Style
+
+Use ASD-STE100 English where practical. Apply this rule to maintained
+documentation, API text, command help, and code comments.
+
+- Use active voice.
+- Put one main idea in each sentence.
+- Keep sentences short. Use no more than 25 words when practical.
+- Use the same term for the same thing.
+- Do not use contractions.
+- Do not use a vague word such as "this" without a clear noun.
+- Put behavior and its reason in separate sentences.
+- Keep exact API names, game field names, and Source 2 terms.
+
+Do not edit generated files or upstream protobuf text to change the writing
+style. Edit the generator or source text when possible.
 
 ## Updating Protobuf Definitions
 
@@ -81,33 +98,42 @@ When Valve updates Deadlock's protobuf definitions, sync and regenerate:
 cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-protos
 ```
 
-This updates the files under `crates/boon-proto/proto/` and regenerates `crates/boon-proto/src/proto.rs`.
+The command updates the files in `crates/boon-proto/proto/`. It also regenerates
+`crates/boon-proto/src/proto.rs`.
 
 ## Updating the Name Lookup Tables
 
-Ability/item and modifier IDs in demo events are MurmurHash2 hashes of their string names. The lookup tables at `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs` are generated from Deadlock's `abilities.vdata` and `modifiers.vdata`.
+Ability, item, modifier, and breakable subclass IDs are MurmurHash2 hashes of
+internal names. The generator joins four Deadlock VData files to the English
+hero and item localization catalogs. The VData files are `abilities.vdata`,
+`modifiers.vdata`, `heroes.vdata`, and `misc.vdata`. The generator creates token
+lookups, display names, resistance inputs, and stat-effect metadata.
 
 ```bash
 # Fetch the latest vdata files from SteamDB and regenerate the tables
 ./scripts/sync-name-tables.sh
 ```
 
-This regenerates `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs`.
+This regenerates `abilities.rs`, `ability_display_names.rs`, `breakables.rs`,
+`modifiers.rs`, `resistances.rs`, and `stat_catalog.rs` under
+`crates/boon/src/`.
 
-If you already have `abilities.vdata` and `modifiers.vdata` locally (e.g., extracted from the game's VPK data using [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)), you can skip the fetch step and run the generator directly:
+If you already have those VData and localization inputs locally (for example,
+after extracting the game's VPK data with
+[Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)),
+place all six files in the repository root and run the generator directly:
 
 ```bash
-# Run from the repo root with abilities.vdata and modifiers.vdata in the working directory
+# Run from the repo root with the four VData and two localization files present
 cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 ```
 
 ## Release Strategy
 
-Boon has three independent release tracks. All releases are started manually
-from the **Release Boon** workflow on the `main` branch; maintainers do not
-create or push release tags themselves. The workflow verifies the selected
-version, uploads it to the relevant package index, and only then creates the
-tag and GitHub Release.
+Boon has three independent release tracks. Start each release manually from the
+**Release Boon** workflow on the `main` branch. Do not create or push a release
+tag. The workflow verifies the selected version and uploads the package. After
+the upload succeeds, the workflow creates the tag and GitHub Release.
 
 | Workflow selection | Package index | Tag |
 | --- | --- | --- |
@@ -115,15 +141,17 @@ tag and GitHub Release.
 | `boon` | crates.io (`boon-deadlock`) | `boon-v<version>` |
 | `boon-python` | PyPI (`boon-deadlock`) | `boon-python-v<version>` |
 
-For a coordinated release, run the workflow three times in this order:
+For a coordinated release, run the workflow to completion three times in this
+order:
 
 1. `boon-proto`
 2. `boon`
 3. `boon-python`
 
-This order is enforced. A `boon` release requires the repository's exact
-`boon-proto` version to exist on crates.io, and a `boon-python` release
-requires the exact `boon-deadlock` version to exist there.
+The workflow enforces this order. Wait until each upload is visible before you
+start the next release. A `boon` release requires the exact `boon-proto` version
+on crates.io. A `boon-python` release requires the exact `boon-deadlock` version
+on crates.io.
 
 Before dispatching a release:
 
@@ -139,17 +167,18 @@ Before dispatching a release:
 3. Open **Actions > Release Boon > Run workflow**, select the component, enter
    its version without a leading `v`, and dispatch it from `main`.
 
-Publishing is idempotent: rerunning a partially completed release skips an
-identical version already present on crates.io or PyPI. A tag that already
-points at the release commit is also a no-op; the workflow refuses to move a tag
-that points anywhere else.
+You can run a partially completed release again. The workflow skips an identical
+version that is already on crates.io or PyPI. It also keeps a tag that points to
+the release commit. The workflow does not move a tag that points to a different
+commit.
 
-`boon-dev` is not released: it has no crates.io package or release binary and
-is built locally with `cargo build --release -p boon-dev`.
+`boon-dev` does not have a release package or binary. Build it locally with
+`cargo build --release -p boon-dev`.
 
 ## Test Fixtures
 
-Demo files (`.dem`) are not checked into this repository (they are gitignored). They are hosted as GitHub releases in [pnxenopoulos/boon-fixtures](https://github.com/pnxenopoulos/boon-fixtures).
+The repository does not contain demo files (`.dem`). Download them from the
+[boon-fixtures releases](https://github.com/pnxenopoulos/boon-fixtures).
 
 ### Downloading fixtures
 
@@ -161,6 +190,10 @@ gh release download 70555151 \
   --dir crates/boon-python/tests/fixtures/
 
 gh release download 70537442 \
+  --repo pnxenopoulos/boon-fixtures \
+  --dir crates/boon-python/tests/fixtures/
+
+gh release download 103129247 \
   --repo pnxenopoulos/boon-fixtures \
   --dir crates/boon-python/tests/fixtures/
 ```
@@ -177,7 +210,7 @@ gh release create <match_id> \
   crates/boon-python/tests/fixtures/<match_id>.dem \
   --repo pnxenopoulos/boon-fixtures \
   --title "<match_id>.dem" \
-  --notes "Description of the fixture (e.g., game mode, notable properties)"
+  --notes "Description of the fixture (for example, game mode, notable properties)"
 ```
 
 3. Add fixture-specific tests in `crates/boon-python/tests/test_<match_id>.py` with a skip guard:
@@ -189,9 +222,7 @@ FIXTURE_PATH = FIXTURES_DIR / "<match_id>.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("<match_id>.dem fixture not available")
-    d = Demo(str(FIXTURE_PATH))
-    d.load(*ALL_DATASETS)
-    return d
+    return get_demo(FIXTURE_PATH)
 ```
 
 4. Update CI to download the new fixture.
@@ -202,19 +233,21 @@ def demo() -> Demo:
 |----------|-----------|-------------|
 | 70555151 | 6v6 | Standard 6v6 match |
 | 70537442 | Street Brawl | Street brawl (game_mode=4) match |
+| 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
 
 ## Submitting Changes
 
-1. Fork the repository and create a feature branch from `main`
-2. Make your changes, keeping commits focused and descriptive
-3. Ensure `cargo fmt`, `cargo clippy`, and tests all pass
-4. Open a pull request against `main` with a clear description of what changed and why
+1. Fork the repository and create a feature branch from `main`.
+2. Make the changes. Keep each commit focused and descriptive.
+3. Run `cargo fmt`, `cargo clippy`, and the tests.
+4. Open a pull request against `main`. Describe the change and its reason.
 
 ## Reporting Issues
 
-Open an issue on [GitHub](https://github.com/pnxenopoulos/boon/issues). For bug reports, include:
+Open an issue on [GitHub](https://github.com/pnxenopoulos/boon/issues). Include
+this information in a bug report:
 
-- Boon version / commit hash
-- Steps to reproduce
-- Expected vs actual behavior
-- Demo file match ID (if applicable)
+- Boon version or commit hash.
+- Steps to reproduce the problem.
+- Expected behavior and actual behavior.
+- Demo match ID, if applicable.

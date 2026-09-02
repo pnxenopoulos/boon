@@ -21,8 +21,8 @@ pub enum Error {
     Parse { context: String },
 }
 
-// Manual impl because `snap::Error` doesn't implement `std::error::Error`,
-// so thiserror's `#[from]` derive can't be used.
+// `snap::Error` does not implement `std::error::Error`.
+// Thus, thiserror cannot derive `#[from]`.
 impl From<snap::Error> for Error {
     fn from(e: snap::Error) -> Self {
         Error::Decompress(e.to_string())

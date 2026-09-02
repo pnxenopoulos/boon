@@ -1,37 +1,16 @@
-use std::collections::HashMap;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon::{StatModifierKind, decode_stat_modifier_value_type};
 use colored::Colorize;
 use serde::Serialize;
-
-// eValType → stat name mapping (from misc.vdata pickup definitions)
-const EVAL_HEALTH: u32 = 31;
-const EVAL_SPIRIT_POWER: u32 = 51;
-const EVAL_FIRE_RATE: u32 = 79;
-const EVAL_WEAPON_DAMAGE: u32 = 18;
-const EVAL_COOLDOWN_REDUCTION: u32 = 109;
-const EVAL_AMMO: u32 = 172;
-
-/// Index into the 6-stat array by eValType
-fn stat_index(val_type: u32) -> Option<usize> {
-    match val_type {
-        EVAL_HEALTH => Some(0),
-        EVAL_SPIRIT_POWER => Some(1),
-        EVAL_FIRE_RATE => Some(2),
-        EVAL_WEAPON_DAMAGE => Some(3),
-        EVAL_COOLDOWN_REDUCTION => Some(4),
-        EVAL_AMMO => Some(5),
-        _ => None,
-    }
-}
 
 #[derive(Serialize)]
 struct StatModifierOutput {
     tick: i32,
     hero_id: i64,
-    stat: String,
+    stat: &'static str,
     value: f32,
 }
 
@@ -44,16 +23,9 @@ struct StatModifierSummary {
     weapon_damage: f32,
     cooldown_reduction: f32,
     ammo: f32,
+    bullet_resist: f32,
+    spirit_resist: f32,
 }
-
-const STAT_NAMES: [&str; 6] = [
-    "health",
-    "spirit_power",
-    "fire_rate",
-    "weapon_damage",
-    "cooldown_reduction",
-    "ammo",
-];
 
 pub fn run(
     file: &Path,
@@ -74,8 +46,8 @@ pub fn run(
     // StatViewerModifierValues keys for indices 0..20: (modifier_id, val_type, value)
     let mut sv_keys: Vec<(Option<u64>, Option<u64>, Option<u64>)> = Vec::new();
 
-    // Previous state per hero: [health, spirit_power, fire_rate, weapon_damage, cooldown_reduction, ammo]
-    let mut prev_state: HashMap<i64, [f32; 6]> = HashMap::new();
+    // Previous state per hero, ordered by StatModifierKind::index().
+    let mut prev_state: HashMap<i64, [f32; StatModifierKind::COUNT]> = HashMap::new();
     let mut events_out: Vec<StatModifierOutput> = Vec::new();
 
     parser
@@ -109,7 +81,7 @@ pub fn run(
                 }
 
                 // Sum values by eValType
-                let mut sums = [0.0f32; 6];
+                let mut sums = [0.0f32; StatModifierKind::COUNT];
                 for (mid_key, vt_key, val_key) in &sv_keys {
                     let mid = entity.get_u32(*mid_key);
                     let vt = entity.get_u32(*vt_key);
@@ -117,19 +89,22 @@ pub fn run(
                     if mid == 0 && vt == 0 && val == 0.0 {
                         continue;
                     }
-                    if let Some(idx) = stat_index(vt) {
-                        sums[idx] += val;
+                    if let Some(decoded) = decode_stat_modifier_value_type(vt) {
+                        sums[decoded.kind.index()] += val * decoded.value_scale;
                     }
                 }
 
                 // Compare to previous state, emit changes
-                let prev = prev_state.entry(hero_id).or_insert([0.0f32; 6]);
-                for i in 0..6 {
-                    if sums[i] != prev[i] && sums[i] > prev[i] {
+                let prev = prev_state
+                    .entry(hero_id)
+                    .or_insert([0.0f32; StatModifierKind::COUNT]);
+                for stat in StatModifierKind::ALL {
+                    let i = stat.index();
+                    if (sums[i] - prev[i]).abs() > f32::EPSILON {
                         events_out.push(StatModifierOutput {
                             tick: ctx.tick(),
                             hero_id,
-                            stat: STAT_NAMES[i].to_string(),
+                            stat: stat.name(),
                             value: sums[i],
                         });
                     }
@@ -163,6 +138,8 @@ pub fn run(
                 weapon_damage: sums[3],
                 cooldown_reduction: sums[4],
                 ammo: sums[5],
+                bullet_resist: sums[6],
+                spirit_resist: sums[7],
             })
             .collect();
         summaries.sort_by_key(|s| s.hero_id);
@@ -176,27 +153,31 @@ pub fn run(
         }
 
         println!(
-            "{:>8} {:>8} {:>14} {:>10} {:>15} {:>18} {:>6}",
+            "{:>8} {:>8} {:>14} {:>10} {:>15} {:>18} {:>6} {:>14} {:>14}",
             "Hero ID".bold(),
             "Health".bold(),
             "Spirit Power".bold(),
             "Fire Rate".bold(),
             "Weapon Damage".bold(),
             "Cooldown Reduction".bold(),
-            "Ammo".bold()
+            "Ammo".bold(),
+            "Bullet Resist".bold(),
+            "Spirit Resist".bold()
         );
-        println!("{}", "-".repeat(80));
+        println!("{}", "-".repeat(112));
 
         for s in summaries.iter().take(limit) {
             println!(
-                "{:>8} {:>8.1} {:>14.1} {:>10.3} {:>15.3} {:>18.3} {:>6.3}",
+                "{:>8} {:>8.1} {:>14.1} {:>10.3} {:>15.3} {:>18.3} {:>6.3} {:>14.3} {:>14.3}",
                 s.hero_id,
                 s.health,
                 s.spirit_power,
                 s.fire_rate,
                 s.weapon_damage,
                 s.cooldown_reduction,
-                s.ammo
+                s.ammo,
+                s.bullet_resist,
+                s.spirit_resist
             );
         }
 

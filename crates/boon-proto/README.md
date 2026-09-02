@@ -8,17 +8,18 @@
 
 </div>
 
-Pre-generated Rust types for Deadlock's protobuf definitions, used by the [Boon](https://github.com/pnxenopoulos/boon) demo parser.
+Pre-generated Rust types for the Deadlock protobuf definitions. The [Boon](https://github.com/pnxenopoulos/boon) demo parser uses these types.
 
 ## Overview
 
-This crate contains auto-generated Rust code produced by [`prost`](https://github.com/tokio-rs/prost) from Valve's `.proto` files shipped with Deadlock. The generated output lives in `src/proto.rs` and is checked into version control so that downstream crates can build without needing `protoc`.
+[`prost`](https://github.com/tokio-rs/prost) generates this Rust code from Valve's
+`.proto` files. The repository contains `src/proto.rs`. Users do not need `protoc`.
 
 ## Installation
 
 ```toml
 [dependencies]
-boon-proto = "0.2"
+boon-proto = "0.3"
 ```
 
 ## Usage
@@ -33,7 +34,8 @@ let event = proto::CCitadelUserMsgHeroKilled::default();
 
 ## Regenerating
 
-When upstream `.proto` files change (e.g. after a Deadlock update), regenerate using the scripts in the [Boon repository](https://github.com/pnxenopoulos/boon):
+Use the scripts in the [Boon repository](https://github.com/pnxenopoulos/boon)
+when an upstream `.proto` file changes:
 
 ```bash
 # Fetch latest protos from SteamDatabase
@@ -45,7 +47,11 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 
 ## Version tracking
 
-The `[package.metadata.boon-proto]` section in `Cargo.toml` records the Deadlock client/server version the protos were extracted from.
+The crate version records the upstream build as
+`MAJOR.MINOR.SourceRevision+ServerVersion`. `MAJOR.MINOR` identifies the
+protobuf API compatibility line. The Deadlock source revision is the patch
+version. SemVer build metadata contains the server build.
+`scripts/sync-protos.sh` updates the version.
 
 ## License
 

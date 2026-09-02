@@ -1,8 +1,8 @@
-"""`demo.snapshots(...)` — sampled per-tick snapshots in one parallel pass.
+"""Test sampled snapshots from `demo.snapshots(...)`.
 
-Selecting a subset of ticks must give exactly the rows you'd get by building the
-full per-tick frame and filtering it — just far cheaper, since only the selected
-ticks are materialized. Skips when no `.dem` fixture is present.
+The selected rows must equal the same rows from a complete per-tick frame. The
+test creates only the selected ticks to use less time and memory. The tests skip
+when no `.dem` fixture is present.
 """
 
 import threading

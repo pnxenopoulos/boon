@@ -39,6 +39,15 @@ def ability_names() -> dict[int, str]:
     """Return a mapping of MurmurHash2 ability ID to ability name."""
     ...
 
+def ability_display_names() -> dict[str, str]:
+    """Return exact internal ability/item names mapped to English display names.
+
+    Includes exact localized top-level entries such as ability_*, upgrade_*,
+    and citadel_ability_*. Unlocalized internal names are omitted rather than
+    assigned a synthesized name.
+    """
+    ...
+
 def modifier_names() -> dict[int, str]:
     """Return a mapping of MurmurHash2 modifier ID to modifier name."""
     ...
@@ -85,7 +94,6 @@ class Demo:
         InvalidDemoError: If the file is not a valid demo file.
         DemoHeaderError: If required fields are missing from the file header.
         DemoInfoError: If required fields are missing from the file info.
-        DemoMessageError: If the match ID could not be resolved from game entities.
 
     Example:
         >>> demo = Demo("match.dem")
@@ -123,12 +131,13 @@ class Demo:
         ...
 
     def load(self, *datasets: str) -> None:
-        """Load one or more datasets from the demo file in a single pass.
+        """Load and cache one or more datasets using compatible parser passes.
 
         Valid dataset names: see :meth:`available_datasets`.
 
-        Already-loaded datasets are skipped. Multiple datasets requested together
-        share a single parse pass over the file for efficiency.
+        Already-loaded datasets are skipped. Event/entity datasets requested
+        together share one filtered pass; snapshot datasets share one parallel
+        keyframe-segmented pass, including in mixed requests.
 
         Args:
             *datasets: One or more dataset names to load.
@@ -163,7 +172,7 @@ class Demo:
 
     @property
     def total_clock_time(self) -> str:
-        """The total duration of the demo as a formatted string (e.g., ``"12:34"``)."""
+        """The total duration of the demo as a formatted string (for example, ``"12:34"``)."""
         ...
 
     @property
@@ -179,7 +188,7 @@ class Demo:
     @property
     def match_id(self) -> int | None:
         """The match ID for this demo, or ``None`` if the demo does not carry
-        one (e.g. a partial capture or sandbox / custom content)."""
+        one (for example a partial capture or sandbox / custom content)."""
         ...
 
     @property
@@ -233,6 +242,9 @@ class Demo:
           to ``is_category == False`` for the complete, non-overlapping
           breakdown.
 
+        The decoded message and all four frames are cached after the first call;
+        repeated calls do not parse the demo or rebuild the frames.
+
         Raises ``DemoMessageError`` if the demo contains no post-match details
         (for example, an incomplete recording).
         """
@@ -253,16 +265,16 @@ class Demo:
 
         Decodes the demo once (across full-packet keyframe segments, in parallel)
         and collects rows only at the ticks you select — far cheaper than
-        materializing a full per-tick frame and filtering it in Python.
+        creating a full per-tick frame and filtering it in Python.
 
         Args:
             datasets: Which snapshot dataset(s) to return: ``"player_ticks"``
                 (default), ``"world_ticks"``, ``"troopers"``, or a list of them.
             ticks: A specific tick or list of ticks.
             every: Sample every ``N`` ticks (gap-robust stride).
-            seconds: Sample about once per ``seconds`` (converted via the tick
+            seconds: Sample about once per ``seconds`` (converted with the tick
                 rate). Mutually exclusive with ``every``.
-            events: Sample at the ticks of these event datasets (e.g. ``"kills"``
+            events: Sample at the ticks of these event datasets (for example ``"kills"``
                 or ``["kills", "damage"]``).
             start_tick: Restrict to ticks at or after this tick.
             end_tick: Restrict to ticks at or before this tick.
@@ -278,6 +290,39 @@ class Demo:
             >>> demo.snapshots(ticks=[29000, 30000])        # specific ticks
             >>> demo.snapshots("troopers", events="kills")  # troopers at kills
             >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
+        """
+        ...
+
+    def stat_ticks(
+        self,
+        stats: str | list[str],
+        *,
+        ticks: int | list[int] | None = ...,
+        every: int | None = ...,
+        seconds: float | None = ...,
+        events: str | list[str] | None = ...,
+        start_tick: int | None = ...,
+        end_tick: int | None = ...,
+    ) -> pl.DataFrame:
+        """Sample derived player stats at selected ticks.
+
+        Each requested stat produces _native, _baseline, _effective, and
+        _complete columns. Percentage stats use percentage points. Tick
+        selectors match those supported by snapshots(). Values are analytical
+        calculations; _complete reports known source/formula coverage, not
+        independent verification of Valve's exact operation ordering, caps, or
+        dynamic runtime values.
+        """
+        ...
+
+    def stat_effects(
+        self, stats: str | list[str] | None = ...
+    ) -> pl.DataFrame:
+        """Return change-only source details for generated stat contributions.
+
+        Rows describe item and modifier apply/change/remove events, their layer,
+        operation, resolved value, source IDs/names, caster/provider, stacks,
+        duration, active state, and whether the value is complete.
         """
         ...
 
@@ -344,7 +389,7 @@ class Demo:
         ...
 
     def tick_to_clock_time(self, tick: int) -> str:
-        """Convert a tick number to a clock time string (e.g., ``"3:14"``), excluding paused time.
+        """Convert a tick number to a clock time string (for example, ``"3:14"``), excluding paused time.
 
         Automatically loads ``world_ticks`` on first call to determine pauses.
 
@@ -368,29 +413,35 @@ class Demo:
 
     @property
     def regulation_ticks(self) -> int | None:
-        """Active (non-paused) ticks of regulation play, up to the game-over event.
+        """Match-clock ticks at game over.
 
-        Reflects how much of the game was actually played, unlike ``total_ticks``
-        (the full recording, including pre-game and post-match time). ``None`` if
-        no game-over event was found.
+        Uses the replicated HUD match clock. This excludes pregame, pauses, and
+        post-game time. Old demos that omit this field or set it to zero use
+        active demo ticks as a fallback. The fallback excludes pauses and
+        post-game time, but it can include pregame recording time. Therefore,
+        it might not match the HUD clock exactly. Returns ``None`` if no
+        game-over event was found.
         """
         ...
 
     @property
     def regulation_seconds(self) -> float | None:
-        """Active gameplay duration in seconds, up to the game-over event.
+        """HUD match-clock value at game over, in seconds.
 
-        Equal to ``regulation_ticks / tick_rate``. The regulation counterpart to
-        ``total_seconds``. ``None`` if no game-over event was found.
+        This excludes pregame, pauses, and post-game time. Old demos that omit
+        this field or set it to zero use active demo ticks as a fallback. The
+        fallback excludes pauses and post-game time, but it can include pregame
+        recording time. Therefore, it might not match the HUD clock exactly.
+        Returns ``None`` if no game-over event was found.
         """
         ...
 
     @property
     def regulation_clock_time(self) -> str | None:
-        """Regulation play duration as a formatted string (e.g. ``"32:45"``).
+        """Match-clock value at game over (for example, ``"32:45"``).
 
-        The regulation counterpart to ``total_clock_time``. ``None`` if no
-        game-over event was found.
+        This is the formatted counterpart to ``regulation_seconds``. Returns
+        ``None`` if no game-over event was found.
         """
         ...
 
@@ -413,11 +464,11 @@ class Demo:
     def banned_heroes(self) -> pl.DataFrame:
         """Heroes banned from this match as a Polars DataFrame.
 
-        Read from the one-shot ``BannedHeroes`` user message, which the server
+        Read from the single ``BannedHeroes`` user message, which the server
         sends early in the demo (before the match starts) only when the match
         has bans. The message carries nothing but the hero IDs -- no team, no
         banning player, and no pick/ban ordering -- so this cannot be used to
-        reconstruct a draft.
+        build a draft.
 
         An empty DataFrame means no bans were recorded for this match. Demos
         from builds that never emit the message are indistinguishable from
@@ -434,7 +485,7 @@ class Demo:
     def player_ticks(self) -> pl.DataFrame:
         """Per-tick, per-player state as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
         Returns a DataFrame with one row per player per tick, containing
         position, health, combat timers, kills, deaths, net worth, and more.
         Rows where the pawn is not found or ``hero_id == 0`` are skipped.
@@ -456,6 +507,14 @@ class Demo:
             - **health** (*int*) -- Current health.
             - **max_health** (*int*) -- Effective maximum health (level + items +
               buffs), from the controller's ``m_iHealthMax``.
+            - **barrier** (*float*) -- Current barrier remaining. Returns ``0.0`` when
+              the demo does not contain a barrier tracker for this player.
+            - **bullet_resist_baseline** (*float*) -- Baseline bullet/gun damage
+              resistance in percentage points from hero progression and
+              unconditional equipped-item stats.
+            - **spirit_resist_baseline** (*float*) -- Baseline spirit damage
+              resistance in percentage points from hero progression and
+              unconditional equipped-item stats.
             - **lifestate** (*int*) -- Life state value (use ``lifestate_names()`` to resolve).
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.
@@ -497,7 +556,7 @@ class Demo:
     def world_ticks(self) -> pl.DataFrame:
         """World state at every tick as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick.
@@ -510,7 +569,7 @@ class Demo:
     def kills(self) -> pl.DataFrame:
         """Hero kill events as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the kill occurred.
@@ -524,7 +583,7 @@ class Demo:
     def damage(self) -> pl.DataFrame:
         """Damage events as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the damage occurred.
@@ -537,6 +596,12 @@ class Demo:
             - **crit_damage** (*float*) -- Critical damage amount.
             - **attacker_class** (*int*) -- The attacker's entity class ID.
             - **victim_class** (*int*) -- The victim's entity class ID.
+            - **ability_id** (*int*) -- The ability/weapon responsible, or 0 when absent.
+            - **damage_type** (*int*) -- Raw Source ``type`` damage bitfield.
+            - **citadel_type** (*int*) -- Deadlock damage category; 3 is melee-typed damage.
+            - **damage_flags** (*int*) -- Raw Valve damage flags.
+            - **is_melee** (*bool*) -- Whether this is melee-typed damage (``citadel_type == 3``).
+            - **melee_type** (*str | None*) -- ``"light"``, ``"heavy"``, or ``"other"`` for melee-typed damage; null otherwise.
         """
         ...
 
@@ -544,7 +609,7 @@ class Demo:
     def flex_slots(self) -> pl.DataFrame:
         """Flex slot unlock events as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the flex slot was unlocked.
@@ -556,7 +621,7 @@ class Demo:
     def abilities(self) -> pl.DataFrame:
         """Important ability usage events as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the ability was used.
@@ -569,7 +634,7 @@ class Demo:
     def ability_upgrades(self) -> pl.DataFrame:
         """Hero ability point spending events as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the upgrade occurred.
@@ -583,7 +648,7 @@ class Demo:
     def item_purchases(self) -> pl.DataFrame:
         """Item shop transactions as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the transaction occurred.
@@ -597,7 +662,7 @@ class Demo:
     def chat(self) -> pl.DataFrame:
         """In-game chat messages as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the message was sent.
@@ -612,7 +677,7 @@ class Demo:
         """Objective health state changes as a Polars DataFrame.
 
         Emits a row when an objective's health, max_health, or phase changes.
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick when the change occurred.
@@ -633,7 +698,7 @@ class Demo:
     def mid_boss(self) -> pl.DataFrame:
         """Mid boss lifecycle events as a Polars DataFrame.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **tick** (*int*) -- The game tick.
@@ -654,7 +719,7 @@ class Demo:
         Exactly one of ``capture_tick`` / ``expire_tick`` is set per row. Only
         completed Rifts appear: one still live when the demo ends is omitted.
 
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Columns:
             - **rift_num** (*int*) -- 1-based Rift index in the match. Entity
@@ -717,6 +782,63 @@ class Demo:
         ...
 
     @property
+    def breakables(self) -> pl.DataFrame:
+        """Breakable map-prop destruction events as a Polars DataFrame.
+
+        Deadlock represents a broken CCitadel_BreakableProp as an entity
+        leaving the PVS. Boon emits the candidate only if the same index and
+        serial never reactivate later in the demo, and ignores full-packet
+        delete/create replacements.
+
+        Health and lifestate are intentionally omitted because the server
+        does not report a final health-zero or dead state.
+
+        Not loaded by default. Access this property or call load("breakables") explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the prop was broken.
+            - **event** (*str*) -- Always "broken".
+            - **entity_id** (*int*) -- Entity slot index.
+            - **entity_serial** (*int*) -- Serial distinguishing reuse of the slot.
+            - **subclass_id** (*int*) -- Raw unsigned breakable subclass hash ID.
+            - **subclass_name** (*str*) -- Resolved internal subclass name, or "BREAKABLE_NOT_FOUND".
+            - **team_num** (*int*) -- The prop's last-known team.
+            - **x** (*float*) -- Last-known X position.
+            - **y** (*float*) -- Last-known Y position.
+            - **z** (*float*) -- Last-known Z position.
+        """
+        ...
+
+    @property
+    def sinners_sacrifice(self) -> pl.DataFrame:
+        """Sinner's Sacrifice machine lifecycle and hit events.
+
+        Tracks both the standard and Hideout machine entity classes. Damage
+        messages provide the exact victim entity, incoming damage, and attacker
+        hero. An unmatched entity health decrease is retained as a hit with an
+        unresolved attacker. ``health`` is the machine state at the end of the
+        tick, so multiple hits in one tick can share the same value.
+
+        Not loaded by default. Access this property or call
+        ``load("sinners_sacrifice")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the event occurred.
+            - **event** (*str*) -- ``"spawned"``, ``"hit"``, or ``"reset"``.
+            - **entity_id** (*int*) -- Entity slot index.
+            - **entity_serial** (*int*) -- Serial distinguishing reuse of the slot.
+            - **attacker_hero_id** (*int*) -- Attacker hero ID, or 0 when unresolved/not applicable.
+            - **damage** (*int*) -- Incoming damage, or 0 for spawned/reset events.
+            - **health** (*int*) -- Machine health at the end of this tick.
+            - **max_health** (*int*) -- Maximum machine health.
+            - **team_num** (*int*) -- The machine's team.
+            - **x** (*float*) -- X position.
+            - **y** (*float*) -- Y position.
+            - **z** (*float*) -- Z position.
+        """
+        ...
+
+    @property
     def stat_modifier_events(self) -> pl.DataFrame:
         """Permanent stat bonus change events as a Polars DataFrame.
 
@@ -727,8 +849,8 @@ class Demo:
         Columns:
             - **tick** (*int*) -- The game tick when the stat changed.
             - **hero_id** (*int*) -- The player's hero ID.
-            - **stat_type** (*str*) -- ``"health"``, ``"spirit_power"``, ``"fire_rate"``, ``"weapon_damage"``, ``"cooldown_reduction"``, or ``"ammo"``.
-            - **amount** (*float*) -- The increase from this event.
+            - **stat_type** (*str*) -- ``"health"``, ``"spirit_power"``, ``"fire_rate"``, ``"weapon_damage"``, ``"cooldown_reduction"``, ``"ammo"``, ``"bullet_resist"``, or ``"spirit_resist"``.
+            - **amount** (*float*) -- The signed change from this event.
         """
         ...
 
@@ -758,7 +880,7 @@ class Demo:
         Change-only: a row is emitted for an ability only on the tick its
         cooldown or charge state changes, keeping the frame compact. One ability
         entity exists per ability a player owns, including innate movement
-        abilities (jump, dash, slide, ...) which can be filtered out via ``slot``.
+        abilities (jump, dash, slide, ...) which can be filtered out with ``slot``.
 
         Not loaded by default. Access this property or call ``load("ability_ticks")`` explicitly.
 
@@ -799,7 +921,7 @@ class Demo:
         """Per-tick street brawl state as a Polars DataFrame.
 
         Only available for street brawl demos (game_mode=4).
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Raises:
             NotStreetBrawlError: If the demo is not a street brawl game.
@@ -822,7 +944,7 @@ class Demo:
         """Street brawl round scoring events as a Polars DataFrame.
 
         Only available for street brawl demos (game_mode=4).
-        Auto-loads on first access if not already loaded via :meth:`load`.
+        Boon loads this dataset on first access.
 
         Raises:
             NotStreetBrawlError: If the demo is not a street brawl game.

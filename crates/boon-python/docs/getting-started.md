@@ -13,32 +13,36 @@ We recommend using [uv](https://docs.astral.sh/uv/):
 uv add boon-deadlock
 ```
 
-If you don't use uv, pip works too:
+If you do not use uv, use pip:
 
 ```bash
 pip install boon-deadlock
 ```
 
-Boon is a Rust library with Python bindings built using [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs).
+Boon is a Rust library. Its Python bindings use [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs).
 
 ## Quick Start
 
-The `Demo` class is the entrypoint for all parsing. Pass it a path to a `.dem` file, then access the datasets you need as properties. Each property is parsed on first access, so you only pay for what you use. If you need several datasets at once, `load()` parses them in a single pass. Call `Demo.available_datasets()` to see all dataset names.
+The `Demo` class is the entry point for parsing. Give it the path to a `.dem`
+file. Then, access the required datasets as properties. Boon parses a property
+on first access. Use `load()` to parse multiple datasets in one pass. Call
+`Demo.available_datasets()` to get all dataset names.
 
-Most properties return [Polars](https://pola.rs) DataFrames, so you get the full Polars API for filtering, grouping, and analysis out of the box.
+Most properties return [Polars](https://pola.rs) DataFrames. Use the Polars API
+to filter, group, and analyze the data.
 
 ```python
 from boon import Demo
 
 demo = Demo("match.dem")
 
-# Metadata properties (not DataFrames)
+# Read metadata.
 print(demo.map_name)         # "dl_midtown"
 print(demo.total_ticks)      # 54000
 print(demo.total_clock_time) # "30:00"
 print(demo.match_id)         # 28309863
 
-# Dataset properties return Polars DataFrames
+# Get a dataset as a Polars DataFrame.
 players = demo.players
 print(players)
 # shape: (12, 6)
@@ -51,10 +55,10 @@ print(players)
 # │ ...         ┆ ...           ┆ ...     ┆ ...      ┆ ...        ┆ ...  │
 # └─────────────┴───────────────┴─────────┴──────────┴────────────┴──────┘
 
-# Batch-load multiple datasets in a single parse pass
+# Load multiple datasets in one pass.
 demo.load("kills", "damage", "item_purchases", "ability_upgrades")
 
-# Cached — no additional parsing needed
+# Boon uses the cached data.
 print(f"Kills: {len(demo.kills)}")
 print(f"Damage events: {len(demo.damage)}")
 ```
@@ -100,23 +104,23 @@ objectives = demo.objectives
 # Mid boss lifecycle (spawn, kill, rejuv buffs)
 mid_boss = demo.mid_boss
 
-# Rift (king of the hill) lifecycle — one row per rift, with winner and lane
+# Get one row per Rift, with the winner and lane.
 rift = demo.rift
 
 # Lane troopers and guardians (opt-in, large dataset)
 troopers = demo.troopers
-# trooper_type is "trooper" (lane creeps) or "trooper_boss" (lane guardian)
+# "trooper" is a lane creep. "trooper_boss" is a lane guardian.
 ```
 
 ## Filtering with Polars
 
-Boon returns [Polars](https://pola.rs) DataFrames, so you can use the full Polars
-API for filtering, grouping, and analysis:
+Boon returns [Polars](https://pola.rs) DataFrames. Use the Polars API to filter,
+group, and analyze the data:
 
 ```python
 import polars as pl
 
-# Get a single player's data
+# Select one player's data.
 haze = player_ticks.filter(pl.col("hero_id") == 13)
 
 # Health over time
@@ -129,4 +133,4 @@ final_tick.select("hero_id", "gold_net_worth", "ap_net_worth", "kills", "deaths"
 
 ## Error Handling
 
-Boon raises its own exceptions for invalid or malformed demo files. See the {ref}`Exceptions <exceptions>` section of the API reference for the full list.
+Boon raises specific exceptions for invalid demo files. See {ref}`Exceptions <exceptions>` for the full list.

@@ -65,7 +65,7 @@ impl Parser {
         Ok(())
     }
 
-    /// Parse the entire demo while materializing only selected entity classes.
+    /// Parse the entire demo. Create only the selected entity classes.
     pub fn run_to_end_filtered<F>(
         &self,
         class_filter: &std::collections::HashSet<&str>,

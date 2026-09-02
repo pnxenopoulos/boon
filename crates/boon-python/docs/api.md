@@ -9,8 +9,8 @@ from boon import Demo
 demo = Demo("match.dem")
 ```
 
-A Deadlock demo file. Construction parses the file header, file info, and first tick
-to extract metadata.
+A Deadlock demo file. The constructor reads the file header, file information,
+and first tick. It uses this data to get match metadata.
 
 **Raises:**
 
@@ -18,7 +18,6 @@ to extract metadata.
 - `InvalidDemoError` -- If the file is not a valid demo.
 - `DemoHeaderError` -- If required fields (build number, map name) are missing from the file header.
 - `DemoInfoError` -- If required fields (playback ticks, playback time) are missing from the file info.
-- `DemoMessageError` -- If the match ID could not be resolved from game entities.
 
 **Parameters:**
 
@@ -32,10 +31,9 @@ to extract metadata.
 demo.verify()  # -> bool
 ```
 
-Verify that the file is a valid demo file. Returns `True` if valid.
+Verify that the file is a valid demo. The method returns `True` for a valid file.
 
-This is already called during construction, so it will always return `True`
-for an existing `Demo` instance.
+The constructor runs this check. An existing `Demo` instance always returns `True`.
 
 ---
 
@@ -45,7 +43,7 @@ for an existing `Demo` instance.
 Demo.available_datasets()  # -> list[str]
 ```
 
-Static method. Returns the list of dataset names that can be passed to `load()` or accessed as properties.
+Return all dataset names. You can pass these names to `load()` or access them as properties.
 
 ---
 
@@ -55,10 +53,10 @@ Static method. Returns the list of dataset names that can be passed to `load()` 
 demo.load("kills", "player_ticks", "world_ticks")
 ```
 
-Load one or more datasets from the demo file in a single pass. See `available_datasets()` for valid names.
+Load one or more datasets from the demo in one pass. Use `available_datasets()` to get valid names.
 
-Already-loaded datasets are skipped. Multiple datasets requested together share
-a single parse pass over the file for efficiency.
+Boon skips datasets that are already loaded. Datasets in one request use one
+parse pass.
 
 **Parameters:**
 
@@ -77,8 +75,8 @@ a single parse pass over the file for efficiency.
 demo.tick_to_seconds(11400)  # -> 190.0
 ```
 
-Convert a tick number to seconds elapsed, excluding paused time.
-Automatically loads `world_ticks` on first call to determine pauses.
+Convert a tick number to elapsed seconds. The result excludes paused time.
+The method loads `world_ticks` on the first call to find pauses.
 
 **Parameters:**
 
@@ -94,9 +92,9 @@ Automatically loads `world_ticks` on first call to determine pauses.
 demo.tick_to_clock_time(11400)  # -> "3:10"
 ```
 
-Convert a tick number to a clock time string (e.g., `"3:14"` or `"12:34"`),
-excluding paused time. Automatically loads `world_ticks` on first call to
-determine pauses.
+Convert a tick number to a clock time string, such as `"3:14"` or `"12:34"`.
+The result excludes paused time. The method loads `world_ticks` on the first
+call to find pauses.
 
 **Parameters:**
 
@@ -114,21 +112,76 @@ demo.snapshots("troopers", events="kills")        # troopers at kill ticks
 demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)  # -> dict
 ```
 
-Sample per-tick state at *selected* ticks in a single parallel pass. The demo is
-decoded once (across full-packet keyframe segments, in parallel) but only the
-ticks you select are materialized — so `snapshots(every=64)` is far cheaper than
-pulling the full `player_ticks` frame and filtering it in Python.
+Sample per-tick state at *selected* ticks in one parallel pass. Boon decodes
+the demo once. It processes full-packet keyframe segments in parallel. Boon
+creates rows only for the selected ticks. Therefore, `snapshots(every=64)`
+uses less memory and time than a full `player_ticks` frame that you filter
+in Python.
 
 - **`datasets`** -- which snapshot dataset(s): `"player_ticks"` (default),
   `"world_ticks"`, `"troopers"`, or a list.
 - **`ticks`** -- a specific tick or list of ticks.
 - **`every`** / **`seconds`** -- a periodic stride (mutually exclusive).
-- **`events`** -- sample at the ticks of these event datasets (e.g. `"kills"`).
+- **`events`** -- sample at the ticks of event datasets, such as `"kills"`.
 - **`start_tick`** / **`end_tick`** -- restrict to a contiguous window.
 
-Returns a single DataFrame for one dataset, or a dict keyed by name for several.
-With only a window and no other selector, every tick in the window is returned;
-specifying no selector at all raises `ValueError`.
+Return one DataFrame for one dataset. Return a dictionary for multiple datasets.
+A window without another selector returns each tick in the window. A request
+without a selector raises `ValueError`.
+
+#### `stat_ticks()`
+
+```python
+demo.stat_ticks(
+    ["bullet_resist", "spirit_resist", "fire_rate_bonus"],
+    every=64,
+)
+```
+
+Sample calculated player stats without adding columns to each `player_ticks`
+row. Use the same tick selectors as `snapshots()`: `ticks`, `every`,
+`seconds`, `events`, `start_tick`, and `end_tick`. Multiple requested
+stats use one entity and modifier pass. Boon processes keyframe segments in
+parallel.
+
+Supported stat names are `bullet_resist`, `spirit_resist`, `spirit_power`,
+`fire_rate_bonus`, `weapon_damage_bonus`, `cooldown_reduction`,
+`status_resist`, `bullet_lifesteal`, and `spirit_lifesteal`. Percentage
+stats are returned in percentage points; spirit power is returned in points.
+
+For each requested stat, the frame contains four columns:
+
+- `*_native`: the hero value at the current level.
+- `*_baseline`: native plus persistent progression and purchased items.
+- `*_effective`: baseline plus applicable live modifiers at that tick.
+- `*_complete`: true when each known contribution uses a supported formula.
+
+Boon does not guess an unsupported stack rule. It applies one copy and sets
+`*_complete` to false. A modifier does not apply when
+`in_aura_range == false`. Boon removes a permanent item modifier when the
+baseline already contains the item contribution.
+
+Boon calculates these values from recorded state and the generated VData
+catalog. The demo does not provide a final server value for every stat.
+`*_complete` is true when Boon evaluates each matching catalog effect. It does
+not verify engine-only caps, operation order, or live conditions. See
+{doc}`known-issues`.
+
+#### `stat_effects()`
+
+```python
+demo.stat_effects(["bullet_resist", "spirit_resist"])
+```
+
+Return source details for stat changes. Each row identifies the player, stat,
+event, operation, calculated value, layer, and item or modifier source. It also
+contains ability IDs, modifier IDs, names, runtime serial, provider, stacks,
+duration, active state, and completeness. Without a `stats` argument, the
+result contains all supported stats.
+
+Use this dataset to check formulas and join changes to `stat_ticks`. The
+dataset is not part of `load()`. Boon calculates it on demand while it
+releases the Python interpreter lock.
 
 #### `summary()`
 
@@ -309,7 +362,7 @@ see `regulation_seconds`.
 demo.total_clock_time  # str
 ```
 
-The total duration of the demo as a formatted string (e.g., `"12:34"`), covering
+The total duration of the demo as a formatted string (for example, `"12:34"`), covering
 the **entire recording**. For gameplay duration, see `regulation_clock_time`.
 
 ---
@@ -340,7 +393,7 @@ The name of the map the demo was recorded on.
 demo.match_id  # int | None
 ```
 
-The match ID for this demo, or `None` if the demo does not carry one (e.g. a
+The match ID for this demo, or `None` if the demo does not carry one (for example a
 partial capture or sandbox / custom content).
 
 ---
@@ -393,11 +446,12 @@ Scans for the `k_EUserMsg_GameOver` event on first access.
 demo.regulation_ticks  # int | None
 ```
 
-The number of active (non-paused) ticks of regulation play, counted from the
-start of the recording up to the game-over event. Reflects how much of the game
-was actually played, unlike `total_ticks` (the full recording). `None` if no
-game-over event was found. Scans for `k_EUserMsg_GameOver` and loads
-`world_ticks` on first access.
+The number of match-clock ticks at the game-over event. Boon uses the
+replicated HUD match clock, so this value excludes pregame, pauses, and
+post-game time. Old demos that omit the clock or set it to zero use active demo
+ticks as a fallback. The fallback excludes pauses and post-game time, but it can
+include pregame recording time. Therefore, it might not match the HUD clock
+exactly. `None` if no game-over event was found.
 
 ---
 
@@ -407,9 +461,9 @@ game-over event was found. Scans for `k_EUserMsg_GameOver` and loads
 demo.regulation_seconds  # float | None
 ```
 
-The active gameplay duration in seconds, up to the game-over event. Equal to
-`regulation_ticks / tick_rate`. The regulation counterpart to `total_seconds`.
-`None` if no game-over event was found.
+The replicated HUD match-clock value at the game-over event, in seconds.
+`regulation_ticks` is this value converted to ticks. `None` if no game-over
+event was found.
 
 ---
 
@@ -419,8 +473,9 @@ The active gameplay duration in seconds, up to the game-over event. Equal to
 demo.regulation_clock_time  # str | None
 ```
 
-The regulation play duration as a formatted string (e.g., `"32:45"`). The
-counterpart to `total_clock_time`. `None` if no game-over event was found.
+The match-clock value at game over as a formatted string (for example,
+`"32:45"`). The format drops fractional seconds. `None` if no game-over event
+was found.
 
 ### DataFrame Properties
 
@@ -450,21 +505,22 @@ when no game-over event is available).
 demo.banned_heroes  # polars.DataFrame
 ```
 
-Heroes banned from this match, read from the one-shot `BannedHeroes` user
-message that the server sends early in the demo (before the match starts) and
-only when the match has bans.
+Heroes that the `BannedHeroes` user message identifies. The server can send
+this message once before the match starts. GOTV recordings do not always
+contain the message.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `hero_id` | `int` | The banned hero's ID (joins to `players.hero_id`) |
 | `hero_name` | `str` | Resolved hero name, or `"HERO_NOT_FOUND"` for an ID that predates the bundled hero table |
 
-The message carries nothing but the hero IDs — no team, no banning player, and
-no pick/ban ordering — so this cannot be used to reconstruct a draft.
+The message contains only hero IDs. It does not contain the team, banning
+player, or draft order. Boon can list unavailable heroes, but it cannot build
+the draft order.
 
-An empty DataFrame means no bans were recorded. Demos from builds that never
-emit the message are indistinguishable from ban-free matches, so treat empty as
-"nothing recorded" rather than as positive proof that nothing was banned.
+An empty DataFrame means that the demo contains no ban data. It does not prove
+that the match had no bans. The demo cannot distinguish a match without bans
+from a server build that did not send the message.
 
 ```python
 demo.banned_heroes
@@ -489,7 +545,7 @@ demo.player_ticks  # polars.DataFrame
 
 Per-tick, per-player state. Returns one row per player per tick.
 Rows where the pawn is not found or `hero_id == 0` are skipped.
-Auto-loads on first access if not already loaded via `load()`.
+Boon loads this dataset on first access.
 
 **Pawn fields** (from `CCitadelPlayerPawn`):
 
@@ -510,6 +566,9 @@ Auto-loads on first access if not already loaded via `load()`.
 | `respawn_time` | `float` | Time until respawn |
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
+| `barrier` | `float` | Current barrier remaining; `0.0` when no tracker is present |
+| `bullet_resist_baseline` | `float` | Baseline bullet/gun resistance from hero progression and unconditional equipped-item stats |
+| `spirit_resist_baseline` | `float` | Baseline spirit resistance from hero progression and unconditional equipped-item stats |
 | `lifestate` | `int` | Life state value (use `lifestate_names()` to resolve) |
 | `souls` | `int` | Current souls (currency) |
 | `spent_souls` | `int` | Total spent souls |
@@ -559,7 +618,7 @@ demo.world_ticks  # polars.DataFrame
 ```
 
 World state at every tick. Returns one row per tick.
-Auto-loads on first access if not already loaded via `load()`.
+Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -575,7 +634,7 @@ Auto-loads on first access if not already loaded via `load()`.
 demo.kills  # polars.DataFrame
 ```
 
-Hero kill events. Auto-loads on first access if not already loaded via `load()`.
+Hero kill events. Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -592,7 +651,7 @@ Hero kill events. Auto-loads on first access if not already loaded via `load()`.
 demo.damage  # polars.DataFrame
 ```
 
-Damage events. Auto-loads on first access if not already loaded via `load()`.
+Damage events. Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -606,6 +665,18 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 | `crit_damage` | `float` | Critical damage amount |
 | `attacker_class` | `int` | The attacker's entity class ID |
 | `victim_class` | `int` | The victim's entity class ID |
+| `ability_id` | `int` | Raw ability/weapon ID, or `0` when absent; resolve with `ability_names()` |
+| `damage_type` | `int` | Raw Source `type` damage bitfield |
+| `citadel_type` | `int` | Deadlock damage category; `3` is melee-typed damage |
+| `damage_flags` | `int` | Raw Valve damage flags used for detailed classification |
+| `is_melee` | `bool` | Whether this is melee-typed damage (`citadel_type == 3`) |
+| `melee_type` | `str` or null | `"light"`, `"heavy"`, or `"other"` for melee-typed damage; null otherwise |
+
+`is_melee` contains Valve's melee damage category. The `DFLAG_LIGHT_MELEE`
+and `DFLAG_HEAVY_MELEE` bits identify light and heavy hits.
+`melee_type="other"` identifies melee abilities, NPC attacks, and unclear
+flag combinations. Boon does not use the ability name or damage value to
+classify melee damage.
 
 ---
 
@@ -615,7 +686,7 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 demo.flex_slots  # polars.DataFrame
 ```
 
-Flex slot unlock events. Auto-loads on first access if not already loaded via `load()`.
+Flex slot unlock events. Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -630,7 +701,7 @@ Flex slot unlock events. Auto-loads on first access if not already loaded via `l
 demo.abilities  # polars.DataFrame
 ```
 
-Important ability usage events. Auto-loads on first access if not already loaded via `load()`.
+Important ability usage events. Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -647,7 +718,7 @@ demo.ability_upgrades  # polars.DataFrame
 ```
 
 Hero ability point spending events (skill tier upgrades). Emits a row each time a
-player upgrades one of their abilities. Auto-loads on first access.
+player upgrades one of their abilities. Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -665,7 +736,7 @@ demo.item_purchases  # polars.DataFrame
 ```
 
 Item shop transactions. Includes purchases, upgrades, sells, swaps, and failures.
-Auto-loads on first access.
+Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -682,7 +753,7 @@ Auto-loads on first access.
 demo.chat  # polars.DataFrame
 ```
 
-In-game chat messages. Auto-loads on first access.
+In-game chat messages. Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -700,7 +771,7 @@ demo.objectives  # polars.DataFrame
 ```
 
 Objective health state changes. Tracks walkers, barracks, shrines, patrons, and mid boss. Emits a row when an objective's health or max_health changes.
-Auto-loads on first access.
+Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -725,7 +796,7 @@ demo.mid_boss  # polars.DataFrame
 ```
 
 Mid boss lifecycle events including spawn, kill, and rejuvenator buff tracking.
-Auto-loads on first access.
+Boon loads this dataset on first access.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -741,7 +812,7 @@ Auto-loads on first access.
 demo.rift  # polars.DataFrame
 ```
 
-Rift lifecycle — one row per Rift. Auto-loads on first access.
+Rift lifecycle — one row per Rift. Boon loads this dataset on first access.
 
 The Rift is a periodic king-of-the-hill objective (`Koth` in the game files). It
 is announced, becomes contestable, and then either is captured by a team — which
@@ -831,13 +902,85 @@ Not loaded by default. Access this property or call `load("neutrals")` explicitl
 
 ---
 
+#### `breakables`
+
+```python
+demo.breakables  # polars.DataFrame
+```
+
+Breakable map-prop destruction events. Boon tracks
+`CCitadel_BreakableProp` entities. A broken prop leaves the PVS without a
+health-zero update or a permanent delete. Boon keeps the leave as a candidate
+until parsing is complete. It emits the event only when the same
+`(entity_id, entity_serial)` identity does not become active again. Boon
+ignores full-packet delete and create replacements.
+
+The server does not report health zero or a dead lifestate before the leave.
+Therefore, the dataset does not contain these columns. Position and team use
+the last values before the final leave.
+
+Boon does not load this dataset by default. Access the property or call `load("breakables")`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | Tick when the prop was broken |
+| `event` | `str` | Always `"broken"` |
+| `entity_id` | `int` | Entity slot index |
+| `entity_serial` | `int` | Serial distinguishing reuse of the slot |
+| `subclass_id` | `int` | Raw unsigned `m_nSubclassID` hash |
+| `subclass_name` | `str` | Resolved internal subclass name, or `"BREAKABLE_NOT_FOUND"` |
+| `team_num` | `int` | Last-known team |
+| `x` | `float` | Last-known X position in world (Hammer) units |
+| `y` | `float` | Last-known Y position in world (Hammer) units |
+| `z` | `float` | Last-known Z position in world (Hammer) units |
+
+---
+
+#### `sinners_sacrifice`
+
+```python
+demo.sinners_sacrifice  # polars.DataFrame
+```
+
+Sinner's Sacrifice machine lifecycle and hit events. Boon tracks
+`CNPC_Neutral_SinnersSacrifice` and
+`CNPC_Neutral_SinnersSacrifice_Hideout`. Entity state supplies the identity,
+health, and position. Each Damage message supplies the victim, incoming damage,
+and attacker hero. Boon keeps a health decrease that has no matching message.
+For this event, `attacker_hero_id` is `0`.
+
+`health` is the machine state at the end of the tick. Multiple hits in one
+tick can have the same health value. A completed machine stays alive at one
+health. An inactive machine can omit health fields. Therefore, the dataset does
+not add a false death or lifestate event.
+
+Boon does not load this dataset by default. Access the property or call
+`load("sinners_sacrifice")`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | Tick when the event occurred |
+| `event` | `str` | `"spawned"`, `"hit"`, or `"reset"` |
+| `entity_id` | `int` | Entity slot index |
+| `entity_serial` | `int` | Serial distinguishing reuse of the slot |
+| `attacker_hero_id` | `int` | Attacker hero ID, or `0` when unresolved/not applicable |
+| `damage` | `int` | Incoming damage, or `0` for spawned/reset events |
+| `health` | `int` | Machine health at the end of this tick |
+| `max_health` | `int` | Maximum machine health |
+| `team_num` | `int` | Machine team |
+| `x` | `float` | X position in world (Hammer) units |
+| `y` | `float` | Y position in world (Hammer) units |
+| `z` | `float` | Z position in world (Hammer) units |
+
+---
+
 #### `stat_modifier_events`
 
 ```python
 demo.stat_modifier_events  # polars.DataFrame
 ```
 
-Permanent stat bonus change events from urn and breakable pickups. Emits a row whenever a stat total changes.
+Permanent stat bonus changes from urn and breakable pickups. Boon emits a row when a stat total changes.
 
 Not loaded by default. Access this property or call `load("stat_modifier_events")` explicitly.
 
@@ -845,8 +988,8 @@ Not loaded by default. Access this property or call `load("stat_modifier_events"
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the stat changed |
 | `hero_id` | `int` | The player's hero ID |
-| `stat_type` | `str` | `"health"`, `"spirit_power"`, `"fire_rate"`, `"weapon_damage"`, `"cooldown_reduction"`, or `"ammo"` |
-| `amount` | `float` | The increase from this event |
+| `stat_type` | `str` | `"health"`, `"spirit_power"`, `"fire_rate"`, `"weapon_damage"`, `"cooldown_reduction"`, `"ammo"`, `"bullet_resist"`, or `"spirit_resist"` |
+| `amount` | `float` | The signed change from this event |
 
 ---
 
@@ -856,8 +999,15 @@ Not loaded by default. Access this property or call `load("stat_modifier_events"
 demo.active_modifiers  # polars.DataFrame
 ```
 
-Active buff/debuff modifiers on players. Tracks `applied`, `changed` (stack
-count changed while active), and `removed` events for each modifier.
+Raw active buff and debuff modifiers on players. Boon tracks `applied`,
+`changed`, and `removed` events for each Source 2 modifier serial. A
+`changed` event records a change to stacks, duration, or application time.
+
+One ability can create multiple modifier instances. The number of rows is not
+the stack count. Use `stacks`. A `serial` identifies an active entry. The
+game can reuse the serial after removal. Use the apply, change, and remove
+events to identify each cycle. Do not use the serial as a globally unique
+lifecycle ID.
 
 Not loaded by default. Access this property or call `load("active_modifiers")` explicitly.
 
@@ -865,10 +1015,11 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 |--------|------|-------------|
 | `tick` | `int` | The game tick when the modifier event occurred |
 | `hero_id` | `int` | The affected player's hero ID |
-| `event` | `str` | `"applied"`, `"changed"` (stacks changed while active), or `"removed"` |
+| `event` | `str` | `"applied"`, `"changed"` (live state changed), or `"removed"` |
+| `serial` | `int` | Source 2 runtime identifier; unique while live, reusable after removal |
 | `modifier_id` | `int` | Raw modifier subclass hash ID (use `modifier_names()` to resolve) |
 | `ability_id` | `int` | Raw ability subclass hash ID (use `ability_names()` to resolve) |
-| `duration` | `float` | Modifier duration |
+| `duration` | `float` | Current modifier duration in seconds (`-1` when indefinite) |
 | `caster_hero_id` | `int` | Hero ID of the caster |
 | `stacks` | `int` | Number of stacks |
 
@@ -880,11 +1031,11 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 demo.ability_ticks  # polars.DataFrame
 ```
 
-Ability cooldown and charge state over time. **Change-only**: a row is emitted
-for an ability only on the tick its cooldown or charge state changes (not every
-tick), keeping the frame compact. One ability entity exists per ability a player
-owns, including innate movement abilities (jump, dash, slide, …), which can be
-filtered out via `slot`.
+Ability cooldown and charge state over time. The dataset is **change-only**.
+Boon emits a row only when the cooldown or charge state changes. One entity
+exists for each ability that a player owns. These entities include movement
+abilities such as jump, dash, and slide. Use `slot` to remove these abilities
+from the result.
 
 Not loaded by default. Access this property or call `load("ability_ticks")` explicitly.
 
@@ -908,9 +1059,9 @@ Not loaded by default. Access this property or call `load("ability_ticks")` expl
 demo.urn  # polars.DataFrame
 ```
 
-Urn lifecycle events. Tracks when the urn is picked up, dropped, or returned
-by filtering urn-related modifiers from the `ActiveModifiers` string table.
-Also tracks delivery point activation/deactivation via `CCitadelIdolReturnTrigger` entities.
+Urn lifecycle events. Boon finds urn pickup, drop, and return events in the
+`ActiveModifiers` string table. It finds delivery point activation and
+deactivation in `CCitadelIdolReturnTrigger` entities.
 
 Not loaded by default. Access this property or call `load("urn")` explicitly.
 
@@ -933,7 +1084,7 @@ demo.street_brawl_ticks  # polars.DataFrame
 ```
 
 Per-tick street brawl state. Only available for street brawl demos (game_mode=4).
-Auto-loads on first access if not already loaded via `load()`.
+Boon loads this dataset on first access.
 
 **Raises:** `NotStreetBrawlError` if the demo is not a street brawl game.
 
@@ -958,7 +1109,7 @@ demo.street_brawl_rounds  # polars.DataFrame
 ```
 
 Street brawl round scoring events. Only available for street brawl demos (game_mode=4).
-Auto-loads on first access if not already loaded via `load()`.
+Boon loads this dataset on first access.
 
 **Raises:** `NotStreetBrawlError` if the demo is not a street brawl game.
 
@@ -985,7 +1136,7 @@ hero_names()  # -> dict[int, str]
 
 Return a mapping of hero ID to hero name.
 
-**Returns:** `dict[int, str]` -- Hero ID to hero name mapping (e.g., `{1: "Infernus", 2: "Seven", ...}`).
+**Returns:** `dict[int, str]` -- Hero ID to hero name mapping (for example, `{1: "Infernus", 2: "Seven", ...}`).
 
 ---
 
@@ -1013,7 +1164,33 @@ ability_names()  # -> dict[int, str]
 
 Return a mapping of MurmurHash2 ability ID to ability name.
 
-**Returns:** `dict[int, str]` -- Ability hash to name mapping.
+The returned values are stable internal VData names such as
+`upgrade_quick_silver`, not localized in-game labels.
+
+**Returns:** `dict[int, str]` -- Ability hash to internal-name mapping.
+
+---
+
+### `ability_display_names()`
+
+```python
+from boon import ability_display_names
+
+ability_display_names()  # -> dict[str, str]
+```
+
+Return exact current internal ability/item names mapped to their English
+in-game display names. This includes `ability_*`, `upgrade_*`, and
+`citadel_ability_*` naming schemes. For example,
+`upgrade_quick_silver` maps to `"Quicksilver Reload"`, while
+`ability_unicorn_luminousstrike` maps to `"Radiant Daggers"`.
+`citadel_ability_hook` maps to `"Grapple Arm"`.
+
+Hidden, test, retired, or otherwise unlocalized internal entries are omitted;
+Boon never invents a display name by stripping prefixes or title-casing.
+
+**Returns:** `dict[str, str]` -- Internal ability/item name to English display
+name mapping.
 
 ---
 
@@ -1027,7 +1204,7 @@ game_mode_names()  # -> dict[int, str]
 
 Return a mapping of game mode ID to game mode name.
 
-**Returns:** `dict[int, str]` -- Game mode ID to name mapping (e.g., `{1: "6v6", 4: "street_brawl"}`).
+**Returns:** `dict[int, str]` -- Game mode ID to name mapping (for example, `{1: "6v6", 4: "street_brawl"}`).
 
 ---
 
@@ -1057,7 +1234,7 @@ Return a mapping of patron phase ID to phase name. Phases are the values of
 `CNPC_Boss_Tier3.m_ePhase`: `0=normal` (shielded), `1=final` (killable),
 `2=transforming` (vulnerable). Non-patron objectives report `0` by default.
 
-**Returns:** `dict[int, str]` -- Patron phase ID to name mapping (e.g., `{0: "normal", 1: "final", 2: "transforming"}`).
+**Returns:** `dict[int, str]` -- Patron phase ID to name mapping (for example, `{0: "normal", 1: "final", 2: "transforming"}`).
 
 ---
 
@@ -1102,7 +1279,7 @@ An analysis layer of derived metrics computed from parsed demo data. Each
 function takes a [`Demo`](#demo) and returns a Polars DataFrame, keyed on
 `hero_id` so results join cleanly to the parser's other frames (`players`,
 `kills`, `player_ticks`, the `summary()` outputs, ...). Every metric is also
-surfaced as a convenience method on `Demo` (e.g. `demo.kill_participation()`
+surfaced as a convenience method on `Demo` (for example `demo.kill_participation()`
 delegates to `boon.stats.kill_participation(demo)` — same computation).
 
 ### `kill_participation()`
@@ -1154,11 +1331,9 @@ from boon import stats
 stats.in_combat(demo)   # equivalently: demo.in_combat()
 ```
 
-Whether each player is in combat, per tick, derived from the pawn's
-`in_combat_end_time` window on `player_ticks`. The current game time per tick is
-reconstructed from non-paused elapsed ticks plus a constant offset calibrated
-against the data (at a damage tick `in_combat_last_damage_time` equals the
-current game time).
+Reports the combat state of each player for each tick. Boon uses the pawn's
+`in_combat_end_time` value in `player_ticks`. Boon calculates the current game
+time from non-paused ticks and a constant offset. Damage events set the offset.
 
 **Returns:** `polars.DataFrame` with columns `tick`, `hero_id`, `in_combat` (see
 the [`Demo.in_combat()`](#in-combat) table), one row per `(tick, hero_id)`,
@@ -1205,7 +1380,8 @@ Raised when required fields are missing from the demo file info (playback ticks,
 from boon import DemoMessageError
 ```
 
-Raised when required data could not be resolved from demo messages (e.g., match ID from `CCitadelGameRulesProxy`).
+Raised when a requested protobuf message is absent or cannot be decoded, such
+as post-match details or a malformed kill/damage event.
 
 ---
 

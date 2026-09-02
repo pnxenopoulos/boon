@@ -1,5 +1,166 @@
 # 📝 Changelog
 
+## 0.8.0
+
+### boon-python
+
+- New `ability_display_names()` maps exact current internal ability/item VData
+  names—including `ability_*`, `upgrade_*`, and `citadel_ability_*`—to their
+  English in-game names. The generated table joins current VData keys to
+  Valve's localization catalogs; unlocalized
+  hidden/test/retired entries are omitted instead of receiving guessed names.
+
+- `demo.damage` now includes raw `ability_id`, `damage_type`, `citadel_type`,
+  and `damage_flags`, plus `is_melee` and nullable `melee_type`. `is_melee`
+  covers every melee-typed hit; Valve's explicit damage flags classify `light`
+  and `heavy`, while abilities, NPC attacks, and ambiguous flags remain `other`.
+
+- New opt-in `demo.sinners_sacrifice` dataset combines pbdems2 entity
+  lifecycle/state with Damage messages to report Sinner's Sacrifice machine
+  spawns, resets, and exact hits. Rows include stable index+serial identity,
+  resolved attacker hero, incoming damage, tick-final health, team, and world
+  position; unmatched health decreases are retained as unattributed hits.
+
+- New opt-in `demo.breakables` dataset reports destruction of
+  `CCitadel_BreakableProp` map props with tick, stable entity identity, raw
+  subclass ID, resolved subclass name, team, and last-known world position.
+  It uses pbdems2 0.3.0 lifecycle transitions
+  to retain a PVS leave as a break candidate, cancel it if the same entity
+  identity reactivates, and ignore full-packet delete/create replacements.
+  This avoids a scan of every tracked prop for each tick. It also does not add
+  a false health-zero or dead state that the server did not send.
+
+- New `demo.stat_ticks(...)` selectively tracks native, persistent baseline,
+  and tick-effective player stats for bullet/spirit resistance, spirit power,
+  fire rate, weapon damage, cooldown reduction, status resistance, and both
+  lifesteal types. It supports explicit ticks, ranges, strides, seconds, and
+  event-aligned sampling; requested stats share one parallel modifier/entity
+  pass and include a per-stat completeness flag.
+- New `demo.stat_effects(...)` change-only details frame lists generated item
+  and modifier contributions. Columns include layer, operation, resolved value,
+  ability/modifier identity, runtime serial, caster/provider, stacks, duration,
+  active state, and formula completeness.
+- **Fixed:** `active_modifiers`, barrier snapshots, and effective stat tracking
+  now consume one shared full-protobuf modifier state. Partial string-table
+  updates preserve omitted fields, while removals, slot reuse, serial changes,
+  aura range, and keyframe rebuilds are handled consistently.
+
+- New `barrier` column in `demo.player_ticks` and sampled player snapshots. It
+  reports the player's current barrier remaining from the
+  `modifier_barrier_tracker` entry; older demos without that tracker return
+  `0.0`.
+- New `bullet_resist_baseline` and `spirit_resist_baseline` columns in
+  `demo.player_ticks` and sampled player snapshots. They calculate the baseline
+  percentage from hero
+  VData progression, spirit scaling, and unconditional stats on the player's
+  equipped items, using Deadlock's multiplicative resistance stacking. Temporary
+  buffs, barriers, auras, and enemy resistance reductions are not included.
+- **Faster:** `teamfights()` now batch-loads damage and kills in one filtered
+  event pass. It gets player positions only at relevant damage ticks. It does
+  not create all of `player_ticks`. On a 115 MB demo, this reduced
+  end-to-end runtime from 20.2s to 12.1s (about 40%) with identical output.
+- **Faster:** `in_combat()` and `time_dead()` request `player_ticks` and
+  `world_ticks` together, collecting both in one parallel snapshot pass on a
+  cold `Demo`. The paired input load fell from 4.23s to 2.49s on the same demo.
+- **Faster:** mixed `Demo.load(...)` requests keep `player_ticks`,
+  `world_ticks`, and `troopers` on their parallel keyframe-segmented path
+  while event/entity datasets share a separate filtered pass. A mixed request
+  no longer makes heavy snapshot datasets fall back to serial decoding.
+- **Faster:** the change-only `ability_upgrades` and `stat_modifier_events`
+  datasets process only player controllers updated on the current tick rather
+  than rescanning every controller.
+- **Fixed:** `stat_modifier_events` recognises the disjoint `EModifierValue`
+  aliases observed in builds 10725 and 10854. The compatibility decoder is
+  shared by `boon-python` and `boon-dev`, and no longer guesses an enum layout
+  from one controller snapshot.
+- **Fixed:** `regulation_ticks`, `regulation_seconds`, and
+  `regulation_clock_time` now use the replicated HUD match clock at game over.
+  They no longer include pregame recording time. Old demos without the clock
+  field keep the previous pause-aware fallback.
+- **Fixed:** `active_modifiers` now distinguishes concurrent raw modifier
+  instances with a `serial` column and emits `"changed"` when a live
+  modifier's duration or application timestamp changes, as well as when its
+  stack count changes. A single ability may create multiple internal modifier
+  instances (for example, an attached effect plus a kill-check window), so row
+  count is not the stack count. Use `stacks` as the stack count.
+  Source 2 may reuse a serial after removal, so a serial distinguishes
+  concurrently live instances rather than serving as a globally unique
+  lifecycle ID.
+- **Fixed:** effective stat evaluation sorts modifiers that are active at the
+  same time by runtime serial. Randomized map iteration can no longer
+  change results when non-commutative resistance and flat-reduction effects
+  overlap.
+- **Faster:** `summary()` caches its decoded post-match message and four
+  DataFrames after the first call. The scan, protobuf decode, and frame builds
+  release the Python interpreter; repeated calls return shallow frame clones
+  without reparsing (about 0.35ms on the benchmark demo).
+
+### boon
+
+- Updated the entity parser from `pbdems2` 0.2.2 to 0.3.0. Boon now
+  re-exports stable `EntityId` values and typed `EntityChange` /
+  `EntityChangeKind` lifecycle events, so callers can distinguish updates,
+  PVS leaves, permanent deletes, and entity-slot reuse without rebuilding
+  identity from an index alone.
+- New generated `ability_display_name` / `all_ability_display_names` and
+  `breakable_name` / `all_breakables` lookup APIs expose exact English
+  ability/item labels and breakable-prop subclass names to Rust callers.
+- New shared `decode_stat_modifier_value_type` compatibility API normalizes
+  the observed build-10725 and build-10854 `EModifierValue` aliases, including
+  signed bullet/spirit resistance entries.
+- New fixed-size `StatBlock` / `StatMask` engine and explicit `StatId`,
+  `StatOperation`, and native/baseline/effective layer semantics.
+- The VData name-table generator now emits a compact catalog of unconditional
+  item effects and live modifier effects, keyed primarily by ability and
+  modifier ID with guarded cross-build fallbacks.
+- New reusable `ModifierState` builds complete `ActiveModifiers` entries
+  from partial protobuf deltas and emits typed applied/changed/removed events.
+
+### boon-proto
+
+- Synced protobuf definitions to game build **6684** (`SourceRevision`
+  10933105); `boon-proto` is now `0.3.10933105+6684`. **Breaking:** upstream
+  removed `CMsgClientToGCGetMatchHistoryResponse.Match.not_scored` from the
+  match-history schema. The schema also adds server-mode metadata and
+  low-priority-pool flags. Generated lookup tables refreshed from the same
+  snapshot contain 794 abilities, 1,106 modifiers, 457 exact English
+  ability/item display names, and 30 breakable prop subclasses.
+
+### Documentation
+
+- Maintained documentation, API text, and code comments now use ASD-STE100
+  English where practical. Generated files and upstream protobuf text are
+  excluded.
+
+### Community contributions
+
+- Thanks to [ghaif](https://github.com/ghaif) for identifying and investigating
+  four changes included in 0.8.0. Their reports and initial implementations
+  informed the final changes:
+
+  - [PR #38](https://github.com/pnxenopoulos/boon/pull/38) — Sinner's
+    Sacrifice machine events
+  - [PR #37](https://github.com/pnxenopoulos/boon/pull/37) — breakable map prop
+    events
+  - [PR #35](https://github.com/pnxenopoulos/boon/pull/35) — melee damage
+    detection
+  - [PR #34](https://github.com/pnxenopoulos/boon/pull/34) — cross-build
+    `EModifierValue` renumbering
+
+  These pull requests were not merged directly. Their findings helped guide the
+  final implementations.
+
+### Release process
+
+- Releases are manual and separate for each component. Publish `boon-proto`,
+  `boon`, and `boon-python` independently. The workflow creates a tag only
+  after the package-index upload succeeds.
+- Merge the changes to `main` and wait for **CI Check**. Then run the
+  **Release Boon** workflow for `boon-proto`, `boon`, and `boon-python`, in that
+  order. Wait for each registry upload before you start the next release. The
+  workflow checks the dependency order and creates the tags and GitHub Releases.
+  Do not create release tags manually. See `CONTRIBUTING.md` for the full list.
+
 ## 0.7.0
 
 ### boon-python

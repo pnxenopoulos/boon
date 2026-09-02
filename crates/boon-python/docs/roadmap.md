@@ -1,44 +1,43 @@
 # 🚗 Roadmap
 
-This page tracks features and improvements being considered for Boon. It is
-not a commitment — items here are ideas, in no particular order, and may
-change. Contributions and feedback are welcome on [GitHub](https://github.com/pnxenopoulos/boon/issues)
-or [Discord](https://discord.gg/WmjZHxWrCD).
+This page lists possible features and improvements for Boon. Items are not
+commitments. The list has no fixed order, and the items can change. Send
+feedback on [GitHub](https://github.com/pnxenopoulos/boon/issues) or
+[Discord](https://discord.gg/WmjZHxWrCD).
 
 ## ID → name mappings
 
-Several columns are exposed as raw numeric IDs that would be more ergonomic
-with a `*_names()` lookup, mirroring the shape of `team_names()` or
-`patron_phase_names()`:
+Some columns contain only numeric IDs. Add `*_names()` lookups when a name makes
+the data easier to use. Use the same format as `team_names()` and
+`patron_phase_names()`.
 
-- **`lane_names()`** — for the `start_lane` (players) and `lane` (objectives)
-  columns. Values come from the `CMsgLaneColor` proto enum: `1=yellow`,
+- **`lane_names()`** — Map player `start_lane` and objective `lane` values.
+  Values come from the `CMsgLaneColor` protobuf enum: `1=yellow`,
   `3=green`, `4=blue`, `6=purple`, `0=none`.
-- More as new opaque enums are surfaced.
+- Add more lookups when Boon exposes an enum without names.
 
 ## Visualization
 
-Helpers to turn parsed DataFrames into visuals without writing ad-hoc
-plotting code each time:
+Add helpers that create visuals from parsed DataFrames:
 
-- **Static plots** for common views: net-worth-over-time, kill timelines,
+- **Static plots** for common views: net worth over time, kill timelines,
   damage-dealt-vs-taken matrices, lane control.
-- **Position heatmaps** per hero or per team, computed from `player_ticks`.
-- **Animated GIFs** of player movement over a match (or a window), rendered
-  on a stylized map.
-- A small style API so plots/GIFs use consistent Deadlock colours (team,
-  hero, lane) by default.
+- **Position heatmaps** for each hero or team, calculated from `player_ticks`.
+- **Animated GIFs** of player movement for a match or time window. Show the
+  movement on a stylized map.
+- A small style API that applies the same Deadlock colors to teams, heroes, and
+  lanes.
 
 ## Analysis helpers
 
-Composable, derived stats rather than only raw rows:
+Add analysis functions that return calculated statistics:
 
-- A `match_summary` helper returning per-player KDA, GPM, XPM, last-hits,
-  hero damage, objective damage, etc. in a single frame.
-- **Combat-encounter detection** — grouping kills and damage into fights and
-  tagging participants, location, and outcome.
-- **Win-probability over time** — an interface for plugging in a model and
-  exposing a `win_prob` column on `world_ticks`.
+- A `match_summary` function that returns KDA, GPM, XPM, last hits, hero damage,
+  and objective damage for each player.
+- **Combat encounter detection** — Group kills and damage into fights. Add the
+  participants, location, and result.
+- **Win probability over time** — Add an interface for a model. Put its
+  `win_prob` values in `world_ticks`.
 
 ## Performance and ergonomics
 
@@ -47,5 +46,5 @@ Composable, derived stats rather than only raw rows:
 
 ## Have an idea?
 
-Open a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or chime
-in on the [Discord](https://discord.gg/WmjZHxWrCD).
+Open a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or send a
+message on [Discord](https://discord.gg/WmjZHxWrCD).

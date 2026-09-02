@@ -8,7 +8,9 @@ import polars as pl
 import pytest
 from boon import (
     Demo,
+    DemoMessageError,
     InvalidDemoError,
+    ability_display_names,
     ability_names,
     game_mode_names,
     hero_names,
@@ -29,7 +31,9 @@ PLAYER_TICKS_COLUMNS = {
     "tick", "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
     "in_regen_zone", "in_item_shop",
     "death_time", "last_spawn_time", "respawn_time",
-    "health", "max_health", "lifestate", "souls", "spent_souls",
+    "health", "max_health", "barrier", "bullet_resist_baseline",
+    "spirit_resist_baseline",
+    "lifestate", "souls", "spent_souls",
     "in_combat_end_time", "in_combat_last_damage_time", "in_combat_start_time",
     "player_damage_dealt_end_time", "player_damage_dealt_last_damage_time",
     "player_damage_dealt_start_time", "player_damage_taken_end_time",
@@ -50,6 +54,8 @@ DAMAGE_COLUMNS = {
     "tick", "damage", "pre_damage", "victim_hero_id", "attacker_hero_id",
     "victim_health_new", "hitgroup_id", "crit_damage",
     "attacker_class", "victim_class",
+    "ability_id", "damage_type", "citadel_type", "damage_flags",
+    "is_melee", "melee_type",
 }
 
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
@@ -79,11 +85,21 @@ NEUTRALS_COLUMNS = {
     "x", "y", "z", "entity_id",
 }
 
+BREAKABLES_COLUMNS = {
+    "tick", "event", "entity_id", "entity_serial", "subclass_id",
+    "subclass_name", "team_num", "x", "y", "z",
+}
+
+SINNERS_SACRIFICE_COLUMNS = {
+    "tick", "event", "entity_id", "entity_serial", "attacker_hero_id",
+    "damage", "health", "max_health", "team_num", "x", "y", "z",
+}
+
 STAT_MODIFIER_EVENTS_COLUMNS = {"tick", "hero_id", "stat_type", "amount"}
 
 ACTIVE_MODIFIERS_COLUMNS = {
-    "tick", "hero_id", "event", "modifier_id", "ability_id",
-    "duration", "caster_hero_id", "stacks",
+    "tick", "hero_id", "event", "serial", "modifier_id",
+    "ability_id", "duration", "caster_hero_id", "stacks",
 }
 
 URN_COLUMNS = {
@@ -106,12 +122,12 @@ PLAYERS_COLUMNS = {
 
 BANNED_HEROES_COLUMNS = {"hero_id", "hero_name"}
 
-# Bans are recorded per match, so the expected values are per fixture. Demos
-# absent from this map are only checked against the schema-level invariants.
-# `84133142` and `70537442` are the demos observed to carry the one-shot
-# `BannedHeroes` message; `70555151` shares a server version with `70537442`
-# and carries no bans, which is what makes the empty case a real match state
-# rather than an unsupported build.
+# Bans are recorded for each match. Thus, each fixture has expected values.
+# Tests apply only schema checks to a demo that is not in this map.
+# Demos `84133142` and `70537442` contain the `BannedHeroes` message.
+# Demo `70555151` uses the same server version as `70537442` but has no bans.
+# This empty result is a valid match state. It does not identify an unsupported
+# build.
 EXPECTED_BANS = {
     "84133142.dem": [69, 63],
     "70537442.dem": [2, 69],
@@ -134,6 +150,8 @@ DATASET_COLUMNS = {
     "mid_boss": MID_BOSS_COLUMNS,
     "troopers": TROOPERS_COLUMNS,
     "neutrals": NEUTRALS_COLUMNS,
+    "breakables": BREAKABLES_COLUMNS,
+    "sinners_sacrifice": SINNERS_SACRIFICE_COLUMNS,
     "stat_modifier_events": STAT_MODIFIER_EVENTS_COLUMNS,
     "active_modifiers": ACTIVE_MODIFIERS_COLUMNS,
     "ability_ticks": ABILITY_TICKS_COLUMNS,
@@ -260,12 +278,11 @@ class TestPlayersAndTeams:
 class TestHealthInvariants:
     """Tests for player health sanity across all ticks."""
 
-    # A player's current health can momentarily read above max_health — e.g. a
-    # transient overheal effect, or health and max_health being networked on
-    # different ticks so a snapshot catches them mid-update. It is real but
-    # rare, so we cap the share of offending (player, tick) rows rather than
-    # forbidding it outright. Observed across fixtures: ~0.01%-0.13%, so 1%
-    # leaves comfortable headroom while still catching a regression.
+    # Current health can temporarily be greater than max_health. An overheal can
+    # cause this condition. A snapshot can also receive health and max_health on
+    # different ticks. The condition occurs in approximately 0.01% to 0.13% of
+    # fixture rows. Permit a maximum rate of 1%. This limit permits normal data
+    # and detects a regression.
     MAX_OVERHEALTH_RATE = 0.01
 
     def test_health_rarely_exceeds_max(self, demo: Demo) -> None:
@@ -318,6 +335,20 @@ class TestNameLookups:
         names = ability_names()
         assert 46922526 in names
         assert names[46922526] == "inherent_base"
+
+    def test_ability_display_names_are_exact_localized_names(self) -> None:
+        display_names = ability_display_names()
+        internal_names = set(ability_names().values())
+
+        assert isinstance(display_names, dict)
+        assert len(display_names) > 0
+        assert set(display_names) <= internal_names
+        assert all(display_names.values())
+        assert display_names["upgrade_quick_silver"] == "Quicksilver Reload"
+        assert display_names["citadel_ability_hook"] == "Grapple Arm"
+        assert (
+            display_names["ability_unicorn_luminousstrike"] == "Radiant Daggers"
+        )
 
     def test_modifier_names_is_dict(self) -> None:
         names = modifier_names()
@@ -384,7 +415,7 @@ class TestDatasets:
 
     # Datasets that may be empty depending on game mode
     # "rift" is empty on demos from builds predating the Rift objective.
-    POSSIBLY_EMPTY = {"ability_upgrades", "flex_slots", "mid_boss", "neutrals", "stat_modifier_events", "urn", "rift"}
+    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
@@ -404,6 +435,58 @@ class TestDatasets:
         df = getattr(demo, dataset)
         if "tick" in df.columns and len(df) > 0:
             assert df["tick"].min() >= 0  # type: ignore[operator]
+
+
+class TestDamageMelee:
+    """Raw damage metadata and flag-based melee classification."""
+
+    LIGHT_MELEE_FLAG = 1 << 33
+    HEAVY_MELEE_FLAG = 1 << 34
+
+    def test_fields_present_and_typed(self, demo: Demo) -> None:
+        df = demo.damage
+        assert df.schema["ability_id"] == pl.UInt32
+        assert df.schema["damage_type"] == pl.Int32
+        assert df.schema["citadel_type"] == pl.Int32
+        assert df.schema["damage_flags"] == pl.UInt64
+        assert df.schema["is_melee"] == pl.Boolean
+        assert df.schema["melee_type"] == pl.String
+
+    def test_melee_classification_matches_raw_fields(self, demo: Demo) -> None:
+        df = demo.damage
+        expected_is_melee = df["citadel_type"] == 3
+        assert (df["is_melee"] == expected_is_melee).all()
+
+        expected_types: list[str | None] = []
+        for citadel_type, flags in df.select(
+            "citadel_type", "damage_flags"
+        ).iter_rows():
+            if citadel_type != 3:
+                expected_types.append(None)
+                continue
+            is_light = bool(flags & self.LIGHT_MELEE_FLAG)
+            is_heavy = bool(flags & self.HEAVY_MELEE_FLAG)
+            if is_light and not is_heavy:
+                expected_types.append("light")
+            elif is_heavy and not is_light:
+                expected_types.append("heavy")
+            else:
+                expected_types.append("other")
+
+        assert df["melee_type"].to_list() == expected_types
+
+    def test_basic_melee_types_are_valid(self, demo: Demo) -> None:
+        melee = demo.damage.filter(pl.col("is_melee"))
+        if len(melee) == 0:
+            pytest.skip("no basic melee damage in this demo")
+        assert set(melee["melee_type"].unique()) <= {"light", "heavy", "other"}
+        assert melee["melee_type"].is_not_null().all()
+
+    def test_known_fixture_has_light_heavy_and_other(self, demo: Demo) -> None:
+        if Path(demo.path).name != "96850353.dem":
+            pytest.skip("known melee classification belongs to another fixture")
+        counts = set(demo.damage["melee_type"].drop_nulls().unique())
+        assert counts == {"light", "heavy", "other"}
 
 
 class TestAbilityTicks:
@@ -429,8 +512,6 @@ class TestAbilityTicks:
 class TestActiveModifiers:
     """Semantics of the active_modifiers event stream (applied/changed/removed)."""
 
-    INSTANCE_KEYS = ["hero_id", "modifier_id", "ability_id", "caster_hero_id"]
-
     def test_event_values_in_domain(self, demo: Demo) -> None:
         events = set(demo.active_modifiers["event"].unique().to_list())
         assert events <= {"applied", "changed", "removed"}
@@ -440,22 +521,23 @@ class TestActiveModifiers:
         if len(am) > 0:
             assert am["stacks"].min() >= 0
 
-    def test_changed_events_reflect_varying_stacks(self, demo: Demo) -> None:
-        # A "changed" row is emitted only when a live modifier's stack count
-        # moves (regression: stacks used to be frozen at first sighting, so a
-        # debuff climbing 2 -> 4 stayed reported as 2). Any modifier group with
-        # a "changed" event must therefore show more than one distinct stack
-        # value, and must have an "applied" event. Grouping by these keys can
-        # merge concurrent instances (there is no serial column), so this uses
-        # set/containment properties rather than row adjacency.
+    def test_serial_lifecycle_transitions_are_valid(self, demo: Demo) -> None:
         am = demo.active_modifiers
-        if "changed" not in am["event"].to_list():
-            pytest.skip("no stack-change events in this demo")
-        for _, grp in am.group_by(self.INSTANCE_KEYS):
-            events = grp["event"].to_list()
-            if "changed" in events:
-                assert "applied" in events, "changed event without an applied"
-                assert grp["stacks"].n_unique() > 1
+        if len(am) == 0:
+            pytest.skip("no modifier events in this demo")
+        assert am["serial"].min() > 0
+        for _, grp in am.group_by(["hero_id", "serial"], maintain_order=True):
+            active = False
+            for event in grp["event"]:
+                if event == "applied":
+                    assert not active
+                    active = True
+                elif event == "changed":
+                    assert active
+                else:
+                    assert event == "removed"
+                    assert active
+                    active = False
 
 
 class TestRift:
@@ -540,6 +622,107 @@ class TestRift:
 
 
 # ===================================================================
+# Breakables
+# ===================================================================
+
+
+class TestBreakables:
+    """Terminal breakable-prop leave events."""
+
+    def test_events_are_breaks(self, demo: Demo) -> None:
+        df = demo.breakables
+        if len(df) == 0:
+            pytest.skip("no breakable events in this demo")
+        assert df["event"].eq("broken").all()
+
+    def test_identity_includes_serial(self, demo: Demo) -> None:
+        df = demo.breakables
+        assert df.schema["entity_id"] == pl.Int32
+        assert df.schema["entity_serial"] == pl.UInt32
+        identities = list(
+            zip(df["entity_id"].to_list(), df["entity_serial"].to_list(), strict=True)
+        )
+        assert len(identities) == len(set(identities))
+
+    def test_subclasses_are_resolved(self, demo: Demo) -> None:
+        df = demo.breakables
+        assert df.schema["subclass_id"] == pl.UInt32
+        assert df.schema["subclass_name"] == pl.String
+        if len(df) == 0:
+            pytest.skip("no breakable events in this demo")
+        assert df["subclass_id"].gt(0).all()
+        assert df["subclass_name"].ne("BREAKABLE_NOT_FOUND").all()
+
+    def test_positions_are_on_map(self, demo: Demo) -> None:
+        df = demo.breakables
+        if len(df) == 0:
+            pytest.skip("no breakable events in this demo")
+        for axis in ("x", "y", "z"):
+            assert df[axis].is_finite().all()
+            assert df[axis].abs().max() < 1.0e6
+
+
+# ===================================================================
+# Sinner's Sacrifice
+# ===================================================================
+
+
+class TestSinnersSacrifice:
+    """Lifecycle and exact machine-hit events."""
+
+    def test_event_and_identity_semantics(self, demo: Demo) -> None:
+        df = demo.sinners_sacrifice
+        assert df.schema["entity_id"] == pl.Int32
+        assert df.schema["entity_serial"] == pl.UInt32
+        assert set(df["event"].unique()) <= {"spawned", "hit", "reset"}
+        spawned = df.filter(pl.col("event") == "spawned")
+        identities = list(
+            zip(
+                spawned["entity_id"].to_list(),
+                spawned["entity_serial"].to_list(),
+                strict=True,
+            )
+        )
+        assert len(identities) == len(set(identities))
+
+    def test_health_and_damage_semantics(self, demo: Demo) -> None:
+        df = demo.sinners_sacrifice
+        if len(df) == 0:
+            pytest.skip("no Sinner's Sacrifice machines in this demo")
+        assert df["health"].gt(0).all()
+        assert df["health"].le(df["max_health"]).all()
+
+        hits = df.filter(pl.col("event") == "hit")
+        if len(hits) > 0:
+            assert hits["damage"].gt(0).all()
+
+        lifecycle = df.filter(pl.col("event") != "hit")
+        assert lifecycle["damage"].eq(0).all()
+        assert lifecycle["attacker_hero_id"].eq(0).all()
+
+    def test_positions_are_on_map(self, demo: Demo) -> None:
+        df = demo.sinners_sacrifice
+        if len(df) == 0:
+            pytest.skip("no Sinner's Sacrifice machines in this demo")
+        for axis in ("x", "y", "z"):
+            assert df[axis].is_finite().all()
+            assert df[axis].abs().max() < 1.0e6
+
+    def test_known_hit_has_exact_attacker(self, demo: Demo) -> None:
+        if Path(demo.path).name != "96850353.dem":
+            pytest.skip("known Sinner's Sacrifice hit belongs to another fixture")
+        known = demo.sinners_sacrifice.filter(
+            (pl.col("tick") == 49270)
+            & (pl.col("event") == "hit")
+            & (pl.col("entity_id") == 3342)
+            & (pl.col("attacker_hero_id") == 69)
+            & (pl.col("damage") == 100)
+            & (pl.col("health") == 400)
+        )
+        assert len(known) == 1
+
+
+# ===================================================================
 # Banned heroes
 # ===================================================================
 
@@ -569,8 +752,8 @@ class TestBannedHeroes:
             assert row["hero_name"] == names.get(row["hero_id"], "HERO_NOT_FOUND")
 
     def test_hero_ids_are_known(self, demo: Demo) -> None:
-        # A HERO_NOT_FOUND here means a ban referenced a hero the bundled table
-        # doesn't have, i.e. heroes.rs needs regenerating.
+        # HERO_NOT_FOUND means that the bundled table does not contain the hero.
+        # Regenerate heroes.rs in this case.
         unknown = demo.banned_heroes.filter(pl.col("hero_name") == "HERO_NOT_FOUND")
         assert len(unknown) == 0, f"unknown banned hero id(s): {unknown['hero_id'].to_list()}"
 
@@ -709,3 +892,16 @@ class TestErrors:
 
     def test_not_street_brawl_error_importable(self) -> None:
         from boon import NotStreetBrawlError  # noqa: F401
+
+
+def test_summary_repeated_access_is_stable() -> None:
+    demo = Demo(str(_require_demo_fixture()))
+    try:
+        first = demo.summary()
+    except DemoMessageError:
+        pytest.skip("demo has no post-match summary")
+
+    second = demo.summary()
+    assert set(first) == {"snapshots", "last_hits", "objectives", "damage"}
+    for name in first:
+        assert first[name].equals(second[name]), name

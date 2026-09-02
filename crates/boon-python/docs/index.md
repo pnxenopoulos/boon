@@ -1,20 +1,21 @@
 # Boon
 
-Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It parses Source 2 demo files (`.dem`) and returns [Polars](https://pola.rs) DataFrames, giving you structured access to match data without dealing with the binary format yourself.
+Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. The Rust core has native Python bindings. Boon reads Source 2 `.dem` files and returns [Polars](https://pola.rs) DataFrames.
 
 ## Why Boon?
 
-Deadlock demo files contain a wealth of match data — player positions, kills, damage, item builds, objective state, and more — but the Source 2 demo format is complex and undocumented. Boon handles the low-level parsing so you can focus on analysis.
+Deadlock demos contain player positions, kills, damage, item builds, objective state, and other match data. The Source 2 demo format is complex and undocumented. Boon handles the format so that you can analyze structured data.
 
 - ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
-- 📊 **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
-- 🎯 **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
-- 🗂️ **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
-- 💻 **CLI included.** A standalone command-line tool for quick inspection without writing any code.
+- 📊 **Structured output.** Each dataset is a Polars DataFrame. You can filter, group, join, and display the data.
+- 🎯 **Parse only what you need.** Boon loads each dataset on demand. Use `load()` to parse multiple datasets in one pass.
+- 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
+- 💻 **CLI included.** The Python package installs a `boon` command for quick inspection without writing code.
 
 ## Get started
 
-Install with `uv add boon-deadlock` or `pip install boon-deadlock`, then head to {doc}`getting-started` for a walkthrough. If something isn't working as expected, check {doc}`known-issues` first — then file a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in the [Discord](https://discord.gg/WmjZHxWrCD).
+Install Boon with `uv add boon-deadlock` or `pip install boon-deadlock`. Then read {doc}`getting-started`.
+If you have a problem, check {doc}`known-issues`. Report other problems on [GitHub](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
 
 ## Useful links
 
@@ -35,5 +36,6 @@ known-issues
 reference/index
 internals/index
 roadmap
+contributors
 changelog
 ```

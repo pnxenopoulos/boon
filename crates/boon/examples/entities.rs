@@ -47,10 +47,10 @@ fn main() {
         let max_health = entity.get_by_name("m_iMaxHealth", ser);
         let team = entity.get_by_name("m_iTeamNum", ser);
 
-        // Position via CBodyComponent. Source 2 splits position into a cell
-        // index (m_cellX/Y/Z) and an in-cell offset (m_vecOrigin.m_vec{X,Y,Z});
-        // combine them with `Entity::world_position` to get Hammer-unit world
-        // coordinates.
+        // Get the position from CBodyComponent. Source 2 splits the position
+        // into a cell index and an offset in the cell. `Entity::world_position`
+        // combines m_cellX/Y/Z with m_vecOrigin.m_vec{X,Y,Z}. The result uses
+        // Hammer units.
         let cell_keys = [
             ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX"),
             ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY"),

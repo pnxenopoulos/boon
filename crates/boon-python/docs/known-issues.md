@@ -1,22 +1,45 @@
 # ⚠️ Known Issues
 
-Deadlock is in active development, and Valve frequently changes the demo file format. This page documents known issues and limitations in boon that stem from these changes.
+Valve changes Deadlock and its demo format frequently. This page lists known Boon limitations that result from these changes.
 
-If you encounter a problem not listed here, please report it on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in the [Discord](https://discord.gg/WmjZHxWrCD).
+Report other problems on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
+
+## Boon calculates effective stats
+
+The demo does not contain a final server value for every stat.
+`demo.stat_ticks(...)` calculates these stats from the recorded player state,
+active modifiers, and generated VData formulas.
+
+A `*_complete` value of `true` means that Boon evaluated every matching effect
+in its current catalog. It does not confirm that the result is identical to
+the game server. Engine-only rules can change the result. These rules can
+include caps, operation order, and values that depend on live game conditions.
+Effects that are absent from VData are also absent from the catalog.
+
+Use `demo.stat_effects(...)` to examine each source that Boon used.
 
 ## Banned heroes are frequently absent
 
-`demo.banned_heroes` reads the `k_EUserMsg_BannedHeroes` (msg_type 366) user message, which the server sends once, early in the demo, before the match starts. That message is not reliably present in GOTV recordings: it appears in some older builds and is absent from every newer demo tested so far.
+`demo.banned_heroes` reads the `k_EUserMsg_BannedHeroes` user message. Its
+`msg_type` is 366. The server can send this message once before the match.
+GOTV recordings do not always contain the message. Some older demos contain
+it. None of the newer tested demos contain it.
 
-An empty frame therefore means only "no bans were recorded" — it is **not** proof that nothing was banned. Two things are indistinguishable from the demo alone:
+An empty frame means that the demo contains no ban data. It does not prove
+that the match had no bans. The demo cannot distinguish these cases:
 
-- a match that genuinely had no bans, and
-- a build that never emits the message at all.
+- The match had no bans.
+- The server build did not send the message.
 
-Note that absence is not purely a build property. Two demos recorded on the same server version can differ, with one carrying the message and the other not — so an empty result on a build known to emit it still just means that particular match had no bans.
+Two demos from the same server version can differ. One demo can contain the
+message while the other demo does not contain it.
 
-The message also carries nothing but the hero IDs — no team, no banning player, and no pick/ban ordering — so it cannot be used to reconstruct a draft, only to list which heroes were unavailable.
+The message contains only hero IDs. It does not contain the team, banning
+player, or draft order. Boon can list unavailable heroes, but it cannot build
+the draft order.
 
 ## Ability upgrades empty on older demos
 
-Valve renamed the entity field `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding. Boon uses the current field name (`m_nUpgradeInfo`), so `ability_upgrades` will return an empty DataFrame when parsing demos recorded before this change.
+Valve renamed `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding.
+Boon uses `m_nUpgradeInfo`. Therefore, `ability_upgrades` returns an empty
+DataFrame for demos that Valve recorded before this change.

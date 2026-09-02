@@ -125,6 +125,8 @@ jobs:
     env:
       # Space-separated list of public URLs for demo fixture files.
       DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/70555151/70555151.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem"
+      # This 458 MB fixture runs once. The fixture test skips in other jobs.
+      CURRENT_DEMO_URL: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/103129247/103129247.dem"
 
     steps:
       - name: Checkout
@@ -152,6 +154,12 @@ jobs:
             done
           else
             echo "No DEMO_URLS configured — skipping fixture download"
+          fi
+          if [ "${{ matrix.python-version }}" = "3.13" ]; then
+            echo "Downloading $CURRENT_DEMO_URL ..."
+            curl -fSL --retry 3 \
+              -o "tests/fixtures/$(basename "$CURRENT_DEMO_URL")" \
+              "$CURRENT_DEMO_URL"
           fi
 
       - name: Install wheel and test dependencies
@@ -284,6 +292,6 @@ jobs:
 
       - name: Run coverage and print summary
         run: |
-          cargo llvm-cov nextest --workspace --all-features
+          cargo llvm-cov nextest --workspace --all-features --exclude boon-python
           echo "------ Coverage Summary ------"
           cargo llvm-cov report --summary-only

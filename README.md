@@ -27,7 +27,7 @@
 
 </div>
 
-Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It parses Source 2 demo files (`.dem`) and returns [Polars](https://pola.rs) DataFrames, giving you structured access to match data without dealing with the binary format yourself.
+Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. The Rust core has native Python bindings. Boon reads Source 2 `.dem` files and returns [Polars](https://pola.rs) DataFrames.
 
 ## Table of Contents
 
@@ -43,12 +43,12 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 
 ## Why Boon?
 
-Deadlock demo files contain a wealth of match data — player positions, kills, damage, item builds, objective state, and more — but the Source 2 demo format is complex and undocumented. Boon handles the low-level parsing so you can focus on analysis.
+Deadlock demos contain player positions, kills, damage, item builds, objective state, and other match data. The Source 2 demo format is complex and undocumented. Boon handles the format so that you can analyze structured data.
 
 - ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
-- 📊 **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
-- 🎯 **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
-- 🗂️ **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
+- 📊 **Structured output.** Each dataset is a Polars DataFrame. You can filter, group, join, and display the data.
+- 🎯 **Parse only what you need.** Boon loads each dataset on demand. Use `load()` to parse multiple datasets in one pass.
+- 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
 - 💻 **CLI included.** `pip install boon-deadlock` ships a `boon` command for quick inspection without writing any code.
 
 ## Installation
@@ -73,13 +73,13 @@ Requires Python 3.11–3.14.
 
 ### CLI
 
-`pip install boon-deadlock` (or `uv add boon-deadlock`) puts a `boon` command on your PATH automatically — see the [CLI docs](https://boon.readthedocs.io/en/latest/cli.html). A separate low-level `boon-dev` debugging tool also lives in the repo; build it from source with `cargo build --release -p boon-dev`.
+`pip install boon-deadlock` or `uv add boon-deadlock` adds the `boon` command to your PATH. See the [CLI documentation](https://boon.readthedocs.io/en/latest/cli.html). The repository also contains the low-level `boon-dev` debug tool. Build it with `cargo build --release -p boon-dev`.
 
 ### Rust library
 
 ```toml
 [dependencies]
-boon-deadlock = "0.6"
+boon-deadlock = "0.8"
 ```
 
 ## Quick Start
@@ -133,20 +133,21 @@ boon summary match.dem
 boon --help
 ```
 
-The in-repo `boon-dev` tool (build from source: `cargo build --release -p boon-dev`) adds lower-level commands (`entities`, `events`, `send-tables`, …); see the [CLI reference](https://boon.readthedocs.io/en/latest/cli.html).
+The `boon-dev` tool adds low-level commands such as `entities`, `events`, and `send-tables`. Build it with `cargo build --release -p boon-dev`. See the [CLI reference](https://boon.readthedocs.io/en/latest/cli.html).
 
 ## Available Datasets
 
-Each dataset is a property on the `Demo` class that returns a [Polars](https://pola.rs) DataFrame. Datasets are lazy-loaded on first access — Boon only parses what you request. If you need multiple datasets, `load()` parses them in a single pass for efficiency. Call `Demo.available_datasets()` to see the full list programmatically.
+Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataFrame. Boon loads a dataset when you first access it. Use `load()` to parse multiple datasets in one pass. Call `Demo.available_datasets()` to get the full list.
 
 | Dataset | Description |
 |---------|-------------|
 | `player_ticks` | Per-player state every tick (position, health, souls, net worth, kills, deaths, assists, 40+ fields) |
 | `world_ticks` | World state every tick (pause state, next mid boss spawn) |
 | `kills` | Hero kill events with attacker, victim, and assisters |
-| `damage` | Damage events with pre/post mitigation, hitgroups, and crit damage |
-| `item_purchases` | Item shop transactions (purchased, upgraded, sold, swapped) |
+| `damage` | Damage events with mitigation, hitgroups, source metadata, and light/heavy/other melee classification |
+| `item_purchases` | Item shop transactions (purchased, upgraded, sold, swapped, failed) |
 | `ability_upgrades` | Hero ability point spending (tier 1-3) |
+| `ability_ticks` | Ability cooldown, charge, and slot state changes |
 | `abilities` | Important ability usage events |
 | `flex_slots` | Flex slot unlock events per team |
 | `chat` | In-game chat messages (all chat and team chat) |
@@ -154,9 +155,12 @@ Each dataset is a property on the `Demo` class that returns a [Polars](https://p
 | `mid_boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire) |
 | `troopers` | Per-tick alive lane trooper state with position *(opt-in, large)* |
 | `neutrals` | Neutral creep state changes with change detection *(opt-in)* |
+| `breakables` | Breakable map-prop destruction events with resolved subclass and last-known position *(opt-in)* |
+| `sinners_sacrifice` | Sinner's Sacrifice machine lifecycle and exact hit attribution *(opt-in)* |
 | `stat_modifier_events` | Permanent stat bonus change events from pickups *(opt-in)* |
 | `active_modifiers` | Active buff/debuff modifier events *(opt-in)* |
 | `urn` | Urn lifecycle and delivery point events *(opt-in)* |
+| `rift` | Rift (Koth) lifecycle, capture/expiry, winner, lane, and position *(opt-in)* |
 | `street_brawl_ticks` | Per-tick street brawl state *(street brawl only)* |
 | `street_brawl_rounds` | Street brawl round scoring events *(street brawl only)* |
 
@@ -167,7 +171,7 @@ Each dataset is a property on the `Demo` class that returns a [Polars](https://p
 | [`boon`](crates/boon) | Core parser library (published as `boon-deadlock` on crates.io) |
 | [`boon-proto`](crates/boon-proto) | Auto-generated Deadlock protobuf definitions |
 | [`boon-dev`](crates/boon-dev) | Low-level developer / debugging CLI (in-repo only, not published) |
-| [`boon-python`](crates/boon-python) | Python bindings via PyO3 (published as `boon-deadlock` on PyPI) |
+| [`boon-python`](crates/boon-python) | Python bindings that use PyO3 (published as `boon-deadlock` on PyPI) |
 
 ## Documentation
 
@@ -191,7 +195,7 @@ Full documentation is available at [boon.readthedocs.io](https://boon.readthedoc
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and how to submit changes.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, coding standards, and submission instructions.
 
 ## License
 

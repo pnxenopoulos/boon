@@ -9,9 +9,11 @@ use serde::Serialize;
 
 struct CachedModifier {
     hero_id: i64,
+    serial: u32,
     modifier: String,
     ability: String,
     duration: f32,
+    last_applied_time: f32,
     caster_hero_id: i64,
     stacks: i32,
 }
@@ -21,6 +23,7 @@ struct ActiveModifierOutput {
     tick: i32,
     hero_id: i64,
     event: String,
+    serial: u32,
     modifier: String,
     ability: String,
     duration: f32,
@@ -122,6 +125,7 @@ pub fn run(
                             tick: ctx.tick(),
                             hero_id: cached.hero_id,
                             event: "removed".to_string(),
+                            serial: cached.serial,
                             modifier: cached.modifier,
                             ability: cached.ability,
                             duration: cached.duration,
@@ -140,6 +144,7 @@ pub fn run(
                                 tick: ctx.tick(),
                                 hero_id: cached.hero_id,
                                 event: "removed".to_string(),
+                                serial: cached.serial,
                                 modifier: cached.modifier,
                                 ability: cached.ability,
                                 duration: cached.duration,
@@ -175,11 +180,13 @@ pub fn run(
                                 .and_then(|i| entity_to_hero.get(&i).copied())
                                 .unwrap_or(0);
                             let stacks = modifier.stack_count.unwrap_or(0);
+                            let last_applied_time = modifier.last_applied_time.unwrap_or(-1.0);
 
                             events_out.push(ActiveModifierOutput {
                                 tick: ctx.tick(),
                                 hero_id,
                                 event: "applied".to_string(),
+                                serial,
                                 modifier: modifier_name.clone(),
                                 ability: ability_name.clone(),
                                 duration,
@@ -189,32 +196,43 @@ pub fn run(
 
                             e.insert(CachedModifier {
                                 hero_id,
+                                serial,
                                 modifier: modifier_name,
                                 ability: ability_name,
                                 duration,
+                                last_applied_time,
                                 caster_hero_id,
                                 stacks,
                             });
                         }
                         // Already tracked: entry re-sent with updated fields. Emit a
-                        // `changed` row when the stack count moved and refresh the cache,
-                        // so the live count is visible and the eventual `removed` row
-                        // reports the final total, not the value at first sighting.
+                        // `changed` row for stack, duration, or application-time changes.
                         std::collections::hash_map::Entry::Occupied(mut e) => {
-                            let stacks = modifier.stack_count.unwrap_or(0);
                             let cached = e.get_mut();
-                            if stacks != cached.stacks {
+                            let stacks = modifier.stack_count.unwrap_or(cached.stacks);
+                            let duration = modifier.duration.unwrap_or(cached.duration);
+                            let last_applied_time = modifier
+                                .last_applied_time
+                                .unwrap_or(cached.last_applied_time);
+                            let changed = stacks != cached.stacks
+                                || duration.to_bits() != cached.duration.to_bits()
+                                || last_applied_time.to_bits()
+                                    != cached.last_applied_time.to_bits();
+                            if changed {
                                 events_out.push(ActiveModifierOutput {
                                     tick: ctx.tick(),
                                     hero_id: cached.hero_id,
                                     event: "changed".to_string(),
+                                    serial,
                                     modifier: cached.modifier.clone(),
                                     ability: cached.ability.clone(),
-                                    duration: cached.duration,
+                                    duration,
                                     caster_hero_id: cached.caster_hero_id,
                                     stacks,
                                 });
                                 cached.stacks = stacks;
+                                cached.duration = duration;
+                                cached.last_applied_time = last_applied_time;
                             }
                         }
                     }

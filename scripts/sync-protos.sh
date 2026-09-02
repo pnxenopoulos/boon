@@ -186,7 +186,7 @@ update_cargo_toml() {
   local minor="${BASH_REMATCH[2]}"
 
   # The suffix keeps only ServerVersion, which has always matched ClientVersion.
-  # Warn (don't fail) if they ever diverge, since ClientVersion is then dropped.
+  # Warn but continue if the values differ. ClientVersion is then dropped.
   if [[ "$client" != "$server" ]]; then
     echo "WARNING: ClientVersion ($client) != ServerVersion ($server); only ServerVersion is recorded in the version" >&2
   fi

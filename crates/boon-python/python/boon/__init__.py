@@ -6,6 +6,7 @@ __version__ = version("boon-deadlock")
 
 from boon._boon import (
     Demo,
+    ability_display_names,
     ability_names,
     game_mode_names,
     hero_names,
@@ -39,6 +40,7 @@ __all__ = [
     "DemoMessageError",
     "InvalidDemoError",
     "NotStreetBrawlError",
+    "ability_display_names",
     "ability_names",
     "game_mode_names",
     "hero_names",

@@ -11151,6 +11151,8 @@ pub struct CMsgDevMatchInfo {
     pub region_mode: ::core::option::Option<i32>,
     #[prost(uint32, optional, tag = "20")]
     pub compat_version: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "21")]
+    pub low_pri_pool: ::core::option::Option<bool>,
     #[prost(message, repeated, tag = "22")]
     pub team_stats: ::prost::alloc::vec::Vec<c_msg_dev_match_info::Team>,
 }
@@ -12646,8 +12648,6 @@ pub mod c_msg_client_to_gc_get_match_history_response {
             default = "KECitadelGameModeInvalid"
         )]
         pub game_mode: ::core::option::Option<i32>,
-        #[prost(bool, optional, tag = "21")]
-        pub not_scored: ::core::option::Option<bool>,
         #[prost(uint32, optional, tag = "22")]
         pub game_mode_version: ::core::option::Option<u32>,
         #[prost(uint32, optional, tag = "23")]
@@ -12671,6 +12671,8 @@ pub mod c_msg_client_to_gc_get_match_history_response {
         pub ranked_calibration_match: ::core::option::Option<u32>,
         #[prost(bool, optional, tag = "30")]
         pub ranked_used_demotion_protection: ::core::option::Option<bool>,
+        #[prost(bool, optional, tag = "31")]
+        pub low_pri_pool: ::core::option::Option<bool>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
@@ -17499,6 +17501,13 @@ pub mod c_msg_server_crash_sentinel_file {
         pub allow_hideout: ::core::option::Option<bool>,
         #[prost(bool, optional, tag = "12")]
         pub was_lost_lobby: ::core::option::Option<bool>,
+        #[prost(
+            enumeration = "super::ECitadelServerMode",
+            repeated,
+            packed = "false",
+            tag = "13"
+        )]
+        pub server_modes: ::prost::alloc::vec::Vec<i32>,
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -19254,6 +19263,8 @@ pub struct CMsgServerToGcEnterMatchmaking {
     pub allow_hideout: ::core::option::Option<bool>,
     #[prost(uint32, optional, tag = "13")]
     pub process_id: ::core::option::Option<u32>,
+    #[prost(enumeration = "ECitadelServerMode", repeated, packed = "false", tag = "14")]
+    pub server_modes: ::prost::alloc::vec::Vec<i32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -19340,6 +19351,8 @@ pub struct CMsgServerToGcAbandonMatch {
     pub allow_hideout: ::core::option::Option<bool>,
     #[prost(bool, optional, tag = "23")]
     pub was_lost_lobby: ::core::option::Option<bool>,
+    #[prost(enumeration = "ECitadelServerMode", repeated, packed = "false", tag = "24")]
+    pub server_modes: ::prost::alloc::vec::Vec<i32>,
 }
 /// Nested message and enum types in `CMsgServerToGCAbandonMatch`.
 pub mod c_msg_server_to_gc_abandon_match {
@@ -19808,6 +19821,39 @@ impl ECitadelMatchAuxStat {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "k_eMatchAuxStat_Dummy" => Some(Self::KEMatchAuxStatDummy),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ECitadelServerMode {
+    KECitadelServerModeMatch = 0,
+    KECitadelServerModeHideout = 1,
+    KECitadelServerModeCoopBot = 2,
+    KECitadelServerModeInternal = 3,
+}
+impl ECitadelServerMode {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            Self::KECitadelServerModeMatch => "k_eCitadelServerMode_Match",
+            Self::KECitadelServerModeHideout => "k_eCitadelServerMode_Hideout",
+            Self::KECitadelServerModeCoopBot => "k_eCitadelServerMode_CoopBot",
+            Self::KECitadelServerModeInternal => "k_eCitadelServerMode_Internal",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "k_eCitadelServerMode_Match" => Some(Self::KECitadelServerModeMatch),
+            "k_eCitadelServerMode_Hideout" => Some(Self::KECitadelServerModeHideout),
+            "k_eCitadelServerMode_CoopBot" => Some(Self::KECitadelServerModeCoopBot),
+            "k_eCitadelServerMode_Internal" => Some(Self::KECitadelServerModeInternal),
             _ => None,
         }
     }
@@ -26566,9 +26612,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1")]
+    #[prost(uint32, optional, tag = "1", default = "0")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -27372,7 +27418,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,
