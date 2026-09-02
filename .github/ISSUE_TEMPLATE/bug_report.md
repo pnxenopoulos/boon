@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Something isn't working as expected
+about: Something does not work as expected
 labels: bug
 ---
 

@@ -5,34 +5,28 @@
 //! abilities.vdata, modifiers.vdata, heroes.vdata, misc.vdata, and English
 //! localization files.
 //!
-//! These files come from Deadlock's VPK game data, extracted using
-//! Source2Viewer (ValveResourceFormat). They use Valve's KV3 format — a
-//! non-standard JSON-like structure where top-level keys (indented one tab)
-//! are identifiers.
+//! Source2Viewer (ValveResourceFormat) extracts these files from Deadlock VPK
+//! data. The files use Valve KV3. Top-level keys have one tab of indentation.
 //!
-//! Source 2 uses CUtlStringToken (MurmurHash2 with seed 0x31415926) for both
-//! ability subclass IDs and modifier subclass IDs. In a demo a modifier is
-//! identified by the `modifier_subclass` token on `CModifierTableEntry` — the
-//! hash of the modifier's *subclass name*, i.e. its `_my_subclass_name` (or,
-//! for the generic modifiers in modifiers.vdata, its top-level key).
+//! Source 2 uses CUtlStringToken (MurmurHash2 with seed 0x31415926) for ability
+//! and modifier subclass IDs. In a demo, `modifier_subclass` on
+//! `CModifierTableEntry` identifies a modifier. The token is the hash of
+//! `_my_subclass_name`. A generic modifier in modifiers.vdata uses its
+//! top-level key.
 //!
-//! Ability names are the top-level keys of abilities.vdata. English display
-//! names are the exact top-level keys shared by abilities.vdata and Valve's
-//! hero/item localization catalogs. Intersecting the two sources excludes
-//! description, search-alias, modifier, and stale localization tokens while
-//! covering `ability_*`, `upgrade_*`, `citadel_ability_*`, and future schemes.
+//! Ability names are top-level keys in abilities.vdata. A display name requires
+//! the same key in abilities.vdata and Valve's English localization catalogs.
+//! This intersection excludes description, search-alias, modifier, and stale
+//! tokens. It covers `ability_*`, `upgrade_*`, and `citadel_ability_*` names.
 //!
-//! The modifier name table is the union of three vdata-derived sources:
-//!   1. every top-level key in modifiers.vdata — the generic/global modifiers;
-//!   2. every nested `_my_subclass_name` in modifiers.vdata;
-//!   3. the `_my_subclass_name` of each modifier `subclass:` block nested in
-//!      abilities.vdata — those whose own `_class` starts with `modifier_`.
+//! The modifier name table combines three VData sources:
+//!   1. Each top-level key in modifiers.vdata.
+//!   2. Each nested `_my_subclass_name` in modifiers.vdata.
+//!   3. Each modifier `_my_subclass_name` in abilities.vdata.
 //!
-//! For source 3, abilities.vdata interleaves modifier, scale-function and
-//! ability/item subclasses — all carrying a `_my_subclass_name` — so the
-//! `_class` prefix is the discriminator: modifiers are `modifier_*`,
-//! scale-functions `scale_function_*`, abilities `citadel_ability_*` /
-//! `citadel_item`, etc.
+//! Source 3 contains modifier, scale-function, ability, and item subclasses.
+//! Each subclass has `_my_subclass_name`. The generator selects entries whose
+//! `_class` starts with `modifier_`.
 
 mod stats;
 
@@ -80,10 +74,11 @@ fn murmur_hash2(key: &[u8]) -> u32 {
     h
 }
 
-/// Parse a KV3 `key = "value"` assignment line, returning the unquoted value
-/// when `line` is exactly that assignment for `key`. Returns `None` for a
-/// different key or a non-string / empty value. `line` should already be
-/// trimmed of surrounding whitespace.
+/// Parse a KV3 `key = "value"` assignment line.
+///
+/// Return the unquoted value when `line` is the specified assignment. Return
+/// `None` for a different key, an empty value, or a value that is not a string.
+/// Remove surrounding whitespace from `line` before the call.
 fn kv3_string_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
     let rest = line.strip_prefix(key)?.trim_start();
     let rest = rest.strip_prefix('=')?.trim();
@@ -100,7 +95,7 @@ fn extract_top_level_keys(content: &str) -> Vec<&str> {
     let mut names = Vec::new();
 
     for line in content.lines() {
-        // Must start with exactly one tab, then a word char (not another tab)
+        // Require one tab and then one word character.
         let Some(rest) = line.strip_prefix('\t') else {
             continue;
         };
@@ -108,7 +103,7 @@ fn extract_top_level_keys(content: &str) -> Vec<&str> {
             continue;
         }
 
-        // Find the key: contiguous word characters before whitespace/`=`
+        // Get the word characters before whitespace or `=`.
         let key_end = rest
             .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
             .unwrap_or(rest.len());
@@ -117,7 +112,7 @@ fn extract_top_level_keys(content: &str) -> Vec<&str> {
         }
         let key = &rest[..key_end];
 
-        // Check that what follows is ` = ` (with optional whitespace)
+        // Require `=` after optional whitespace.
         let after = rest[key_end..].trim_start();
         if !after.starts_with('=') {
             continue;
@@ -839,7 +834,7 @@ fn write_resistance_table(
     )
     .unwrap();
     writeln!(out, "//!").unwrap();
-    writeln!(out, "//! Hero and equipped-item inputs used to reconstruct passive bullet and spirit resistance.").unwrap();
+    writeln!(out, "//! Hero and equipped-item inputs used to calculate passive bullet and spirit resistance.").unwrap();
     writeln!(out, "//!").unwrap();
     writeln!(out, "//! Last updated: {today}").unwrap();
     writeln!(out).unwrap();

@@ -374,9 +374,9 @@ impl Demo {
         (tick - paused).max(0)
     }
 
-    /// Scan for the always-collected one-shot messages (`GameOver`,
-    /// `BannedHeroes`) if not already done.
-    /// Uses the lightweight events-only parser pass.
+    /// Scan once for `GameOver` and `BannedHeroes` messages.
+    ///
+    /// Use the event-only parser pass.
     pub(super) fn ensure_always_events_scanned(&mut self) -> PyResult<()> {
         if self.always_events_scanned {
             return Ok(());
@@ -404,16 +404,16 @@ impl Demo {
                 banned.extend(msg.banned_hero_ids);
             }
         }
-        // Always `Some` after a full scan, so an empty list reads as "this match
-        // had no bans" rather than "not looked at yet".
+        // A completed scan always sets Some.
+        // An empty list means "no ban data" and not "not scanned."
         self.banned_hero_ids = Some(banned);
         self.always_events_scanned = true;
         Ok(())
     }
 
-    /// Collect the player roster from the `CCitadelPlayerController` entities
-    /// present at `tick`. Players with no Steam ID (bots / empty slots) are
-    /// skipped. Returns an empty frame when no controllers exist at `tick`.
+    /// Collect the player roster from controllers at `tick`.
+    /// Skip bots and empty slots that have no Steam ID.
+    /// Return an empty frame when the tick has no controllers.
     pub(super) fn collect_players_at(&self, tick: i32) -> PyResult<DataFrame> {
         let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
 
@@ -500,14 +500,13 @@ impl Demo {
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
 
-    /// Decode the requested snapshot datasets in a SINGLE parallel pass across
-    /// full-packet keyframe segments, returning `(player_ticks, world_ticks,
-    /// troopers)` for whichever were requested. Player pawn/controller,
-    /// game-rules, and alive-trooper state are all re-keyframed at every full
-    /// packet, so the per-segment cold restarts stitch back into byte-for-byte
-    /// the same frames as a serial pass. Falls back to one serial decode when
-    /// parallelism is disabled (`BOON_TICK_SEGMENTS=1`) or the demo has ≤1
-    /// keyframe.
+    /// Decode requested snapshot datasets in one parallel pass.
+    ///
+    /// Each full packet contains a new keyframe for the required entity state.
+    /// Therefore, the segment results are identical to one serial pass.
+    /// Return the requested `player_ticks`, `world_ticks`, and `troopers`
+    /// frames. Use one serial decode when `BOON_TICK_SEGMENTS=1` or when the
+    /// demo has one keyframe.
     pub(super) fn build_snapshots_parallel(
         &self,
         wants: SnapWants,
@@ -605,12 +604,11 @@ impl Demo {
         ))
     }
 
-    /// Snapshot the requested datasets at a single tick via a direct
-    /// `parse_to_tick` seek instead of a full-demo decode. `tick` must be a real
-    /// emitted tick; otherwise empty frames are returned, matching the predicate
-    /// path (which emits nothing for a tick with no data). Exact for the same
-    /// reason the segmented decode is: these entities are re-keyframed at every
-    /// full packet, so the seek reconstructs the identical state at `tick`.
+    /// Get requested datasets at one tick with `parse_to_tick`.
+    ///
+    /// Return empty frames when the demo does not emit `tick`. Each full packet
+    /// contains a new keyframe for these entities. Therefore, a direct seek
+    /// produces the same state as a full decode at `tick`.
     pub(super) fn snapshot_at_tick(
         &self,
         tick: i32,

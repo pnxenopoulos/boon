@@ -17,7 +17,7 @@ Part of the [Boon](https://github.com/pnxenopoulos/boon) project.
 
 - Memory-mapped, zero-copy parsing for maximum throughput
 - Match metadata (map, players, duration, build number)
-- Full entity state at any tick via snapshot seeking
+- Full entity state at any tick with snapshot seeking
 - Stable entity identities and typed update/PVS-leave/delete lifecycle events
 - Game event extraction with protobuf decoding
 - Filtered tick streaming for efficient per-entity-class analysis
@@ -132,7 +132,8 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 
 ## Performance
 
-For best throughput when you only need specific entity types, use `run_to_end_filtered` with a class filter. This skips field decoding for entities outside the filter set.
+Use `run_to_end_filtered` with a class filter when you need specific entity
+types. Boon does not decode fields for entities outside the filter.
 
 ```rust,ignore
 use std::collections::HashSet;
@@ -140,7 +141,7 @@ use std::collections::HashSet;
 let filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
 parser.run_to_end_filtered(&filter, |ctx| {
     for (_, entity) in ctx.entities.iter() {
-        // Only CCitadelPlayerPawn entities are tracked
+        // Track only CCitadelPlayerPawn entities.
     }
 }).unwrap();
 ```

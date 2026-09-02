@@ -1,8 +1,8 @@
 # 🔬 Demo File Internals
 
-Deadlock demos use Valve's game-neutral **PBDEMS2** Source 2 container and
-entity wire format. Those shared mechanisms are implemented by
-[pbdems2](https://crates.io/crates/pbdems2) and documented in its docs.rs guide:
+Deadlock demos use the **PBDEMS2** Source 2 container and entity format.
+[pbdems2](https://crates.io/crates/pbdems2) implements these shared functions.
+Its docs.rs guide contains this information:
 
 - [File structure and outer commands](https://docs.rs/pbdems2/latest/pbdems2/guide/file_structure/index.html)
 - [Inner packet-message framing](https://docs.rs/pbdems2/latest/pbdems2/guide/packet_messages/index.html)
@@ -11,10 +11,9 @@ entity wire format. Those shared mechanisms are implemented by
 - [Entities, class information, and handles](https://docs.rs/pbdems2/latest/pbdems2/guide/entities/index.html)
 - [Adapters, playback, seeking, and segmentation](https://docs.rs/pbdems2/latest/pbdems2/guide/playback/index.html)
 
-Boon supplies the Deadlock protobuf adapter, entity/property selections,
-events, datasets, and generated token, display-name, and stat tables. See the pbdems2
-guide when extending the shared parser, and the chapter below for the
-Deadlock-specific token tables.
+Boon supplies the Deadlock protobuf adapter, entity and property selections,
+events, datasets, and generated tables. Read the pbdems2 guide when you change
+the shared parser. Read the next section for Deadlock token tables.
 
 ```{toctree}
 :maxdepth: 1

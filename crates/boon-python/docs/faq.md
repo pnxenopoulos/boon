@@ -2,52 +2,57 @@
 
 ## Where do I get demo files?
 
-Deadlock demo files (`.dem`) are GOTV recordings of matches. You can download them from the in-game match history or from third-party sites that host replays. The files are typically named by match ID (e.g., `70555151.dem`).
+Deadlock demo files (`.dem`) are GOTV match recordings. Download them from the in-game match history or from a replay service.
+The file name usually contains the match ID. For example, `70555151.dem` contains match 70555151.
 
 ## Why does boon return Polars DataFrames instead of pandas?
 
-[Polars](https://pola.rs) is significantly faster than pandas for the kind of operations common in replay analysis (filtering, grouping, joins). It also has lower memory usage and a more expressive API. If you need pandas, you can convert with `df.to_pandas()`.
+[Polars](https://pola.rs) is fast for common replay analysis operations. These operations include filters, groups, and joins.
+Polars also uses memory efficiently. Use `df.to_pandas()` when you need a pandas DataFrame.
 
 ## Why do DataFrames use integer IDs instead of names?
 
-Keeping raw IDs makes the data compact and fast to filter, group, and join. IDs are also stable — they don't change if Valve renames a hero or ability. Use the module-level mapping functions (`hero_names()`, `team_names()`, `ability_names()`, `modifier_names()`) to resolve IDs to names when you need them. See {doc}`examples` for patterns.
+Raw IDs keep the data compact. They also make filters, groups, and joins fast. IDs do not change when Valve renames a hero or ability.
+Use `hero_names()`, `team_names()`, `ability_names()`, and `modifier_names()` to resolve IDs. See {doc}`examples` for examples.
 
 ## How do I see what datasets are available?
 
-Call `Demo.available_datasets()` to get the full list of dataset names you can pass to `load()` or access as properties.
+Call `Demo.available_datasets()` to get all dataset names. You can pass these names to `load()` or access them as properties.
 
-## What's the difference between accessing a property and calling `load()`?
+## What is the difference between a property and `load()`?
 
-Accessing a property (e.g., `demo.kills`) parses that dataset on first access. Calling `load("kills", "damage", "player_ticks")` parses multiple datasets in a single pass over the file, which is faster when you need several datasets. After either approach, the data is cached — subsequent accesses are free.
+Accessing a property parses that dataset on first access. For example, `demo.kills` parses the kills dataset.
+`load("kills", "damage", "player_ticks")` parses multiple datasets in one pass. Boon caches the result after either operation.
 
 ## Why is `player_ticks` missing some heroes?
 
-GOTV demo recordings don't always include all player pawns. The parser can only return data for pawns that are present in the demo. This is a limitation of the demo format, not boon.
+GOTV recordings do not always include all player pawns. Boon can return data only for pawns that are in the demo.
 
 ## Why is `ability_upgrades` empty?
 
-Valve renamed the underlying entity field from `m_nUpgradeBits` to `m_nUpgradeInfo` in a recent update. Boon uses the current field name, so older demos will return an empty DataFrame. See {doc}`known-issues` for details.
+Valve renamed `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding. Boon uses the current field name. Older demos return an empty DataFrame. See {doc}`known-issues`.
 
 ## What is `trooper_boss`?
 
-In the `troopers` dataset, `trooper_type` is either `"trooper"` (regular lane creeps) or `"trooper_boss"` (the lane guardian).
+In the `troopers` dataset, `trooper_type` is `"trooper"` for a regular lane creep. It is `"trooper_boss"` for the lane guardian.
 
 ## How do I work with street brawl demos?
 
-Street brawl is game mode 4. You can check with `demo.game_mode`. Street brawl demos have two additional datasets: `street_brawl_ticks` and `street_brawl_rounds`. Accessing these on a non-street-brawl demo raises `NotStreetBrawlError`.
+Street brawl is game mode 4. Check the mode with `demo.game_mode`. Street brawl demos have `street_brawl_ticks` and `street_brawl_rounds`. Other modes raise `NotStreetBrawlError` when you access these datasets.
 
 ## How do I convert a tick to a timestamp?
 
-Use `demo.tick_to_seconds(tick)` or `demo.tick_to_clock_time(tick)`. Both exclude paused time and automatically load `world_ticks` on first call.
+Use `demo.tick_to_seconds(tick)` or `demo.tick_to_clock_time(tick)`. Both methods exclude paused time. They load `world_ticks` on the first call.
 
 ## What does `damage` include?
 
-The `damage` dataset includes all damage events in the game — hero vs hero, hero vs objectives, troopers, neutrals, and everything else. Filter by `attacker_hero_id` or `victim_hero_id` to focus on what you need.
+The `damage` dataset includes all recorded damage events. It includes damage to heroes, objectives, troopers, and neutral units. Filter `attacker_hero_id` or `victim_hero_id` to select the required events.
 
 ## Can I use boon without Python?
 
-Yes. The core parser is available as a Rust crate (`boon-deadlock`) on [crates.io](https://crates.io/crates/boon-deadlock), so you can parse demos from Rust with no Python involved. The repository also ships a low-level `boon-dev` debugging CLI you can build from source (`cargo build --release -p boon-dev`). See {doc}`cli`. (The `boon` command bundled with the Python package does require Python.)
+Yes. The core parser is the `boon-deadlock` Rust crate on [crates.io](https://crates.io/crates/boon-deadlock).
+The repository also contains the low-level `boon-dev` debug tool. Build it with `cargo build --release -p boon-dev`. See {doc}`cli`. The `boon` command in the Python package requires Python.
 
-## Something isn't working. Where do I report it?
+## Something is not working. Where do I report it?
 
-Check {doc}`known-issues` first. If your problem isn't listed, file a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in the [Discord](https://discord.gg/WmjZHxWrCD).
+Check {doc}`known-issues` first. If the page does not list the problem, create a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in [Discord](https://discord.gg/WmjZHxWrCD).

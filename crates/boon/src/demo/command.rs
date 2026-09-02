@@ -6,8 +6,8 @@ pub use boon_proto::proto::SvcMessages;
 
 /// Outer demo command type constants.
 ///
-/// Rust doesn't allow `Enum as i32` in match patterns, so we re-export
-/// the protobuf enum values as plain `i32`/`u32` constants.
+/// Rust does not allow `Enum as i32` in match patterns. Re-export the protobuf
+/// enum values as plain `i32` and `u32` constants.
 pub mod dem {
     use super::EDemoCommands;
     pub const STOP: i32 = EDemoCommands::DemStop as i32;

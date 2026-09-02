@@ -6,7 +6,7 @@ impl Demo {
     ///
     /// Returns a DataFrame with 51 columns covering position, health, barrier, resistance, combat
     /// timers, kills, deaths, net worth, and more for every player at every tick.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.ensure_snapshots_detached(
@@ -22,7 +22,7 @@ impl Demo {
     /// World state at every tick as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``is_paused``, ``next_midboss``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn world_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.ensure_snapshots_detached(
@@ -43,7 +43,7 @@ impl Demo {
     /// - attacker_hero_id: The hero ID of the attacker
     /// - assister_hero_ids: List of hero IDs of players who assisted
     ///
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn kills(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_kills.is_none() {
@@ -74,7 +74,7 @@ impl Demo {
     /// - melee_type: ``"light"`` or ``"heavy"`` for basic melee, ``"other"``
     ///   for another melee-typed source, otherwise null
     ///
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn damage(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_damage.is_none() {
@@ -86,7 +86,7 @@ impl Demo {
     /// Flex slot unlock events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``team_num``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn flex_slots(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_flex_slots.is_none() {
@@ -98,7 +98,7 @@ impl Demo {
     /// Ability usage events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn abilities(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_abilities.is_none() {
@@ -110,7 +110,7 @@ impl Demo {
     /// Hero ability upgrade events (skill point spending) as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``tier``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn ability_upgrades(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_ability_upgrades.is_none() {
@@ -122,7 +122,7 @@ impl Demo {
     /// Item purchase/sell/upgrade events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``change``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_item_purchases.is_none() {
@@ -134,7 +134,7 @@ impl Demo {
     /// Chat messages as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``text``, ``chat_type``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn chat(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_chat.is_none() {
@@ -147,7 +147,7 @@ impl Demo {
     ///
     /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``, ``phase``, ``x``, ``y``, ``z``, ``entity_id``.
     /// Emits a row when an objective's health or max_health changes.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn objectives(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_objectives.is_none() {
@@ -160,7 +160,7 @@ impl Demo {
     ///
     /// Columns: ``tick``, ``team_num``, ``event``.
     /// Events: ``"spawned"``, ``"killed"``, ``"picked_up"``, ``"used"``, ``"expired"``.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn mid_boss(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_mid_boss.is_none() {
@@ -178,7 +178,7 @@ impl Demo {
     /// ``capture_tick``, ``expire_tick``, ``winning_team``, ``lane``, ``x``,
     /// ``y``, ``z``. Exactly one of ``capture_tick`` / ``expire_tick`` is set
     /// per row; ``winning_team`` is null when the Rift expired uncaptured.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn rift(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_rift.is_none() {
@@ -259,19 +259,19 @@ impl Demo {
     /// ``attacker_hero_id``, ``damage``, ``health``, ``max_health``,
     /// ``team_num``, ``x``, ``y``, ``z``.
     ///
-    /// ``event`` is ``"spawned"``, ``"hit"``, or ``"reset"``. Hit rows use
-    /// the Damage message's exact victim entity and attacker when available;
-    /// an entity health decrease without a matching message is retained with
-    /// ``attacker_hero_id=0``. ``health`` is the machine's state at the end of
-    /// the tick, which may be shared by multiple hits in the same tick.
+    /// ``event`` is ``"spawned"``, ``"hit"``, or ``"reset"``. A hit row uses
+    /// the victim and attacker from the Damage message. Boon keeps a health
+    /// decrease that has no matching message. For this event,
+    /// ``attacker_hero_id`` is ``0``. ``health`` is the machine state at the
+    /// end of the tick. Multiple hits can have the same health value.
     ///
-    /// Tracks both ``CNPC_Neutral_SinnersSacrifice`` and the Hideout variant.
-    /// Health zero and lifestate are intentionally omitted because inactive
-    /// machines can omit health fields and completed machines remain alive at
-    /// one health.
+    /// Track ``CNPC_Neutral_SinnersSacrifice`` and its Hideout variant.
+    /// An inactive machine can omit health fields. A completed machine stays
+    /// alive at one health. Therefore, the dataset does not add health-zero or
+    /// lifestate fields.
     ///
-    /// **Note:** Not loaded by default. Access this property or call
-    /// ``load("sinners_sacrifice")`` explicitly.
+    /// Boon does not load this dataset by default. Access the property or call
+    /// ``load("sinners_sacrifice")``.
     #[getter]
     pub(crate) fn sinners_sacrifice(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_sinners_sacrifice.is_none() {
@@ -290,7 +290,7 @@ impl Demo {
     /// ``amount`` is the signed change from this event.
     ///
     /// Emits a row whenever a stat total changes (idol/breakable pickups).
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn stat_modifier_events(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_stat_modifier_events.is_none() {
@@ -306,11 +306,10 @@ impl Demo {
     /// Columns: ``tick``, ``hero_id``, ``event``, ``modifier_id``, ``ability_id``,
     /// ``duration``, ``caster_hero_id``, ``stacks``.
     ///
-    /// Events: ``"applied"`` when a modifier is first seen on a player,
-    /// ``"changed"`` when its ``stacks`` count changes while active, and
-    /// ``"removed"`` when it disappears. The ``removed`` row reports the final
-    /// stack count.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// ``"applied"`` means that Boon first saw the modifier on a player.
+    /// ``"changed"`` means that its active state changed. ``"removed"`` means
+    /// that it disappeared. The removed row contains the final stack count.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn active_modifiers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_active_modifiers.is_none() {
@@ -321,11 +320,10 @@ impl Demo {
 
     /// Ability cooldown / charge state changes as a Polars DataFrame.
     ///
-    /// Change-only: a row is emitted for an ability only on the tick its
-    /// cooldown or charge state changes (not every tick), keeping the frame
-    /// compact. One ability entity exists per ability the player owns, including
-    /// innate movement abilities (jump, dash, slide, ...) which can be filtered
-    /// out via ``slot``.
+    /// The dataset is change-only. Boon emits a row only when the cooldown or
+    /// charge state changes. One entity exists for each ability that a player
+    /// owns. These entities include movement abilities such as jump, dash, and
+    /// slide. Use ``slot`` to remove these abilities from the result.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability_id`` (a ``CUtlStringToken``;
     /// resolve with ``ability_names()``), ``slot`` (``EAbilitySlots_t``),
@@ -334,8 +332,8 @@ impl Demo {
     /// ``charge_recharge_end`` (recharge window of the charge currently
     /// regenerating).
     ///
-    /// Not loaded by default. Access this property or call
-    /// ``load("ability_ticks")`` explicitly.
+    /// Boon does not load this dataset by default. Access the property or call
+    /// ``load("ability_ticks")``.
     #[getter]
     pub(crate) fn ability_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_ability_ticks.is_none() {
@@ -355,7 +353,7 @@ impl Demo {
     ///
     /// For modifier events (``picked_up``, ``dropped``, ``returned``),
     /// ``team_num``/``x``/``y``/``z`` are 0. For delivery events, ``hero_id`` is 0.
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn urn(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if self.cached_urn.is_none() {
@@ -371,7 +369,7 @@ impl Demo {
     /// ``state_start_time``, ``non_combat_time``.
     ///
     /// Only available for street brawl demos (game_mode=4).
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     ///
     /// Raises:
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
@@ -394,7 +392,7 @@ impl Demo {
     /// ``sapphire_score``.
     ///
     /// Only available for street brawl demos (game_mode=4).
-    /// Auto-loads on first access if not already loaded via ``load()``.
+    /// Boon loads this dataset on first access.
     ///
     /// Raises:
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
@@ -441,7 +439,7 @@ impl Demo {
     /// which also includes pre-game and post-match time). Scans for the
     /// game-over event and loads ``world_ticks`` on first access.
     ///
-    /// Returns ``None`` if no game over event was found (e.g. an incomplete
+    /// Returns ``None`` if no game over event was found (for example an incomplete
     /// recording).
     #[getter]
     pub(crate) fn regulation_ticks(&mut self) -> PyResult<Option<i32>> {
@@ -472,7 +470,7 @@ impl Demo {
         Ok(Some(ticks as f32 / self.tick_rate as f32))
     }
 
-    /// The duration of regulation play as a formatted string (e.g. ``"32:45"``),
+    /// The duration of regulation play as a formatted string (for example ``"32:45"``),
     /// excluding paused time.
     ///
     /// The regulation counterpart to ``total_clock_time``. Scans for the

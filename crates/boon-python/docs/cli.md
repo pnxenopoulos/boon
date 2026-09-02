@@ -1,20 +1,15 @@
 # 💻 CLI
 
-Boon ships a `boon` command-line tool for inspecting demo files without writing
-any code. It comes in two flavors:
+Boon includes two CLI tools.
 
-- **Bundled with the Python package** — `pip install boon-deadlock` (or
-  `uv add boon-deadlock`) puts a `boon` executable on your PATH. It is a
-  [Typer](https://typer.tiangolo.com) app that runs the same parser as the
-  library and prints [Polars](https://pola.rs) DataFrames — the quickest way to
-  poke at a demo. Documented in [Python CLI](#python-cli) below.
-- **`boon-dev` (in-repo debugging tool)** — a low-level Rust CLI with a broader
-  set of format-inspection commands (entities, send tables, string tables, raw
-  messages, …). It is not shipped as a binary; build it from source. Documented
-  under [boon-dev](#boon-dev) below.
+- **Python CLI:** Install `boon-deadlock` with pip or uv. The package adds
+  `boon` to your PATH. This command uses the library parser and prints
+  [Polars](https://pola.rs) DataFrames. See [Python CLI](#python-cli).
+- **`boon-dev`:** This low-level Rust tool inspects entities, send tables,
+  string tables, and raw messages. Build it from the repository. See
+  [boon-dev](#boon-dev).
 
-The bundled command is invoked as `boon`, the debugging tool as `boon-dev`; both
-support `--help` on any command.
+Both tools support `--help` for each command.
 
 ## Python CLI
 

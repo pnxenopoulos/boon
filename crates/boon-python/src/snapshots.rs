@@ -8,9 +8,11 @@ use crate::*;
 // per-segment rows concatenated in order — identical to a single serial pass.
 // See `Parser::decode_segment` / `full_packet_offsets`.
 
-/// Number of keyframe segments to split the parallel `player_ticks` decode
-/// across: the CPU count, overridable via `BOON_TICK_SEGMENTS` (`1` disables
-/// parallelism; read fresh so tests can force the serial path).
+/// Get the number of keyframe segments for parallel `player_ticks` decoding.
+///
+/// The default is the CPU count. `BOON_TICK_SEGMENTS` overrides the default.
+/// A value of `1` disables parallel processing. Read the value for each call so
+/// that tests can select serial processing.
 pub(super) fn parallel_segments() -> usize {
     std::env::var("BOON_TICK_SEGMENTS")
         .ok()

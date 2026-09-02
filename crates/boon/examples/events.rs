@@ -16,7 +16,7 @@ fn main() {
 
     let mut count = 0;
     for event in &events {
-        // If a filter is given, skip events whose name doesn't contain it
+        // If a filter exists, skip an event whose name does not contain it.
         if let Some(f) = filter
             && !event.name.contains(f.as_str())
         {

@@ -1,6 +1,6 @@
 use crate::*;
 
-/// A `str` or `list[str]` Python argument (e.g. `datasets=`, `events=`).
+/// A `str` or `list[str]` Python argument, such as `datasets=` or `events=`.
 #[derive(FromPyObject)]
 pub(super) enum StrOrList {
     #[pyo3(transparent)]
@@ -18,7 +18,7 @@ impl StrOrList {
     }
 }
 
-/// An `int` or `list[int]` Python argument (e.g. `ticks=`).
+/// An `int` or `list[int]` Python argument, such as `ticks=`.
 #[derive(FromPyObject)]
 pub(super) enum IntOrList {
     #[pyo3(transparent)]
@@ -62,25 +62,24 @@ pub(super) const VALID_DATASETS: &[&str] = &[
 pub(super) const VALID_STREET_BRAWL_DATASETS: &[&str] =
     &["street_brawl_ticks", "street_brawl_rounds"];
 
-/// Known Rift ("Koth") cash-in sites, as `([x, y], lane)`.
+/// Known Rift ("Koth") cash-in sites in the form `([x, y], lane)`.
 ///
-/// The Rift entities carry no `m_iLane` field, so the lane has to come from the
-/// cash-in location. Each site below was cross-checked against the lane of the
-/// buffed trooper cohort that spawns for the winning team after a capture. Only
-/// these two sites have been observed, so any other location resolves to lane
-/// `0` rather than being guessed at.
+/// Rift entities do not contain `m_iLane`. Boon gets the lane from the cash-in
+/// location. We compared each site with the lane of the buffed troopers that
+/// spawn after a capture. We observed only these two sites. Other locations
+/// resolve to lane `0`.
 pub(super) const RIFT_LANE_SITES: &[([f32; 2], i64)] = &[([-7560.0, 0.0], 1), ([7612.0, 0.0], 6)];
 
-/// Match radius, in Hammer units, for associating a location with a known Rift
-/// site. The two known sites are ~15k units apart, so this is deliberately
-/// loose enough to absorb per-match jitter without ever matching both.
+/// Match radius, in Hammer units, for a known Rift site.
+/// The two sites are approximately 15,000 units apart.
+/// This radius permits location variation but cannot match both sites.
 pub(super) const RIFT_LANE_TOLERANCE: f32 = 1024.0;
 
-/// Upper bound, in Hammer units, on a plausible map coordinate.
+/// Maximum valid map coordinate in Hammer units.
 ///
-/// The game clears `m_vKothCashInCurrentLocation` to `FLT_MAX` rather than to
-/// zero once a Rift resolves. `FLT_MAX` is finite, so an `is_finite` check does
-/// not reject it — this bound does.
+/// After a Rift ends, the game sets `m_vKothCashInCurrentLocation` to
+/// `FLT_MAX`. This value is finite. Therefore, `is_finite` does not reject it.
+/// This maximum rejects the value.
 pub(super) const RIFT_COORD_SANITY: f32 = 1.0e6;
 
 /// The lane for a Rift cash-in location, or `0` when the location is not a
@@ -436,36 +435,31 @@ pub(super) fn stat_type_label(stat_type: i32) -> String {
     }
 }
 
-/// Whether a ``source_name`` is one of Valve's coarse damage-type buckets
-/// (``Bullet``/``Ability``/``Melee``/``Misc``/``UnknownAbility``) rather than a
-/// specific source. Coarse buckets use Capitalized display names; specific
-/// sources use snake_case identifiers (e.g. ``citadel_weapon_astro_set``).
+/// Return true for a Valve damage-category ``source_name``.
+/// Categories are ``Bullet``, ``Ability``, ``Melee``, ``Misc``, and
+/// ``UnknownAbility``. Categories use capitalized names. Specific sources use
+/// snake_case names, such as ``citadel_weapon_astro_set``.
 pub(super) fn is_category_source(name: &str) -> bool {
     name.chars().next().is_some_and(char::is_uppercase) && !name.contains('_')
 }
 
-/// Build the post-match ``damage`` DataFrame from the damage matrix: one row per
-/// (``dealer_player_slot``, ``target_player_slot``, ``source_name``,
-/// ``sample_time_s``). ``dealer_hero_id``/``target_hero_id`` resolve the slots
-/// to heroes (null for non-player slots such as 0), so the frame joins to
-/// ``snapshots``/``last_hits`` on ``hero_id``. ``damage`` is the per-interval
-/// value of ``stat_type``
-/// (``damage``/``healing``/``heal_prevented``/``mitigated``/``lethal``/``regen``)
-/// dealt from dealer to target during the interval ending at that sample. It is
-/// additive: ``sum`` for totals, ``cumsum`` over ``sample_time_s`` for the
-/// running total.
+/// Build the post-match ``damage`` DataFrame from the damage matrix.
 ///
-/// Empty when the demo has no damage matrix. The underlying cumulative arrays
-/// are shorter than the full sample list when the pair met mid-match, so they
-/// are aligned to the end of ``sample_time_s`` (verified against the snapshot
-/// ``player_damage``).
+/// Each row identifies a dealer slot, target slot, source, and sample time.
+/// The hero ID columns map player slots to heroes. Non-player slots are null.
+/// The ``damage`` column contains the ``stat_type`` value for the interval
+/// that ends at the sample. Use ``sum`` to get totals. Use ``cumsum`` over
+/// ``sample_time_s`` to get a running total.
 ///
-/// The matrix records the same hit twice: under a coarse category
-/// (``is_category`` true) and under a specific source (``is_category`` false).
-/// Categories only exist for ``damage`` (and some ``mitigated``); every other
-/// stat type is specific-only. Summing all rows therefore double-counts
-/// ``damage`` — filter to ``is_category == False`` for the complete, never
-/// double-counted per-source breakdown across all stat types.
+/// Return an empty frame when the demo has no damage matrix. Some cumulative
+/// arrays are shorter than the full sample list. This occurs when a pair meets
+/// during the match. Align these arrays to the end of ``sample_time_s``. We
+/// verified this alignment against snapshot ``player_damage``.
+///
+/// The matrix records each hit under a category and under a specific source.
+/// Category rows set ``is_category`` to true. Most other rows set it to false.
+/// Do not sum category rows and specific-source rows together. Filter to
+/// ``is_category == False`` to get the per-source values without duplicates.
 pub(super) fn build_damage_frame(
     match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
 ) -> PolarsResult<DataFrame> {
@@ -479,8 +473,8 @@ pub(super) fn build_damage_frame(
     let mut sample_time_s = Vec::new();
     let mut damage = Vec::new();
 
-    // player_slot -> hero_id, so dealer/target slots resolve to heroes (slot 0
-    // and other non-player slots have no hero and stay null).
+    // Map player slots to hero IDs.
+    // Keep slot 0 and other non-player slots null.
     let slot_to_hero: HashMap<u32, u32> = match_info
         .players
         .iter()

@@ -1,8 +1,8 @@
-//! Stateful reconstruction of Deadlock's `ActiveModifiers` string table.
+//! State tracking for Deadlock's `ActiveModifiers` string table.
 //!
-//! String-table entries are protobuf deltas: an update may contain only the
-//! fields that changed. [`ModifierState`] merges those deltas, handles slot
-//! reuse and explicit removals, and can rebuild state from a keyframe snapshot.
+//! String-table entries are protobuf changes. An update can contain only changed
+//! fields. [`ModifierState`] merges the changes. It handles slot reuse and
+//! explicit removals. It can rebuild state from a keyframe snapshot.
 
 use std::collections::HashMap;
 
@@ -29,13 +29,13 @@ impl ModifierChangeKind {
     }
 }
 
-/// One reconstructed modifier lifecycle change.
+/// One modifier lifecycle change.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ModifierChange {
     pub kind: ModifierChangeKind,
     pub serial: u32,
-    /// Complete state after an apply/change, or the last complete state before
-    /// a removal.
+    /// Complete state after an apply or change.
+    /// A removal contains the last complete state.
     pub entry: CModifierTableEntry,
 }
 
@@ -57,7 +57,7 @@ impl ModifierState {
         self.by_serial.get(&serial)
     }
 
-    /// Clear all reconstructed state.
+    /// Clear all tracked state.
     pub fn clear(&mut self) {
         self.by_serial.clear();
         self.index_to_serial.clear();
@@ -85,12 +85,11 @@ impl ModifierState {
         changes
     }
 
-    /// Rebuild live state from a complete string-table snapshot.
+    /// Build live state from a complete string-table snapshot.
     ///
-    /// ActiveModifiers is append-oriented: historical apply/update/remove rows
-    /// occur in table order, while reused slots contain their newest value.
-    /// Replaying the table therefore reconstructs the same live serial set as
-    /// processing its deltas from signon.
+    /// ActiveModifiers stores apply, update, and remove rows in table order.
+    /// A reused slot contains its newest value. Processing the table produces
+    /// the same active serial set as processing each change from signon.
     pub fn rebuild(&mut self, ctx: &Context) {
         self.clear();
         let Some(table) = ctx.string_tables().find_table("ActiveModifiers") else {
@@ -117,8 +116,8 @@ impl ModifierState {
         };
         let mut changes = Vec::with_capacity(2);
 
-        // A slot can be overwritten by a new serial without receiving a
-        // separate removal row for the previous serial.
+        // A new serial can overwrite a slot.
+        // The table does not always contain a removal row for the old serial.
         if let Some(old_serial) = self.index_to_serial.get(&index).copied()
             && old_serial != serial
             && let Some(entry) = self.by_serial.remove(&old_serial)
@@ -168,7 +167,7 @@ impl ModifierState {
     }
 }
 
-/// Merge present protobuf fields into an existing reconstructed entry.
+/// Merge present protobuf fields into an existing entry.
 fn merge_entry(current: &mut CModifierTableEntry, delta: CModifierTableEntry) {
     macro_rules! merge {
         ($($field:ident),+ $(,)?) => {

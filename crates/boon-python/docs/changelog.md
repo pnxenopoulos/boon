@@ -27,8 +27,8 @@
   It uses pbdems2 0.3.0 lifecycle transitions
   to retain a PVS leave as a break candidate, cancel it if the same entity
   identity reactivates, and ignore full-packet delete/create replacements.
-  This avoids rescanning every tracked prop each tick or fabricating a
-  health-zero/dead state the server never sends.
+  This avoids a scan of every tracked prop for each tick. It also does not add
+  a false health-zero or dead state that the server did not send.
 
 - New `demo.stat_ticks(...)` selectively tracks native, persistent baseline,
   and tick-effective player stats for bullet/spirit resistance, spirit power,
@@ -36,8 +36,8 @@
   lifesteal types. It supports explicit ticks, ranges, strides, seconds, and
   event-aligned sampling; requested stats share one parallel modifier/entity
   pass and include a per-stat completeness flag.
-- New `demo.stat_effects(...)` change-only provenance frame explains generated
-  item and modifier contributions, including layer, operation, resolved value,
+- New `demo.stat_effects(...)` change-only details frame lists generated item
+  and modifier contributions. Columns include layer, operation, resolved value,
   ability/modifier identity, runtime serial, caster/provider, stacks, duration,
   active state, and formula completeness.
 - **Fixed:** `active_modifiers`, barrier snapshots, and effective stat tracking
@@ -50,14 +50,14 @@
   `modifier_barrier_tracker` entry; older demos without that tracker return
   `0.0`.
 - New `bullet_resist_baseline` and `spirit_resist_baseline` columns in
-  `demo.player_ticks` and sampled player snapshots. They reconstruct the
-  baseline percentage from hero
+  `demo.player_ticks` and sampled player snapshots. They calculate the baseline
+  percentage from hero
   VData progression, spirit scaling, and unconditional stats on the player's
   equipped items, using Deadlock's multiplicative resistance stacking. Temporary
   buffs, barriers, auras, and enemy resistance reductions are not included.
 - **Faster:** `teamfights()` now batch-loads damage and kills in one filtered
-  event pass and snapshots player positions only at relevant damage ticks
-  instead of materializing all of `player_ticks`. On a 115 MB demo this reduced
+  event pass. It gets player positions only at relevant damage ticks. It does
+  not create all of `player_ticks`. On a 115 MB demo, this reduced
   end-to-end runtime from 20.2s to 12.1s (about 40%) with identical output.
 - **Faster:** `in_combat()` and `time_dead()` request `player_ticks` and
   `world_ticks` together, collecting both in one parallel snapshot pass on a
@@ -78,12 +78,12 @@
   modifier's duration or application timestamp changes, as well as when its
   stack count changes. A single ability may create multiple internal modifier
   instances (for example, an attached effect plus a kill-check window), so row
-  count must not be treated as stack count; `stacks` remains authoritative.
+  count is not the stack count. Use `stacks` as the stack count.
   Source 2 may reuse a serial after removal, so a serial distinguishes
   concurrently live instances rather than serving as a globally unique
   lifecycle ID.
-- **Fixed:** effective stat evaluation sorts simultaneously live modifiers by
-  runtime serial before applying them. Randomized map iteration can no longer
+- **Fixed:** effective stat evaluation sorts modifiers that are active at the
+  same time by runtime serial. Randomized map iteration can no longer
   change results when non-commutative resistance and flat-reduction effects
   overlap.
 - **Faster:** `summary()` caches its decoded post-match message and four
@@ -109,7 +109,7 @@
 - The VData name-table generator now emits a compact catalog of unconditional
   item effects and live modifier effects, keyed primarily by ability and
   modifier ID with guarded cross-build fallbacks.
-- New reusable `ModifierState` reconstructs complete `ActiveModifiers` entries
+- New reusable `ModifierState` builds complete `ActiveModifiers` entries
   from partial protobuf deltas and emits typed applied/changed/removed events.
 
 ### boon-proto
@@ -122,17 +122,22 @@
   snapshot contain 794 abilities, 1,106 modifiers, 457 exact English
   ability/item display names, and 30 breakable prop subclasses.
 
+### Documentation
+
+- Maintained documentation, API text, and code comments now use ASD-STE100
+  English where practical. Generated files and upstream protobuf text are
+  excluded.
+
 ### Release process
 
-- Releases are now manual and component-scoped. `boon-proto`, `boon`, and
-  `boon-python` are published independently, and each component is tagged only
-  after its package-index upload succeeds.
-- After merging to `main` and waiting for **CI Check**, run the **Release Boon**
-  workflow to completion for `boon-proto`, then `boon`, then `boon-python`,
-  waiting for each registry upload before starting the next component. The
-  workflow verifies the dependency order and creates the tags and GitHub
-  Releases; maintainers should not create release tags manually. See the
-  repository's `CONTRIBUTING.md` for the full checklist.
+- Releases are manual and separate for each component. Publish `boon-proto`,
+  `boon`, and `boon-python` independently. The workflow creates a tag only
+  after the package-index upload succeeds.
+- Merge the changes to `main` and wait for **CI Check**. Then run the
+  **Release Boon** workflow for `boon-proto`, `boon`, and `boon-python`, in that
+  order. Wait for each registry upload before you start the next release. The
+  workflow checks the dependency order and creates the tags and GitHub Releases.
+  Do not create release tags manually. See `CONTRIBUTING.md` for the full list.
 
 ## 0.7.0
 

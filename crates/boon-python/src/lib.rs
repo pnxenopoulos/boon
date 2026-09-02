@@ -80,8 +80,8 @@ struct Demo {
     cached_summary: Option<SummaryFrames>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
-    // Hero IDs from the one-shot `BannedHeroes` message. `Some(vec![])` means
-    // the demo was scanned and carried no bans; `None` means not scanned yet.
+    // Hero IDs from the `BannedHeroes` message.
+    // `Some(vec![])` means no ban data. `None` means not scanned.
     banned_hero_ids: Option<Vec<u32>>,
     always_events_scanned: bool,
     // Flex slot unlock events

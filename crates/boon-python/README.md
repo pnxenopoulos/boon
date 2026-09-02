@@ -17,7 +17,7 @@
 
 </div>
 
-Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo / replay parser written in Rust with native Python bindings. It returns [Polars](https://pola.rs) DataFrames for easy analysis.
+Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. Its Rust core has native Python bindings. Boon returns [Polars](https://pola.rs) DataFrames.
 
 ## Installation
 
@@ -100,8 +100,8 @@ stat_effects = demo.stat_effects()
 
 ## CLI
 
-Installing the package also puts a `boon` command on your PATH for inspecting a
-demo straight from the terminal — no code required:
+The package adds the `boon` command to your PATH. Use it to inspect a demo
+without Python code:
 
 ```bash
 boon info match.dem                    # match metadata
@@ -111,11 +111,11 @@ boon summary match.dem                 # post-match summary
 boon stats match.dem -m kill-participation
 ```
 
-Run `boon --help` for the full list. See the [CLI docs](https://boon.readthedocs.io/en/latest/cli.html) for details.
+Run `boon --help` for all commands. See the [CLI documentation](https://boon.readthedocs.io/en/latest/cli.html).
 
 ## Features
 
-- Parse Deadlock `.dem` demo files at native speed via Rust
+- Parse Deadlock `.dem` files at native speed with Rust
 - 22 built-in datasets covering players, combat, economy, objectives, and map state
 - Access to match metadata, player info, entity state, game events, and post-match summaries
 - All data returned as [Polars](https://pola.rs) DataFrames

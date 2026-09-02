@@ -242,11 +242,11 @@ pub fn evaluate_player_stats<'a>(
         .into_iter()
         .filter(|entry| entry.in_aura_range != Some(false))
         .collect();
-    // ModifierState exposes a HashMap because serial lookup is its hot path.
-    // Never let that map's randomized iteration order leak into stat results:
-    // resistance composition and flat reductions are not interchangeable.
-    // Runtime serials order simultaneously live effects consistently; the
-    // remaining fields make this deterministic for synthetic/incomplete input.
+    // ModifierState uses a HashMap for fast serial lookup.
+    // A HashMap does not have a stable iteration order.
+    // Stat operations can produce a different result in a different order.
+    // Sort active effects by serial.
+    // Use the other fields as stable tie-breakers.
     modifiers.sort_unstable_by_key(|entry| {
         (
             entry.serial_number.unwrap_or_default(),
@@ -272,9 +272,9 @@ pub fn evaluate_player_stats<'a>(
         }
     }
 
-    // Persistent item modifiers repeat unconditional properties that were
-    // already applied from the purchased-upgrade catalog. Other permanent
-    // modifiers are baseline sources; finite-duration modifiers are temporary.
+    // The item catalog already applies permanent item properties.
+    // Skip matching item modifiers to prevent duplicate values. Other permanent
+    // modifiers are baseline effects. Finite modifiers are temporary effects.
     let persistent_modifiers = modifiers.iter().copied().filter(|entry| {
         entry.duration.unwrap_or(-1.0) < 0.0
             && !upgrades.contains(&entry.ability_subclass.unwrap_or(0))
@@ -317,8 +317,8 @@ pub fn evaluate_player_stats<'a>(
     for &(entry, effect, tier) in &temporary_effects {
         if effect.stat == StatId::SpiritPower {
             let (value, ok) = effect.resolve(effective_spirit, tier);
-            // VData does not provide one universal stack rule. Apply one copy
-            // and expose uncertainty instead of assuming linear scaling.
+            // VData does not define one stack rule for all effects.
+            // Apply one copy and set the result to incomplete.
             effective_spirit += value;
             if !ok || entry.stack_count.unwrap_or(0) > 1 {
                 complete.remove(effect.stat);
@@ -388,8 +388,8 @@ mod tests {
     fn plot_armor(stacks: i32, in_aura_range: Option<bool>) -> CModifierTableEntry {
         CModifierTableEntry {
             ability_subclass: Some(3_553_292_912),
-            // This token comes from the older real-demo fixture and exercises
-            // the guarded ability-level fallback generated for cross-build IDs.
+            // This token is from the older demo fixture.
+            // It tests the ability-level backup ID for different builds.
             modifier_subclass: Some(1_397_769_555),
             duration: Some(5.0),
             stack_count: Some(stacks),

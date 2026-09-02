@@ -71,7 +71,7 @@ pub type Context = ParserState;
 pub struct GameEvent {
     /// Game tick at which this event occurred.
     pub tick: i32,
-    /// Human-readable event name (e.g. `"player_death"`, `"k_ECitadelUserMsg_Damage"`).
+    /// Human-readable event name, such as `"player_death"`.
     pub name: String,
     /// Numeric message type from the packet stream.
     pub msg_type: u32,

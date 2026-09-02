@@ -37,11 +37,10 @@ impl Demo {
             .playback_time
             .ok_or_else(|| DemoInfoError::new_err("missing playback time in file info"))?;
 
-        // Parse the first tick and best-effort resolve match_id / game_mode from
-        // CCitadelGameRulesProxy. The match ID is optional: some demos (partial
-        // captures, sandbox / custom content) don't carry one, so we record it
-        // when present and leave it `None` otherwise rather than refusing to
-        // open the demo. game_mode defaults to 0 when unavailable.
+        // Parse the first tick. Get match_id and game_mode from
+        // CCitadelGameRulesProxy when they are available. A partial capture or
+        // custom demo can omit the match ID. Store `None` in that case. Use 0
+        // for game_mode when it is not available.
         let ctx = parser.parse_to_tick(1).map_err(to_py_err)?;
 
         let game_rules = ctx
@@ -148,7 +147,7 @@ impl Demo {
         self.playback_time
     }
 
-    /// The total duration of the demo as a formatted string (e.g., "12:34").
+    /// The total duration of the demo as a formatted string (for example, "12:34").
     #[getter]
     pub(crate) fn total_clock_time(&self) -> String {
         let total_seconds = self.playback_time as u32;
@@ -170,7 +169,7 @@ impl Demo {
     }
 
     /// The match ID for this demo, or ``None`` if the demo does not carry one
-    /// (e.g. a partial capture or sandbox / custom content).
+    /// (for example a partial capture or sandbox / custom content).
     #[getter]
     pub(crate) fn match_id(&self) -> Option<u64> {
         self.match_id
@@ -280,24 +279,24 @@ impl Demo {
 
     /// Snapshot per-tick state at selected ticks in a single parallel pass.
     ///
-    /// Decodes the demo once (across keyframe segments, in parallel) and collects
-    /// rows only at the ticks you select, so sampling is far cheaper than pulling
-    /// a full per-tick frame and filtering in Python.
+    /// Decode the demo once. Process keyframe segments in parallel.
+    /// Collect rows only at selected ticks. This uses less memory and time than
+    /// a full per-tick frame that you filter in Python.
     ///
     /// Args:
     ///     datasets: Which snapshot dataset(s) to return — ``"player_ticks"``
     ///         (default), ``"world_ticks"``, ``"troopers"``, or a list of them.
     ///     ticks: A specific tick or list of ticks.
     ///     every: Sample every ``N`` ticks (gap-robust stride).
-    ///     seconds: Sample about once per ``seconds`` (converted via the tick rate).
+    ///     seconds: Sample about once per ``seconds`` (converted with the tick rate).
     ///         Mutually exclusive with ``every``.
-    ///     events: Sample at the ticks of these event datasets (e.g. ``"kills"``
+    ///     events: Sample at the ticks of these event datasets (for example ``"kills"``
     ///         or ``["kills", "damage"]``).
     ///     start_tick, end_tick: Restrict to a contiguous ``[start, end]`` window.
     ///
-    /// With no stride/ticks/events but a window, every tick in the window is
-    /// returned; specifying none of them is an error. Returns a single DataFrame
-    /// when one dataset is requested, otherwise a dict keyed by dataset name.
+    /// A window without another selector returns each tick in the window.
+    /// A request without a selector is an error. Return one DataFrame for one
+    /// dataset. Return a dictionary for multiple datasets.
     ///
     /// Example:
     ///     >>> demo.snapshots(every=64)                     # ~1 row/sec of ticks
@@ -438,10 +437,9 @@ impl Demo {
 
     /// Sample native, persistent baseline, and effective player stats.
     ///
-    /// Only the requested stats and ticks are materialized. Percentage stats
-    /// are expressed in percentage points; spirit power is expressed in raw
-    /// points. A per-stat complete column is false when a known active formula
-    /// depends on behavior the current catalog cannot resolve.
+    /// Create only the requested stats and ticks. Express percentage stats in
+    /// percentage points. Express spirit power in points. A complete column is
+    /// false when the catalog cannot calculate a known active formula.
     #[pyo3(signature = (stats, *, ticks=None, every=None, seconds=None, events=None, start_tick=None, end_tick=None))]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn stat_ticks(
@@ -595,7 +593,7 @@ impl Demo {
         Ok(active_ticks as f64 / self.tick_rate as f64)
     }
 
-    /// Convert a tick number to a clock time string (e.g., ``"03:14"``),
+    /// Convert a tick number to a clock time string (for example, ``"03:14"``),
     /// excluding paused time.
     ///
     /// Automatically loads ``world_ticks`` on first call to determine pauses.
@@ -624,15 +622,14 @@ impl Demo {
             return Ok(PyDataFrame(df.clone()));
         }
 
-        // The roster (name / steam id / hero / team / lane / rank) is set once the
-        // match is underway and never changes, so it can be snapshotted from a
-        // single tick. Prefer the game-over tick: it is late enough that every
-        // field is populated (heroes locked, lanes assigned) but before the
-        // post-game teardown that despawns the player controllers. Snapshotting
-        // there — rather than the final recorded tick — avoids both reading
-        // pre-game placeholders and finding the controllers (partially or
-        // fully) gone at the end. Fall back to the final tick only when a demo
-        // has no game-over event (e.g. an incomplete recording).
+        // The roster does not change after the match starts.
+        // Read it from one tick.
+        // Prefer the game-over tick because all roster fields are set.
+        // This tick occurs before the game removes player controllers.
+        // The final recorded tick can contain pre-game placeholder values.
+        // It can also occur after some controllers are removed.
+        // Use the final tick only when the demo has no game-over event.
+        // An incomplete recording is one example.
         py.detach(|| self.ensure_always_events_scanned())?;
         let snapshot_tick = self.game_over.map_or(self.total_ticks, |(_, tick)| tick);
         let mut df = py.detach(|| self.collect_players_at(snapshot_tick))?;
@@ -653,16 +650,14 @@ impl Demo {
     /// - hero_name: The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID
     ///   that predates the bundled hero table
     ///
-    /// Read from the one-shot ``BannedHeroes`` user message, which the server
-    /// sends early in the demo (before the match starts) only when the match
-    /// has bans. The message carries nothing but the hero IDs — no team, no
-    /// banning player, and no pick/ban ordering — so this cannot be used to
-    /// reconstruct a draft.
+    /// Read the ``BannedHeroes`` user message. The server can send this
+    /// message once before the match starts. The message contains only hero
+    /// IDs. It does not contain the team, banning player, or draft order.
+    /// Therefore, Boon cannot build a draft.
     ///
-    /// An empty DataFrame means no bans were recorded for this match. Demos
-    /// from builds that never emit the message are indistinguishable from
-    /// ban-free matches, so treat empty as "nothing recorded" rather than as
-    /// positive proof that nothing was banned.
+    /// An empty DataFrame means that the demo contains no ban data. It does not
+    /// prove that the match had no bans. The demo cannot distinguish a match
+    /// without bans from a server build that did not send the message.
     #[getter]
     pub(crate) fn banned_heroes(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         py.detach(|| self.ensure_always_events_scanned())?;

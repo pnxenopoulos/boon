@@ -122,12 +122,12 @@ PLAYERS_COLUMNS = {
 
 BANNED_HEROES_COLUMNS = {"hero_id", "hero_name"}
 
-# Bans are recorded per match, so the expected values are per fixture. Demos
-# absent from this map are only checked against the schema-level invariants.
-# `84133142` and `70537442` are the demos observed to carry the one-shot
-# `BannedHeroes` message; `70555151` shares a server version with `70537442`
-# and carries no bans, which is what makes the empty case a real match state
-# rather than an unsupported build.
+# Bans are recorded for each match. Thus, each fixture has expected values.
+# Tests apply only schema checks to a demo that is not in this map.
+# Demos `84133142` and `70537442` contain the `BannedHeroes` message.
+# Demo `70555151` uses the same server version as `70537442` but has no bans.
+# This empty result is a valid match state. It does not identify an unsupported
+# build.
 EXPECTED_BANS = {
     "84133142.dem": [69, 63],
     "70537442.dem": [2, 69],
@@ -278,12 +278,11 @@ class TestPlayersAndTeams:
 class TestHealthInvariants:
     """Tests for player health sanity across all ticks."""
 
-    # A player's current health can momentarily read above max_health — e.g. a
-    # transient overheal effect, or health and max_health being networked on
-    # different ticks so a snapshot catches them mid-update. It is real but
-    # rare, so we cap the share of offending (player, tick) rows rather than
-    # forbidding it outright. Observed across fixtures: ~0.01%-0.13%, so 1%
-    # leaves comfortable headroom while still catching a regression.
+    # Current health can temporarily be greater than max_health. An overheal can
+    # cause this condition. A snapshot can also receive health and max_health on
+    # different ticks. The condition occurs in approximately 0.01% to 0.13% of
+    # fixture rows. Permit a maximum rate of 1%. This limit permits normal data
+    # and detects a regression.
     MAX_OVERHEALTH_RATE = 0.01
 
     def test_health_rarely_exceeds_max(self, demo: Demo) -> None:
@@ -753,8 +752,8 @@ class TestBannedHeroes:
             assert row["hero_name"] == names.get(row["hero_id"], "HERO_NOT_FOUND")
 
     def test_hero_ids_are_known(self, demo: Demo) -> None:
-        # A HERO_NOT_FOUND here means a ban referenced a hero the bundled table
-        # doesn't have, i.e. heroes.rs needs regenerating.
+        # HERO_NOT_FOUND means that the bundled table does not contain the hero.
+        # Regenerate heroes.rs in this case.
         unknown = demo.banned_heroes.filter(pl.col("hero_name") == "HERO_NOT_FOUND")
         assert len(unknown) == 0, f"unknown banned hero id(s): {unknown['hero_id'].to_list()}"
 

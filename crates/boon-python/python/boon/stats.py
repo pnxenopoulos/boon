@@ -1,12 +1,11 @@
-"""Derived statistics computed from parsed Boon demo data.
+"""Calculate statistics from parsed Boon demo data.
 
-This module is the analysis layer on top of the parser: each function takes a
-:class:`boon.Demo` and returns a Polars DataFrame of a derived metric. The same
-functions are surfaced as convenience methods on ``Demo`` (e.g.
-``demo.kill_participation()`` delegates to :func:`kill_participation`).
+Each function accepts a :class:`boon.Demo` and returns a Polars DataFrame. The
+same functions are convenience methods on ``Demo``. For example,
+``demo.kill_participation()`` calls :func:`kill_participation`.
 
-Stats are keyed on ``hero_id`` so they join cleanly to the parser's other
-frames (``players``, ``kills``, ``player_ticks``, ``summary()`` outputs, ...).
+Results use ``hero_id`` as a key. Join them to ``players``, ``kills``,
+``player_ticks``, or the ``summary()`` frames.
 """
 
 from __future__ import annotations
@@ -23,44 +22,43 @@ __all__ = ["in_combat", "kill_participation", "teamfights", "time_dead"]
 
 
 def in_combat(demo: Demo) -> pl.DataFrame:
-    """Whether each player is in combat, per tick.
+    """Report the combat state of each player for each tick.
 
-    Deadlock tracks a player's combat state on the pawn as a window: a player is
-    "in combat" while the current game time is before ``in_combat_end_time``,
-    which the engine pushes to ``last_damage_time + delay`` on every hit (delay
-    ~0.5s for trooper/denizen damage, ~3.0s for hero damage). This derives the
-    live boolean from those raw ``player_ticks`` columns.
+    Deadlock stores combat state as a time window on the player pawn. The player
+    is in combat while the current game time is less than
+    ``in_combat_end_time``. Each hit sets the end time to the last damage time
+    plus a delay. The delay is approximately 0.5 seconds for NPC damage and 3.0
+    seconds for hero damage. This function calculates the state from
+    ``player_ticks``.
 
-    The comparison needs the *current* game time per tick. That is reconstructed
-    from non-paused elapsed ticks (matching :meth:`Demo.tick_to_seconds`) plus a
-    constant offset between the demo tick clock and the engine's game clock. The
-    offset is calibrated against the data itself: at any damage tick the engine's
-    ``last_damage_time`` equals the current game time, and ``last_damage_time``
-    can never exceed "now", so ``max(last_damage_time - elapsed_seconds)`` over
-    all ticks recovers the offset.
+    The comparison requires the current game time for each tick. Calculate this
+    time from non-paused ticks, as :meth:`Demo.tick_to_seconds` does. Then add one
+    constant offset between the demo clock and the engine clock. At a damage
+    tick, ``last_damage_time`` equals the current engine time. It cannot be later
+    than the current engine time. Thus, the maximum value of
+    ``last_damage_time - elapsed_seconds`` is the clock offset.
 
     Args:
-        demo: The demo to compute over.
+        demo: The demo to analyze.
 
     Returns:
-        A Polars DataFrame with one row per ``(tick, hero_id)`` -- so it joins
-        directly onto ``demo.player_ticks`` -- sorted by ``tick`` then
-        ``hero_id``, with columns:
+        A Polars DataFrame with one row for each ``(tick, hero_id)``. Rows are
+        sorted by ``tick`` and then ``hero_id``. The frame has these columns:
 
         - ``tick`` (*int*) -- The game tick.
         - ``hero_id`` (*int*) -- The player's hero ID.
-        - ``in_combat`` (*bool*) -- Whether the player is in combat on that tick.
+        - ``in_combat`` (*bool*) -- True when the player is in combat.
     """
     tick_rate = demo.tick_rate
     if tick_rate == 0:
-        raise ValueError("tick_rate is 0: cannot reconstruct the game clock")
+        raise ValueError("tick_rate is 0: cannot calculate the game clock")
 
-    # Both inputs are full per-tick snapshots. Request them together so Boon
-    # collects them in one parallel keyframe-segmented pass on a cold Demo.
+    # Both inputs are full snapshots for each tick. Request them together.
+    # Boon then collects them in one parallel pass for a new Demo.
     demo.load("player_ticks", "world_ticks")
 
-    # Elapsed game seconds per tick, excluding paused time (same basis as
-    # Demo.tick_to_seconds): cumulative count of non-paused ticks / tick_rate.
+    # Calculate elapsed game time from the cumulative number of non-paused ticks.
+    # This calculation is the same as Demo.tick_to_seconds.
     clock = (
         demo.world_ticks.sort("tick")
         .with_columns(
@@ -272,46 +270,43 @@ def teamfights(
     radius: float = 1500.0,
     min_players: int = 3,
 ) -> pl.DataFrame:
-    """Detect teamfights from hero-vs-hero damage, clustered in space and time.
+    """Detect teamfights from hero damage in a local area and time window.
 
-    A teamfight is a *localized* period in which the two teams deal damage to
-    each other — not just where kills happen (a fight can end with everyone
-    alive, and it starts well before the first kill). Hero-vs-hero, opposing-team
-    damage events are clustered so that events close in **both** time and
-    **location** form one fight; this separates concurrent skirmishes in
-    different lanes that pure time-clustering would merge into one long blob.
+    A teamfight does not require a kill. It can start before the first kill and
+    can end with all players alive. Use damage between heroes on opposing teams.
+    Combine events that are close in time and location. This rule keeps fights
+    in different lanes separate.
 
-    Each damage event is placed at the victim's position (falling back to the
-    attacker's). Events are swept in tick order: an event joins the nearest
-    "active" fight whose centroid is within ``radius`` and whose last event was
-    within ``gap_seconds``, otherwise it starts a new fight (a fight goes
-    inactive once no event has landed near it within ``gap_seconds``). Fights
-    with fewer than ``min_players`` distinct heroes are dropped as lone poke.
+    Use the victim position for each event. Use the attacker position when the
+    victim position is not available. Process events in tick order. An event
+    joins the nearest active fight when its distance from the fight center is
+    less than ``radius``. The last event must also be less than ``gap_seconds``
+    earlier. Otherwise, the event starts a new fight. A fight becomes inactive
+    after ``gap_seconds`` without a nearby event. Drop fights that have fewer
+    than ``min_players`` different heroes.
 
     Args:
-        demo: The demo to compute over.
-        gap_seconds: Maximum lull, in seconds, before a fight goes inactive.
-        radius: Maximum distance (map units) between an event and a fight's
-            running centroid for the event to belong to that fight. Map-scale
-            dependent; the default suits Deadlock's coordinate scale.
-        min_players: Minimum distinct heroes (dealing or taking hero damage) for
-            a cluster to count as a teamfight.
+        demo: The demo to analyze.
+        gap_seconds: Maximum time without a nearby event before a fight ends.
+        radius: Maximum map distance between an event and the current fight
+            center. The default is for Deadlock coordinates.
+        min_players: Minimum number of different heroes that deal or take hero
+            damage in a fight.
 
     Returns:
         A Polars DataFrame with one row per teamfight, sorted by ``start_tick``:
 
         - ``fight_id`` (*int*) -- Sequential fight number (1-indexed).
         - ``start_tick`` / ``end_tick`` (*int*) -- First and last damage tick.
-        - ``start_seconds`` / ``end_seconds`` (*float*) -- Those ticks in elapsed
-          seconds (via :meth:`Demo.tick_to_seconds`, excluding paused time).
+        - ``start_seconds`` / ``end_seconds`` (*float*) -- Start and end times.
+          The values exclude paused time and use :meth:`Demo.tick_to_seconds`.
         - ``duration_seconds`` (*float*) -- ``end_seconds - start_seconds``.
-        - ``center_x`` / ``center_y`` (*float*) -- Mean event position (the
-          fight's rough location).
+        - ``center_x`` / ``center_y`` (*float*) -- Mean event position.
         - ``participants`` (*list[int]*) -- Hero IDs that dealt or took hero
           damage in the fight (sorted).
         - ``num_participants`` (*int*) -- ``len(participants)``.
         - ``hero_damage`` (*int*) -- Total hero-vs-hero damage dealt in the fight.
-        - ``kills`` (*int*) -- Hero kills within the fight's tick window.
+        - ``kills`` (*int*) -- Hero kills in the fight time window.
 
     Raises:
         ValueError: If the demo's tick rate is 0 (cannot cluster by time).
@@ -360,9 +355,8 @@ def teamfights(
     if dmg.is_empty():
         return pl.DataFrame(schema=schema)
 
-    # Only positions at relevant damage ticks can contribute to a fight. This
-    # avoids materializing the full player_ticks frame merely to discard most
-    # of it during the two joins below.
+    # Only positions at damage ticks can contribute to a fight. Request only
+    # those positions. This prevents creation of the full player_ticks frame.
     damage_ticks = dmg.get_column("tick").unique().to_list()
     pos = demo.snapshots(ticks=damage_ticks).select("tick", "hero_id", "x", "y")
     dmg = (
@@ -445,14 +439,13 @@ def teamfights(
     if fights.is_empty():
         return pl.DataFrame(schema=schema)
 
-    # Attribute each kill to the fight of the last hero damage to its victim at
-    # or before the kill (the fight that secured it), so concurrent fights with
-    # overlapping tick windows don't double-count kills.
+    # Assign each kill to the fight that last damaged the victim before the kill.
+    # This rule prevents duplicate kills in fights with overlapping time windows.
     victim_dmg = dmg.select("tick", "victim_hero_id", "_fight").sort("tick")
     kills_sorted = demo.kills.select("tick", "victim_hero_id").sort("tick")
     with warnings.catch_warnings():
-        # The frames are globally tick-sorted (hence per-victim-group sorted);
-        # polars just can't verify that cheaply with a `by` group.
+        # The frames are sorted by tick and by victim group.
+        # Polars cannot verify this condition efficiently with a `by` group.
         warnings.filterwarnings(
             "ignore", message="Sortedness of columns cannot be checked"
         )

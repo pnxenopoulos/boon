@@ -553,18 +553,17 @@ impl Demo {
         let mut rift_cur_capture_tick: Option<i32> = None;
         let mut rift_cur_winning_team: Option<i32> = None;
         let mut rift_cur_loc: [f32; 3] = [0.0; 3];
-        // m_nKothScoringTeam holds the *previous* Rift's winner until the next
-        // one opens, so a positive value only counts as a capture once this Rift
-        // has been observed contested (-1). Without this a stale winner would
-        // register a capture on the same tick the Rift opened.
+        // m_nKothScoringTeam keeps the previous winner until the next Rift opens.
+        // Count a positive value only after the current Rift is contested (-1).
+        // This check prevents a stale winner at the Rift open tick.
         let mut rift_seen_contested = false;
         let mut rift_spawners_prev: std::collections::HashSet<i32> =
             std::collections::HashSet::new();
         let mut rift_spawners_cur: std::collections::HashSet<i32> =
             std::collections::HashSet::new();
 
-        // Shared full-protobuf modifier reconstruction keeps this public
-        // lifecycle frame consistent with barriers and effective stats.
+        // Shared full-protobuf modifier state supplies this lifecycle frame.
+        // Barriers and effective stats use the same state.
         struct CachedMod {
             hero_id: i64,
             modifier_id: u32,
@@ -1231,8 +1230,8 @@ impl Demo {
                         pt_last_spawn_time.push(pawn.get_f32(pk_last_spawn));
                         pt_respawn_time.push(pawn.get_f32(pk_respawn));
                         pt_health.push(pawn.get_i64(pk_health));
-                        // Prefer the controller's effective max; fall back to the
-                        // pawn's base max when the controller isn't populated yet.
+                        // Prefer the controller's effective maximum.
+                        // Use the pawn base maximum until the controller is ready.
                         let eff_max_health = ctrl.get_i64(ck_health_max);
                         pt_max_health.push(if eff_max_health > 0 {
                             eff_max_health

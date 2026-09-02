@@ -1,12 +1,14 @@
 # 📖 Examples
 
-Practical examples showing how to use boon for common Deadlock replay analysis tasks.
+These examples show common Deadlock replay analysis tasks.
 
 ## Resolving IDs to names
 
-Boon DataFrames use raw integer IDs for heroes, teams, abilities, and modifiers rather than strings. This keeps the data compact and fast to filter, group, and join on — you never pay for string comparisons in hot loops. It also means the data is stable: IDs don't change if Valve renames a hero or ability.
+Boon DataFrames use integer IDs for heroes, teams, abilities, and modifiers.
+The IDs keep data compact and make operations fast. IDs do not change when
+Valve renames a hero or ability.
 
-When you need human-readable names, boon provides module-level mapping functions that return `dict[int, str]`:
+Use the module mapping functions to get human-readable names. They return `dict[int, str]`:
 
 ```python
 from boon import hero_names, team_names, ability_names, modifier_names, game_mode_names

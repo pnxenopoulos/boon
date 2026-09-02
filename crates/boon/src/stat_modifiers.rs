@@ -49,22 +49,21 @@ impl StatModifierKind {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecodedStatModifierValue {
     pub kind: StatModifierKind,
-    /// Multiplier that converts the raw accumulated value into Boon's signed
-    /// canonical value. Most entries are additive; explicit resistance
-    /// reduction entries use `-1.0`.
+    /// Multiplier that converts the raw value to Boon's signed value.
+    /// Most entries add a value.
+    /// Resistance reduction entries use `-1.0`.
     pub value_scale: f32,
 }
 
 /// Decode the numeric `EModifierValue` stored in
 /// `m_PlayerDataGlobal.m_vecStatViewerModifierValues[*].m_eValType`.
 ///
-/// Demo send tables preserve the enum's numeric discriminant, but not its
-/// symbolic member name. These discriminants are not stable wire IDs: Valve
-/// renumbered `EModifierValue` between the captured build 10725 and build
-/// 10854.
+/// Demo send tables keep the numeric enum value. They do not keep the member
+/// name. These values are not stable wire IDs. Valve changed
+/// `EModifierValue` between captured builds 10725 and 10854.
 ///
-/// The first value in each alias pair was observed in build 10725; the second
-/// was observed in build 10854:
+/// The first value in each pair is from build 10725.
+/// The second value is from build 10854:
 ///
 /// | Canonical stat       | 10725 | 10854 |
 /// |----------------------|------:|------:|
@@ -75,18 +74,17 @@ pub struct DecodedStatModifierValue {
 /// | cooldown reduction   |   109 |    98 |
 /// | ammo                 |   172 |    63 |
 ///
-/// These discriminants are pairwise disjoint, and this controller vector is
-/// interpreted in the narrower context of permanent stat-viewer modifiers.
-/// Accepting both observed aliases is therefore unambiguous and avoids
-/// guessing the enum layout from an individual controller snapshot. Values
-/// 32-35 were additionally observed in build 10854 as signed spirit/bullet
-/// resistance entries; captured build-10725 vectors do not use them.
+/// Each pair contains different numbers. This controller vector contains
+/// permanent stat-viewer modifiers. Therefore, this table can accept both
+/// layouts without ambiguity. It does not have to guess a layout from one
+/// controller snapshot. Build 10854 also uses values 32-35 for signed spirit
+/// and bullet resistance. Captured build-10725 vectors do not use these
+/// values.
 ///
-/// This is a compatibility alias table, not a claim that either numbering is
-/// permanently stable. When supporting another build, verify the observed
-/// `m_eValType` values. If Valve ever reuses one of these numbers for a
-/// different canonical stat, this decoder must become build/layout-aware
-/// instead of adding another unconditional alias.
+/// This table contains observed aliases. It does not define stable wire IDs.
+/// For each new build, verify the observed `m_eValType` values. Do not add an
+/// alias if Valve assigns an existing number to a different stat. In that case,
+/// select the layout from the build number.
 pub const fn decode_stat_modifier_value_type(value_type: u32) -> Option<DecodedStatModifierValue> {
     let (kind, value_scale) = match value_type {
         31 | 43 => (StatModifierKind::Health, 1.0),
