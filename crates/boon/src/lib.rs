@@ -55,6 +55,8 @@
 //! ```
 
 pub mod abilities;
+pub mod ability_display_names;
+pub mod breakables;
 pub mod demo;
 pub mod entity;
 pub mod error;
@@ -69,18 +71,21 @@ pub mod patron_phases;
 pub mod position;
 pub mod resistances;
 pub mod stat_catalog;
+pub mod stat_modifiers;
 pub mod stats;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
 pub use abilities::{ability_name, all_abilities};
+pub use ability_display_names::{ability_display_name, all_ability_display_names};
+pub use breakables::{all_breakables, breakable_name};
 pub use demo::{
     CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name, decode_event_payload,
 };
 pub use entity::{
-    ClassEntry, ClassInfo, ENTITY_HANDLE_INDEX_MASK, Entity, EntityContainer, FieldValue,
-    INVALID_ENTITY_HANDLE, Serializer, SerializerContainer, SerializerField, StringTable,
-    StringTableContainer, StringTableEntry, protobuf_handle_index,
+    ClassEntry, ClassInfo, ENTITY_HANDLE_INDEX_MASK, Entity, EntityChange, EntityChangeKind,
+    EntityContainer, EntityId, FieldValue, INVALID_ENTITY_HANDLE, Serializer, SerializerContainer,
+    SerializerField, StringTable, StringTableContainer, StringTableEntry, protobuf_handle_index,
 };
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};
@@ -93,6 +98,9 @@ pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
 pub use resistances::{
     HeroResistanceStats, ItemResistanceStats, hero_resistance_stats, item_resistance_stats,
+};
+pub use stat_modifiers::{
+    DecodedStatModifierValue, StatModifierKind, decode_stat_modifier_value_type,
 };
 pub use stats::{
     STAT_COUNT, StatBlock, StatEffect, StatId, StatLayers, StatMask, StatOperation,

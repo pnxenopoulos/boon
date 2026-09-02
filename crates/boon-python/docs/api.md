@@ -18,7 +18,6 @@ to extract metadata.
 - `InvalidDemoError` -- If the file is not a valid demo.
 - `DemoHeaderError` -- If required fields (build number, map name) are missing from the file header.
 - `DemoInfoError` -- If required fields (playback ticks, playback time) are missing from the file info.
-- `DemoMessageError` -- If the match ID could not be resolved from game entities.
 
 **Parameters:**
 
@@ -161,6 +160,11 @@ An unsupported stack rule is never guessed: Boon applies one copy and sets
 `*_complete` to false. Modifiers with `in_aura_range == false` do not apply.
 A permanent item modifier is deduplicated from the item contribution already
 in the baseline.
+
+These values are analytical reconstructions from replicated state and the
+generated VData catalog, not authoritative server totals. `*_complete` reports
+known source/formula coverage; it does not claim that Valve's exact operation
+ordering, caps, and dynamic runtime values have all been independently verified.
 
 #### `stat_effects()`
 
@@ -657,6 +661,18 @@ Damage events. Auto-loads on first access if not already loaded via `load()`.
 | `crit_damage` | `float` | Critical damage amount |
 | `attacker_class` | `int` | The attacker's entity class ID |
 | `victim_class` | `int` | The victim's entity class ID |
+| `ability_id` | `int` | Raw ability/weapon ID, or `0` when absent; resolve with `ability_names()` |
+| `damage_type` | `int` | Raw Source `type` damage bitfield |
+| `citadel_type` | `int` | Deadlock damage category; `3` is melee-typed damage |
+| `damage_flags` | `int` | Raw Valve damage flags used for detailed classification |
+| `is_melee` | `bool` | Whether this is melee-typed damage (`citadel_type == 3`) |
+| `melee_type` | `str` or null | `"light"`, `"heavy"`, or `"other"` for melee-typed damage; null otherwise |
+
+`is_melee` directly reflects Valve's melee damage category. The
+`DFLAG_LIGHT_MELEE` and `DFLAG_HEAVY_MELEE` bits distinguish light and heavy
+hits; melee-typed abilities, NPC attacks, and ambiguous flag combinations
+receive `melee_type="other"`. Boon does not infer melee from ability names or
+damage amount.
 
 ---
 
@@ -882,6 +898,79 @@ Not loaded by default. Access this property or call `load("neutrals")` explicitl
 
 ---
 
+#### `breakables`
+
+```python
+demo.breakables  # polars.DataFrame
+```
+
+Breakable map-prop destruction events. Tracks
+`CCitadel_BreakableProp` entities. Deadlock represents a broken prop as a PVS
+leave without a health-zero update or permanent delete. Boon keeps that leave
+as a candidate through the end of parsing and emits it only if the same
+`(entity_id, entity_serial)` identity never reactivates. Full-packet
+delete/create replacements are ignored.
+
+The server does not first report health zero or a dead lifestate, so those
+synthetic columns are deliberately omitted. Position and team are the last
+values observed before the terminal leave.
+
+Not loaded by default. Access this property or call `load("breakables")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | Tick when the prop was broken |
+| `event` | `str` | Always `"broken"` |
+| `entity_id` | `int` | Entity slot index |
+| `entity_serial` | `int` | Serial distinguishing reuse of the slot |
+| `subclass_id` | `int` | Raw unsigned `m_nSubclassID` hash |
+| `subclass_name` | `str` | Resolved internal subclass name, or `"BREAKABLE_NOT_FOUND"` |
+| `team_num` | `int` | Last-known team |
+| `x` | `float` | Last-known X position in world (Hammer) units |
+| `y` | `float` | Last-known Y position in world (Hammer) units |
+| `z` | `float` | Last-known Z position in world (Hammer) units |
+
+---
+
+#### `sinners_sacrifice`
+
+```python
+demo.sinners_sacrifice  # polars.DataFrame
+```
+
+Sinner's Sacrifice machine lifecycle and hit events. Tracks both
+`CNPC_Neutral_SinnersSacrifice` and
+`CNPC_Neutral_SinnersSacrifice_Hideout`. Boon combines the entity stream with
+Damage messages: entity state supplies stable identity, health, and position,
+while each Damage message supplies the exact victim, incoming damage, and
+attacker hero. A health decrease without a matching message is retained with
+`attacker_hero_id=0` rather than being silently dropped.
+
+`health` is the machine state at the end of the tick, so multiple hit messages
+on one machine in one tick can share the same health value. Completed machines
+remain alive at one health, and inactive machines can omit health fields;
+therefore this dataset does not expose a fabricated death or lifestate event.
+
+Not loaded by default. Access this property or call
+`load("sinners_sacrifice")` explicitly.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | Tick when the event occurred |
+| `event` | `str` | `"spawned"`, `"hit"`, or `"reset"` |
+| `entity_id` | `int` | Entity slot index |
+| `entity_serial` | `int` | Serial distinguishing reuse of the slot |
+| `attacker_hero_id` | `int` | Attacker hero ID, or `0` when unresolved/not applicable |
+| `damage` | `int` | Incoming damage, or `0` for spawned/reset events |
+| `health` | `int` | Machine health at the end of this tick |
+| `max_health` | `int` | Maximum machine health |
+| `team_num` | `int` | Machine team |
+| `x` | `float` | X position in world (Hammer) units |
+| `y` | `float` | Y position in world (Hammer) units |
+| `z` | `float` | Z position in world (Hammer) units |
+
+---
+
 #### `stat_modifier_events`
 
 ```python
@@ -912,8 +1001,10 @@ Raw active buff/debuff modifier instances on players. Tracks `applied`,
 `removed` events for each Source 2 modifier serial.
 
 One ability can create several internal modifier instances at once. Do not
-interpret the number of rows as a stack count; use `stacks`. Use `serial` to
-reconstruct an individual instance's lifecycle.
+interpret the number of rows as a stack count; use `stacks`. A `serial`
+distinguishes concurrently live entries but the game can reuse it after removal.
+Reconstruct each affected hero's successive apply/change/remove cycles rather
+than treating a serial as a globally unique lifecycle ID.
 
 Not loaded by default. Access this property or call `load("active_modifiers")` explicitly.
 
@@ -922,7 +1013,7 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 | `tick` | `int` | The game tick when the modifier event occurred |
 | `hero_id` | `int` | The affected player's hero ID |
 | `event` | `str` | `"applied"`, `"changed"` (live state changed), or `"removed"` |
-| `serial` | `int` | Source 2 modifier serial identifying one lifecycle |
+| `serial` | `int` | Source 2 runtime identifier; unique while live, reusable after removal |
 | `modifier_id` | `int` | Raw modifier subclass hash ID (use `modifier_names()` to resolve) |
 | `ability_id` | `int` | Raw ability subclass hash ID (use `ability_names()` to resolve) |
 | `duration` | `float` | Current modifier duration in seconds (`-1` when indefinite) |
@@ -1070,7 +1161,33 @@ ability_names()  # -> dict[int, str]
 
 Return a mapping of MurmurHash2 ability ID to ability name.
 
-**Returns:** `dict[int, str]` -- Ability hash to name mapping.
+The returned values are stable internal VData names such as
+`upgrade_quick_silver`, not localized in-game labels.
+
+**Returns:** `dict[int, str]` -- Ability hash to internal-name mapping.
+
+---
+
+### `ability_display_names()`
+
+```python
+from boon import ability_display_names
+
+ability_display_names()  # -> dict[str, str]
+```
+
+Return exact current internal ability/item names mapped to their English
+in-game display names. This includes `ability_*`, `upgrade_*`, and
+`citadel_ability_*` naming schemes. For example,
+`upgrade_quick_silver` maps to `"Quicksilver Reload"`, while
+`ability_unicorn_luminousstrike` maps to `"Radiant Daggers"`.
+`citadel_ability_hook` maps to `"Grapple Arm"`.
+
+Hidden, test, retired, or otherwise unlocalized internal entries are omitted;
+Boon never invents a display name by stripping prefixes or title-casing.
+
+**Returns:** `dict[str, str]` -- Internal ability/item name to English display
+name mapping.
 
 ---
 
@@ -1262,7 +1379,8 @@ Raised when required fields are missing from the demo file info (playback ticks,
 from boon import DemoMessageError
 ```
 
-Raised when required data could not be resolved from demo messages (e.g., match ID from `CCitadelGameRulesProxy`).
+Raised when a requested protobuf message is absent or cannot be decoded, such
+as post-match details or a malformed kill/damage event.
 
 ---
 

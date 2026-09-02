@@ -18,6 +18,8 @@ ALL_DATASETS = [
     "kills",
     "mid_boss",
     "neutrals",
+    "breakables",
+    "sinners_sacrifice",
     "objectives",
     "player_ticks",
     "rift",

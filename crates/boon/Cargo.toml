@@ -23,9 +23,6 @@ thiserror = "2.0"
 
 boon-proto = { workspace = true }
 
-[profile.dev]
-opt-level = 1
-
 [dev-dependencies]
 criterion = "0.5"
 

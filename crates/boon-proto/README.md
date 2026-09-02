@@ -18,7 +18,7 @@ This crate contains auto-generated Rust code produced by [`prost`](https://githu
 
 ```toml
 [dependencies]
-boon-proto = "0.2"
+boon-proto = "0.3"
 ```
 
 ## Usage
@@ -45,7 +45,11 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 
 ## Version tracking
 
-The `[package.metadata.boon-proto]` section in `Cargo.toml` records the Deadlock client/server version the protos were extracted from.
+The crate version records the upstream build as
+`MAJOR.MINOR.SourceRevision+ServerVersion`. `MAJOR.MINOR` is Boon's protobuf API
+compatibility epoch; the monotonic Deadlock source revision is the patch
+version, and SemVer build metadata records the server build. Running
+`scripts/sync-protos.sh` updates this version automatically.
 
 ## License
 

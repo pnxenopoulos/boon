@@ -85,19 +85,28 @@ This updates the files under `crates/boon-proto/proto/` and regenerates `crates/
 
 ## Updating the Name Lookup Tables
 
-Ability/item and modifier IDs in demo events are MurmurHash2 hashes of their string names. The lookup tables at `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs` are generated from Deadlock's `abilities.vdata` and `modifiers.vdata`.
+Ability/item, modifier, and breakable subclass IDs are MurmurHash2 hashes of
+their internal names. The generator joins Deadlock's `abilities.vdata`,
+`modifiers.vdata`, `heroes.vdata`, and `misc.vdata` with the English hero
+and item localization catalogs to produce token lookups, display names,
+resistance inputs, and stat-effect metadata.
 
 ```bash
 # Fetch the latest vdata files from SteamDB and regenerate the tables
 ./scripts/sync-name-tables.sh
 ```
 
-This regenerates `crates/boon/src/abilities.rs` and `crates/boon/src/modifiers.rs`.
+This regenerates `abilities.rs`, `ability_display_names.rs`, `breakables.rs`,
+`modifiers.rs`, `resistances.rs`, and `stat_catalog.rs` under
+`crates/boon/src/`.
 
-If you already have `abilities.vdata` and `modifiers.vdata` locally (e.g., extracted from the game's VPK data using [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)), you can skip the fetch step and run the generator directly:
+If you already have those VData and localization inputs locally (for example,
+after extracting the game's VPK data with
+[Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)),
+place all six files in the repository root and run the generator directly:
 
 ```bash
-# Run from the repo root with abilities.vdata and modifiers.vdata in the working directory
+# Run from the repo root with the four VData and two localization files present
 cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 ```
 
@@ -115,15 +124,18 @@ tag and GitHub Release.
 | `boon` | crates.io (`boon-deadlock`) | `boon-v<version>` |
 | `boon-python` | PyPI (`boon-deadlock`) | `boon-python-v<version>` |
 
-For a coordinated release, run the workflow three times in this order:
+For a coordinated release, run the workflow to completion three times in this
+order:
 
 1. `boon-proto`
 2. `boon`
 3. `boon-python`
 
-This order is enforced. A `boon` release requires the repository's exact
-`boon-proto` version to exist on crates.io, and a `boon-python` release
-requires the exact `boon-deadlock` version to exist there.
+This order is enforced. Wait for each package-index upload to become visible
+before dispatching the next component. A `boon` release requires the
+repository's exact `boon-proto` version to exist on crates.io, and a
+`boon-python` release requires the exact `boon-deadlock` version to exist
+there.
 
 Before dispatching a release:
 

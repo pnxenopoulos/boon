@@ -39,6 +39,15 @@ def ability_names() -> dict[int, str]:
     """Return a mapping of MurmurHash2 ability ID to ability name."""
     ...
 
+def ability_display_names() -> dict[str, str]:
+    """Return exact internal ability/item names mapped to English display names.
+
+    Includes exact localized top-level entries such as ability_*, upgrade_*,
+    and citadel_ability_*. Unlocalized internal names are omitted rather than
+    assigned a synthesized name.
+    """
+    ...
+
 def modifier_names() -> dict[int, str]:
     """Return a mapping of MurmurHash2 modifier ID to modifier name."""
     ...
@@ -85,7 +94,6 @@ class Demo:
         InvalidDemoError: If the file is not a valid demo file.
         DemoHeaderError: If required fields are missing from the file header.
         DemoInfoError: If required fields are missing from the file info.
-        DemoMessageError: If the match ID could not be resolved from game entities.
 
     Example:
         >>> demo = Demo("match.dem")
@@ -300,7 +308,10 @@ class Demo:
 
         Each requested stat produces _native, _baseline, _effective, and
         _complete columns. Percentage stats use percentage points. Tick
-        selectors match those supported by snapshots().
+        selectors match those supported by snapshots(). Values are analytical
+        reconstructions; _complete reports known source/formula coverage, not
+        independent verification of Valve's exact operation ordering, caps, or
+        dynamic runtime values.
         """
         ...
 
@@ -579,6 +590,12 @@ class Demo:
             - **crit_damage** (*float*) -- Critical damage amount.
             - **attacker_class** (*int*) -- The attacker's entity class ID.
             - **victim_class** (*int*) -- The victim's entity class ID.
+            - **ability_id** (*int*) -- The ability/weapon responsible, or 0 when absent.
+            - **damage_type** (*int*) -- Raw Source ``type`` damage bitfield.
+            - **citadel_type** (*int*) -- Deadlock damage category; 3 is melee-typed damage.
+            - **damage_flags** (*int*) -- Raw Valve damage flags.
+            - **is_melee** (*bool*) -- Whether this is melee-typed damage (``citadel_type == 3``).
+            - **melee_type** (*str | None*) -- ``"light"``, ``"heavy"``, or ``"other"`` for melee-typed damage; null otherwise.
         """
         ...
 
@@ -755,6 +772,63 @@ class Demo:
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.
             - **entity_id** (*int*) -- Entity index (stable per neutral across ticks).
+        """
+        ...
+
+    @property
+    def breakables(self) -> pl.DataFrame:
+        """Breakable map-prop destruction events as a Polars DataFrame.
+
+        Deadlock represents a broken CCitadel_BreakableProp as an entity
+        leaving the PVS. Boon emits the candidate only if the same index and
+        serial never reactivate later in the demo, and ignores full-packet
+        delete/create replacements.
+
+        Health and lifestate are intentionally omitted because the server
+        does not report a final health-zero or dead state.
+
+        Not loaded by default. Access this property or call load("breakables") explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the prop was broken.
+            - **event** (*str*) -- Always "broken".
+            - **entity_id** (*int*) -- Entity slot index.
+            - **entity_serial** (*int*) -- Serial distinguishing reuse of the slot.
+            - **subclass_id** (*int*) -- Raw unsigned breakable subclass hash ID.
+            - **subclass_name** (*str*) -- Resolved internal subclass name, or "BREAKABLE_NOT_FOUND".
+            - **team_num** (*int*) -- The prop's last-known team.
+            - **x** (*float*) -- Last-known X position.
+            - **y** (*float*) -- Last-known Y position.
+            - **z** (*float*) -- Last-known Z position.
+        """
+        ...
+
+    @property
+    def sinners_sacrifice(self) -> pl.DataFrame:
+        """Sinner's Sacrifice machine lifecycle and hit events.
+
+        Tracks both the standard and Hideout machine entity classes. Damage
+        messages provide the exact victim entity, incoming damage, and attacker
+        hero. An unmatched entity health decrease is retained as a hit with an
+        unresolved attacker. ``health`` is the machine state at the end of the
+        tick, so multiple hits in one tick can share the same value.
+
+        Not loaded by default. Access this property or call
+        ``load("sinners_sacrifice")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the event occurred.
+            - **event** (*str*) -- ``"spawned"``, ``"hit"``, or ``"reset"``.
+            - **entity_id** (*int*) -- Entity slot index.
+            - **entity_serial** (*int*) -- Serial distinguishing reuse of the slot.
+            - **attacker_hero_id** (*int*) -- Attacker hero ID, or 0 when unresolved/not applicable.
+            - **damage** (*int*) -- Incoming damage, or 0 for spawned/reset events.
+            - **health** (*int*) -- Machine health at the end of this tick.
+            - **max_health** (*int*) -- Maximum machine health.
+            - **team_num** (*int*) -- The machine's team.
+            - **x** (*float*) -- X position.
+            - **y** (*float*) -- Y position.
+            - **z** (*float*) -- Z position.
         """
         ...
 

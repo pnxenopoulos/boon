@@ -1,7 +1,9 @@
 //! Run: cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 //!
-//! Generates ability/modifier names, resistance inputs, and the stat effect catalog
-//! from Deadlock's abilities.vdata, modifiers.vdata, and heroes.vdata.
+//! Generates ability/modifier/breakable names, English ability/item display
+//! names, resistance inputs, and the stat effect catalog from Deadlock's
+//! abilities.vdata, modifiers.vdata, heroes.vdata, misc.vdata, and English
+//! localization files.
 //!
 //! These files come from Deadlock's VPK game data, extracted using
 //! Source2Viewer (ValveResourceFormat). They use Valve's KV3 format — a
@@ -14,7 +16,11 @@
 //! hash of the modifier's *subclass name*, i.e. its `_my_subclass_name` (or,
 //! for the generic modifiers in modifiers.vdata, its top-level key).
 //!
-//! Ability names are the top-level keys of abilities.vdata.
+//! Ability names are the top-level keys of abilities.vdata. English display
+//! names are the exact top-level keys shared by abilities.vdata and Valve's
+//! hero/item localization catalogs. Intersecting the two sources excludes
+//! description, search-alias, modifier, and stale localization tokens while
+//! covering `ability_*`, `upgrade_*`, `citadel_ability_*`, and future schemes.
 //!
 //! The modifier name table is the union of three vdata-derived sources:
 //!   1. every top-level key in modifiers.vdata — the generic/global modifiers;
@@ -30,7 +36,7 @@
 
 mod stats;
 
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -124,6 +130,142 @@ fn extract_top_level_keys(content: &str) -> Vec<&str> {
         names.push(key);
     }
 
+    names
+}
+
+/// Extract all quoted strings from one Valve localization line.
+///
+/// Valve's localization format is KV1-like rather than KV3. Most lines hold a
+/// quoted token and quoted value, but a few upstream lines contain more than
+/// one pair. This scanner handles both cases, escaped quotes, and `//` comments
+/// without treating quoted `//` text as a comment.
+fn quoted_localization_values(line: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut chars = line.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '/' && chars.peek() == Some(&'/') {
+            break;
+        }
+        if ch != '"' {
+            continue;
+        }
+
+        let mut value = String::new();
+        while let Some(ch) = chars.next() {
+            match ch {
+                '"' => {
+                    values.push(value);
+                    break;
+                }
+                '\\' => {
+                    let Some(escaped) = chars.next() else {
+                        value.push('\\');
+                        break;
+                    };
+                    match escaped {
+                        'n' => value.push('\n'),
+                        'r' => value.push('\r'),
+                        't' => value.push('\t'),
+                        '"' => value.push('"'),
+                        '\\' => value.push('\\'),
+                        other => {
+                            value.push('\\');
+                            value.push(other);
+                        }
+                    }
+                }
+                other => value.push(other),
+            }
+        }
+    }
+
+    values
+}
+
+/// Join exact top-level VData keys to their English localization values.
+/// Missing localization is valid for hidden, test, and retired entries, so
+/// those names are omitted rather than synthesized.
+fn extract_ability_display_names(
+    ability_names: &[&str],
+    localization_contents: &[&str],
+) -> Vec<(String, String)> {
+    let known_names: HashSet<&str> = ability_names.iter().copied().collect();
+    let mut display_names = BTreeMap::new();
+
+    for content in localization_contents {
+        for line in content.lines() {
+            let values = quoted_localization_values(line);
+            for pair in values.chunks_exact(2) {
+                let internal_name = &pair[0];
+                let display_name = &pair[1];
+                if !known_names.contains(internal_name.as_str()) || display_name.is_empty() {
+                    continue;
+                }
+
+                if let Some(previous) =
+                    display_names.insert(internal_name.clone(), display_name.clone())
+                {
+                    assert_eq!(
+                        previous, *display_name,
+                        "conflicting English display names for {internal_name}"
+                    );
+                }
+            }
+        }
+    }
+
+    display_names.into_iter().collect()
+}
+
+/// Extract top-level object names whose direct `_class` matches `target_class`.
+///
+/// `misc.vdata` is a flat catalog: each entity template is a top-level object,
+/// and its discriminator is a direct child two tabs deep. Restricting the class
+/// check to that depth prevents a nested child class from classifying its parent.
+fn extract_top_level_keys_by_class<'a>(content: &'a str, target_class: &str) -> Vec<&'a str> {
+    let mut names = Vec::new();
+    let mut current_name: Option<&str> = None;
+    let mut current_matches = false;
+
+    let flush = |name: &mut Option<&'a str>, matches: &mut bool, names: &mut Vec<&'a str>| {
+        if *matches
+            && let Some(name) = name.take()
+        {
+            names.push(name);
+        }
+        *name = None;
+        *matches = false;
+    };
+
+    for line in content.lines() {
+        if let Some(rest) = line.strip_prefix('\t')
+            && !rest.starts_with('\t')
+        {
+            let key_end = rest
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            let after = rest[key_end..].trim_start();
+            if key_end > 0 && after.starts_with('=') {
+                flush(&mut current_name, &mut current_matches, &mut names);
+                let key = &rest[..key_end];
+                if !["generic_data_type", "_include"].contains(&key) {
+                    current_name = Some(key);
+                }
+                continue;
+            }
+        }
+
+        if current_name.is_some()
+            && line.starts_with("\t\t")
+            && !line.starts_with("\t\t\t")
+            && kv3_string_value(line.trim(), "_class") == Some(target_class)
+        {
+            current_matches = true;
+        }
+    }
+
+    flush(&mut current_name, &mut current_matches, &mut names);
     names
 }
 
@@ -318,6 +460,111 @@ fn write_hash_table(
 
     eprintln!(
         "Wrote {} with {} entries",
+        output_path.display(),
+        entries.len()
+    );
+}
+
+/// Generate the exact internal-name → English display-name table.
+fn write_ability_display_name_table(
+    output_path: &Path,
+    entries: &[(String, String)],
+    today: &str,
+) {
+    let mut out = fs::File::create(output_path).expect("failed to create output file");
+
+    writeln!(
+        out,
+        "//! Auto-generated by scripts/generate-name-tables from abilities.vdata"
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "//! and Deadlock's English hero/item localization catalogs."
+    )
+    .unwrap();
+    writeln!(out, "//! Maps exact internal ability/item names to English display names.")
+        .unwrap();
+    writeln!(out, "//!").unwrap();
+    writeln!(out, "//! Last updated: {today}").unwrap();
+    writeln!(out).unwrap();
+
+    writeln!(
+        out,
+        "/// All known (internal name, English display name) pairs sorted by internal name."
+    )
+    .unwrap();
+    writeln!(out, "const ENTRIES: &[(&str, &str)] = &[").unwrap();
+    for (internal_name, display_name) in entries {
+        writeln!(out, "    ({internal_name:?}, {display_name:?}),").unwrap();
+    }
+    writeln!(out, "];").unwrap();
+    writeln!(out).unwrap();
+
+    writeln!(
+        out,
+        "/// Look up an English display name by exact internal ability/item name."
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "pub fn ability_display_name(internal_name: &str) -> Option<&'static str> {{"
+    )
+    .unwrap();
+    writeln!(out, "    match internal_name {{").unwrap();
+    for (internal_name, display_name) in entries {
+        writeln!(
+            out,
+            "        {internal_name:?} => Some({display_name:?}),"
+        )
+        .unwrap();
+    }
+    writeln!(out, "        _ => None,").unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+
+    writeln!(
+        out,
+        "/// Return all exact internal-name to English display-name pairs."
+    )
+    .unwrap();
+    writeln!(
+        out,
+        "pub fn all_ability_display_names() -> &'static [(&'static str, &'static str)] {{"
+    )
+    .unwrap();
+    writeln!(out, "    ENTRIES").unwrap();
+    writeln!(out, "}}").unwrap();
+    writeln!(out).unwrap();
+
+    writeln!(out, "#[cfg(test)]").unwrap();
+    writeln!(out, "mod tests {{").unwrap();
+    writeln!(out, "    use super::*;").unwrap();
+    if let Some((internal_name, display_name)) = entries.first() {
+        writeln!(out).unwrap();
+        writeln!(out, "    #[test]").unwrap();
+        writeln!(out, "    fn known_entry() {{").unwrap();
+        writeln!(
+            out,
+            "        assert_eq!(ability_display_name({internal_name:?}), Some({display_name:?}));"
+        )
+        .unwrap();
+        writeln!(out, "    }}").unwrap();
+    }
+    writeln!(out).unwrap();
+    writeln!(out, "    #[test]").unwrap();
+    writeln!(out, "    fn unknown_name() {{").unwrap();
+    writeln!(
+        out,
+        "        assert_eq!(ability_display_name(\"not_a_real_ability\"), None);"
+    )
+    .unwrap();
+    writeln!(out, "    }}").unwrap();
+    writeln!(out, "}}").unwrap();
+
+    eprintln!(
+        "Wrote {} with {} localized entries",
         output_path.display(),
         entries.len()
     );
@@ -686,7 +933,12 @@ fn main() {
     let abilities_path = vdata_dir.join("abilities.vdata");
     let modifiers_path = vdata_dir.join("modifiers.vdata");
     let heroes_path = vdata_dir.join("heroes.vdata");
+    let misc_path = vdata_dir.join("misc.vdata");
+    let hero_localization_path = vdata_dir.join("citadel_heroes_english.txt");
+    let item_localization_path = vdata_dir.join("citadel_gc_mod_names_english.txt");
     let abilities_output = Path::new("crates/boon/src/abilities.rs");
+    let ability_display_names_output = Path::new("crates/boon/src/ability_display_names.rs");
+    let breakables_output = Path::new("crates/boon/src/breakables.rs");
     let modifiers_output = Path::new("crates/boon/src/modifiers.rs");
     let resistances_output = Path::new("crates/boon/src/resistances.rs");
     let stat_catalog_output = Path::new("crates/boon/src/stat_catalog.rs");
@@ -696,6 +948,9 @@ fn main() {
     let abilities_content = read_optional_vdata(&abilities_path);
     let modifiers_content = read_optional_vdata(&modifiers_path);
     let heroes_content = read_optional_vdata(&heroes_path);
+    let misc_content = read_optional_vdata(&misc_path);
+    let hero_localization_content = read_optional_vdata(&hero_localization_path);
+    let item_localization_content = read_optional_vdata(&item_localization_path);
 
     // --- abilities.vdata → abilities.rs ---
     if std::env::var_os("BOON_STATS_ONLY").is_some() {
@@ -720,9 +975,56 @@ fn main() {
             "ABILITY_NOT_FOUND",
             &today,
         );
+
+        let localization_contents: Vec<&str> = [
+            hero_localization_content.as_deref(),
+            item_localization_content.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+        if localization_contents.is_empty() {
+            eprintln!(
+                "English hero/item localization not found (skipping ability_display_names.rs)"
+            );
+        } else {
+            let display_entries = extract_ability_display_names(&names, &localization_contents);
+            eprintln!(
+                "Localized {} of {} top-level ability/item names",
+                display_entries.len(),
+                names.len()
+            );
+            write_ability_display_name_table(
+                ability_display_names_output,
+                &display_entries,
+                &today,
+            );
+        }
         stats::generate(content, stat_catalog_output, &today);
     } else {
         eprintln!("abilities.vdata not found (skipping abilities.rs)");
+    }
+
+    // Breakable subclass IDs are CUtlStringToken hashes of the top-level
+    // misc.vdata names whose gameplay class is citadel_breakable_prop.
+    if let Some(content) = &misc_content {
+        let names = extract_top_level_keys_by_class(content, "citadel_breakable_prop");
+        eprintln!(
+            "Extracted {} breakable subclass names from misc.vdata",
+            names.len()
+        );
+        let entries = hash_entries(&names);
+        write_hash_table(
+            breakables_output,
+            &entries,
+            "misc.vdata (`citadel_breakable_prop` entries)",
+            "breakable_name",
+            "all_breakables",
+            "BREAKABLE_NOT_FOUND",
+            &today,
+        );
+    } else {
+        eprintln!("misc.vdata not found (skipping breakables.rs)");
     }
 
     // --- modifiers → modifiers.rs ---
@@ -807,4 +1109,86 @@ fn chrono_free_today() -> String {
         .expect("invalid utf8 from date")
         .trim()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_localization_pairs_and_escapes() {
+        let line = r#"	"ability_test" "A \"Quoted\" // Name" "upgrade_test" "Line\nTwo" // "ignored" "Ignored""#;
+
+        assert_eq!(
+            quoted_localization_values(line),
+            vec![
+                "ability_test",
+                "A \"Quoted\" // Name",
+                "upgrade_test",
+                "Line\nTwo",
+            ]
+        );
+    }
+
+    #[test]
+    fn display_names_require_exact_vdata_keys() {
+        let ability_names = vec![
+            "ability_test",
+            "upgrade_test",
+            "ability_missing",
+            "citadel_ability_test",
+        ];
+        let hero_localization = concat!(
+            "	\"ability_test\" \"Hero Ability\"\n",
+            "	\"ability_test_desc\" \"Not a display name\"\n",
+            "	\"ability_stale\" \"No matching VData entry\"\n",
+            "	\"citadel_ability_test\" \"Class-prefixed Ability\"\n",
+        );
+        let item_localization = "	\"upgrade_test\" \"Shop Item\"\n";
+
+        assert_eq!(
+            extract_ability_display_names(
+                &ability_names,
+                &[hero_localization, item_localization]
+            ),
+            vec![
+                ("ability_test".to_string(), "Hero Ability".to_string()),
+                (
+                    "citadel_ability_test".to_string(),
+                    "Class-prefixed Ability".to_string(),
+                ),
+                ("upgrade_test".to_string(), "Shop Item".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn extracts_only_direct_breakable_classes() {
+        let content = concat!(
+            "{\n",
+            "\tgeneric_data_type = \"misc\"\n",
+            "\tcitadel_breakable_prop_wooden_crate =\n",
+            "\t{\n",
+            "\t\t_class = \"citadel_breakable_prop\"\n",
+            "\t}\n",
+            "\tnon_breakable_parent =\n",
+            "\t{\n",
+            "\t\t_class = \"some_other_class\"\n",
+            "\t\tchild =\n",
+            "\t\t{\n",
+            "\t\t\t_class = \"citadel_breakable_prop\"\n",
+            "\t\t}\n",
+            "\t}\n",
+            "\tvehicle_car_01 =\n",
+            "\t{\n",
+            "\t\t_class = \"citadel_breakable_prop\"\n",
+            "\t}\n",
+            "}\n",
+        );
+
+        assert_eq!(
+            extract_top_level_keys_by_class(content, "citadel_breakable_prop"),
+            vec!["citadel_breakable_prop_wooden_crate", "vehicle_car_01"]
+        );
+    }
 }

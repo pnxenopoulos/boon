@@ -1,10 +1,34 @@
 # 📝 Changelog
 
-## 0.8.0 (unreleased)
-
-0.8.0 is under development.
+## 0.8.0
 
 ### boon-python
+
+- New `ability_display_names()` maps exact current internal ability/item VData
+  names—including `ability_*`, `upgrade_*`, and `citadel_ability_*`—to their
+  English in-game names. The generated table joins current VData keys to
+  Valve's localization catalogs; unlocalized
+  hidden/test/retired entries are omitted instead of receiving guessed names.
+
+- `demo.damage` now includes raw `ability_id`, `damage_type`, `citadel_type`,
+  and `damage_flags`, plus `is_melee` and nullable `melee_type`. `is_melee`
+  covers every melee-typed hit; Valve's explicit damage flags classify `light`
+  and `heavy`, while abilities, NPC attacks, and ambiguous flags remain `other`.
+
+- New opt-in `demo.sinners_sacrifice` dataset combines pbdems2 entity
+  lifecycle/state with Damage messages to report Sinner's Sacrifice machine
+  spawns, resets, and exact hits. Rows include stable index+serial identity,
+  resolved attacker hero, incoming damage, tick-final health, team, and world
+  position; unmatched health decreases are retained as unattributed hits.
+
+- New opt-in `demo.breakables` dataset reports destruction of
+  `CCitadel_BreakableProp` map props with tick, stable entity identity, raw
+  subclass ID, resolved subclass name, team, and last-known world position.
+  It uses pbdems2 0.3.0 lifecycle transitions
+  to retain a PVS leave as a break candidate, cancel it if the same entity
+  identity reactivates, and ignore full-packet delete/create replacements.
+  This avoids rescanning every tracked prop each tick or fabricating a
+  health-zero/dead state the server never sends.
 
 - New `demo.stat_ticks(...)` selectively tracks native, persistent baseline,
   and tick-effective player stats for bullet/spirit resistance, spirit power,
@@ -45,12 +69,23 @@
 - **Faster:** the change-only `ability_upgrades` and `stat_modifier_events`
   datasets process only player controllers updated on the current tick rather
   than rescanning every controller.
+- **Fixed:** `stat_modifier_events` recognises the disjoint `EModifierValue`
+  aliases observed in builds 10725 and 10854. The compatibility decoder is
+  shared by `boon-python` and `boon-dev`, and no longer guesses an enum layout
+  from one controller snapshot.
 - **Fixed:** `active_modifiers` now distinguishes concurrent raw modifier
   instances with a `serial` column and emits `"changed"` when a live
   modifier's duration or application timestamp changes, as well as when its
   stack count changes. A single ability may create multiple internal modifier
   instances (for example, an attached effect plus a kill-check window), so row
   count must not be treated as stack count; `stacks` remains authoritative.
+  Source 2 may reuse a serial after removal, so a serial distinguishes
+  concurrently live instances rather than serving as a globally unique
+  lifecycle ID.
+- **Fixed:** effective stat evaluation sorts simultaneously live modifiers by
+  runtime serial before applying them. Randomized map iteration can no longer
+  change results when non-commutative resistance and flat-reduction effects
+  overlap.
 - **Faster:** `summary()` caches its decoded post-match message and four
   DataFrames after the first call. The scan, protobuf decode, and frame builds
   release the Python interpreter; repeated calls return shallow frame clones
@@ -58,6 +93,17 @@
 
 ### boon
 
+- Updated the entity parser from `pbdems2` 0.2.2 to 0.3.0. Boon now
+  re-exports stable `EntityId` values and typed `EntityChange` /
+  `EntityChangeKind` lifecycle events, so callers can distinguish updates,
+  PVS leaves, permanent deletes, and entity-slot reuse without rebuilding
+  identity from an index alone.
+- New generated `ability_display_name` / `all_ability_display_names` and
+  `breakable_name` / `all_breakables` lookup APIs expose exact English
+  ability/item labels and breakable-prop subclass names to Rust callers.
+- New shared `decode_stat_modifier_value_type` compatibility API normalizes
+  the observed build-10725 and build-10854 `EModifierValue` aliases, including
+  signed bullet/spirit resistance entries.
 - New fixed-size `StatBlock` / `StatMask` engine and explicit `StatId`,
   `StatOperation`, and native/baseline/effective layer semantics.
 - The VData name-table generator now emits a compact catalog of unconditional
@@ -66,11 +112,27 @@
 - New reusable `ModifierState` reconstructs complete `ActiveModifiers` entries
   from partial protobuf deltas and emits typed applied/changed/removed events.
 
+### boon-proto
+
+- Synced protobuf definitions to game build **6684** (`SourceRevision`
+  10933105); `boon-proto` is now `0.3.10933105+6684`. **Breaking:** upstream
+  removed `CMsgClientToGCGetMatchHistoryResponse.Match.not_scored` from the
+  match-history schema. The schema also adds server-mode metadata and
+  low-priority-pool flags. Generated lookup tables refreshed from the same
+  snapshot contain 794 abilities, 1,106 modifiers, 457 exact English
+  ability/item display names, and 30 breakable prop subclasses.
+
 ### Release process
 
 - Releases are now manual and component-scoped. `boon-proto`, `boon`, and
   `boon-python` are published independently, and each component is tagged only
   after its package-index upload succeeds.
+- After merging to `main` and waiting for **CI Check**, run the **Release Boon**
+  workflow to completion for `boon-proto`, then `boon`, then `boon-python`,
+  waiting for each registry upload before starting the next component. The
+  workflow verifies the dependency order and creates the tags and GitHub
+  Releases; maintainers should not create release tags manually. See the
+  repository's `CONTRIBUTING.md` for the full checklist.
 
 ## 0.7.0
 

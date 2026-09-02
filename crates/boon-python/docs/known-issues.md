@@ -4,6 +4,16 @@ Deadlock is in active development, and Valve frequently changes the demo file fo
 
 If you encounter a problem not listed here, please report it on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in the [Discord](https://discord.gg/WmjZHxWrCD).
 
+## Effective stats are reconstructed
+
+`demo.stat_ticks(...)` derives effective stats from replicated player/modifier
+state and a generated VData effect catalog; demos do not expose one authoritative
+total for every supported stat. A `*_complete` value of `true` means every
+known contribution used a supported formula. It does not guarantee that Valve's
+exact operation ordering, caps, or dynamic runtime inputs have all been
+independently verified. Treat effective values as auditable analytical
+reconstructions and use `demo.stat_effects(...)` to inspect their provenance.
+
 ## Banned heroes are frequently absent
 
 `demo.banned_heroes` reads the `k_EUserMsg_BannedHeroes` (msg_type 366) user message, which the server sends once, early in the demo, before the match starts. That message is not reliably present in GOTV recordings: it appears in some older builds and is absent from every newer demo tested so far.

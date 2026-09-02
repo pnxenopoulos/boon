@@ -50,12 +50,17 @@ print(demo.total_clock_time) # "30:00"
 print(demo.winning_team_num) # 2
 
 # Name lookups (module-level — no demo required)
-from boon import hero_names, team_names, ability_names, modifier_names
+from boon import (
+    ability_display_names, ability_names, hero_names, modifier_names, team_names,
+)
 
 print(hero_names())      # {0: "Base", 1: "Infernus", ...}
 print(team_names())      # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
 print(ability_names())   # {46922526: "inherent_base", ...}
 print(modifier_names())  # {2059539911: "timer", ...}
+print(ability_display_names())
+# {"ability_afterburn": "Afterburn", ...,
+#  "upgrade_quick_silver": "Quicksilver Reload"}
 
 # Player info
 print(demo.players)
@@ -68,9 +73,10 @@ print(demo.players)
 player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
 kills            = demo.kills             # kill events
-damage           = demo.damage            # damage events
+damage           = demo.damage            # damage events, including melee classification
 item_purchases   = demo.item_purchases    # item shop transactions
 ability_upgrades = demo.ability_upgrades  # skill point spending
+ability_ticks    = demo.ability_ticks     # cooldown, charge, and slot changes
 abilities        = demo.abilities         # ability usage events
 flex_slots       = demo.flex_slots        # flex slot unlocks
 chat             = demo.chat              # chat messages
@@ -78,10 +84,18 @@ objectives       = demo.objectives        # objective health per tick
 mid_boss         = demo.mid_boss          # mid boss lifecycle events
 troopers         = demo.troopers          # lane trooper state per tick
 neutrals         = demo.neutrals          # neutral creep state changes
+breakables       = demo.breakables        # breakable map-prop destruction events
+sinners_sacrifice = demo.sinners_sacrifice  # Sinner's Sacrifice machine hits
 stat_modifier_events = demo.stat_modifier_events  # permanent stat bonus change events
 active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 urn              = demo.urn               # urn lifecycle and delivery events
 rift             = demo.rift              # rift (koth) lifecycle, one row per rift
+```
+
+```python
+# Selective derived stats (computed on demand, not load() datasets)
+stat_ticks = demo.stat_ticks(["bullet_resist", "spirit_resist"], every=64)
+stat_effects = demo.stat_effects()
 ```
 
 ## CLI
@@ -102,7 +116,7 @@ Run `boon --help` for the full list. See the [CLI docs](https://boon.readthedocs
 ## Features
 
 - Parse Deadlock `.dem` demo files at native speed via Rust
-- 17 built-in datasets covering players, combat, economy, objectives, and map state
+- 22 built-in datasets covering players, combat, economy, objectives, and map state
 - Access to match metadata, player info, entity state, game events, and post-match summaries
 - All data returned as [Polars](https://pola.rs) DataFrames
 - Bundled `boon` command-line tool for quick demo inspection

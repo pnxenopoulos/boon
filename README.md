@@ -48,7 +48,7 @@ Deadlock demo files contain a wealth of match data — player positions, kills, 
 - ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
 - 📊 **Structured output.** Every dataset is a Polars DataFrame, ready for filtering, grouping, joins, and visualization.
 - 🎯 **Parse only what you need.** Each dataset is loaded on demand. Request one property and Boon skips everything else. Batch multiple datasets with `load()` to share a single parse pass.
-- 🗂️ **Comprehensive.** Player state, kills, damage, item purchases, ability upgrades, objectives, chat, lane troopers, neutral creeps, buffs/debuffs, urn tracking, and street brawl scoring.
+- 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
 - 💻 **CLI included.** `pip install boon-deadlock` ships a `boon` command for quick inspection without writing any code.
 
 ## Installation
@@ -79,7 +79,7 @@ Requires Python 3.11–3.14.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.6"
+boon-deadlock = "0.8"
 ```
 
 ## Quick Start
@@ -144,9 +144,10 @@ Each dataset is a property on the `Demo` class that returns a [Polars](https://p
 | `player_ticks` | Per-player state every tick (position, health, souls, net worth, kills, deaths, assists, 40+ fields) |
 | `world_ticks` | World state every tick (pause state, next mid boss spawn) |
 | `kills` | Hero kill events with attacker, victim, and assisters |
-| `damage` | Damage events with pre/post mitigation, hitgroups, and crit damage |
-| `item_purchases` | Item shop transactions (purchased, upgraded, sold, swapped) |
+| `damage` | Damage events with mitigation, hitgroups, source metadata, and light/heavy/other melee classification |
+| `item_purchases` | Item shop transactions (purchased, upgraded, sold, swapped, failed) |
 | `ability_upgrades` | Hero ability point spending (tier 1-3) |
+| `ability_ticks` | Ability cooldown, charge, and slot state changes |
 | `abilities` | Important ability usage events |
 | `flex_slots` | Flex slot unlock events per team |
 | `chat` | In-game chat messages (all chat and team chat) |
@@ -154,9 +155,12 @@ Each dataset is a property on the `Demo` class that returns a [Polars](https://p
 | `mid_boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire) |
 | `troopers` | Per-tick alive lane trooper state with position *(opt-in, large)* |
 | `neutrals` | Neutral creep state changes with change detection *(opt-in)* |
+| `breakables` | Breakable map-prop destruction events with resolved subclass and last-known position *(opt-in)* |
+| `sinners_sacrifice` | Sinner's Sacrifice machine lifecycle and exact hit attribution *(opt-in)* |
 | `stat_modifier_events` | Permanent stat bonus change events from pickups *(opt-in)* |
 | `active_modifiers` | Active buff/debuff modifier events *(opt-in)* |
 | `urn` | Urn lifecycle and delivery point events *(opt-in)* |
+| `rift` | Rift (Koth) lifecycle, capture/expiry, winner, lane, and position *(opt-in)* |
 | `street_brawl_ticks` | Per-tick street brawl state *(street brawl only)* |
 | `street_brawl_rounds` | Street brawl round scoring events *(street brawl only)* |
 

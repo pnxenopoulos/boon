@@ -238,10 +238,23 @@ pub fn evaluate_player_stats<'a>(
     ability_tiers: &HashMap<u32, u8>,
     active_modifiers: impl IntoIterator<Item = &'a CModifierTableEntry>,
 ) -> StatLayers {
-    let modifiers: Vec<_> = active_modifiers
+    let mut modifiers: Vec<_> = active_modifiers
         .into_iter()
         .filter(|entry| entry.in_aura_range != Some(false))
         .collect();
+    // ModifierState exposes a HashMap because serial lookup is its hot path.
+    // Never let that map's randomized iteration order leak into stat results:
+    // resistance composition and flat reductions are not interchangeable.
+    // Runtime serials order simultaneously live effects consistently; the
+    // remaining fields make this deterministic for synthetic/incomplete input.
+    modifiers.sort_unstable_by_key(|entry| {
+        (
+            entry.serial_number.unwrap_or_default(),
+            entry.parent.unwrap_or_default(),
+            entry.ability_subclass.unwrap_or_default(),
+            entry.modifier_subclass.unwrap_or_default(),
+        )
+    });
     let mut complete = StatMask::ALL;
     let native_spirit = spirit_power(hero_id, level);
     let native = native_with_spirit(hero_id, level, native_spirit);
@@ -407,6 +420,32 @@ mod tests {
         let modifier = plot_armor(1, Some(false));
         let layers = evaluate_player_stats(67, 1, &[], &HashMap::new(), std::iter::once(&modifier));
         assert_eq!(layers.effective[StatId::WeaponDamageBonus], 0.0);
+    }
+
+    #[test]
+    fn active_modifier_order_is_deterministic() {
+        let reduction = CModifierTableEntry {
+            serial_number: Some(10),
+            ability_subclass: Some(2_678_489_038),
+            modifier_subclass: Some(123_287_285),
+            duration: Some(5.0),
+            ..Default::default()
+        };
+        let resistance = CModifierTableEntry {
+            serial_number: Some(20),
+            ability_subclass: Some(1_282_141_666),
+            modifier_subclass: Some(97_953_256),
+            duration: Some(5.0),
+            ..Default::default()
+        };
+
+        let forward = evaluate_player_stats(0, 1, &[], &HashMap::new(), [&reduction, &resistance]);
+        let reverse = evaluate_player_stats(0, 1, &[], &HashMap::new(), [&resistance, &reduction]);
+
+        assert_eq!(
+            forward.effective[StatId::BulletResist],
+            reverse.effective[StatId::BulletResist]
+        );
     }
 
     #[test]

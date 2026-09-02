@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fetch abilities.vdata and modifiers.vdata from SteamDatabase/GameTracking-Deadlock
+# Fetch name-table vdata from SteamDatabase/GameTracking-Deadlock
 # and regenerate the name lookup tables in crates/boon/src/.
 #
 # What it does:
 # 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
-# 2) Copies abilities.vdata and modifiers.vdata to the repo root
-# 3) Runs the generate-name-tables script to regenerate abilities.rs and modifiers.rs
+# 2) Copies the required VData and English hero/item localization files to the
+#    repo root
+# 3) Runs the generator to refresh the name/stat tables in crates/boon/src
 # 4) Runs `cargo fmt --all` so the regenerated tables are correctly formatted
-# 5) Cleans up the temporary vdata files
+# 5) Cleans up the temporary generator inputs
 #
 # The modifier table is built purely from these two vdata files: modifiers.vdata
 # (top-level keys + nested `_my_subclass_name` values) plus the modifier
@@ -24,10 +25,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
 
 VDATA_DIR="game/citadel/pak01_dir/scripts"
+HERO_LOCALIZATION_DIR="game/citadel/resource/localization/citadel_heroes"
+ITEM_LOCALIZATION_DIR="game/citadel/resource/localization/citadel_gc_mod_names"
 # modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers are
 # nested as modifier subclasses inside abilities.vdata (see
 # scripts/generate-name-tables/main.rs).
-VDATA_FILES=(abilities.vdata modifiers.vdata heroes.vdata)
+VDATA_FILES=(abilities.vdata modifiers.vdata heroes.vdata misc.vdata)
+LOCALIZATION_FILES=(citadel_heroes_english.txt citadel_gc_mod_names_english.txt)
+LOCALIZATION_SOURCES=(
+  "$HERO_LOCALIZATION_DIR/citadel_heroes_english.txt"
+  "$ITEM_LOCALIZATION_DIR/citadel_gc_mod_names_english.txt"
+)
 
 DEADLOCK_REF="${DEADLOCK_REF:-}"
 
@@ -41,6 +49,9 @@ TMP_DIR="$(mktemp -d)"
 cleanup() {
   rm -rf "$TMP_DIR"
   for file in "${VDATA_FILES[@]}"; do
+    rm -f "$ROOT_DIR/$file"
+  done
+  for file in "${LOCALIZATION_FILES[@]}"; do
     rm -f "$ROOT_DIR/$file"
   done
 }
@@ -64,7 +75,7 @@ clone_repo() {
 
   if has_sparse_checkout; then
     git sparse-checkout init --cone >/dev/null 2>&1 || true
-    git sparse-checkout set "$VDATA_DIR" >/dev/null 2>&1 || true
+    git sparse-checkout set "$VDATA_DIR" "$HERO_LOCALIZATION_DIR" "$ITEM_LOCALIZATION_DIR" >/dev/null 2>&1 || true
   fi
 
   if [[ -n "$DEADLOCK_REF" ]]; then
@@ -79,6 +90,13 @@ copy_vdata() {
     local src="$REPO_DIR/$VDATA_DIR/$file"
     [[ -f "$src" ]] || die "Missing vdata file in upstream: $src"
     cp -f "$src" "$ROOT_DIR/"
+    echo "Copied $file to repo root"
+  done
+  for index in "${!LOCALIZATION_FILES[@]}"; do
+    local file="${LOCALIZATION_FILES[$index]}"
+    local src="$REPO_DIR/${LOCALIZATION_SOURCES[$index]}"
+    [[ -f "$src" ]] || die "Missing localization file in upstream: $src"
+    cp -f "$src" "$ROOT_DIR/$file"
     echo "Copied $file to repo root"
   done
 }
@@ -100,7 +118,7 @@ main() {
   copy_vdata
   generate_tables
   format_tables
-  echo "Done. Updated abilities.rs, modifiers.rs, and resistances.rs"
+  echo "Done. Updated abilities.rs, ability_display_names.rs, breakables.rs, modifiers.rs, resistances.rs, and stat_catalog.rs"
 }
 
 main "$@"

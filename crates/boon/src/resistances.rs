@@ -2,7 +2,7 @@
 //!
 //! Hero and equipped-item inputs used to reconstruct passive bullet and spirit resistance.
 //!
-//! Last updated: 2026-08-06
+//! Last updated: 2026-09-02
 
 /// Hero-defined resistance and spirit-power progression, in percentage points.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -21,7 +21,7 @@ pub struct HeroResistanceStats {
 pub fn hero_resistance_stats(hero_id: i64) -> HeroResistanceStats {
     match hero_id {
         8 => HeroResistanceStats {
-            spirit_resist_per_level: 0.625,
+            spirit_resist_per_level: 0.35,
             spirit_power_per_level: 1.1,
             ..HeroResistanceStats::default()
         },
@@ -165,7 +165,7 @@ pub fn item_resistance_stats(ability_id: u32) -> ItemResistanceStats {
             ..ItemResistanceStats::default()
         },
         2059712766 => ItemResistanceStats {
-            spirit_resist: 10.0,
+            spirit_resist: 8.0,
             ..ItemResistanceStats::default()
         },
         2081037738 => ItemResistanceStats {

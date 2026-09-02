@@ -1,6 +1,6 @@
 //! Auto-generated from Deadlock abilities.vdata.
 //!
-//! Last updated: 2026-08-07
+//! Last updated: 2026-09-02
 
 use crate::stats::{StatEffect, StatId, StatOperation};
 
@@ -825,7 +825,7 @@ pub fn item_stat_effects(ability_id: u32) -> &'static [StatEffect] {
         2059712766 => &[StatEffect {
             stat: StatId::SpiritResist,
             operation: StatOperation::Resistance,
-            base_value: 10.0,
+            base_value: 8.0,
             spirit_power_scale: 0.0,
             upgrade_values: [10.0, 0.0, 0.0],
             upgrade_scales: [0.0, 0.0, 0.0],
@@ -3556,7 +3556,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
         (2059712766, 2312238751) => &[StatEffect {
             stat: StatId::SpiritResist,
             operation: StatOperation::Resistance,
-            base_value: 10.0,
+            base_value: 8.0,
             spirit_power_scale: 0.0,
             upgrade_values: [10.0, 0.0, 0.0],
             upgrade_scales: [0.0, 0.0, 0.0],
@@ -3661,7 +3661,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
             operation: StatOperation::Resistance,
             base_value: 0.0,
             spirit_power_scale: 0.0,
-            upgrade_values: [40.0, 0.0, 0.0],
+            upgrade_values: [0.0, 0.0, 40.0],
             upgrade_scales: [0.0, 0.0, 0.0],
             complete: true,
         }],
@@ -4794,7 +4794,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
                 stat: StatId::WeaponDamageBonus,
                 operation: StatOperation::Add,
                 base_value: 25.0,
-                spirit_power_scale: 0.2,
+                spirit_power_scale: 0.3,
                 upgrade_values: [0.0, 0.0, 0.0],
                 upgrade_scales: [0.0, 0.0, 0.0],
                 complete: true,
@@ -4814,7 +4814,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
                 stat: StatId::WeaponDamageBonus,
                 operation: StatOperation::Add,
                 base_value: 25.0,
-                spirit_power_scale: 0.2,
+                spirit_power_scale: 0.3,
                 upgrade_values: [0.0, 0.0, 0.0],
                 upgrade_scales: [0.0, 0.0, 0.0],
                 complete: true,
@@ -4834,7 +4834,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
                 stat: StatId::WeaponDamageBonus,
                 operation: StatOperation::Add,
                 base_value: 25.0,
-                spirit_power_scale: 0.2,
+                spirit_power_scale: 0.3,
                 upgrade_values: [0.0, 0.0, 0.0],
                 upgrade_scales: [0.0, 0.0, 0.0],
                 complete: true,
@@ -4854,7 +4854,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
                 stat: StatId::WeaponDamageBonus,
                 operation: StatOperation::Add,
                 base_value: 25.0,
-                spirit_power_scale: 0.2,
+                spirit_power_scale: 0.3,
                 upgrade_values: [0.0, 0.0, 0.0],
                 upgrade_scales: [0.0, 0.0, 0.0],
                 complete: true,
@@ -6462,7 +6462,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
             2059712766 => &[StatEffect {
                 stat: StatId::SpiritResist,
                 operation: StatOperation::Resistance,
-                base_value: 10.0,
+                base_value: 8.0,
                 spirit_power_scale: 0.0,
                 upgrade_values: [10.0, 0.0, 0.0],
                 upgrade_scales: [0.0, 0.0, 0.0],
@@ -6549,7 +6549,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
                 operation: StatOperation::Resistance,
                 base_value: 0.0,
                 spirit_power_scale: 0.0,
-                upgrade_values: [40.0, 0.0, 0.0],
+                upgrade_values: [0.0, 0.0, 40.0],
                 upgrade_scales: [0.0, 0.0, 0.0],
                 complete: true,
             }],
@@ -7125,7 +7125,7 @@ pub fn modifier_stat_effects(ability_id: u32, modifier_id: u32) -> &'static [Sta
                     stat: StatId::WeaponDamageBonus,
                     operation: StatOperation::Add,
                     base_value: 25.0,
-                    spirit_power_scale: 0.2,
+                    spirit_power_scale: 0.3,
                     upgrade_values: [0.0, 0.0, 0.0],
                     upgrade_scales: [0.0, 0.0, 0.0],
                     complete: true,

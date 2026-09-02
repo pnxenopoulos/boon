@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "boon-deadlock"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "boon-proto",
@@ -279,7 +279,7 @@ dependencies = [
 
 [[package]]
 name = "boon-dev"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "anyhow",
  "boon-deadlock",
@@ -294,7 +294,7 @@ dependencies = [
 
 [[package]]
 name = "boon-proto"
-version = "0.2.10879761+6668"
+version = "0.3.10933105+6684"
 dependencies = [
  "bytes",
  "prost",
@@ -304,7 +304,7 @@ dependencies = [
 
 [[package]]
 name = "boon-python"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "boon-deadlock",
  "boon-proto",
@@ -1321,6 +1321,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "inventory"
+version = "0.3.24"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a4f0c30c76f2f4ccee3fe55a2435f691ca00c0e4bd87abe4f4a851b1d4dac39b"
+dependencies = [
+ "rustversion",
+]
+
+[[package]]
 name = "ipnet"
 version = "2.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1647,9 +1656,9 @@ dependencies = [
 
 [[package]]
 name = "pbdems2"
-version = "0.2.2"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfe5711026af89275429e02078711b02f12a102a841a265040bb8a0226e7c45a"
+checksum = "26826ce7ba714d8af9fcdba1781ef4e8ddefaaa0f9f4e76df7401f6e9a7858e0"
 dependencies = [
  "rustc-hash",
  "serde",
@@ -2375,6 +2384,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ab53c047fcd1a1d2a8820fe84f05d6be69e9526be40cb03b73f86b6b03e6d87d"
 dependencies = [
  "indoc",
+ "inventory",
  "libc",
  "memoffset",
  "once_cell",

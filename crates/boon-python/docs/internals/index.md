@@ -12,7 +12,7 @@ entity wire format. Those shared mechanisms are implemented by
 - [Adapters, playback, seeking, and segmentation](https://docs.rs/pbdems2/latest/pbdems2/guide/playback/index.html)
 
 Boon supplies the Deadlock protobuf adapter, entity/property selections,
-events, datasets, and hashed ability/modifier name tables. See the pbdems2
+events, datasets, and generated token, display-name, and stat tables. See the pbdems2
 guide when extending the shared parser, and the chapter below for the
 Deadlock-specific token tables.
 

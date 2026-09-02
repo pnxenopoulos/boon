@@ -18,9 +18,10 @@ Part of the [Boon](https://github.com/pnxenopoulos/boon) project.
 - Memory-mapped, zero-copy parsing for maximum throughput
 - Match metadata (map, players, duration, build number)
 - Full entity state at any tick via snapshot seeking
+- Stable entity identities and typed update/PVS-leave/delete lifecycle events
 - Game event extraction with protobuf decoding
 - Filtered tick streaming for efficient per-entity-class analysis
-- Ability and modifier name lookups
+- Ability/modifier token, English ability/item, and breakable subclass lookups
 
 ## Installation
 
@@ -28,7 +29,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon-deadlock = "0.3"
+boon-deadlock = "0.8"
 ```
 
 Requires Rust 1.88+ (edition 2024).
@@ -98,7 +99,10 @@ let x = entity.get_by_name(
 ### Helper Functions
 
 - `ability_name(id)` &mdash; resolve an ability hash to its name
+- `ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
+- `breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
 - `modifier_name(id)` &mdash; resolve a modifier hash to its name
+- `decode_stat_modifier_value_type(value_type)` &mdash; normalize observed cross-build stat-modifier enum values
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload
 
 ## Examples
