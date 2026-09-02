@@ -4,7 +4,7 @@ This recording's post-game tail outlives the player controllers: the
 ``CCitadelPlayerController`` entities are torn down a few seconds before the
 final recorded tick, so a naive final-tick snapshot of ``.players`` comes back
 empty. It is the regression fixture for the game-over-tick fallback in
-``players`` (see ``collect_players_at`` in ``src/lib.rs``).
+``players`` (see ``collect_players_at`` in ``src/runtime.rs``).
 
 A lightweight ``Demo(...)`` fixture is used (not ``get_demo``) because this is a
 large demo and these tests only need the roster and match metadata, not every

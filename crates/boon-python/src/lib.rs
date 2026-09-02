@@ -80,6 +80,10 @@ struct Demo {
     cached_summary: Option<SummaryFrames>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
+    // Match-clock seconds at game over. The flag distinguishes "not read"
+    // from a demo that does not replicate the clock field.
+    game_over_match_clock: Option<f32>,
+    game_over_match_clock_scanned: bool,
     // Hero IDs from the `BannedHeroes` message.
     // `Some(vec![])` means no ban data. `None` means not scanned.
     banned_hero_ids: Option<Vec<u32>>,

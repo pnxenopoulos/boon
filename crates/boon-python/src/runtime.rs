@@ -411,6 +411,50 @@ impl Demo {
         Ok(())
     }
 
+    /// Read the replicated match clock at the game-over tick once.
+    pub(super) fn ensure_game_over_match_clock_scanned(&mut self) -> PyResult<()> {
+        if self.game_over_match_clock_scanned {
+            return Ok(());
+        }
+
+        self.ensure_always_events_scanned()?;
+        self.game_over_match_clock = match self.game_over {
+            Some((_, tick)) => self.match_clock_at(tick)?,
+            None => None,
+        };
+        self.game_over_match_clock_scanned = true;
+        Ok(())
+    }
+
+    /// Read the authoritative HUD match clock from the game-rules entity.
+    fn match_clock_at(&self, tick: i32) -> PyResult<Option<f32>> {
+        let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
+        let Some(serializer) = ctx.serializers().get("CCitadelGameRulesProxy") else {
+            return Ok(None);
+        };
+        let Some(key) = serializer.resolve_field_key("m_pGameRules.m_flMatchClockAtLastUpdate")
+        else {
+            return Ok(None);
+        };
+        let Some((_, game_rules)) = ctx
+            .entities()
+            .iter()
+            .find(|(_, entity)| entity.class_name.as_ref() == "CCitadelGameRulesProxy")
+        else {
+            return Ok(None);
+        };
+        if !game_rules.fields.contains_key(&key) {
+            return Ok(None);
+        }
+
+        let seconds = game_rules.get_f32(Some(key));
+        if seconds.is_finite() && seconds >= 0.0 {
+            Ok(Some(seconds))
+        } else {
+            Ok(None)
+        }
+    }
+
     /// Collect the player roster from controllers at `tick`.
     /// Skip bots and empty slots that have no Steam ID.
     /// Return an empty frame when the tick has no controllers.

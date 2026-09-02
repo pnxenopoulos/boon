@@ -73,6 +73,10 @@
   aliases observed in builds 10725 and 10854. The compatibility decoder is
   shared by `boon-python` and `boon-dev`, and no longer guesses an enum layout
   from one controller snapshot.
+- **Fixed:** `regulation_ticks`, `regulation_seconds`, and
+  `regulation_clock_time` now use the replicated HUD match clock at game over.
+  They no longer include pregame recording time. Old demos without the clock
+  field keep the previous pause-aware fallback.
 - **Fixed:** `active_modifiers` now distinguishes concurrent raw modifier
   instances with a `serial` column and emits `"changed"` when a live
   modifier's duration or application timestamp changes, as well as when its

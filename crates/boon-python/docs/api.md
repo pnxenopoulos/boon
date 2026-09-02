@@ -446,11 +446,10 @@ Scans for the `k_EUserMsg_GameOver` event on first access.
 demo.regulation_ticks  # int | None
 ```
 
-The number of active (non-paused) ticks of regulation play, counted from the
-start of the recording up to the game-over event. Reflects how much of the game
-was actually played, unlike `total_ticks` (the full recording). `None` if no
-game-over event was found. Scans for `k_EUserMsg_GameOver` and loads
-`world_ticks` on first access.
+The number of match-clock ticks at the game-over event. Boon uses the
+replicated HUD match clock, so this value excludes pregame, pauses, and
+post-game time. Old demos without the clock field use active demo ticks as a
+fallback. `None` if no game-over event was found.
 
 ---
 
@@ -460,9 +459,9 @@ game-over event was found. Scans for `k_EUserMsg_GameOver` and loads
 demo.regulation_seconds  # float | None
 ```
 
-The active gameplay duration in seconds, up to the game-over event. Equal to
-`regulation_ticks / tick_rate`. The regulation counterpart to `total_seconds`.
-`None` if no game-over event was found.
+The replicated HUD match-clock value at the game-over event, in seconds.
+`regulation_ticks` is this value converted to ticks. `None` if no game-over
+event was found.
 
 ---
 
@@ -472,8 +471,9 @@ The active gameplay duration in seconds, up to the game-over event. Equal to
 demo.regulation_clock_time  # str | None
 ```
 
-The regulation play duration as a formatted string (for example, `"32:45"`). The
-counterpart to `total_clock_time`. `None` if no game-over event was found.
+The match-clock value at game over as a formatted string (for example,
+`"32:45"`). The format drops fractional seconds. `None` if no game-over event
+was found.
 
 ### DataFrame Properties
 

@@ -88,6 +88,8 @@ impl Demo {
             cached_damage: None,
             cached_summary: None,
             game_over: None,
+            game_over_match_clock: None,
+            game_over_match_clock_scanned: false,
             banned_hero_ids: None,
             always_events_scanned: false,
             cached_abilities: None,

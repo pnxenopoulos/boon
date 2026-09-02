@@ -413,29 +413,30 @@ class Demo:
 
     @property
     def regulation_ticks(self) -> int | None:
-        """Active (non-paused) ticks of regulation play, up to the game-over event.
+        """Match-clock ticks at game over.
 
-        Reflects how much of the game was actually played, unlike ``total_ticks``
-        (the full recording, including pre-game and post-match time). ``None`` if
-        no game-over event was found.
+        Uses the replicated HUD match clock. This excludes pregame, pauses, and
+        post-game time. Old demos without this field use active demo ticks as a
+        fallback. Returns ``None`` if no game-over event was found.
         """
         ...
 
     @property
     def regulation_seconds(self) -> float | None:
-        """Active gameplay duration in seconds, up to the game-over event.
+        """HUD match-clock value at game over, in seconds.
 
-        Equal to ``regulation_ticks / tick_rate``. The regulation counterpart to
-        ``total_seconds``. ``None`` if no game-over event was found.
+        This excludes pregame, pauses, and post-game time. Old demos without
+        this field use active demo ticks as a fallback. Returns ``None`` if
+        no game-over event was found.
         """
         ...
 
     @property
     def regulation_clock_time(self) -> str | None:
-        """Regulation play duration as a formatted string (for example ``"32:45"``).
+        """Match-clock value at game over (for example, ``"32:45"``).
 
-        The regulation counterpart to ``total_clock_time``. ``None`` if no
-        game-over event was found.
+        This is the formatted counterpart to ``regulation_seconds``. Returns
+        ``None`` if no game-over event was found.
         """
         ...
 

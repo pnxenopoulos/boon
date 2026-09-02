@@ -192,6 +192,10 @@ gh release download 70555151 \
 gh release download 70537442 \
   --repo pnxenopoulos/boon-fixtures \
   --dir crates/boon-python/tests/fixtures/
+
+gh release download 103129247 \
+  --repo pnxenopoulos/boon-fixtures \
+  --dir crates/boon-python/tests/fixtures/
 ```
 
 Tests that require a missing fixture are skipped automatically.
@@ -218,9 +222,7 @@ FIXTURE_PATH = FIXTURES_DIR / "<match_id>.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("<match_id>.dem fixture not available")
-    d = Demo(str(FIXTURE_PATH))
-    d.load(*ALL_DATASETS)
-    return d
+    return get_demo(FIXTURE_PATH)
 ```
 
 4. Update CI to download the new fixture.
@@ -231,6 +233,7 @@ def demo() -> Demo:
 |----------|-----------|-------------|
 | 70555151 | 6v6 | Standard 6v6 match |
 | 70537442 | Street Brawl | Street brawl (game_mode=4) match |
+| 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
 
 ## Submitting Changes
 

@@ -431,52 +431,51 @@ impl Demo {
         Ok(self.game_over.map(|(_, tick)| tick))
     }
 
-    /// The number of ticks of regulation play, excluding paused time.
+    /// The number of match-clock ticks at game over.
     ///
-    /// Counts active (non-paused) ticks from the start of the recording up to
-    /// the ``k_EUserMsg_GameOver`` event, reflecting how much of the game was
-    /// actually played rather than the full recording length (``total_ticks``,
-    /// which also includes pre-game and post-match time). Scans for the
-    /// game-over event and loads ``world_ticks`` on first access.
+    /// Uses the replicated HUD match clock. This excludes pregame, pauses, and
+    /// post-game time. Old demos that do not contain the clock field use active
+    /// demo ticks as a fallback.
     ///
-    /// Returns ``None`` if no game over event was found (for example an incomplete
-    /// recording).
+    /// Returns ``None`` if no game-over event was found.
     #[getter]
     pub(crate) fn regulation_ticks(&mut self) -> PyResult<Option<i32>> {
-        self.ensure_always_events_scanned()?;
-        let Some((_, tick)) = self.game_over else {
+        let Some(seconds) = self.regulation_seconds()? else {
             return Ok(None);
         };
-        self.ensure_paused_ticks_built()?;
-        Ok(Some(self.count_active_ticks(tick)))
+        Ok(Some((seconds * self.tick_rate as f32).round() as i32))
     }
 
-    /// The duration of regulation play in seconds, excluding paused time.
+    /// The HUD match-clock value at game over, in seconds.
     ///
-    /// Unlike ``total_seconds`` (the full recording length), this measures the
-    /// active gameplay duration up to the ``k_EUserMsg_GameOver`` event. Equal
-    /// to ``regulation_ticks / tick_rate``. Scans for the game-over event and
-    /// loads ``world_ticks`` on first access.
+    /// This excludes pregame, pauses, and post-game time. Old demos that do not
+    /// contain the clock field use active demo ticks as a fallback.
     ///
-    /// Returns ``None`` if no game over event was found.
+    /// Returns ``None`` if no game-over event was found.
     #[getter]
     pub(crate) fn regulation_seconds(&mut self) -> PyResult<Option<f32>> {
         if self.tick_rate == 0 {
             return Ok(None);
         }
-        let Some(ticks) = self.regulation_ticks()? else {
+        self.ensure_game_over_match_clock_scanned()?;
+        if let Some(seconds) = self.game_over_match_clock {
+            return Ok(Some(seconds));
+        }
+
+        let Some((_, tick)) = self.game_over else {
             return Ok(None);
         };
-        Ok(Some(ticks as f32 / self.tick_rate as f32))
+        self.ensure_paused_ticks_built()?;
+        Ok(Some(
+            self.count_active_ticks(tick) as f32 / self.tick_rate as f32,
+        ))
     }
 
-    /// The duration of regulation play as a formatted string (for example ``"32:45"``),
-    /// excluding paused time.
+    /// The match-clock value at game over (for example, ``"32:45"``).
     ///
-    /// The regulation counterpart to ``total_clock_time``. Scans for the
-    /// game-over event and loads ``world_ticks`` on first access.
+    /// This is the formatted counterpart to ``regulation_seconds``.
     ///
-    /// Returns ``None`` if no game over event was found.
+    /// Returns ``None`` if no game-over event was found.
     #[getter]
     pub(crate) fn regulation_clock_time(&mut self) -> PyResult<Option<String>> {
         let Some(secs) = self.regulation_seconds()? else {
