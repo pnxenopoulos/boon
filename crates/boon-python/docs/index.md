@@ -36,5 +36,6 @@ known-issues
 reference/index
 internals/index
 roadmap
+contributors
 changelog
 ```

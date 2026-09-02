@@ -128,6 +128,24 @@
   English where practical. Generated files and upstream protobuf text are
   excluded.
 
+### Community contributions
+
+- Thanks to [ghaif](https://github.com/ghaif) for identifying and investigating
+  four changes included in 0.8.0. Their reports and initial implementations
+  informed the final changes:
+
+  - [PR #38](https://github.com/pnxenopoulos/boon/pull/38) — Sinner's
+    Sacrifice machine events
+  - [PR #37](https://github.com/pnxenopoulos/boon/pull/37) — breakable map prop
+    events
+  - [PR #35](https://github.com/pnxenopoulos/boon/pull/35) — melee damage
+    detection
+  - [PR #34](https://github.com/pnxenopoulos/boon/pull/34) — cross-build
+    `EModifierValue` renumbering
+
+  These pull requests were not merged directly. Their findings helped guide the
+  final implementations.
+
 ### Release process
 
 - Releases are manual and separate for each component. Publish `boon-proto`,
