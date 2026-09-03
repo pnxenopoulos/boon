@@ -1,14 +1,24 @@
 # 📝 Changelog
 
-## Unreleased
+## 0.9.0
+
+### boon
+
+- New `EffectiveModifierState` separates replicated `ActiveModifiers` rows
+  from modifiers that still have a gameplay effect. It ends a positive,
+  finite-duration modifier at its `GameTime_t` deadline and retains the raw
+  row for later partial protobuf updates. An explicit removal, an aura exit,
+  or slot reuse can end the modifier earlier. Zero, negative, and incomplete
+  durations continue until a recorded state transition ends them.
 
 ### boon-python
 
-- Fixed finite modifiers that stayed active after their duration ended. Boon
-  now uses the Source 2 simulation clock and the modifier duration to find the
-  effective end tick. Explicit removals, aura exits, and slot reuse can end an
-  effect earlier. Old demos without a compatible simulation clock keep the
-  recorded transition behavior.
+- Fixed finite modifiers that stayed active in `active_modifiers`,
+  `stat_effects(...)`, and `stat_ticks(...)` after their duration ended.
+  Boon now compares the modifier deadline with the replicated Source 2
+  simulation clock. Old demos without a compatible simulation clock keep the
+  recorded transition behavior. Boon does not clear all modifiers when a
+  player dies because some modifiers persist after death.
 
 ## 0.8.0
 
