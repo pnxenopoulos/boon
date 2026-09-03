@@ -1,5 +1,33 @@
 # 📝 Changelog
 
+## 0.9.0
+
+### boon
+
+- New `EffectiveModifierState` separates replicated `ActiveModifiers` rows
+  from modifiers that still have a gameplay effect. It ends a positive,
+  finite-duration modifier at its `GameTime_t` deadline and retains the raw
+  row for later partial protobuf updates. An explicit removal, an aura exit,
+  or slot reuse can end the modifier earlier. Zero, negative, and incomplete
+  durations continue until a recorded state transition ends them.
+
+### boon-python
+
+- New opt-in `demo.healing` dataset surfaces per-event healing from
+  `CCitadelUserMessage_Damage`. A heal is a damage message with a negative
+  `health_lost`; the dataset keeps those rows and reports `amount` as the
+  positive health restored, resolving `target_hero_id` and `source_hero_id`
+  through the same entity-to-hero map as `demo.damage`. Not loaded by default.
+  Barrier / shield grants are not carried by this message, so this is health
+  healing only.
+
+- Fixed finite modifiers that stayed active in `active_modifiers`,
+  `stat_effects(...)`, and `stat_ticks(...)` after their duration ended.
+  Boon now compares the modifier deadline with the replicated Source 2
+  simulation clock. Old demos without a compatible simulation clock keep the
+  recorded transition behavior. Boon does not clear all modifiers when a
+  player dies because some modifiers persist after death.
+
 ## 0.8.0
 
 ### boon-python

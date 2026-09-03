@@ -58,6 +58,11 @@ DAMAGE_COLUMNS = {
     "is_melee", "melee_type",
 }
 
+HEALING_COLUMNS = {
+    "tick", "target_hero_id", "source_hero_id", "amount",
+    "ability_id", "citadel_type",
+}
+
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
 
 ABILITIES_COLUMNS = {"tick", "hero_id", "ability"}
@@ -141,6 +146,7 @@ DATASET_COLUMNS = {
     "world_ticks": WORLD_TICKS_COLUMNS,
     "kills": KILLS_COLUMNS,
     "damage": DAMAGE_COLUMNS,
+    "healing": HEALING_COLUMNS,
     "flex_slots": FLEX_SLOTS_COLUMNS,
     "abilities": ABILITIES_COLUMNS,
     "ability_upgrades": ABILITY_UPGRADES_COLUMNS,
@@ -415,7 +421,7 @@ class TestDatasets:
 
     # Datasets that may be empty depending on game mode
     # "rift" is empty on demos from builds predating the Rift objective.
-    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
+    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "healing", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
@@ -720,6 +726,19 @@ class TestSinnersSacrifice:
             & (pl.col("health") == 400)
         )
         assert len(known) == 1
+
+
+class TestHealing:
+    """The healing dataset: heal events (negative health_lost) as positive amounts."""
+
+    def test_schema(self, demo: Demo) -> None:
+        assert set(demo.healing.columns) == HEALING_COLUMNS
+
+    def test_amount_positive(self, demo: Demo) -> None:
+        # amount is -health_lost on rows kept for health_lost < 0, so it is
+        # always positive by construction.
+        df = demo.healing
+        assert (df["amount"] > 0).all()
 
 
 # ===================================================================

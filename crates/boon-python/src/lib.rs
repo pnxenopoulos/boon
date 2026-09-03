@@ -77,6 +77,7 @@ struct Demo {
     cached_world_ticks: Option<DataFrame>,
     cached_kills: Option<DataFrame>,
     cached_damage: Option<DataFrame>,
+    cached_healing: Option<DataFrame>,
     cached_summary: Option<SummaryFrames>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,

@@ -606,6 +606,28 @@ class Demo:
         ...
 
     @property
+    def healing(self) -> pl.DataFrame:
+        """Per-event healing as a Polars DataFrame.
+
+        Heals are carried by ``CCitadelUserMessage_Damage`` as a negative
+        ``health_lost`` (the ``damage`` field itself stays non-negative). This
+        dataset keeps only those rows and reports ``amount`` as the positive
+        health restored. Barrier / shield grants are not in this message, so
+        this is health healing only; shielding needs another source.
+
+        Not loaded by default. Access this property or call ``load("healing")`` explicitly.
+
+        Columns:
+            - **tick** (*int*) -- The game tick when the heal occurred.
+            - **target_hero_id** (*int*) -- The healed hero (0 if not a hero).
+            - **source_hero_id** (*int*) -- The healer (0 if not a hero or self / none).
+            - **amount** (*int*) -- Health restored (positive).
+            - **ability_id** (*int*) -- The ability / item that healed (0 if absent).
+            - **citadel_type** (*int*) -- The Deadlock damage category the heal came through.
+        """
+        ...
+
+    @property
     def flex_slots(self) -> pl.DataFrame:
         """Flex slot unlock events as a Polars DataFrame.
 

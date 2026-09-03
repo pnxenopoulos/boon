@@ -92,7 +92,10 @@ pub use game_modes::{all_game_modes, game_mode_name};
 pub use heroes::{all_heroes, hero_name};
 pub use hitgroups::{all_hitgroups, hitgroup_name};
 pub use lifestates::{all_lifestates, lifestate_name};
-pub use modifier_state::{ModifierChange, ModifierChangeKind, ModifierState};
+pub use modifier_state::{
+    EffectiveModifierState, ModifierChange, ModifierChangeKind, ModifierState,
+    modifier_is_effective_at,
+};
 pub use modifiers::{all_modifiers, modifier_name};
 pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
