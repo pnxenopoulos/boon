@@ -161,6 +161,13 @@ Boon does not guess an unsupported stack rule. It applies one copy and sets
 `in_aura_range == false`. Boon removes a permanent item modifier when the
 baseline already contains the item contribution.
 
+A finite modifier stops at `last_applied_time + duration`. An explicit
+removal, an aura exit, or slot reuse can stop it earlier. Boon compares these
+fields with the replicated Source 2 simulation clock, not the HUD match clock.
+If an old demo does not contain a compatible simulation clock, Boon uses only
+the recorded state transitions. Boon does not remove all modifiers when a
+player dies because some modifiers persist after death.
+
 Boon calculates these values from recorded state and the generated VData
 catalog. The demo does not provide a final server value for every stat.
 `*_complete` is true when Boon evaluates each matching catalog effect. It does

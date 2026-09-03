@@ -307,8 +307,14 @@ impl Demo {
     /// ``duration``, ``caster_hero_id``, ``stacks``.
     ///
     /// ``"applied"`` means that Boon first saw the modifier on a player.
-    /// ``"changed"`` means that its active state changed. ``"removed"`` means
-    /// that it disappeared. The removed row contains the final stack count.
+    /// ``"changed"`` means that its effective state changed. ``"removed"``
+    /// means that its effective lifetime ended. A removal can come from the
+    /// replicated table, slot reuse, aura exit, or a finite duration.
+    ///
+    /// Finite durations use the replicated Source 2 simulation clock. Old
+    /// demos without that clock keep explicit removal behavior. Boon does not
+    /// clear every modifier on death because some modifiers survive death.
+    /// The removed row contains the final stack count.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn active_modifiers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {

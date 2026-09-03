@@ -19,7 +19,7 @@ impl Demo {
             let mut segment = StatSegment::default();
             self.parser
                 .decode_segment(None, i32::MAX, &filter, |ctx| {
-                    segment.update(ctx);
+                    segment.update(ctx, &keys);
                     if predicate.matches(ctx.tick()) {
                         segment
                             .columns
@@ -42,7 +42,7 @@ impl Demo {
                                 let mut segment = StatSegment::default();
                                 parser
                                     .decode_segment(start, end_tick, filter, |ctx| {
-                                        segment.update(ctx);
+                                        segment.update(ctx, keys);
                                         if predicate.matches(ctx.tick()) {
                                             segment.columns.collect_tick(
                                                 ctx,
@@ -80,7 +80,9 @@ impl Demo {
         let mut segment = StatSegment::default();
         if ctx.tick() == tick {
             let keys = PtKeys::resolve(&ctx);
-            segment.modifiers.rebuild(&ctx);
+            segment
+                .modifiers
+                .rebuild(&ctx, current_simulation_time(&ctx, keys.simulation_time));
             segment.initialized = true;
             segment
                 .columns
@@ -101,7 +103,7 @@ impl Demo {
         drop(init);
 
         let mut rows = StatEffectCols::default();
-        let mut modifiers = boon_parser::ModifierState::default();
+        let mut modifiers = boon_parser::EffectiveModifierState::default();
         let mut signatures: HashMap<u32, ModifierEffectSignature> = HashMap::new();
         let mut serial_owners: HashMap<u32, i64> = HashMap::new();
         let mut previous_upgrades: HashMap<i64, HashSet<u32>> = HashMap::new();
@@ -209,7 +211,8 @@ impl Demo {
                     last_inputs.insert(inputs.hero_id, inputs);
                 }
 
-                for change in modifiers.update(ctx) {
+                let game_time = current_simulation_time(ctx, keys.simulation_time);
+                for change in modifiers.update(ctx, game_time) {
                     let entry = &change.entry;
                     let ability_id = entry.ability_subclass.unwrap_or(0);
                     let modifier_id = entry.modifier_subclass.unwrap_or(0);

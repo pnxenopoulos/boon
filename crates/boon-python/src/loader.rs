@@ -574,7 +574,7 @@ impl Demo {
             stacks: i32,
         }
         let mut am_prev: HashMap<u32, CachedMod> = HashMap::new();
-        let mut am_state = boon_parser::ModifierState::default();
+        let mut am_state = boon_parser::EffectiveModifierState::default();
 
         // ability_ticks: per-ability-class resolved field keys (cached on first
         // sight of each class) and per-entity previous state for change detection.
@@ -623,6 +623,7 @@ impl Demo {
 
         // Pawn keys (needed for player_ticks and kills entity_to_hero)
         let mut pk_hero_id: Option<u64> = None;
+        let mut pk_simulation_time: Option<u64> = None;
         let mut pk_vec_x: Option<u64> = None;
         let mut pk_vec_y: Option<u64> = None;
         let mut pk_vec_z: Option<u64> = None;
@@ -837,6 +838,7 @@ impl Demo {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
+                            pk_simulation_time = s.resolve_field_key("m_flSimulationTime");
                             if load_player_ticks || load_urn {
                                 pk_vec_x = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
@@ -1607,7 +1609,8 @@ impl Demo {
 
                 // ── Collect active_modifiers (shared full-delta state) ──
                 if load_active_modifiers {
-                    for change in am_state.update($ctx) {
+                    let game_time = current_simulation_time($ctx, pk_simulation_time);
+                    for change in am_state.update($ctx, game_time) {
                         let serial = change.serial;
                         if change.kind == boon_parser::ModifierChangeKind::Removed {
                             if let Some(cached) = am_prev.remove(&serial) {

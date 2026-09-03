@@ -1,5 +1,15 @@
 # 📝 Changelog
 
+## Unreleased
+
+### boon-python
+
+- Fixed finite modifiers that stayed active after their duration ended. Boon
+  now uses the Source 2 simulation clock and the modifier duration to find the
+  effective end tick. Explicit removals, aura exits, and slot reuse can end an
+  effect earlier. Old demos without a compatible simulation clock keep the
+  recorded transition behavior.
+
 ## 0.8.0
 
 ### boon-python
