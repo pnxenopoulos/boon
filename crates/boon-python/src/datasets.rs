@@ -47,6 +47,7 @@ pub(super) const VALID_DATASETS: &[&str] = &[
     "world_ticks",
     "kills",
     "damage",
+    "healing",
     "flex_slots",
     "item_purchases",
     "troopers",

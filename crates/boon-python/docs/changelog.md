@@ -13,6 +13,14 @@
 
 ### boon-python
 
+- New opt-in `demo.healing` dataset surfaces per-event healing from
+  `CCitadelUserMessage_Damage`. A heal is a damage message with a negative
+  `health_lost`; the dataset keeps those rows and reports `amount` as the
+  positive health restored, resolving `target_hero_id` and `source_hero_id`
+  through the same entity-to-hero map as `demo.damage`. Not loaded by default.
+  Barrier / shield grants are not carried by this message, so this is health
+  healing only.
+
 - Fixed finite modifiers that stayed active in `active_modifiers`,
   `stat_effects(...)`, and `stat_ticks(...)` after their duration ended.
   Boon now compares the modifier deadline with the replicated Source 2

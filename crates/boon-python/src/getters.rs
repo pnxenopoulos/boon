@@ -83,6 +83,32 @@ impl Demo {
         Ok(PyDataFrame(self.cached_damage.clone().unwrap()))
     }
 
+    /// Per-event healing as a Polars DataFrame.
+    ///
+    /// Returns a DataFrame with columns:
+    /// - tick: The game tick when the heal occurred
+    /// - target_hero_id: The healed hero (0 if not a hero)
+    /// - source_hero_id: The healer (0 if not a hero or self / none)
+    /// - amount: Health restored (positive)
+    /// - ability_id: The ability/item that healed (0 if absent; use
+    ///   ``ability_names()`` to resolve it)
+    /// - citadel_type: The Deadlock damage category the heal came through
+    ///
+    /// Heals ride on ``CCitadelUserMessage_Damage`` as a negative
+    /// ``health_lost`` (the ``damage`` field itself stays non-negative). This
+    /// dataset keeps only those rows and reports ``amount`` as the positive
+    /// health restored. Barrier / shield grants are not present in this
+    /// message, so this is health healing only.
+    ///
+    /// Not loaded by default. Boon loads this dataset on first access.
+    #[getter]
+    pub(crate) fn healing(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        if self.cached_healing.is_none() {
+            self.load(py, vec!["healing".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_healing.clone().unwrap()))
+    }
+
     /// Flex slot unlock events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``team_num``.
