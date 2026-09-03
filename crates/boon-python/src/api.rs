@@ -86,6 +86,7 @@ impl Demo {
             cached_world_ticks: None,
             cached_kills: None,
             cached_damage: None,
+            cached_healing: None,
             cached_summary: None,
             game_over: None,
             game_over_match_clock: None,

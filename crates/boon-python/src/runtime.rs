@@ -740,6 +740,7 @@ impl Demo {
             "world_ticks" => self.cached_world_ticks.as_ref(),
             "kills" => self.cached_kills.as_ref(),
             "damage" => self.cached_damage.as_ref(),
+            "healing" => self.cached_healing.as_ref(),
             "flex_slots" => self.cached_flex_slots.as_ref(),
             "item_purchases" => self.cached_item_purchases.as_ref(),
             "troopers" => self.cached_troopers.as_ref(),
