@@ -608,6 +608,88 @@ impl Demo {
         Ok(format!("{minutes}:{seconds:02}"))
     }
 
+    /// The pre-game lobby duration in seconds.
+    ///
+    /// The demo starts recording during the pre-game, so tick 0 leads the on-screen
+    /// match clock (which only reaches ``0:00`` when the barrier drops and the game
+    /// begins) by this amount. ``tick_to_seconds`` counts from the recording start, so
+    /// ``on-screen match clock = tick_to_seconds - pregame_seconds`` (see
+    /// ``tick_to_match_seconds`` / ``tick_to_match_clock``).
+    ///
+    /// Derived from the game's own replicated clock, not a heuristic:
+    /// ``tick_to_seconds(game_over_tick) - m_flMatchClockAtLastUpdate`` read at game
+    /// over. The match clock excludes both the pre-game and paused time, and so does
+    /// ``tick_to_seconds``, so the difference is a constant, pause-independent offset.
+    ///
+    /// Returns ``None`` when the demo has no game-over event, does not replicate the
+    /// match clock (older builds), or does not start in the pre-game. A recording that
+    /// begins after the barrier drop (a spectator join or a clipped replay) has no
+    /// pre-game on its timeline, so tick 0 is not the match origin and the offset is
+    /// negative. The offset is undeterminable in each case.
+    #[getter]
+    pub(crate) fn pregame_seconds(&mut self) -> PyResult<Option<f64>> {
+        if self.tick_rate == 0 {
+            return Ok(None);
+        }
+        self.ensure_game_over_match_clock_scanned()?;
+        let (Some((_, game_over_tick)), Some(match_clock)) =
+            (self.game_over, self.game_over_match_clock)
+        else {
+            return Ok(None);
+        };
+        let elapsed = self.tick_to_seconds(game_over_tick)?;
+        let pregame = elapsed - match_clock as f64;
+        // A negative offset means the recording starts after the barrier drop, so it holds
+        // no pre-game. The pre-game duration is then undeterminable.
+        if pregame < 0.0 {
+            return Ok(None);
+        }
+        Ok(Some(pregame))
+    }
+
+    /// The tick at which the on-screen match clock reaches ``0:00`` — the game begins
+    /// and the barrier drops, ending the pre-game lobby. The counterpart to
+    /// ``game_over_tick``.
+    ///
+    /// The pre-game is never paused, so this is ``round(pregame_seconds * tick_rate)``.
+    /// Returns ``None`` when ``pregame_seconds`` is unavailable.
+    #[getter]
+    pub(crate) fn game_start_tick(&mut self) -> PyResult<Option<i32>> {
+        let Some(pregame) = self.pregame_seconds()? else {
+            return Ok(None);
+        };
+        Ok(Some((pregame * self.tick_rate as f64).round() as i32))
+    }
+
+    /// Convert a tick to on-screen match-clock seconds (``0.0`` at ``game_start_tick``),
+    /// excluding paused time.
+    ///
+    /// This is ``tick_to_seconds(tick) - pregame_seconds``. Pre-game ticks return a
+    /// negative value, matching the spectator clock's pre-game countdown. Returns
+    /// ``None`` when ``pregame_seconds`` is unavailable.
+    pub(crate) fn tick_to_match_seconds(&mut self, tick: i32) -> PyResult<Option<f64>> {
+        let Some(pregame) = self.pregame_seconds()? else {
+            return Ok(None);
+        };
+        Ok(Some(self.tick_to_seconds(tick)? - pregame))
+    }
+
+    /// Convert a tick to an on-screen match-clock string (for example, ``"03:14"``),
+    /// excluding paused time.
+    ///
+    /// Pre-game ticks read as a negative clock (for example, ``"-0:12"``), matching the
+    /// spectator countdown. Returns ``None`` when ``pregame_seconds`` is unavailable.
+    pub(crate) fn tick_to_match_clock(&mut self, tick: i32) -> PyResult<Option<String>> {
+        let Some(secs) = self.tick_to_match_seconds(tick)? else {
+            return Ok(None);
+        };
+        let sign = if secs < 0.0 { "-" } else { "" };
+        let total_seconds = secs.abs() as u32;
+        let minutes = total_seconds / 60;
+        let seconds = total_seconds % 60;
+        Ok(Some(format!("{sign}{minutes}:{seconds:02}")))
+    }
+
     /// Get player information as a Polars DataFrame.
     ///
     /// Returns a DataFrame with columns:

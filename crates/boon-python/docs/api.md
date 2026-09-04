@@ -102,6 +102,46 @@ call to find pauses.
 
 **Returns:** `str` -- A formatted clock time string.
 
+---
+
+#### `tick_to_match_seconds()`
+
+```python
+demo.tick_to_match_seconds(11400)  # -> 160.0  (on-screen match clock, not elapsed)
+```
+
+Convert a tick to on-screen match-clock seconds. `tick_to_seconds` counts from the
+demo's tick 0, which is the pre-game lobby, so it leads the on-screen match clock by
+`pregame_seconds`; this subtracts that offset. The result is `0.0` at `game_start_tick`
+and negative during the pre-game (matching the spectator clock's countdown), and it
+excludes paused time.
+
+**Parameters:**
+
+- **tick** (`int`) -- The game tick to convert.
+
+**Returns:** `float | None` -- Match-clock seconds, or `None` when `pregame_seconds`
+is unavailable.
+
+---
+
+#### `tick_to_match_clock()`
+
+```python
+demo.tick_to_match_clock(11400)  # -> "2:40"   (on-screen clock)
+demo.tick_to_match_clock(500)    # -> "-0:22"  (pre-game countdown)
+```
+
+The formatted counterpart to `tick_to_match_seconds`. Pre-game ticks read as a
+negative clock.
+
+**Parameters:**
+
+- **tick** (`int`) -- The game tick to convert.
+
+**Returns:** `str | None` -- A formatted match-clock string, or `None` when
+`pregame_seconds` is unavailable.
+
 #### `snapshots()`
 
 ```python
@@ -444,6 +484,34 @@ demo.game_over_tick  # int | None
 
 The tick when the game ended, or `None` if no game-over event was found.
 Scans for the `k_EUserMsg_GameOver` event on first access.
+
+---
+
+#### `game_start_tick`
+
+```python
+demo.game_start_tick  # int | None
+```
+
+The tick at which the on-screen match clock reaches `0:00`, when the barrier drops
+and the game begins, ending the pre-game lobby. The counterpart to `game_over_tick`.
+`None` if `pregame_seconds` is unavailable.
+
+---
+
+#### `pregame_seconds`
+
+```python
+demo.pregame_seconds  # float | None
+```
+
+The pre-game lobby duration in seconds (about 30s). The demo starts recording during
+the pre-game, so tick 0 leads the on-screen match clock by this amount:
+`match clock = tick_to_seconds - pregame_seconds`. Read from the replicated match clock
+at game over rather than assumed constant, so it is exact per demo. `None` if the demo
+has no game-over event, does not replicate the match clock, or does not start in the
+pre-game (a recording that begins after the barrier drop). See `tick_to_match_seconds`
+/ `tick_to_match_clock`.
 
 ---
 
