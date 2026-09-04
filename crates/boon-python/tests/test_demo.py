@@ -545,6 +545,38 @@ class TestActiveModifiers:
                     assert active
                     active = False
 
+    def test_no_restamp_reapplication_bursts(self, demo: Demo) -> None:
+        """No tick re-applies modifiers the heroes already have across the roster.
+
+        The engine periodically re-stamps every live modifier on one tick, reusing a
+        serial for some and minting a fresh one for others. Each re-stamped row must
+        not surface as a fresh `applied`, or a modifier applied once looks re-applied
+        every ~60s. A real cast is a modifier the hero did not have and an aura
+        re-entering range touches a hero or two, so a single tick re-applying modifiers
+        many heroes already have only happens on a re-stamp. Detection is by modifier
+        identity, not serial, so a re-stamp that mints fresh serials is caught too.
+        """
+        applied = (
+            demo.active_modifiers.filter(pl.col("event") == "applied")
+            .select(["tick", "hero_id", "modifier_id"])
+            .sort("tick")
+        )
+        seen: set[tuple[int, int]] = set()
+        for (tick,), group in applied.group_by("tick", maintain_order=True):
+            reapplied_heroes = {
+                row["hero_id"]
+                for row in group.iter_rows(named=True)
+                if (row["hero_id"], row["modifier_id"]) in seen
+            }
+            assert len(reapplied_heroes) < 6, (
+                f"tick {tick} re-applies held modifiers for {len(reapplied_heroes)} "
+                "heroes, a re-stamp leaking into applied"
+            )
+            seen.update(
+                (row["hero_id"], row["modifier_id"])
+                for row in group.iter_rows(named=True)
+            )
+
 
 class TestRift:
     """Semantics of the one-row-per-Rift lifecycle frame."""

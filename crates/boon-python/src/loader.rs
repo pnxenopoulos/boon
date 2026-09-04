@@ -567,8 +567,22 @@ impl Demo {
         let mut rift_spawners_cur: std::collections::HashSet<i32> =
             std::collections::HashSet::new();
 
-        // Shared full-protobuf modifier state supplies this lifecycle frame.
-        // Barriers and effective stats use the same state.
+        // Effective (duration-aware) modifier state supplies this lifecycle frame.
+        //
+        // The engine re-stamps every live modifier on one tick about once a minute
+        // (bookkeeping, not gameplay), bumping their last_applied_time. Effective state has
+        // already expired the finite ones, so on that re-stamp it resurrects them and
+        // reports each as a fresh `applied`, a phantom. On a re-stamp tick, an `applied` for
+        // a modifier the hero already has (by identity, see `am_logical_seen`) is one of those
+        // re-applications and is dropped, along with the rest of that entry's lifecycle
+        // (`emitted` records whether a serial was actually reported, so its later
+        // changed/removed stay silent too). A modifier the hero did not have is a real apply
+        // and is always kept.
+        //
+        // Limitation: a suppressed entry stays silent until it leaves `am_prev`, so a genuine
+        // re-cast of the same modifier inside a re-stamp window is masked. This trades a rare,
+        // bounded miss for removing the re-stamp phantoms, and it never emits an orphan
+        // changed/removed.
         struct CachedMod {
             hero_id: i64,
             modifier_id: u32,
@@ -577,9 +591,26 @@ impl Demo {
             duration: f32,
             caster_hero_id: i64,
             stacks: i32,
+            emitted: bool,
         }
         let mut am_prev: HashMap<u32, CachedMod> = HashMap::new();
         let mut am_state = boon_parser::EffectiveModifierState::default();
+        // (hero, modifier_id) reported as `applied` this match. A re-stamp re-applies a
+        // modifier a hero already has, so this identity -- not the serial -- is what marks a
+        // re-application: the engine reuses a serial for some re-stamped modifiers and mints
+        // a fresh one for others, and a serial-only test misses the fresh ones (letting the
+        // finite-modifier-past-window applies through as phantoms).
+        let mut am_logical_seen: std::collections::HashSet<(i64, u32)> =
+            std::collections::HashSet::new();
+        // A re-stamp re-applies modifiers the heroes already have across most of the roster
+        // on one tick; real play re-applies a known modifier for at most a hero or two at a
+        // time (an aura re-entering range), and a fresh cast is a modifier the hero did not
+        // have. So the number of distinct heroes getting a re-application on a single tick is
+        // the discriminator, and this bound sits far above normal play. It is not an applies
+        // count: an early re-stamp re-applies fewer modifiers (fewer are live) yet still spans
+        // the roster. On the available fixtures the most any non-re-stamp tick reaches is a
+        // handful, and every re-stamp reaches most of the roster.
+        const RESTAMP_MIN_REAPPLY_HEROES: usize = 6;
 
         // ability_ticks: per-ability-class resolved field keys (cached on first
         // sight of each class) and per-entity previous state for change detection.
@@ -1612,22 +1643,46 @@ impl Demo {
                     }
                 }
 
-                // ── Collect active_modifiers (shared full-delta state) ──
+                // ── Collect active_modifiers (effective, duration-aware state) ──
                 if load_active_modifiers {
                     let game_time = current_simulation_time($ctx, pk_simulation_time);
-                    for change in am_state.update($ctx, game_time) {
+                    let changes = am_state.update($ctx, game_time);
+
+                    // Flag a re-stamp tick: many heroes get a modifier they already have
+                    // re-applied at once. `am_logical_seen` still holds the state from before
+                    // this tick, so an `applied` whose (hero, modifier_id) is in it is a
+                    // re-application, whatever serial the re-stamp gave it.
+                    let mut restamp_reapplied_heroes: std::collections::HashSet<i64> =
+                        std::collections::HashSet::new();
+                    for change in &changes {
+                        if change.kind == boon_parser::ModifierChangeKind::Applied {
+                            let hero = boon_parser::protobuf_handle_index(change.entry.parent)
+                                .and_then(|index| entity_to_hero.get(&index).copied())
+                                .unwrap_or(0);
+                            let modifier_id = change.entry.modifier_subclass.unwrap_or(0);
+                            if hero != 0 && am_logical_seen.contains(&(hero, modifier_id)) {
+                                restamp_reapplied_heroes.insert(hero);
+                            }
+                        }
+                    }
+                    let is_restamp =
+                        restamp_reapplied_heroes.len() >= RESTAMP_MIN_REAPPLY_HEROES;
+
+                    for change in changes {
                         let serial = change.serial;
                         if change.kind == boon_parser::ModifierChangeKind::Removed {
                             if let Some(cached) = am_prev.remove(&serial) {
-                                am_tick.push($ctx.tick());
-                                am_hero_id.push(cached.hero_id);
-                                am_event.push("removed".to_string());
-                                am_serial.push(serial);
-                                am_modifier_id.push(cached.modifier_id);
-                                am_ability_id.push(cached.ability_id);
-                                am_duration.push(cached.duration);
-                                am_caster_hero_id.push(cached.caster_hero_id);
-                                am_stacks.push(cached.stacks);
+                                if cached.emitted {
+                                    am_tick.push($ctx.tick());
+                                    am_hero_id.push(cached.hero_id);
+                                    am_event.push("removed".to_string());
+                                    am_serial.push(serial);
+                                    am_modifier_id.push(cached.modifier_id);
+                                    am_ability_id.push(cached.ability_id);
+                                    am_duration.push(cached.duration);
+                                    am_caster_hero_id.push(cached.caster_hero_id);
+                                    am_stacks.push(cached.stacks);
+                                }
                             }
                             continue;
                         }
@@ -1654,15 +1709,24 @@ impl Demo {
 
                         match am_prev.entry(serial) {
                             std::collections::hash_map::Entry::Vacant(entry) => {
-                                am_tick.push($ctx.tick());
-                                am_hero_id.push(hero_id);
-                                am_event.push("applied".to_string());
-                                am_serial.push(serial);
-                                am_modifier_id.push(modifier_id);
-                                am_ability_id.push(ability_id);
-                                am_duration.push(duration);
-                                am_caster_hero_id.push(caster_hero_id);
-                                am_stacks.push(stacks);
+                                // On a re-stamp tick, an `applied` for a modifier the hero
+                                // already has is a re-application (whatever its serial), so
+                                // drop it; `emitted` keeps its changed/removed silent too. A
+                                // modifier the hero did not have is real and is kept.
+                                let logical = (hero_id, modifier_id);
+                                let emitted = !(is_restamp && am_logical_seen.contains(&logical));
+                                if emitted {
+                                    am_logical_seen.insert(logical);
+                                    am_tick.push($ctx.tick());
+                                    am_hero_id.push(hero_id);
+                                    am_event.push("applied".to_string());
+                                    am_serial.push(serial);
+                                    am_modifier_id.push(modifier_id);
+                                    am_ability_id.push(ability_id);
+                                    am_duration.push(duration);
+                                    am_caster_hero_id.push(caster_hero_id);
+                                    am_stacks.push(stacks);
+                                }
                                 entry.insert(CachedMod {
                                     hero_id,
                                     modifier_id,
@@ -1671,9 +1735,15 @@ impl Demo {
                                     duration,
                                     caster_hero_id,
                                     stacks,
+                                    emitted,
                                 });
                             }
                             std::collections::hash_map::Entry::Occupied(mut entry) => {
+                                // A serial whose apply was dropped as a phantom stays silent
+                                // for the rest of its lifecycle.
+                                if !entry.get().emitted {
+                                    continue;
+                                }
                                 let cached = entry.get_mut();
                                 let caster_hero_id = if caster_hero_id == 0 {
                                     cached.caster_hero_id
@@ -1705,6 +1775,7 @@ impl Demo {
                                         duration,
                                         caster_hero_id,
                                         stacks,
+                                        emitted: true,
                                     };
                                 }
                             }
