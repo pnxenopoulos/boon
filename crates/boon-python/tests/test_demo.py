@@ -275,6 +275,19 @@ class TestPlayersAndTeams:
         tick_heroes = set(demo.player_ticks["hero_id"].to_list())
         assert tick_heroes == player_heroes
 
+    def test_active_modifiers_covers_all_players(self, demo: Demo) -> None:
+        """Every hero in `players` must be reachable in `active_modifiers`.
+
+        A pawn's `m_spawnedHero.m_nHeroID` reads an intro placeholder before the
+        hero locks in, then settles to the real hero. `entity_to_hero` is built
+        once from an early frame, so a pawn frozen at the placeholder never
+        appears under its real hero id and any join on `active_modifiers.hero_id`
+        silently drops it.
+        """
+        player_heroes = set(demo.players["hero_id"].to_list())
+        am_heroes = set(demo.active_modifiers["hero_id"].to_list())
+        assert player_heroes <= am_heroes
+
 
 # ===================================================================
 # Health invariants
