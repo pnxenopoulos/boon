@@ -53,7 +53,7 @@ KILLS_COLUMNS = {"tick", "victim_hero_id", "attacker_hero_id", "assister_hero_id
 DAMAGE_COLUMNS = {
     "tick", "damage", "pre_damage", "victim_hero_id", "attacker_hero_id",
     "victim_health_new", "hitgroup_id", "crit_damage",
-    "attacker_class", "victim_class",
+    "attacker_class", "victim_class", "victim_entity_id",
     "ability_id", "damage_type", "citadel_type", "damage_flags",
     "is_melee", "melee_type",
 }

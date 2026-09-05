@@ -2630,6 +2630,7 @@ impl Demo {
             let mut dmg_crit_damage: Vec<f32> = Vec::with_capacity(n);
             let mut dmg_attacker_class: Vec<u32> = Vec::with_capacity(n);
             let mut dmg_victim_class: Vec<u32> = Vec::with_capacity(n);
+            let mut dmg_victim_entity_id: Vec<i32> = Vec::with_capacity(n);
             let mut dmg_ability_id: Vec<u32> = Vec::with_capacity(n);
             let mut dmg_type: Vec<i32> = Vec::with_capacity(n);
             let mut dmg_citadel_type: Vec<i32> = Vec::with_capacity(n);
@@ -2645,6 +2646,7 @@ impl Demo {
                 dmg_tick.push(raw.tick);
                 dmg_damage.push(msg.damage.unwrap_or(0));
                 dmg_pre_damage.push(msg.pre_damage.unwrap_or(0.0));
+                dmg_victim_entity_id.push(msg.entindex_victim.unwrap_or(-1));
                 dmg_victim_hero_id.push(
                     entity_to_hero
                         .get(&msg.entindex_victim.unwrap_or(-1))
@@ -2685,6 +2687,7 @@ impl Demo {
                 Column::new("crit_damage".into(), dmg_crit_damage),
                 Column::new("attacker_class".into(), dmg_attacker_class),
                 Column::new("victim_class".into(), dmg_victim_class),
+                Column::new("victim_entity_id".into(), dmg_victim_entity_id),
                 Column::new("ability_id".into(), dmg_ability_id),
                 Column::new("damage_type".into(), dmg_type),
                 Column::new("citadel_type".into(), dmg_citadel_type),

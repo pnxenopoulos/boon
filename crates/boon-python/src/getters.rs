@@ -65,6 +65,9 @@ impl Demo {
     /// - crit_damage: Critical damage amount
     /// - attacker_class: The attacker's entity class ID
     /// - victim_class: The victim's entity class ID
+    /// - victim_entity_id: The victim's entity index (-1 if absent). Join it to an entity-keyed
+    ///   dataset such as ``neutrals`` or ``sinners_sacrifice`` to identify the exact unit killed,
+    ///   which ``victim_class`` (a coarse enum) cannot distinguish.
     /// - ability_id: The ability/weapon that dealt the hit (0 if absent; use
     ///   ``ability_names()`` to resolve it)
     /// - damage_type: Raw Source ``type`` damage bitfield
