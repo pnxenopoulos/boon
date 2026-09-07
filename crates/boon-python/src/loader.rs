@@ -1411,16 +1411,38 @@ impl Demo {
                 }
 
                 // ── Build entity_to_hero map (for kills/damage/mid_boss resolution) ──
-                if (load_abilities || load_kills || load_damage || load_healing || load_sinners_sacrifice || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks) && !entity_to_hero_built {
-                    for (idx, entity) in $ctx.entities().iter() {
-                        if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
-                            let hid = entity.get_i64(pk_hero_id);
-                            if hid != 0 {
-                                entity_to_hero.insert(idx, hid);
+                //
+                // A pawn's m_spawnedHero.m_nHeroID reads a pre-lock placeholder during the
+                // intro (on some demos Bebop shows as hero 66, Billy as 27) and only settles
+                // to the real hero once the match starts. Building this map once from that
+                // early frame froze the placeholder, so every later modifier / kill on those
+                // pawns attributed to the wrong hero and never appeared under the real one.
+                // Do the full scan once, then refresh the pawns touched each tick so the
+                // settled hero id wins.
+                if load_abilities || load_kills || load_damage || load_healing || load_sinners_sacrifice || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks {
+                    if !entity_to_hero_built {
+                        for (idx, entity) in $ctx.entities().iter() {
+                            if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
+                                let hid = entity.get_i64(pk_hero_id);
+                                if hid != 0 {
+                                    entity_to_hero.insert(idx, hid);
+                                }
+                            }
+                        }
+                        entity_to_hero_built = true;
+                    } else {
+                        for &idx in $ctx.entities().updated_indices() {
+                            let Some(entity) = $ctx.entities().get(idx) else {
+                                continue;
+                            };
+                            if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
+                                let hid = entity.get_i64(pk_hero_id);
+                                if hid != 0 {
+                                    entity_to_hero.insert(idx, hid);
+                                }
                             }
                         }
                     }
-                    entity_to_hero_built = true;
                 }
 
                 // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
