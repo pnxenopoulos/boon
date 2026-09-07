@@ -13,6 +13,13 @@
 
 ### boon-python
 
+- `demo.damage` now includes `victim_entity_id`, the victim's entity index
+  (-1 if absent). It is the `entindex_victim` the dataset already uses to
+  resolve `victim_hero_id`, now exposed directly, so a caller can join it to
+  an entity-keyed dataset such as `neutrals` or `sinners_sacrifice` and
+  identify the exact non-hero unit that `victim_class` (a coarse enum) cannot
+  distinguish.
+
 - New opt-in `demo.healing` dataset surfaces per-event healing from
   `CCitadelUserMessage_Damage`. A heal is a damage message with a negative
   `health_lost`; the dataset keeps those rows and reports `amount` as the
