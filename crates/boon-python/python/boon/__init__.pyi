@@ -401,6 +401,30 @@ class Demo:
         """
         ...
 
+    def tick_to_match_seconds(self, tick: int) -> float | None:
+        """Convert a tick to on-screen match-clock seconds, excluding paused time.
+
+        ``0.0`` at ``game_start_tick``; negative during the pre-game lobby (matching
+        the spectator clock's pre-game countdown). Equal to
+        ``tick_to_seconds(tick) - pregame_seconds``.
+
+        Args:
+            tick: The game tick to convert.
+
+        Returns:
+            Match-clock seconds, or ``None`` if ``pregame_seconds`` is unavailable.
+        """
+        ...
+
+    def tick_to_match_clock(self, tick: int) -> str | None:
+        """Convert a tick to an on-screen match-clock string (for example, ``"3:14"``).
+
+        The formatted counterpart to ``tick_to_match_seconds``; pre-game ticks read as
+        a negative clock (for example, ``"-0:12"``). Returns ``None`` if
+        ``pregame_seconds`` is unavailable.
+        """
+        ...
+
     @property
     def winning_team_num(self) -> int | None:
         """The team number of the winning team, or ``None`` if no game-over event was found."""
@@ -409,6 +433,28 @@ class Demo:
     @property
     def game_over_tick(self) -> int | None:
         """The tick when the game ended, or ``None`` if no game-over event was found."""
+        ...
+
+    @property
+    def pregame_seconds(self) -> float | None:
+        """The pre-game lobby duration in seconds.
+
+        The demo starts recording during the pre-game, so tick 0 leads the on-screen
+        match clock (which reaches ``0:00`` only when the barrier drops and the game
+        begins) by this amount: ``match clock = tick_to_seconds - pregame_seconds``.
+        Derived from the replicated match clock at game over, not a heuristic. Returns
+        ``None`` if the demo has no game-over event, does not replicate the match clock
+        (older builds), or does not start in the pre-game (a recording that begins after
+        the barrier drop, where the offset would be negative).
+        """
+        ...
+
+    @property
+    def game_start_tick(self) -> int | None:
+        """The tick at which the match clock reaches ``0:00`` — the game begins and the
+        barrier drops, ending the pre-game lobby. The counterpart to ``game_over_tick``.
+        Returns ``None`` if ``pregame_seconds`` is unavailable.
+        """
         ...
 
     @property

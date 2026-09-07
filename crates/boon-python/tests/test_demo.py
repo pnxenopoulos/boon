@@ -230,6 +230,69 @@ class TestGameResult:
             assert 0 < tick <= demo.total_ticks
 
 
+# ===================================================================
+# Match clock (pre-game offset)
+# ===================================================================
+
+
+class TestMatchClock:
+    """Tests for the on-screen match clock and the pre-game offset.
+
+    ``tick_to_seconds`` counts from the demo's tick 0 (the pre-game lobby), so it
+    leads the on-screen match clock by the pre-game duration. ``pregame_seconds`` /
+    ``game_start_tick`` / ``tick_to_match_*`` expose that offset and the true HUD
+    clock, derived from the game's replicated match clock at game over.
+    """
+
+    def test_pregame_seconds_is_float_or_none(self, demo: Demo) -> None:
+        result = demo.pregame_seconds
+        assert result is None or isinstance(result, float)
+
+    def test_pregame_seconds_sane(self, demo: Demo) -> None:
+        pg = demo.pregame_seconds
+        if pg is not None:
+            # A short, fixed lobby prefix — never a large fraction of the match.
+            assert 0.0 < pg < 120.0
+
+    def test_game_start_tick_before_game_over(self, demo: Demo) -> None:
+        start, over = demo.game_start_tick, demo.game_over_tick
+        if start is not None and over is not None:
+            assert 0 <= start < over
+
+    def test_match_clock_zero_at_game_start(self, demo: Demo) -> None:
+        start = demo.game_start_tick
+        if start is not None:
+            # The match clock is 0:00 at game start, by construction (± rounding).
+            assert abs(demo.tick_to_match_seconds(start)) < 1.0
+
+    def test_match_seconds_identity(self, demo: Demo) -> None:
+        pg = demo.pregame_seconds
+        if pg is None:
+            return
+        for tick in (demo.total_ticks // 4, demo.total_ticks // 2):
+            assert demo.tick_to_match_seconds(tick) == pytest.approx(
+                demo.tick_to_seconds(tick) - pg
+            )
+
+    def test_match_seconds_negative_during_pregame(self, demo: Demo) -> None:
+        start = demo.game_start_tick
+        if start is not None and start > 1:
+            # A tick inside the pre-game reads as a negative match clock.
+            assert demo.tick_to_match_seconds(start // 2) < 0.0
+
+    def test_match_clock_format(self, demo: Demo) -> None:
+        if demo.pregame_seconds is None:
+            return
+        clock = demo.tick_to_match_clock(demo.total_ticks // 2)
+        assert re.match(r"-?\d+:\d{2}", clock)
+
+    def test_match_clock_none_when_offset_unavailable(self, demo: Demo) -> None:
+        # tick_to_match_* and game_start_tick are None exactly when the offset is.
+        if demo.pregame_seconds is None:
+            assert demo.tick_to_match_seconds(0) is None
+            assert demo.tick_to_match_clock(0) is None
+            assert demo.game_start_tick is None
+
 
 # ===================================================================
 # Players and teams

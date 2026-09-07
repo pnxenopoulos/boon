@@ -20,7 +20,15 @@
   through the same entity-to-hero map as `demo.damage`. Not loaded by default.
   Barrier / shield grants are not carried by this message, so this is health
   healing only.
-
+- New `pregame_seconds`, `game_start_tick`, `tick_to_match_seconds(tick)`, and
+  `tick_to_match_clock(tick)`. `tick_to_seconds` / `tick_to_clock_time` count from
+  the demo's tick 0, which is the pre-game lobby, so they lead the on-screen match
+  clock by the pre-game duration (about 30s). These expose that offset and the true
+  on-screen clock: `0:00` at the barrier drop, negative during the pre-game (matching
+  the spectator countdown). The offset is read from the replicated match clock at game
+  over rather than assumed constant, so it is exact per demo. All return `None` when
+  the demo has no game-over event, does not replicate the match clock, or does not
+  start in the pre-game (a recording that begins after the barrier drop).
 - Fixed finite modifiers that stayed active in `active_modifiers`,
   `stat_effects(...)`, and `stat_ticks(...)` after their duration ended.
   Boon now compares the modifier deadline with the replicated Source 2
