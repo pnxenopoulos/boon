@@ -2,7 +2,7 @@
 //! and Deadlock's English hero/item localization catalogs.
 //! Maps exact internal ability/item names to English display names.
 //!
-//! Last updated: 2026-09-02
+//! Last updated: 2026-09-08
 
 /// All known (internal name, English display name) pairs sorted by internal name.
 const ENTRIES: &[(&str, &str)] = &[

@@ -159,6 +159,8 @@ enum EGCCitadelClientMessages {
 	k_EMsgClientToGCSetAccountPrivacySettingResponse = 9283;
 	k_EMsgClientToGCStartRankedInterval = 9289;
 	k_EMsgClientToGCStartRankedIntervalResponse = 9290;
+	k_EMsgClientToGCGetLeaderboardStatus = 9293;
+	k_EMsgClientToGCGetLeaderboardStatusResponse = 9294;
 }
 
 enum ECitadelAccountPermissionFlag {
@@ -1399,6 +1401,7 @@ message CMsgClientToGCUpdateHeroBuildPreferenceResponse {
 	enum EResponse {
 		k_eInternalError = 0;
 		k_eSuccess = 1;
+		k_eTooBusy = 2;
 	}
 
 	optional .CMsgClientToGCUpdateHeroBuildPreferenceResponse.EResponse response = 1 [default = k_eInternalError];
@@ -1626,6 +1629,7 @@ message CMsgClientToGCGetHeroMMRRankingsResponse {
 message CMsgClientToGCGetLeaderboard {
 	optional .ECitadelLeaderboardRegion leaderboard_region = 1 [default = k_ECitadelLeaderboardRegion_None];
 	optional uint32 hero_id = 2;
+	optional uint32 leaderboard_id = 3;
 }
 
 message CMsgClientToGCGetLeaderboardResponse {
@@ -1649,6 +1653,7 @@ message CMsgClientToGCGetLeaderboardResponse {
 
 message CMsgClientToGCGetAccountLeaderboards {
 	optional uint32 account_id = 1;
+	optional uint32 leaderboard_id = 2;
 }
 
 message CMsgClientToGCGetAccountLeaderboardsResponse {
@@ -1923,4 +1928,39 @@ message CMsgClientToGCStartRankedIntervalResponse {
 	}
 
 	optional .CMsgClientToGCStartRankedIntervalResponse.EResponse response = 1 [default = k_eInternalError];
+}
+
+message CMsgClientToGCGetLeaderboardStatus {
+	optional uint32 leaderboard_id = 1;
+}
+
+message CMsgClientToGCGetLeaderboardStatusResponse {
+	message Hero {
+		optional uint32 hero_id = 1;
+		optional uint32 recent_matches = 2;
+		optional .ECitadelLeaderboardRegion region = 3 [default = k_ECitadelLeaderboardRegion_None];
+		optional uint32 lifetime_wins = 4;
+		optional bool is_eligible = 5;
+	}
+
+	enum EResult {
+		k_eInternalError = 0;
+		k_eSuccess = 1;
+		k_eTooBusy = 2;
+		k_eRateLimited = 3;
+		k_eInvalidLeaderboard = 4;
+	}
+
+	optional .CMsgClientToGCGetLeaderboardStatusResponse.EResult result = 1 [default = k_eInternalError];
+	optional bool is_eligible = 2;
+	optional uint32 recent_matches = 3;
+	optional uint32 required_recent_matches = 4;
+	optional uint32 required_recent_hero_matches = 5;
+	optional .ECitadelLeaderboardRegion region = 6 [default = k_ECitadelLeaderboardRegion_None];
+	optional bool is_rank_high_enough = 7;
+	optional uint32 lifetime_matches = 8;
+	optional uint32 required_lifetime_matches = 9;
+	optional uint32 required_lifetime_hero_wins = 10;
+	repeated .CMsgClientToGCGetLeaderboardStatusResponse.Hero hero_info = 11;
+	optional uint32 match_history_days = 12;
 }

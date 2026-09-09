@@ -1,6 +1,6 @@
 //! Auto-generated from Deadlock abilities.vdata.
 //!
-//! Last updated: 2026-09-02
+//! Last updated: 2026-09-08
 
 use crate::stats::{StatEffect, StatId, StatOperation};
 
