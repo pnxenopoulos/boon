@@ -13,6 +13,12 @@
 
 ### boon-python
 
+- New `demo.barriers()` derived dataset reports each barrier a hero gained and
+  how much of it stopped damage. Rows include `tick`, `hero_id`, `granted`,
+  `absorbed`, `expired`, and `hits`. It reads the `barrier` pool in
+  `player_ticks`: a rise opens a barrier and each fall is charged against the
+  barriers still standing, booked as absorbed when `damage` shows a hit on that
+  tick or expired otherwise.
 - `demo.damage` now includes `victim_entity_id`, the victim's entity index
   (-1 if absent). It is the `entindex_victim` the dataset already uses to
   resolve `victim_hero_id`, now exposed directly, so a caller can join it to
