@@ -129,6 +129,7 @@ pub(super) fn segment_ranges(offsets: &[(usize, i32)], n: usize) -> Vec<(Option<
 #[derive(Clone, Copy, Default)]
 pub(super) struct PtKeys {
     pub(super) hero_id: Option<u64>,
+    pub(super) simulation_time: Option<u64>,
     pub(super) vec_x: Option<u64>,
     pub(super) vec_y: Option<u64>,
     pub(super) vec_z: Option<u64>,
@@ -210,6 +211,7 @@ impl PtKeys {
         let stat_viewer = resolve_stat_viewer_keys(ctrl);
         Self {
             hero_id: p("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"),
+            simulation_time: p("m_flSimulationTime"),
             vec_x: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
             vec_y: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
             vec_z: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ"),
@@ -267,6 +269,27 @@ impl PtKeys {
             stat_viewer,
         }
     }
+}
+
+/// Read the Source 2 simulation clock used by modifier timestamps.
+///
+/// Modifier entries store last_applied_time as GameTime_t. Player pawns expose
+/// the same clock through m_flSimulationTime. In observed Deadlock demos, all
+/// current pawns report the same value for a tick. Use the maximum finite value
+/// so a dormant or newly created pawn with a stale zero cannot move time
+/// backwards.
+///
+/// Return None when the serializer does not contain this field. This is an
+/// intentional compatibility path for old demos: callers keep explicit
+/// modifier removals but do not guess an expiry from an unrelated clock.
+pub(super) fn current_simulation_time(ctx: &boon_parser::Context, key: Option<u64>) -> Option<f32> {
+    let key = key?;
+    ctx.entities()
+        .iter()
+        .filter(|(_, entity)| entity.class_name.as_ref() == "CCitadelPlayerPawn")
+        .map(|(_, entity)| entity.get_f32(Some(key)))
+        .filter(|value| value.is_finite())
+        .max_by(f32::total_cmp)
 }
 
 /// Live barrier remaining, decoded from each pawn's persistent
@@ -431,7 +454,7 @@ impl StatCols {
         &mut self,
         ctx: &boon_parser::Context,
         keys: &PtKeys,
-        modifiers: &boon_parser::ModifierState,
+        modifiers: &boon_parser::EffectiveModifierState,
         selected: boon_parser::StatMask,
     ) {
         for (_, controller) in ctx
@@ -525,16 +548,17 @@ impl StatCols {
 #[derive(Default)]
 pub(super) struct StatSegment {
     pub(super) columns: StatCols,
-    pub(super) modifiers: boon_parser::ModifierState,
+    pub(super) modifiers: boon_parser::EffectiveModifierState,
     pub(super) initialized: bool,
 }
 
 impl StatSegment {
-    pub(super) fn update(&mut self, ctx: &boon_parser::Context) {
+    pub(super) fn update(&mut self, ctx: &boon_parser::Context, keys: &PtKeys) {
+        let game_time = current_simulation_time(ctx, keys.simulation_time);
         if self.initialized {
-            self.modifiers.update(ctx);
+            self.modifiers.update(ctx, game_time);
         } else {
-            self.modifiers.rebuild(ctx);
+            self.modifiers.rebuild(ctx, game_time);
             self.initialized = true;
         }
     }

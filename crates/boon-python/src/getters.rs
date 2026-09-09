@@ -65,6 +65,9 @@ impl Demo {
     /// - crit_damage: Critical damage amount
     /// - attacker_class: The attacker's entity class ID
     /// - victim_class: The victim's entity class ID
+    /// - victim_entity_id: The victim's entity index (-1 if absent). Join it to an entity-keyed
+    ///   dataset such as ``neutrals`` or ``sinners_sacrifice`` to identify the exact unit killed,
+    ///   which ``victim_class`` (a coarse enum) cannot distinguish.
     /// - ability_id: The ability/weapon that dealt the hit (0 if absent; use
     ///   ``ability_names()`` to resolve it)
     /// - damage_type: Raw Source ``type`` damage bitfield
@@ -81,6 +84,32 @@ impl Demo {
             self.load(py, vec!["damage".to_string()])?;
         }
         Ok(PyDataFrame(self.cached_damage.clone().unwrap()))
+    }
+
+    /// Per-event healing as a Polars DataFrame.
+    ///
+    /// Returns a DataFrame with columns:
+    /// - tick: The game tick when the heal occurred
+    /// - target_hero_id: The healed hero (0 if not a hero)
+    /// - source_hero_id: The healer (0 if not a hero or self / none)
+    /// - amount: Health restored (positive)
+    /// - ability_id: The ability/item that healed (0 if absent; use
+    ///   ``ability_names()`` to resolve it)
+    /// - citadel_type: The Deadlock damage category the heal came through
+    ///
+    /// Heals ride on ``CCitadelUserMessage_Damage`` as a negative
+    /// ``health_lost`` (the ``damage`` field itself stays non-negative). This
+    /// dataset keeps only those rows and reports ``amount`` as the positive
+    /// health restored. Barrier / shield grants are not present in this
+    /// message, so this is health healing only.
+    ///
+    /// Not loaded by default. Boon loads this dataset on first access.
+    #[getter]
+    pub(crate) fn healing(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+        if self.cached_healing.is_none() {
+            self.load(py, vec!["healing".to_string()])?;
+        }
+        Ok(PyDataFrame(self.cached_healing.clone().unwrap()))
     }
 
     /// Flex slot unlock events as a Polars DataFrame.
@@ -307,8 +336,14 @@ impl Demo {
     /// ``duration``, ``caster_hero_id``, ``stacks``.
     ///
     /// ``"applied"`` means that Boon first saw the modifier on a player.
-    /// ``"changed"`` means that its active state changed. ``"removed"`` means
-    /// that it disappeared. The removed row contains the final stack count.
+    /// ``"changed"`` means that its effective state changed. ``"removed"``
+    /// means that its effective lifetime ended. A removal can come from the
+    /// replicated table, slot reuse, aura exit, or a finite duration.
+    ///
+    /// Finite durations use the replicated Source 2 simulation clock. Old
+    /// demos without that clock keep explicit removal behavior. Boon does not
+    /// clear every modifier on death because some modifiers survive death.
+    /// The removed row contains the final stack count.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn active_modifiers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {

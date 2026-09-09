@@ -53,9 +53,14 @@ KILLS_COLUMNS = {"tick", "victim_hero_id", "attacker_hero_id", "assister_hero_id
 DAMAGE_COLUMNS = {
     "tick", "damage", "pre_damage", "victim_hero_id", "attacker_hero_id",
     "victim_health_new", "hitgroup_id", "crit_damage",
-    "attacker_class", "victim_class",
+    "attacker_class", "victim_class", "victim_entity_id",
     "ability_id", "damage_type", "citadel_type", "damage_flags",
     "is_melee", "melee_type",
+}
+
+HEALING_COLUMNS = {
+    "tick", "target_hero_id", "source_hero_id", "amount",
+    "ability_id", "citadel_type",
 }
 
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
@@ -141,6 +146,7 @@ DATASET_COLUMNS = {
     "world_ticks": WORLD_TICKS_COLUMNS,
     "kills": KILLS_COLUMNS,
     "damage": DAMAGE_COLUMNS,
+    "healing": HEALING_COLUMNS,
     "flex_slots": FLEX_SLOTS_COLUMNS,
     "abilities": ABILITIES_COLUMNS,
     "ability_upgrades": ABILITY_UPGRADES_COLUMNS,
@@ -224,6 +230,69 @@ class TestGameResult:
             assert 0 < tick <= demo.total_ticks
 
 
+# ===================================================================
+# Match clock (pre-game offset)
+# ===================================================================
+
+
+class TestMatchClock:
+    """Tests for the on-screen match clock and the pre-game offset.
+
+    ``tick_to_seconds`` counts from the demo's tick 0 (the pre-game lobby), so it
+    leads the on-screen match clock by the pre-game duration. ``pregame_seconds`` /
+    ``game_start_tick`` / ``tick_to_match_*`` expose that offset and the true HUD
+    clock, derived from the game's replicated match clock at game over.
+    """
+
+    def test_pregame_seconds_is_float_or_none(self, demo: Demo) -> None:
+        result = demo.pregame_seconds
+        assert result is None or isinstance(result, float)
+
+    def test_pregame_seconds_sane(self, demo: Demo) -> None:
+        pg = demo.pregame_seconds
+        if pg is not None:
+            # A short, fixed lobby prefix — never a large fraction of the match.
+            assert 0.0 < pg < 120.0
+
+    def test_game_start_tick_before_game_over(self, demo: Demo) -> None:
+        start, over = demo.game_start_tick, demo.game_over_tick
+        if start is not None and over is not None:
+            assert 0 <= start < over
+
+    def test_match_clock_zero_at_game_start(self, demo: Demo) -> None:
+        start = demo.game_start_tick
+        if start is not None:
+            # The match clock is 0:00 at game start, by construction (± rounding).
+            assert abs(demo.tick_to_match_seconds(start)) < 1.0
+
+    def test_match_seconds_identity(self, demo: Demo) -> None:
+        pg = demo.pregame_seconds
+        if pg is None:
+            return
+        for tick in (demo.total_ticks // 4, demo.total_ticks // 2):
+            assert demo.tick_to_match_seconds(tick) == pytest.approx(
+                demo.tick_to_seconds(tick) - pg
+            )
+
+    def test_match_seconds_negative_during_pregame(self, demo: Demo) -> None:
+        start = demo.game_start_tick
+        if start is not None and start > 1:
+            # A tick inside the pre-game reads as a negative match clock.
+            assert demo.tick_to_match_seconds(start // 2) < 0.0
+
+    def test_match_clock_format(self, demo: Demo) -> None:
+        if demo.pregame_seconds is None:
+            return
+        clock = demo.tick_to_match_clock(demo.total_ticks // 2)
+        assert re.match(r"-?\d+:\d{2}", clock)
+
+    def test_match_clock_none_when_offset_unavailable(self, demo: Demo) -> None:
+        # tick_to_match_* and game_start_tick are None exactly when the offset is.
+        if demo.pregame_seconds is None:
+            assert demo.tick_to_match_seconds(0) is None
+            assert demo.tick_to_match_clock(0) is None
+            assert demo.game_start_tick is None
+
 
 # ===================================================================
 # Players and teams
@@ -268,6 +337,19 @@ class TestPlayersAndTeams:
         player_heroes = set(demo.players["hero_id"].to_list())
         tick_heroes = set(demo.player_ticks["hero_id"].to_list())
         assert tick_heroes == player_heroes
+
+    def test_active_modifiers_covers_all_players(self, demo: Demo) -> None:
+        """Every hero in `players` must be reachable in `active_modifiers`.
+
+        A pawn's `m_spawnedHero.m_nHeroID` reads an intro placeholder before the
+        hero locks in, then settles to the real hero. `entity_to_hero` is built
+        once from an early frame, so a pawn frozen at the placeholder never
+        appears under its real hero id and any join on `active_modifiers.hero_id`
+        silently drops it.
+        """
+        player_heroes = set(demo.players["hero_id"].to_list())
+        am_heroes = set(demo.active_modifiers["hero_id"].to_list())
+        assert player_heroes <= am_heroes
 
 
 # ===================================================================
@@ -415,7 +497,7 @@ class TestDatasets:
 
     # Datasets that may be empty depending on game mode
     # "rift" is empty on demos from builds predating the Rift objective.
-    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
+    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "healing", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
@@ -538,6 +620,38 @@ class TestActiveModifiers:
                     assert event == "removed"
                     assert active
                     active = False
+
+    def test_no_restamp_reapplication_bursts(self, demo: Demo) -> None:
+        """No tick re-applies modifiers the heroes already have across the roster.
+
+        The engine periodically re-stamps every live modifier on one tick, reusing a
+        serial for some and minting a fresh one for others. Each re-stamped row must
+        not surface as a fresh `applied`, or a modifier applied once looks re-applied
+        every ~60s. A real cast is a modifier the hero did not have and an aura
+        re-entering range touches a hero or two, so a single tick re-applying modifiers
+        many heroes already have only happens on a re-stamp. Detection is by modifier
+        identity, not serial, so a re-stamp that mints fresh serials is caught too.
+        """
+        applied = (
+            demo.active_modifiers.filter(pl.col("event") == "applied")
+            .select(["tick", "hero_id", "modifier_id"])
+            .sort("tick")
+        )
+        seen: set[tuple[int, int]] = set()
+        for (tick,), group in applied.group_by("tick", maintain_order=True):
+            reapplied_heroes = {
+                row["hero_id"]
+                for row in group.iter_rows(named=True)
+                if (row["hero_id"], row["modifier_id"]) in seen
+            }
+            assert len(reapplied_heroes) < 6, (
+                f"tick {tick} re-applies held modifiers for {len(reapplied_heroes)} "
+                "heroes, a re-stamp leaking into applied"
+            )
+            seen.update(
+                (row["hero_id"], row["modifier_id"])
+                for row in group.iter_rows(named=True)
+            )
 
 
 class TestRift:
@@ -720,6 +834,19 @@ class TestSinnersSacrifice:
             & (pl.col("health") == 400)
         )
         assert len(known) == 1
+
+
+class TestHealing:
+    """The healing dataset: heal events (negative health_lost) as positive amounts."""
+
+    def test_schema(self, demo: Demo) -> None:
+        assert set(demo.healing.columns) == HEALING_COLUMNS
+
+    def test_amount_positive(self, demo: Demo) -> None:
+        # amount is -health_lost on rows kept for health_lost < 0, so it is
+        # always positive by construction.
+        df = demo.healing
+        assert (df["amount"] > 0).all()
 
 
 # ===================================================================

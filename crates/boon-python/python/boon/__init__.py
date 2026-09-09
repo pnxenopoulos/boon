@@ -23,15 +23,16 @@ from boon.errors import (
     InvalidDemoError,
     NotStreetBrawlError,
 )
-from boon import stats
+from boon import barriers, stats
 
-# Surface stats as convenience methods on Demo. The implementation lives in
-# ``boon.stats``; these are thin delegators so ``demo.kill_participation()`` and
-# ``boon.stats.kill_participation(demo)`` are the same computation.
+# Surface derived datasets as convenience methods on Demo. The implementations live in
+# ``boon.stats`` / ``boon.barriers``; these are thin delegators so ``demo.teamfights()``
+# and ``boon.stats.teamfights(demo)`` are the same computation.
 Demo.in_combat = stats.in_combat
 Demo.kill_participation = stats.kill_participation
 Demo.teamfights = stats.teamfights
 Demo.time_dead = stats.time_dead
+Demo.barriers = barriers.barriers
 
 __all__ = [
     "Demo",
@@ -42,6 +43,7 @@ __all__ = [
     "NotStreetBrawlError",
     "ability_display_names",
     "ability_names",
+    "barriers",
     "game_mode_names",
     "hero_names",
     "hitgroup_names",

@@ -1,4 +1,4 @@
-# Contributors
+# 🤝 Contributors
 
 Boon improves when users report bugs, test demos, and propose changes.
 Thanks to everyone who helps the project. The entries below recognize

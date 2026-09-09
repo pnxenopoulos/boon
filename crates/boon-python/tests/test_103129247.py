@@ -140,6 +140,29 @@ def test_player_melee_damage(demo: Demo) -> None:
     }
 
 
+def test_willpower_modifier_uses_its_effective_lifetime(demo: Demo) -> None:
+    # Valve leaves Willpower serial 7480 in ActiveModifiers until tick 53761.
+    # Its GameTime_t fields give it a five-second effective lifetime, so Boon
+    # must end it at tick 51198. This test prevents the raw table cleanup time
+    # from leaking into active modifier and derived-stat timelines.
+    willpower = demo.active_modifiers.filter(
+        (pl.col("hero_id") == 25)
+        & (pl.col("ability_id") == 2751689917)
+        & (pl.col("serial") == 7480)
+    ).select("tick", "event")
+    assert willpower.rows() == [(50878, "applied"), (51198, "removed")]
+
+    effects = (
+        demo.stat_effects("status_resist")
+        .filter(pl.col("serial") == 7480)
+        .select("tick", "event", "active")
+    )
+    assert effects.rows() == [
+        (50878, "applied", True),
+        (51198, "removed", False),
+    ]
+
+
 def test_banned_heroes(demo: Demo) -> None:
     bans = {
         (row["hero_id"], row["hero_name"])

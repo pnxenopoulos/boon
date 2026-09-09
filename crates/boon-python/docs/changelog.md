@@ -1,5 +1,54 @@
 # 📝 Changelog
 
+## 0.9.0
+
+### boon
+
+- New `EffectiveModifierState` separates replicated `ActiveModifiers` rows
+  from modifiers that still have a gameplay effect. It ends a positive,
+  finite-duration modifier at its `GameTime_t` deadline and retains the raw
+  row for later partial protobuf updates. An explicit removal, an aura exit,
+  or slot reuse can end the modifier earlier. Zero, negative, and incomplete
+  durations continue until a recorded state transition ends them.
+
+### boon-python
+
+- New `demo.barriers()` derived dataset reports each barrier a hero gained and
+  how much of it stopped damage. Rows include `tick`, `hero_id`, `granted`,
+  `absorbed`, `expired`, and `hits`. It reads the `barrier` pool in
+  `player_ticks`: a rise opens a barrier and each fall is charged against the
+  barriers still standing, booked as absorbed when `damage` shows a hit on that
+  tick or expired otherwise.
+- `demo.damage` now includes `victim_entity_id`, the victim's entity index
+  (-1 if absent). It is the `entindex_victim` the dataset already uses to
+  resolve `victim_hero_id`, now exposed directly, so a caller can join it to
+  an entity-keyed dataset such as `neutrals` or `sinners_sacrifice` and
+  identify the exact non-hero unit that `victim_class` (a coarse enum) cannot
+  distinguish.
+
+- New opt-in `demo.healing` dataset surfaces per-event healing from
+  `CCitadelUserMessage_Damage`. A heal is a damage message with a negative
+  `health_lost`; the dataset keeps those rows and reports `amount` as the
+  positive health restored, resolving `target_hero_id` and `source_hero_id`
+  through the same entity-to-hero map as `demo.damage`. Not loaded by default.
+  Barrier / shield grants are not carried by this message, so this is health
+  healing only.
+- New `pregame_seconds`, `game_start_tick`, `tick_to_match_seconds(tick)`, and
+  `tick_to_match_clock(tick)`. `tick_to_seconds` / `tick_to_clock_time` count from
+  the demo's tick 0, which is the pre-game lobby, so they lead the on-screen match
+  clock by the pre-game duration (about 30s). These expose that offset and the true
+  on-screen clock: `0:00` at the barrier drop, negative during the pre-game (matching
+  the spectator countdown). The offset is read from the replicated match clock at game
+  over rather than assumed constant, so it is exact per demo. All return `None` when
+  the demo has no game-over event, does not replicate the match clock, or does not
+  start in the pre-game (a recording that begins after the barrier drop).
+- Fixed finite modifiers that stayed active in `active_modifiers`,
+  `stat_effects(...)`, and `stat_ticks(...)` after their duration ended.
+  Boon now compares the modifier deadline with the replicated Source 2
+  simulation clock. Old demos without a compatible simulation clock keep the
+  recorded transition behavior. Boon does not clear all modifiers when a
+  player dies because some modifiers persist after death.
+
 ## 0.8.0
 
 ### boon-python

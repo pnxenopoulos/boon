@@ -210,7 +210,11 @@ print(f"{positions.height} position samples for hero {hero_id}")
 
 ## Active modifiers (buffs/debuffs)
 
-Track when specific abilities are applied to players.
+Track the effective lifetime of abilities on players. An `applied` event starts
+an effective lifetime. A `removed` event ends it because of an explicit state
+change, an aura exit, slot reuse, or a finite-duration deadline. Boon does not
+apply one death rule to all modifiers because some modifiers persist after
+death.
 
 ```python
 import polars as pl
