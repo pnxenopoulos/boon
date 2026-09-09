@@ -35,9 +35,6 @@ pub(super) struct AbilityUpgradeKeys {
     pub(super) upgrade_info: Option<u64>,
 }
 
-// Spirit power feeds hero-specific m_mapScalingStats rules from heroes.vdata.
-pub(super) const MODIFIER_VALUE_SPIRIT_POWER: u32 = 158;
-
 #[derive(Clone, Copy, Default)]
 pub(super) struct StatViewerKeys {
     pub(super) value_type: Option<u64>,
@@ -83,8 +80,15 @@ pub(super) fn effective_resistances_from_values(
     let mut spirit_power = stats.base_spirit_power + level_ups * stats.spirit_power_per_level;
 
     for (value_type, value) in values {
-        if value_type == MODIFIER_VALUE_SPIRIT_POWER && value.is_finite() {
-            spirit_power += value;
+        let Some(decoded) = boon_parser::decode_stat_modifier_value_type(value_type) else {
+            continue;
+        };
+        if decoded.kind == boon_parser::StatModifierKind::SpiritPower && value.is_finite() {
+            // Use the shared compatibility decoder because EModifierValue was
+            // renumbered between builds 10725 and 10854. Do not compare the
+            // raw value type here. The decoder is the single source of truth
+            // for all observed enum layouts.
+            spirit_power += value * decoded.value_scale;
         }
     }
 

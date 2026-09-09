@@ -215,13 +215,15 @@ mod resistance_tests {
     }
 
     #[test]
-    fn includes_level_and_modifier_spirit_power_in_scaling() {
+    fn includes_both_observed_spirit_power_value_types_in_scaling() {
         // Venator at level 31 has 33 spirit power from level growth; the
-        // network vector contributes another 15 in the reference demo.
-        let [bullet, spirit] =
-            effective_resistances_from_values(65, 31, [(158, 6.0), (158, 9.0)], []);
-        assert_close(bullet, 5.84544);
-        assert_close(spirit, 5.84544);
+        // network vector contributes another 15 in the reference demos.
+        // Builds 10725 and 10854 use different EModifierValue numbers.
+        let legacy = effective_resistances_from_values(65, 31, [(51, 6.0), (51, 9.0)], []);
+        let current = effective_resistances_from_values(65, 31, [(158, 6.0), (158, 9.0)], []);
+        assert_eq!(legacy, current);
+        assert_close(current[0], 5.84544);
+        assert_close(current[1], 5.84544);
     }
 
     #[test]
