@@ -26,14 +26,6 @@ pub(super) fn parallel_segments() -> usize {
 }
 
 pub(super) const STAT_VIEWER_SLOTS: usize = 20;
-pub(super) const UPGRADE_SLOTS: usize = 16;
-pub(super) const ABILITY_UPGRADE_SLOTS: usize = 8;
-
-#[derive(Clone, Copy, Default)]
-pub(super) struct AbilityUpgradeKeys {
-    pub(super) ability_id: Option<u64>,
-    pub(super) upgrade_info: Option<u64>,
-}
 
 #[derive(Clone, Copy, Default)]
 pub(super) struct StatViewerKeys {
@@ -58,56 +50,12 @@ pub(super) fn resolve_stat_viewer_keys(
     })
 }
 
-/// Combine independent resistance sources using Deadlock's multiplicative
-/// stacking rule.
-pub(super) fn combine_resistance(current: f32, source: f32) -> f32 {
-    100.0 - (100.0 - current) * (100.0 - source) / 100.0
-}
-
-/// Reconstruct the baseline resistance shown by the client from hero
-/// progression, spirit-power scaling, and unconditional equipped-item stats.
-///
-/// Temporary buffs, barriers, auras, and enemy resistance reductions are not
-/// included because the controller does not replicate a final resistance value.
-pub(super) fn effective_resistances_from_values(
-    hero_id: i64,
-    level: i64,
-    values: impl IntoIterator<Item = (u32, f32)>,
-    upgrades: impl IntoIterator<Item = u32>,
-) -> [f32; 2] {
-    let stats = boon_parser::hero_resistance_stats(hero_id);
-    let level_ups = level.saturating_sub(1) as f32;
-    let mut spirit_power = stats.base_spirit_power + level_ups * stats.spirit_power_per_level;
-
-    for (value_type, value) in values {
-        let Some(decoded) = boon_parser::decode_stat_modifier_value_type(value_type) else {
-            continue;
-        };
-        if decoded.kind == boon_parser::StatModifierKind::SpiritPower && value.is_finite() {
-            // Use the shared compatibility decoder because EModifierValue was
-            // renumbered between builds 10725 and 10854. Do not compare the
-            // raw value type here. The decoder is the single source of truth
-            // for all observed enum layouts.
-            spirit_power += value * decoded.value_scale;
-        }
-    }
-
-    let hero_bullet = stats.base_bullet_resist
-        + level_ups * stats.bullet_resist_per_level
-        + spirit_power * stats.bullet_resist_per_spirit_power;
-    let hero_spirit = stats.base_spirit_resist
-        + level_ups * stats.spirit_resist_per_level
-        + spirit_power * stats.spirit_resist_per_spirit_power;
-    let mut bullet = combine_resistance(0.0, hero_bullet);
-    let mut spirit = combine_resistance(0.0, hero_spirit);
-
-    for upgrade_id in upgrades {
-        let item = boon_parser::item_resistance_stats(upgrade_id);
-        bullet = combine_resistance(bullet, item.bullet_resist);
-        spirit = combine_resistance(spirit, item.spirit_resist);
-    }
-
-    [bullet, spirit]
+// The vector is usable only when the serializer exposes its count and entry fields.
+pub(super) fn stat_viewer_values_available(
+    count: Option<u64>,
+    keys: &[StatViewerKeys; STAT_VIEWER_SLOTS],
+) -> bool {
+    count.is_some() && keys[0].value_type.is_some() && keys[0].value.is_some()
 }
 
 /// Split the full-packet offsets into `n` contiguous `(start_offset, end_tick)`
@@ -133,7 +81,6 @@ pub(super) fn segment_ranges(offsets: &[(usize, i32)], n: usize) -> Vec<(Option<
 #[derive(Clone, Copy, Default)]
 pub(super) struct PtKeys {
     pub(super) hero_id: Option<u64>,
-    pub(super) simulation_time: Option<u64>,
     pub(super) vec_x: Option<u64>,
     pub(super) vec_y: Option<u64>,
     pub(super) vec_z: Option<u64>,
@@ -186,9 +133,6 @@ pub(super) struct PtKeys {
     pub(super) assists: Option<u64>,
     pub(super) stat_viewer_count: Option<u64>,
     pub(super) stat_viewer: [StatViewerKeys; STAT_VIEWER_SLOTS],
-    pub(super) upgrade_count: Option<u64>,
-    pub(super) upgrades: [Option<u64>; UPGRADE_SLOTS],
-    pub(super) ability_upgrades: [AbilityUpgradeKeys; ABILITY_UPGRADE_SLOTS],
 }
 
 impl PtKeys {
@@ -196,26 +140,10 @@ impl PtKeys {
         let pawn = ctx.serializers().get("CCitadelPlayerPawn");
         let ctrl = ctx.serializers().get("CCitadelPlayerController");
         let p = |name: &str| pawn.and_then(|s| s.resolve_field_key(name));
-        let upgrades = std::array::from_fn(|i| {
-            ctrl.and_then(|s| s.resolve_field_key(&format!("m_PlayerDataGlobal.m_vecUpgrades.{i}")))
-        });
-        let ability_upgrades = std::array::from_fn(|i| AbilityUpgradeKeys {
-            ability_id: ctrl.and_then(|s| {
-                s.resolve_field_key(&format!(
-                    "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_ItemID"
-                ))
-            }),
-            upgrade_info: ctrl.and_then(|s| {
-                s.resolve_field_key(&format!(
-                    "m_PlayerDataGlobal.m_vecAbilityUpgradeState.{i:04}.m_nUpgradeInfo"
-                ))
-            }),
-        });
         let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
         let stat_viewer = resolve_stat_viewer_keys(ctrl);
         Self {
             hero_id: p("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"),
-            simulation_time: p("m_flSimulationTime"),
             vec_x: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
             vec_y: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
             vec_z: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ"),
@@ -261,9 +189,6 @@ impl PtKeys {
             obj_damage: c("m_PlayerDataGlobal.m_iObjectiveDamage"),
             self_healing: c("m_PlayerDataGlobal.m_iSelfHealing"),
             kill_streak: c("m_PlayerDataGlobal.m_iKillStreak"),
-            upgrade_count: c("m_PlayerDataGlobal.m_vecUpgrades"),
-            upgrades,
-            ability_upgrades,
             last_hits: c("m_PlayerDataGlobal.m_iLastHits"),
             level: c("m_PlayerDataGlobal.m_iLevel"),
             kills: c("m_PlayerDataGlobal.m_iPlayerKills"),
@@ -272,6 +197,66 @@ impl PtKeys {
             stat_viewer_count: c("m_PlayerDataGlobal.m_vecStatViewerModifierValues"),
             stat_viewer,
         }
+    }
+}
+
+/// Player positions used by analyses that do not need all player-tick columns.
+#[derive(Default)]
+pub(super) struct PlayerPositionCols {
+    pub(super) tick: Vec<i32>,
+    pub(super) hero_id: Vec<i64>,
+    pub(super) x: Vec<f32>,
+    pub(super) y: Vec<f32>,
+}
+
+impl PlayerPositionCols {
+    pub(super) fn collect_tick(&mut self, ctx: &boon_parser::Context, keys: &PtKeys) {
+        for (_, controller) in ctx
+            .entities()
+            .iter()
+            .filter(|(_, entity)| entity.class_name.as_ref() == "CCitadelPlayerController")
+        {
+            let Some(pawn_handle) = controller.get_handle(keys.pawn_handle) else {
+                continue;
+            };
+            let Some(pawn) = ctx.entities().get_by_handle(pawn_handle) else {
+                continue;
+            };
+            if pawn.class_name.as_ref() != "CCitadelPlayerPawn" {
+                continue;
+            }
+            let hero_id = pawn.get_i64(keys.hero_id);
+            if hero_id == 0 {
+                continue;
+            }
+            let [x, y, _] = pawn.world_position(
+                [keys.cell_x, keys.cell_y, keys.cell_z],
+                [keys.vec_x, keys.vec_y, keys.vec_z],
+            );
+            self.tick.push(ctx.tick());
+            self.hero_id.push(hero_id);
+            self.x.push(x);
+            self.y.push(y);
+        }
+    }
+
+    pub(super) fn append(&mut self, mut other: Self) {
+        self.tick.append(&mut other.tick);
+        self.hero_id.append(&mut other.hero_id);
+        self.x.append(&mut other.x);
+        self.y.append(&mut other.y);
+    }
+
+    pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
+        df_from_columns(vec![
+            Column::new("tick".into(), self.tick),
+            Column::new("hero_id".into(), self.hero_id),
+            Column::new("x".into(), self.x),
+            Column::new("y".into(), self.y),
+        ])
+        .map_err(|error| {
+            InvalidDemoError::new_err(format!("Failed to create position DataFrame: {error}"))
+        })
     }
 }
 
@@ -392,294 +377,6 @@ impl BarrierState {
     }
 }
 
-pub(super) fn raw_u32(entity: &boon_parser::Entity, key: Option<u64>) -> u32 {
-    key.and_then(|key| entity.fields.get(&key))
-        .and_then(|value| match value {
-            boon_parser::FieldValue::I32(value) => Some(*value as u32),
-            boon_parser::FieldValue::I64(value) => Some(*value as u32),
-            boon_parser::FieldValue::U32(value) => Some(*value),
-            boon_parser::FieldValue::U64(value) => Some(*value as u32),
-            _ => None,
-        })
-        .unwrap_or(0)
-}
-
-pub(super) fn stat_inputs(
-    controller: &boon_parser::Entity,
-    keys: &PtKeys,
-) -> (Vec<u32>, HashMap<u32, u8>) {
-    let upgrade_count = controller
-        .get_i64(keys.upgrade_count)
-        .clamp(0, UPGRADE_SLOTS as i64) as usize;
-    let upgrades = keys.upgrades[..upgrade_count]
-        .iter()
-        .map(|key| controller.get_u32(*key))
-        .filter(|id| *id != 0)
-        .collect();
-
-    let mut ability_tiers = HashMap::with_capacity(ABILITY_UPGRADE_SLOTS);
-    for keys in keys.ability_upgrades {
-        let ability_id = controller.get_u32(keys.ability_id);
-        if ability_id == 0 {
-            continue;
-        }
-        let upgrade_bits = raw_u32(controller, keys.upgrade_info) >> 17;
-        ability_tiers.insert(ability_id, upgrade_bits.count_ones().min(3) as u8);
-    }
-    (upgrades, ability_tiers)
-}
-
-#[derive(Default)]
-pub(super) struct StatValueCols {
-    pub(super) native: Vec<f32>,
-    pub(super) baseline: Vec<f32>,
-    pub(super) effective: Vec<f32>,
-    pub(super) complete: Vec<bool>,
-}
-
-pub(super) struct StatCols {
-    pub(super) tick: Vec<i32>,
-    pub(super) hero_id: Vec<i64>,
-    pub(super) values: [StatValueCols; boon_parser::STAT_COUNT],
-}
-
-impl Default for StatCols {
-    fn default() -> Self {
-        Self {
-            tick: Vec::new(),
-            hero_id: Vec::new(),
-            values: std::array::from_fn(|_| StatValueCols::default()),
-        }
-    }
-}
-
-impl StatCols {
-    pub(super) fn collect_tick(
-        &mut self,
-        ctx: &boon_parser::Context,
-        keys: &PtKeys,
-        modifiers: &boon_parser::EffectiveModifierState,
-        selected: boon_parser::StatMask,
-    ) {
-        for (_, controller) in ctx
-            .entities()
-            .iter()
-            .filter(|(_, entity)| entity.class_name.as_ref() == "CCitadelPlayerController")
-        {
-            let Some(pawn_handle) = controller.get_handle(keys.pawn_handle) else {
-                continue;
-            };
-            let Some(pawn) = ctx.entities().get_by_handle(pawn_handle) else {
-                continue;
-            };
-            if pawn.class_name.as_ref() != "CCitadelPlayerPawn" {
-                continue;
-            }
-            let hero_id = pawn.get_i64(keys.hero_id);
-            if hero_id == 0 {
-                continue;
-            }
-            let Some(pawn_index) = boon_parser::protobuf_handle_index(Some(pawn_handle)) else {
-                continue;
-            };
-            let (upgrades, ability_tiers) = stat_inputs(controller, keys);
-            let layers = boon_parser::evaluate_player_stats(
-                hero_id,
-                controller.get_i64(keys.level),
-                &upgrades,
-                &ability_tiers,
-                modifiers.entries().values().filter(|entry| {
-                    boon_parser::protobuf_handle_index(entry.parent) == Some(pawn_index)
-                }),
-            );
-
-            self.tick.push(ctx.tick());
-            self.hero_id.push(hero_id);
-            for stat in selected.iter() {
-                let columns = &mut self.values[stat as usize];
-                columns.native.push(layers.native[stat]);
-                columns.baseline.push(layers.baseline[stat]);
-                columns.effective.push(layers.effective[stat]);
-                columns.complete.push(layers.complete.contains(stat));
-            }
-        }
-    }
-
-    pub(super) fn append(&mut self, mut other: Self, selected: boon_parser::StatMask) {
-        self.tick.append(&mut other.tick);
-        self.hero_id.append(&mut other.hero_id);
-        for stat in selected.iter() {
-            let target = &mut self.values[stat as usize];
-            let source = &mut other.values[stat as usize];
-            target.native.append(&mut source.native);
-            target.baseline.append(&mut source.baseline);
-            target.effective.append(&mut source.effective);
-            target.complete.append(&mut source.complete);
-        }
-    }
-
-    pub(super) fn into_dataframe(self, selected: boon_parser::StatMask) -> PyResult<DataFrame> {
-        let mut columns = vec![
-            Column::new("tick".into(), self.tick),
-            Column::new("hero_id".into(), self.hero_id),
-        ];
-        for stat in selected.iter() {
-            let name = stat.name();
-            let values = &self.values[stat as usize];
-            columns.push(Column::new(
-                format!("{name}_native").into(),
-                values.native.clone(),
-            ));
-            columns.push(Column::new(
-                format!("{name}_baseline").into(),
-                values.baseline.clone(),
-            ));
-            columns.push(Column::new(
-                format!("{name}_effective").into(),
-                values.effective.clone(),
-            ));
-            columns.push(Column::new(
-                format!("{name}_complete").into(),
-                values.complete.clone(),
-            ));
-        }
-        df_from_columns(columns).map_err(|error| {
-            InvalidDemoError::new_err(format!("Failed to create DataFrame: {error}"))
-        })
-    }
-}
-
-#[derive(Default)]
-pub(super) struct StatSegment {
-    pub(super) columns: StatCols,
-    pub(super) modifiers: boon_parser::EffectiveModifierState,
-    pub(super) initialized: bool,
-}
-
-impl StatSegment {
-    pub(super) fn update(&mut self, ctx: &boon_parser::Context, keys: &PtKeys) {
-        let game_time = current_simulation_time(ctx, keys.simulation_time);
-        if self.initialized {
-            self.modifiers.update(ctx, game_time);
-        } else {
-            self.modifiers.rebuild(ctx, game_time);
-            self.initialized = true;
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub(super) struct PlayerStatInputs {
-    pub(super) hero_id: i64,
-    pub(super) level: i64,
-    pub(super) upgrades: Vec<u32>,
-    pub(super) ability_tiers: HashMap<u32, u8>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) struct ModifierEffectSignature {
-    pub(super) ability_id: u32,
-    pub(super) modifier_id: u32,
-    pub(super) stacks: i32,
-    pub(super) in_aura_range: Option<bool>,
-}
-
-#[derive(Default)]
-pub(super) struct StatEffectCols {
-    pub(super) tick: Vec<i32>,
-    pub(super) hero_id: Vec<i64>,
-    pub(super) event: Vec<String>,
-    pub(super) stat: Vec<String>,
-    pub(super) operation: Vec<String>,
-    pub(super) value: Vec<f32>,
-    pub(super) source_type: Vec<String>,
-    pub(super) layer: Vec<String>,
-    pub(super) ability_id: Vec<u32>,
-    pub(super) ability_name: Vec<String>,
-    pub(super) modifier_id: Vec<u32>,
-    pub(super) modifier_name: Vec<String>,
-    pub(super) serial: Vec<u32>,
-    pub(super) caster_hero_id: Vec<i64>,
-    pub(super) provider_hero_id: Vec<i64>,
-    pub(super) stacks: Vec<i32>,
-    pub(super) duration: Vec<f32>,
-    pub(super) active: Vec<bool>,
-    pub(super) complete: Vec<bool>,
-}
-
-pub(super) struct ModifierEffectRow<'a> {
-    pub(super) tick: i32,
-    pub(super) hero_id: i64,
-    pub(super) event: &'a str,
-    pub(super) effect: boon_parser::StatEffect,
-    pub(super) source_type: &'a str,
-    pub(super) layer: &'a str,
-    pub(super) ability_id: u32,
-    pub(super) modifier_id: u32,
-    pub(super) serial: u32,
-    pub(super) caster_hero_id: i64,
-    pub(super) provider_hero_id: i64,
-    pub(super) stacks: i32,
-    pub(super) duration: f32,
-    pub(super) active: bool,
-    pub(super) spirit_power: f32,
-    pub(super) ability_tier: u8,
-}
-
-impl StatEffectCols {
-    pub(super) fn push(&mut self, row: ModifierEffectRow<'_>) {
-        let (value, expression_complete) = row.effect.resolve(row.spirit_power, row.ability_tier);
-        self.tick.push(row.tick);
-        self.hero_id.push(row.hero_id);
-        self.event.push(row.event.to_string());
-        self.stat.push(row.effect.stat.name().to_string());
-        self.operation.push(row.effect.operation.name().to_string());
-        self.value.push(value);
-        self.source_type.push(row.source_type.to_string());
-        self.layer.push(row.layer.to_string());
-        self.ability_id.push(row.ability_id);
-        self.ability_name
-            .push(boon_parser::ability_name(row.ability_id).to_string());
-        self.modifier_id.push(row.modifier_id);
-        self.modifier_name
-            .push(boon_parser::modifier_name(row.modifier_id).to_string());
-        self.serial.push(row.serial);
-        self.caster_hero_id.push(row.caster_hero_id);
-        self.provider_hero_id.push(row.provider_hero_id);
-        self.stacks.push(row.stacks);
-        self.duration.push(row.duration);
-        self.active.push(row.active);
-        self.complete.push(expression_complete && row.stacks <= 1);
-    }
-
-    pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
-        df_from_columns(vec![
-            Column::new("tick".into(), self.tick),
-            Column::new("hero_id".into(), self.hero_id),
-            Column::new("event".into(), self.event),
-            Column::new("stat".into(), self.stat),
-            Column::new("operation".into(), self.operation),
-            Column::new("value".into(), self.value),
-            Column::new("source_type".into(), self.source_type),
-            Column::new("layer".into(), self.layer),
-            Column::new("ability_id".into(), self.ability_id),
-            Column::new("ability_name".into(), self.ability_name),
-            Column::new("modifier_id".into(), self.modifier_id),
-            Column::new("modifier_name".into(), self.modifier_name),
-            Column::new("serial".into(), self.serial),
-            Column::new("caster_hero_id".into(), self.caster_hero_id),
-            Column::new("provider_hero_id".into(), self.provider_hero_id),
-            Column::new("stacks".into(), self.stacks),
-            Column::new("duration".into(), self.duration),
-            Column::new("active".into(), self.active),
-            Column::new("complete".into(), self.complete),
-        ])
-        .map_err(|error| {
-            InvalidDemoError::new_err(format!("Failed to create stat_effects DataFrame: {error}"))
-        })
-    }
-}
-
 /// Column vectors accumulated for `player_ticks`. One per output column; the
 /// order and names in [`into_columns`](PtCols::into_columns) must match the
 /// serial builder in `load()`.
@@ -701,8 +398,9 @@ pub(super) struct PtCols {
     pub(super) health: Vec<i64>,
     pub(super) max_health: Vec<i64>,
     pub(super) barrier: Vec<f32>,
-    pub(super) bullet_resist: Vec<f32>,
-    pub(super) spirit_resist: Vec<f32>,
+    pub(super) stat_modifiers: [Vec<f32>; boon_parser::StatModifierKind::COUNT],
+    pub(super) stat_modifier_values_available: Vec<bool>,
+    pub(super) unknown_stat_modifier_count: Vec<u32>,
     pub(super) lifestate: Vec<i64>,
     pub(super) souls: Vec<i64>,
     pub(super) spent_souls: Vec<i64>,
@@ -788,24 +486,24 @@ impl PtCols {
                 pawn.get_i64(k.max_health)
             });
             self.barrier.push(barriers.remaining(pawn_handle));
-            let level = ctrl.get_i64(k.level);
-            let [bullet_resist, spirit_resist] = effective_resistances_from_values(
-                hid,
-                level,
-                k.stat_viewer
+            let stat_modifier_values_available =
+                stat_viewer_values_available(k.stat_viewer_count, &k.stat_viewer);
+            let stat_modifier_count = ctrl
+                .get_i64(k.stat_viewer_count)
+                .clamp(0, STAT_VIEWER_SLOTS as i64) as usize;
+            let stat_modifier_totals = boon_parser::aggregate_stat_modifier_values(
+                k.stat_viewer[..stat_modifier_count]
                     .iter()
-                    .take(
-                        ctrl.get_i64(k.stat_viewer_count)
-                            .clamp(0, STAT_VIEWER_SLOTS as i64) as usize,
-                    )
                     .map(|keys| (ctrl.get_u32(keys.value_type), ctrl.get_f32(keys.value))),
-                k.upgrades
-                    .iter()
-                    .take(ctrl.get_i64(k.upgrade_count).clamp(0, UPGRADE_SLOTS as i64) as usize)
-                    .map(|key| ctrl.get_u32(*key)),
             );
-            self.bullet_resist.push(bullet_resist);
-            self.spirit_resist.push(spirit_resist);
+            for kind in boon_parser::StatModifierKind::ALL {
+                self.stat_modifiers[kind.index()].push(stat_modifier_totals[kind]);
+            }
+            self.stat_modifier_values_available
+                .push(stat_modifier_values_available);
+            self.unknown_stat_modifier_count
+                .push(stat_modifier_totals.unknown_count);
+            let level = ctrl.get_i64(k.level);
             self.lifestate.push(pawn.get_i64(k.lifestate));
             self.souls.push(pawn.get_i64(k.souls));
             self.spent_souls.push(pawn.get_i64(k.spent_souls));
@@ -863,8 +561,13 @@ impl PtCols {
         self.health.append(&mut o.health);
         self.max_health.append(&mut o.max_health);
         self.barrier.append(&mut o.barrier);
-        self.bullet_resist.append(&mut o.bullet_resist);
-        self.spirit_resist.append(&mut o.spirit_resist);
+        for kind in boon_parser::StatModifierKind::ALL {
+            self.stat_modifiers[kind.index()].append(&mut o.stat_modifiers[kind.index()]);
+        }
+        self.stat_modifier_values_available
+            .append(&mut o.stat_modifier_values_available);
+        self.unknown_stat_modifier_count
+            .append(&mut o.unknown_stat_modifier_count);
         self.lifestate.append(&mut o.lifestate);
         self.souls.append(&mut o.souls);
         self.spent_souls.append(&mut o.spent_souls);
@@ -903,6 +606,16 @@ impl PtCols {
 
     /// Build the `player_ticks` DataFrame. Column order/names must match `load()`.
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
+        let [
+            stat_modifier_health,
+            stat_modifier_spirit_power,
+            stat_modifier_fire_rate,
+            stat_modifier_weapon_damage,
+            stat_modifier_cooldown_reduction,
+            stat_modifier_ammo,
+            stat_modifier_bullet_resist,
+            stat_modifier_spirit_resist,
+        ] = self.stat_modifiers;
         df_from_columns(vec![
             Column::new("tick".into(), self.tick),
             Column::new("hero_id".into(), self.hero_id),
@@ -920,8 +633,37 @@ impl PtCols {
             Column::new("health".into(), self.health),
             Column::new("max_health".into(), self.max_health),
             Column::new("barrier".into(), self.barrier),
-            Column::new("bullet_resist_baseline".into(), self.bullet_resist),
-            Column::new("spirit_resist_baseline".into(), self.spirit_resist),
+            Column::new("stat_modifier_health".into(), stat_modifier_health),
+            Column::new(
+                "stat_modifier_spirit_power".into(),
+                stat_modifier_spirit_power,
+            ),
+            Column::new("stat_modifier_fire_rate".into(), stat_modifier_fire_rate),
+            Column::new(
+                "stat_modifier_weapon_damage".into(),
+                stat_modifier_weapon_damage,
+            ),
+            Column::new(
+                "stat_modifier_cooldown_reduction".into(),
+                stat_modifier_cooldown_reduction,
+            ),
+            Column::new("stat_modifier_ammo".into(), stat_modifier_ammo),
+            Column::new(
+                "stat_modifier_bullet_resist".into(),
+                stat_modifier_bullet_resist,
+            ),
+            Column::new(
+                "stat_modifier_spirit_resist".into(),
+                stat_modifier_spirit_resist,
+            ),
+            Column::new(
+                "stat_modifier_values_available".into(),
+                self.stat_modifier_values_available,
+            ),
+            Column::new(
+                "unknown_stat_modifier_count".into(),
+                self.unknown_stat_modifier_count,
+            ),
             Column::new("lifestate".into(), self.lifestate),
             Column::new("souls".into(), self.souls),
             Column::new("spent_souls".into(), self.spent_souls),
@@ -1071,7 +813,7 @@ impl TkKeys {
 #[derive(Default)]
 pub(super) struct TrCols {
     pub(super) tick: Vec<i32>,
-    pub(super) ttype: Vec<String>,
+    pub(super) ttype: Vec<&'static str>,
     pub(super) team_num: Vec<i64>,
     pub(super) lane: Vec<i64>,
     pub(super) health: Vec<i64>,
@@ -1101,7 +843,7 @@ impl TrCols {
                 continue;
             }
             self.tick.push(ctx.tick());
-            self.ttype.push(ttype.to_string());
+            self.ttype.push(ttype);
             self.team_num.push(e.get_i64(k.team_num));
             self.lane.push(e.get_i64(k.lane));
             self.health.push(e.get_i64(k.health));

@@ -39,8 +39,20 @@ def barriers(demo: Demo) -> pl.DataFrame:
     """
     demo.load("player_ticks", "damage")
     rows: list[dict] = []
-    for hero in demo.player_ticks["hero_id"].unique().to_list():
-        rows.extend(_barriers_for_hero(demo, hero))
+    hurt_by_hero = {
+        int(frame["victim_hero_id"][0]): set(frame["tick"].to_list())
+        for frame in demo.damage.select("victim_hero_id", "tick").partition_by(
+            "victim_hero_id", maintain_order=False
+        )
+    }
+    pools = (
+        demo.player_ticks.select("hero_id", "tick", "barrier")
+        .sort("hero_id", "tick")
+        .partition_by("hero_id", maintain_order=True)
+    )
+    for pool in pools:
+        hero = int(pool["hero_id"][0])
+        rows.extend(_barriers_for_hero(pool, hero, hurt_by_hero.get(hero, set())))
     rows.sort(key=lambda r: r["tick"])
     return pl.DataFrame(
         rows,
@@ -55,15 +67,9 @@ def barriers(demo: Demo) -> pl.DataFrame:
     )
 
 
-def _barriers_for_hero(demo: Demo, hero: int) -> list[dict]:
-    pool = (
-        demo.player_ticks.filter(pl.col("hero_id") == hero)
-        .sort("tick")
-        .select("tick", "barrier")
-    )
+def _barriers_for_hero(pool: pl.DataFrame, hero: int, hurt: set[int]) -> list[dict]:
     ticks = pool["tick"].to_list()
     values = pool["barrier"].to_list()
-    hurt = set(demo.damage.filter(pl.col("victim_hero_id") == hero)["tick"].to_list())
 
     out: list[dict] = []
     standing: list[dict] = []

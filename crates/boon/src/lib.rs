@@ -69,10 +69,7 @@ pub mod modifier_state;
 pub mod modifiers;
 pub mod patron_phases;
 pub mod position;
-pub mod resistances;
-pub mod stat_catalog;
 pub mod stat_modifiers;
-pub mod stats;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
@@ -99,14 +96,8 @@ pub use modifier_state::{
 pub use modifiers::{all_modifiers, modifier_name};
 pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
-pub use resistances::{
-    HeroResistanceStats, ItemResistanceStats, hero_resistance_stats, item_resistance_stats,
-};
 pub use stat_modifiers::{
-    DecodedStatModifierValue, StatModifierKind, decode_stat_modifier_value_type,
-};
-pub use stats::{
-    STAT_COUNT, StatBlock, StatEffect, StatId, StatLayers, StatMask, StatOperation,
-    combine_resistance, evaluate_player_stats,
+    DecodedStatModifierValue, StatModifierKind, StatModifierTotals, aggregate_stat_modifier_values,
+    decode_stat_modifier_value_type,
 };
 pub use teams::{all_teams, team_name};

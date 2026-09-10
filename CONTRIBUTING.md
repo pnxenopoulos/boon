@@ -104,10 +104,10 @@ The command updates the files in `crates/boon-proto/proto/`. It also regenerates
 ## Updating the Name Lookup Tables
 
 Ability, item, modifier, and breakable subclass IDs are MurmurHash2 hashes of
-internal names. The generator joins four Deadlock VData files to the English
+internal names. The generator joins three Deadlock VData files to the English
 hero and item localization catalogs. The VData files are `abilities.vdata`,
-`modifiers.vdata`, `heroes.vdata`, and `misc.vdata`. The generator creates token
-lookups, display names, resistance inputs, and stat-effect metadata.
+`modifiers.vdata`, and `misc.vdata`. The generator creates token lookups and
+display names. Boon does not generate or embed gameplay values from VData.
 
 ```bash
 # Fetch the latest vdata files from SteamDB and regenerate the tables
@@ -115,16 +115,15 @@ lookups, display names, resistance inputs, and stat-effect metadata.
 ```
 
 This regenerates `abilities.rs`, `ability_display_names.rs`, `breakables.rs`,
-`modifiers.rs`, `resistances.rs`, and `stat_catalog.rs` under
-`crates/boon/src/`.
+and `modifiers.rs` under `crates/boon/src/`.
 
 If you already have those VData and localization inputs locally (for example,
 after extracting the game's VPK data with
 [Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)),
-place all six files in the repository root and run the generator directly:
+place all five files in the repository root and run the generator directly:
 
 ```bash
-# Run from the repo root with the four VData and two localization files present
+# Run from the repo root with the three VData and two localization files present
 cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
 ```
 

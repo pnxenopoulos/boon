@@ -1,5 +1,7 @@
 //! Compatibility decoding for permanent stat-viewer modifier values.
 
+use std::ops::Index;
+
 /// Canonical stat represented by a player controller's stat-viewer vector.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 #[repr(u8)]
@@ -55,6 +57,32 @@ pub struct DecodedStatModifierValue {
     pub value_scale: f32,
 }
 
+/// Observed totals from one controller stat-viewer vector.
+///
+/// These values are modifier contributions. They are not complete player
+/// stats. For example, they do not include base hero values or all dynamic
+/// ability effects.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct StatModifierTotals {
+    values: [f32; StatModifierKind::COUNT],
+    /// Number of vector entries with an unknown nonzero value type.
+    pub unknown_count: u32,
+}
+
+impl StatModifierTotals {
+    pub const fn values(&self) -> &[f32; StatModifierKind::COUNT] {
+        &self.values
+    }
+}
+
+impl Index<StatModifierKind> for StatModifierTotals {
+    type Output = f32;
+
+    fn index(&self, kind: StatModifierKind) -> &Self::Output {
+        &self.values[kind.index()]
+    }
+}
+
 /// Decode the numeric `EModifierValue` stored in
 /// `m_PlayerDataGlobal.m_vecStatViewerModifierValues[*].m_eValType`.
 ///
@@ -102,11 +130,36 @@ pub const fn decode_stat_modifier_value_type(value_type: u32) -> Option<DecodedS
     Some(DecodedStatModifierValue { kind, value_scale })
 }
 
+/// Sum the known entries in one controller stat-viewer vector.
+///
+/// Unknown nonzero value types increase `unknown_count`. Non-finite values do
+/// not contribute to a total.
+pub fn aggregate_stat_modifier_values(
+    values: impl IntoIterator<Item = (u32, f32)>,
+) -> StatModifierTotals {
+    let mut totals = StatModifierTotals::default();
+    for (value_type, value) in values {
+        if value_type == 0 {
+            continue;
+        }
+        let Some(decoded) = decode_stat_modifier_value_type(value_type) else {
+            totals.unknown_count += 1;
+            continue;
+        };
+        if value.is_finite() {
+            totals.values[decoded.kind.index()] += value * decoded.value_scale;
+        }
+    }
+    totals
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
 
-    use super::{StatModifierKind, decode_stat_modifier_value_type};
+    use super::{
+        StatModifierKind, aggregate_stat_modifier_values, decode_stat_modifier_value_type,
+    };
 
     const OBSERVED_ALIASES: &[(u32, StatModifierKind)] = &[
         (31, StatModifierKind::Health),
@@ -162,5 +215,21 @@ mod tests {
         for value_type in [0, 1, 255, u32::MAX] {
             assert_eq!(decode_stat_modifier_value_type(value_type), None);
         }
+    }
+
+    #[test]
+    fn aggregates_aliases_and_signed_values() {
+        let totals = aggregate_stat_modifier_values([
+            (51, 6.0),
+            (158, 9.0),
+            (34, 10.0),
+            (35, 2.0),
+            (999, 5.0),
+            (0, 3.0),
+        ]);
+
+        assert_eq!(totals[StatModifierKind::SpiritPower], 15.0);
+        assert_eq!(totals[StatModifierKind::BulletResist], 8.0);
+        assert_eq!(totals.unknown_count, 1);
     }
 }

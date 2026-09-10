@@ -8,7 +8,7 @@ set -euo pipefail
 # 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
 # 2) Copies the required VData and English hero/item localization files to the
 #    repo root
-# 3) Runs the generator to refresh the name/stat tables in crates/boon/src
+# 3) Runs the generator to refresh the name tables in crates/boon/src
 # 4) Runs `cargo fmt --all` so the regenerated tables are correctly formatted
 # 5) Cleans up the temporary generator inputs
 #
@@ -30,7 +30,7 @@ ITEM_LOCALIZATION_DIR="game/citadel/resource/localization/citadel_gc_mod_names"
 # modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers are
 # nested as modifier subclasses inside abilities.vdata (see
 # scripts/generate-name-tables/main.rs).
-VDATA_FILES=(abilities.vdata modifiers.vdata heroes.vdata misc.vdata)
+VDATA_FILES=(abilities.vdata modifiers.vdata misc.vdata)
 LOCALIZATION_FILES=(citadel_heroes_english.txt citadel_gc_mod_names_english.txt)
 LOCALIZATION_SOURCES=(
   "$HERO_LOCALIZATION_DIR/citadel_heroes_english.txt"
@@ -118,7 +118,7 @@ main() {
   copy_vdata
   generate_tables
   format_tables
-  echo "Done. Updated abilities.rs, ability_display_names.rs, breakables.rs, modifiers.rs, resistances.rs, and stat_catalog.rs"
+  echo "Done. Updated abilities.rs, ability_display_names.rs, breakables.rs, and modifiers.rs"
 }
 
 main "$@"

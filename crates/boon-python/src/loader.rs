@@ -31,23 +31,29 @@ impl Demo {
             ));
         }
 
+        // Load small datasets together when they use the same entity class or
+        // event stream. A later property access can then use the cache instead
+        // of scanning the demo again.
+        let requested = |name: &str| datasets.iter().any(|dataset| dataset == name);
+        let damage_cohort = requested("damage") || requested("healing");
+        let kill_cohort = requested("kills") || requested("abilities");
+        let controller_cohort =
+            requested("ability_upgrades") || requested("item_purchases") || requested("chat");
+
         // Determine what to load (skip already cached)
-        let load_abilities =
-            datasets.iter().any(|s| s == "abilities") && self.cached_abilities.is_none();
+        let load_abilities = kill_cohort && self.cached_abilities.is_none();
         let mut load_player_ticks =
             datasets.iter().any(|s| s == "player_ticks") && self.cached_player_ticks.is_none();
         let mut load_world_ticks =
             datasets.iter().any(|s| s == "world_ticks") && self.cached_world_ticks.is_none();
-        let load_kills = datasets.iter().any(|s| s == "kills") && self.cached_kills.is_none();
-        let load_damage = datasets.iter().any(|s| s == "damage") && self.cached_damage.is_none();
-        let load_healing = datasets.iter().any(|s| s == "healing") && self.cached_healing.is_none();
+        let load_kills = kill_cohort && self.cached_kills.is_none();
+        let load_damage = damage_cohort && self.cached_damage.is_none();
+        let load_healing = damage_cohort && self.cached_healing.is_none();
         let load_flex_slots =
             datasets.iter().any(|s| s == "flex_slots") && self.cached_flex_slots.is_none();
-        let load_ability_upgrades = datasets.iter().any(|s| s == "ability_upgrades")
-            && self.cached_ability_upgrades.is_none();
-        let load_item_purchases =
-            datasets.iter().any(|s| s == "item_purchases") && self.cached_item_purchases.is_none();
-        let load_chat = datasets.iter().any(|s| s == "chat") && self.cached_chat.is_none();
+        let load_ability_upgrades = controller_cohort && self.cached_ability_upgrades.is_none();
+        let load_item_purchases = controller_cohort && self.cached_item_purchases.is_none();
+        let load_chat = controller_cohort && self.cached_chat.is_none();
         let load_objectives =
             datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
         let load_mid_boss =
@@ -300,8 +306,10 @@ impl Demo {
         let mut pt_health: Vec<i64> = Vec::with_capacity(pt_capacity);
         let mut pt_max_health: Vec<i64> = Vec::with_capacity(pt_capacity);
         let mut pt_barrier: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_bullet_resist: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_spirit_resist: Vec<f32> = Vec::with_capacity(pt_capacity);
+        let mut pt_stat_modifiers: [Vec<f32>; boon_parser::StatModifierKind::COUNT] =
+            std::array::from_fn(|_| Vec::with_capacity(pt_capacity));
+        let mut pt_stat_modifier_values_available: Vec<bool> = Vec::with_capacity(pt_capacity);
+        let mut pt_unknown_stat_modifier_count: Vec<u32> = Vec::with_capacity(pt_capacity);
         let mut pt_lifestate: Vec<i64> = Vec::with_capacity(pt_capacity);
         let mut pt_souls: Vec<i64> = Vec::with_capacity(pt_capacity);
         let mut pt_spent_souls: Vec<i64> = Vec::with_capacity(pt_capacity);
@@ -790,8 +798,6 @@ impl Demo {
         // StatViewerModifierValues keys for indices 0..20.
         let mut smk_count: Option<u64> = None;
         let mut smk_keys = [StatViewerKeys::default(); STAT_VIEWER_SLOTS];
-        let mut upk_count: Option<u64> = None;
-        let mut upk_keys = [None; UPGRADE_SLOTS];
 
         // World keys
         let mut wk_is_paused: Option<u64> = None;
@@ -1009,15 +1015,6 @@ impl Demo {
                                 "m_PlayerDataGlobal.m_vecStatViewerModifierValues",
                             );
                             smk_keys = resolve_stat_viewer_keys(Some(s));
-                            if load_player_ticks {
-                                upk_count =
-                                    s.resolve_field_key("m_PlayerDataGlobal.m_vecUpgrades");
-                                upk_keys = std::array::from_fn(|i| {
-                                    s.resolve_field_key(&format!(
-                                        "m_PlayerDataGlobal.m_vecUpgrades.{i}"
-                                    ))
-                                });
-                            }
                         }
                     }
                     if load_objectives {
@@ -1277,22 +1274,24 @@ impl Demo {
                             pawn.get_i64(pk_max_health)
                         });
                         pt_barrier.push(pt_barriers.remaining(pawn_handle));
-                        let level = ctrl.get_i64(ck_level);
-                        let [bullet_resist, spirit_resist] = effective_resistances_from_values(
-                            hid,
-                            level,
-                            smk_keys.iter()
-                            .take(ctrl.get_i64(smk_count).clamp(0, STAT_VIEWER_SLOTS as i64) as usize)
-                            .map(|keys| {
+                        let stat_modifier_values_available =
+                            stat_viewer_values_available(smk_count, &smk_keys);
+                        let stat_modifier_count = ctrl
+                            .get_i64(smk_count)
+                            .clamp(0, STAT_VIEWER_SLOTS as i64) as usize;
+                        let stat_modifier_totals = boon_parser::aggregate_stat_modifier_values(
+                            smk_keys[..stat_modifier_count].iter().map(|keys| {
                                 (ctrl.get_u32(keys.value_type), ctrl.get_f32(keys.value))
                             }),
-                            upk_keys
-                                .iter()
-                                .take(ctrl.get_i64(upk_count).clamp(0, UPGRADE_SLOTS as i64) as usize)
-                                .map(|key| ctrl.get_u32(*key)),
                         );
-                        pt_bullet_resist.push(bullet_resist);
-                        pt_spirit_resist.push(spirit_resist);
+                        for kind in boon_parser::StatModifierKind::ALL {
+                            pt_stat_modifiers[kind.index()].push(stat_modifier_totals[kind]);
+                        }
+                        pt_stat_modifier_values_available
+                            .push(stat_modifier_values_available);
+                        pt_unknown_stat_modifier_count
+                            .push(stat_modifier_totals.unknown_count);
+                        let level = ctrl.get_i64(ck_level);
                         pt_lifestate.push(pawn.get_i64(pk_lifestate));
                         pt_souls.push(pawn.get_i64(pk_souls));
                         pt_spent_souls.push(pawn.get_i64(pk_spent_souls));
@@ -2585,6 +2584,16 @@ impl Demo {
         // ── Build and cache DataFrames ──
 
         if load_player_ticks {
+            let [
+                stat_modifier_health,
+                stat_modifier_spirit_power,
+                stat_modifier_fire_rate,
+                stat_modifier_weapon_damage,
+                stat_modifier_cooldown_reduction,
+                stat_modifier_ammo,
+                stat_modifier_bullet_resist,
+                stat_modifier_spirit_resist,
+            ] = pt_stat_modifiers;
             let df = df_from_columns(vec![
                 Column::new("tick".into(), pt_tick),
                 Column::new("hero_id".into(), pt_hero_id),
@@ -2602,8 +2611,37 @@ impl Demo {
                 Column::new("health".into(), pt_health),
                 Column::new("max_health".into(), pt_max_health),
                 Column::new("barrier".into(), pt_barrier),
-                Column::new("bullet_resist_baseline".into(), pt_bullet_resist),
-                Column::new("spirit_resist_baseline".into(), pt_spirit_resist),
+                Column::new("stat_modifier_health".into(), stat_modifier_health),
+                Column::new(
+                    "stat_modifier_spirit_power".into(),
+                    stat_modifier_spirit_power,
+                ),
+                Column::new("stat_modifier_fire_rate".into(), stat_modifier_fire_rate),
+                Column::new(
+                    "stat_modifier_weapon_damage".into(),
+                    stat_modifier_weapon_damage,
+                ),
+                Column::new(
+                    "stat_modifier_cooldown_reduction".into(),
+                    stat_modifier_cooldown_reduction,
+                ),
+                Column::new("stat_modifier_ammo".into(), stat_modifier_ammo),
+                Column::new(
+                    "stat_modifier_bullet_resist".into(),
+                    stat_modifier_bullet_resist,
+                ),
+                Column::new(
+                    "stat_modifier_spirit_resist".into(),
+                    stat_modifier_spirit_resist,
+                ),
+                Column::new(
+                    "stat_modifier_values_available".into(),
+                    pt_stat_modifier_values_available,
+                ),
+                Column::new(
+                    "unknown_stat_modifier_count".into(),
+                    pt_unknown_stat_modifier_count,
+                ),
                 Column::new("lifestate".into(), pt_lifestate),
                 Column::new("souls".into(), pt_souls),
                 Column::new("spent_souls".into(), pt_spent_souls),

@@ -70,6 +70,44 @@ def test_stat_modifier_events_on_build_10854(demo: Demo) -> None:
     assert first["amount"] == pytest.approx(2.0)
 
 
+def test_player_tick_stat_modifiers(demo: Demo) -> None:
+    row = (
+        demo.snapshots("player_ticks", ticks=130000)
+        .filter(pl.col("hero_id") == 25)
+        .select(
+            "tick",
+            "hero_id",
+            "stat_modifier_health",
+            "stat_modifier_spirit_power",
+            "stat_modifier_fire_rate",
+            "stat_modifier_weapon_damage",
+            "stat_modifier_cooldown_reduction",
+            "stat_modifier_ammo",
+            "stat_modifier_bullet_resist",
+            "stat_modifier_spirit_resist",
+            "stat_modifier_values_available",
+            "unknown_stat_modifier_count",
+        )
+        .to_dicts()
+    )
+    assert row == [
+        {
+            "tick": 130000,
+            "hero_id": 25,
+            "stat_modifier_health": 80.0,
+            "stat_modifier_spirit_power": 6.0,
+            "stat_modifier_fire_rate": 4.0,
+            "stat_modifier_weapon_damage": 0.0,
+            "stat_modifier_cooldown_reduction": 2.0,
+            "stat_modifier_ammo": 10.0,
+            "stat_modifier_bullet_resist": 0.0,
+            "stat_modifier_spirit_resist": 0.0,
+            "stat_modifier_values_available": True,
+            "unknown_stat_modifier_count": 0,
+        }
+    ]
+
+
 def test_sinners_sacrifice(demo: Demo) -> None:
     events = demo.sinners_sacrifice
     counts = {
@@ -144,23 +182,13 @@ def test_willpower_modifier_uses_its_effective_lifetime(demo: Demo) -> None:
     # Valve leaves Willpower serial 7480 in ActiveModifiers until tick 53761.
     # Its GameTime_t fields give it a five-second effective lifetime, so Boon
     # must end it at tick 51198. This test prevents the raw table cleanup time
-    # from leaking into active modifier and derived-stat timelines.
+    # from leaking into the effective modifier timeline.
     willpower = demo.active_modifiers.filter(
         (pl.col("hero_id") == 25)
         & (pl.col("ability_id") == 2751689917)
         & (pl.col("serial") == 7480)
     ).select("tick", "event")
     assert willpower.rows() == [(50878, "applied"), (51198, "removed")]
-
-    effects = (
-        demo.stat_effects("status_resist")
-        .filter(pl.col("serial") == 7480)
-        .select("tick", "event", "active")
-    )
-    assert effects.rows() == [
-        (50878, "applied", True),
-        (51198, "removed", False),
-    ]
 
 
 def test_banned_heroes(demo: Demo) -> None:

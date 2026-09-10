@@ -293,38 +293,7 @@ class Demo:
         """
         ...
 
-    def stat_ticks(
-        self,
-        stats: str | list[str],
-        *,
-        ticks: int | list[int] | None = ...,
-        every: int | None = ...,
-        seconds: float | None = ...,
-        events: str | list[str] | None = ...,
-        start_tick: int | None = ...,
-        end_tick: int | None = ...,
-    ) -> pl.DataFrame:
-        """Sample derived player stats at selected ticks.
-
-        Each requested stat produces _native, _baseline, _effective, and
-        _complete columns. Percentage stats use percentage points. Tick
-        selectors match those supported by snapshots(). Values are analytical
-        calculations; _complete reports known source/formula coverage, not
-        independent verification of Valve's exact operation ordering, caps, or
-        dynamic runtime values.
-        """
-        ...
-
-    def stat_effects(
-        self, stats: str | list[str] | None = ...
-    ) -> pl.DataFrame:
-        """Return change-only source details for generated stat contributions.
-
-        Rows describe item and modifier apply/change/remove events, their layer,
-        operation, resolved value, source IDs/names, caster/provider, stacks,
-        duration, active state, and whether the value is complete.
-        """
-        ...
+    def _player_positions(self, ticks: list[int]) -> pl.DataFrame: ...
 
     def in_combat(self) -> pl.DataFrame:
         """Whether each player is in combat, per tick.
@@ -535,6 +504,9 @@ class Demo:
         Returns a DataFrame with one row per player per tick, containing
         position, health, combat timers, kills, deaths, net worth, and more.
         Rows where the pawn is not found or ``hero_id == 0`` are skipped.
+        The stat_modifier_* columns are observed controller contributions.
+        They are not final or effective player stats.
+
 
         Columns:
             - **tick** (*int*) -- The game tick.
@@ -555,12 +527,16 @@ class Demo:
               buffs), from the controller's ``m_iHealthMax``.
             - **barrier** (*float*) -- Current barrier remaining. Returns ``0.0`` when
               the demo does not contain a barrier tracker for this player.
-            - **bullet_resist_baseline** (*float*) -- Baseline bullet/gun damage
-              resistance in percentage points from hero progression and
-              unconditional equipped-item stats.
-            - **spirit_resist_baseline** (*float*) -- Baseline spirit damage
-              resistance in percentage points from hero progression and
-              unconditional equipped-item stats.
+            - **stat_modifier_health** (*float*) -- Observed health modifier total.
+            - **stat_modifier_spirit_power** (*float*) -- Observed spirit-power modifier total.
+            - **stat_modifier_fire_rate** (*float*) -- Observed fire-rate modifier total.
+            - **stat_modifier_weapon_damage** (*float*) -- Observed weapon-damage modifier total.
+            - **stat_modifier_cooldown_reduction** (*float*) -- Observed cooldown-reduction modifier total.
+            - **stat_modifier_ammo** (*float*) -- Observed ammo modifier total.
+            - **stat_modifier_bullet_resist** (*float*) -- Observed bullet-resistance modifier total.
+            - **stat_modifier_spirit_resist** (*float*) -- Observed spirit-resistance modifier total.
+            - **stat_modifier_values_available** (*bool*) -- Whether the demo serializer contains the stat-viewer vector.
+            - **unknown_stat_modifier_count** (*int*) -- Number of vector entries with an unknown nonzero value type.
             - **lifestate** (*int*) -- Life state value (use ``lifestate_names()`` to resolve).
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.

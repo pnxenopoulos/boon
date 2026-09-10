@@ -358,7 +358,7 @@ def teamfights(
     # Only positions at damage ticks can contribute to a fight. Request only
     # those positions. This prevents creation of the full player_ticks frame.
     damage_ticks = dmg.get_column("tick").unique().to_list()
-    pos = demo.snapshots(ticks=damage_ticks).select("tick", "hero_id", "x", "y")
+    pos = demo._player_positions(damage_ticks)
     dmg = (
         dmg.join(
             pos.rename({"hero_id": "victim_hero_id", "x": "vx", "y": "vy"}),

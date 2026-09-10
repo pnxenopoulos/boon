@@ -13,14 +13,16 @@ braces for nested objects. Use
 [Source2Viewer / ValveResourceFormat](https://github.com/ValveResourceFormat/ValveResourceFormat)
 to extract these files.
 
-Boon uses four files:
+Boon uses three files:
 
 | File | Provides | Surfaced as |
 |------|----------|-------------|
 | `abilities.vdata` | Every hero ability and item, plus the modifier subclasses they spawn | `ability_names()`, part of `modifier_names()` |
-| `modifiers.vdata` | The generic/global modifiers (shop zones, capture auras, boss invulnerability, …) | part of `modifier_names()` |
-| `heroes.vdata` | Hero baseline resistance and scaling inputs | generated resistance tables |
+| `modifiers.vdata` | Generic and global modifiers | Part of `modifier_names()` |
 | `misc.vdata` | Miscellaneous entity templates | `breakables.subclass_name` for `citadel_breakable_prop` entries |
+
+Boon reads only names and class metadata from these files. It does not generate
+gameplay values from VData.
 
 These files are in `game/citadel/pak01_dir/scripts/` in
 [SteamDatabase/GameTracking-Deadlock](https://github.com/SteamDatabase/GameTracking-Deadlock).

@@ -92,12 +92,6 @@ urn              = demo.urn               # urn lifecycle and delivery events
 rift             = demo.rift              # rift (koth) lifecycle, one row per rift
 ```
 
-```python
-# Selective derived stats (computed on demand, not load() datasets)
-stat_ticks = demo.stat_ticks(["bullet_resist", "spirit_resist"], every=64)
-stat_effects = demo.stat_effects()
-```
-
 ## CLI
 
 The package adds the `boon` command to your PATH. Use it to inspect a demo

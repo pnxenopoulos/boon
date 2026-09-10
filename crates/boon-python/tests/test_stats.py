@@ -13,6 +13,7 @@ class _TrackedDemo:
         self._demo = demo
         self.load_calls: list[tuple[str, ...]] = []
         self.snapshot_calls: list[dict[str, object]] = []
+        self.position_calls: list[list[int]] = []
         self.attribute_reads: list[str] = []
 
     def load(self, *datasets: str) -> None:
@@ -24,6 +25,10 @@ class _TrackedDemo:
         result = self._demo.snapshots(*args, **kwargs)
         assert isinstance(result, pl.DataFrame)
         return result
+
+    def _player_positions(self, ticks: list[int]) -> pl.DataFrame:
+        self.position_calls.append(ticks)
+        return self._demo._player_positions(ticks)
 
     def __getattr__(self, name: str) -> object:
         self.attribute_reads.append(name)
@@ -234,8 +239,7 @@ def test_teamfights_uses_batched_events_and_selected_positions() -> None:
     stats.teamfights(tracked)  # type: ignore[arg-type]
 
     assert tracked.load_calls == [("damage", "kills", "world_ticks")]
-    assert len(tracked.snapshot_calls) == 1
-    ticks = tracked.snapshot_calls[0]["ticks"]
-    assert isinstance(ticks, list)
-    assert ticks
+    assert tracked.snapshot_calls == []
+    assert len(tracked.position_calls) == 1
+    assert tracked.position_calls[0]
     assert "player_ticks" not in tracked.attribute_reads

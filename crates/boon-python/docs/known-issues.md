@@ -4,19 +4,17 @@ Valve changes Deadlock and its demo format frequently. This page lists known Boo
 
 Report other problems on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
 
-## Boon calculates effective stats
+## Player stat modifiers are not final stats
 
-The demo does not contain a final server value for every stat.
-`demo.stat_ticks(...)` calculates these stats from the recorded player state,
-active modifiers, and generated VData formulas.
+`demo.player_ticks` reads `m_vecStatViewerModifierValues` from each player
+controller. The `stat_modifier_*` columns contain signed sums for the value
+types that Boon knows. They do not include base hero stats, all item values, or
+all temporary effects. Do not use these columns as final damage mitigation or
+effective player stats.
 
-A `*_complete` value of `true` means that Boon evaluated every matching effect
-in its current catalog. It does not confirm that the result is identical to
-the game server. Engine-only rules can change the result. These rules can
-include caps, operation order, and values that depend on live game conditions.
-Effects that are absent from VData are also absent from the catalog.
-
-Use `demo.stat_effects(...)` to examine each source that Boon used.
+`stat_modifier_values_available` is false when the demo serializer does not
+contain this vector. `unknown_stat_modifier_count` is the number of vector
+entries with a nonzero `EModifierValue` that this Boon version does not know.
 
 ## Banned heroes are frequently absent
 
