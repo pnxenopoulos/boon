@@ -366,6 +366,8 @@ impl Demo {
 
         let explicit = ticks.map(IntOrList::into_vec).unwrap_or_default();
         let event_names = events.map(StrOrList::into_vec);
+        let explicit_only =
+            !explicit.is_empty() && event_names.as_ref().is_none_or(std::vec::Vec::is_empty);
 
         // Event-dataset loading, tick indexing, seeking, and the snapshot decode
         // are all pure Rust work. Keep only the final Python object conversion
@@ -385,11 +387,13 @@ impl Demo {
                 ));
             }
 
-            // Fast path: a single tick with no stride or window seeks directly
-            // (`parse_to_tick`) instead of decoding the whole demo.
-            if stride.is_none() && !has_window && tick_set.len() == 1 {
-                let t = *tick_set.iter().next().expect("len == 1");
-                self.snapshot_at_tick(t, wants)
+            // Use direct seeks for one event tick or at most four explicit ticks.
+            // Larger requests use one pass because each seek starts at a keyframe.
+            if stride.is_none()
+                && !has_window
+                && (tick_set.len() == 1 || (explicit_only && tick_set.len() <= 4))
+            {
+                self.snapshots_at_ticks(tick_set.into_iter().collect(), wants)
             } else {
                 // The tick predicate is the union of stride-sampled and explicit
                 // event ticks, restricted to the requested window.
@@ -438,150 +442,16 @@ impl Demo {
         }
     }
 
-    /// Sample native, persistent baseline, and effective player stats.
-    ///
-    /// Create only the requested stats and ticks. Express percentage stats in
-    /// percentage points. Express spirit power in points. A complete column is
-    /// false when the catalog cannot calculate a known active formula.
-    #[pyo3(signature = (stats, *, ticks=None, every=None, seconds=None, events=None, start_tick=None, end_tick=None))]
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn stat_ticks(
-        &mut self,
-        py: Python<'_>,
-        stats: StrOrList,
-        ticks: Option<IntOrList>,
-        every: Option<i32>,
-        seconds: Option<f32>,
-        events: Option<StrOrList>,
-        start_tick: Option<i32>,
-        end_tick: Option<i32>,
-    ) -> PyResult<PyDataFrame> {
-        let names = stats.into_vec();
-        if names.is_empty() {
+    /// Return only player positions at the selected ticks for analysis helpers.
+    #[pyo3(name = "_player_positions")]
+    pub(crate) fn player_positions(&self, py: Python<'_>, ticks: Vec<i32>) -> PyResult<Py<PyAny>> {
+        if ticks.is_empty() {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "stat_ticks(): stats must not be empty",
+                "_player_positions(): ticks must not be empty",
             ));
         }
-        let mut selected = boon_parser::StatMask::default();
-        for name in names {
-            let Some(stat) = boon_parser::StatId::from_name(&name) else {
-                let valid: Vec<_> = boon_parser::StatId::ALL
-                    .into_iter()
-                    .map(boon_parser::StatId::name)
-                    .collect();
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "stat_ticks(): unknown stat {name:?}; valid stats: {valid:?}"
-                )));
-            };
-            selected.insert(stat);
-        }
-
-        if every.is_some() && seconds.is_some() {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "stat_ticks(): pass either every or seconds, not both",
-            ));
-        }
-        let stride = match (every, seconds) {
-            (Some(step), _) if step < 1 => {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "stat_ticks(): every must be at least 1",
-                ));
-            }
-            (Some(step), _) => Some(step),
-            (_, Some(value)) if !value.is_finite() || value <= 0.0 => {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "stat_ticks(): seconds must be positive",
-                ));
-            }
-            (_, Some(value)) => Some(((value * self.tick_rate as f32).round() as i32).max(1)),
-            _ => None,
-        };
-        let explicit = ticks.map(IntOrList::into_vec).unwrap_or_default();
-        let event_names = events.map(StrOrList::into_vec);
-
-        let frame = py.detach(|| {
-            let mut tick_set = HashSet::new();
-            if let Some(names) = event_names.as_deref() {
-                tick_set = self.event_ticks(names)?;
-            }
-            tick_set.extend(explicit);
-
-            let has_window = start_tick.is_some() || end_tick.is_some();
-            if stride.is_none() && tick_set.is_empty() && !has_window {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "stat_ticks(): select ticks, a stride, events, or a tick window",
-                ));
-            }
-            if stride.is_none() && !has_window && tick_set.len() == 1 {
-                return self.stat_ticks_at(
-                    *tick_set.iter().next().expect("one selected tick"),
-                    selected,
-                );
-            }
-
-            let start = start_tick.unwrap_or(i32::MIN);
-            let end = end_tick.unwrap_or(i32::MAX);
-            let predicate = if stride.is_none() && tick_set.is_empty() {
-                TickPredicate::Window { start, end }
-            } else {
-                if let Some(step) = stride {
-                    let mut last = None;
-                    for tick in self.parser.distinct_ticks().map_err(to_py_err)? {
-                        if last.is_none_or(|previous| tick - previous >= step) {
-                            tick_set.insert(tick);
-                            last = Some(tick);
-                        }
-                    }
-                }
-                TickPredicate::Set {
-                    ticks: tick_set,
-                    start,
-                    end,
-                }
-            };
-            self.build_stat_ticks_parallel(selected, &predicate)
-        })?;
-        Ok(PyDataFrame(frame))
-    }
-
-    /// Explain generated item and modifier contributions to tracked stats.
-    ///
-    /// The result is change-oriented: item purchases/removals and relevant
-    /// modifier apply/change/remove transitions each produce one row per
-    /// affected stat. Passing no stats collects the complete supported set.
-    #[pyo3(signature = (stats=None))]
-    pub(crate) fn stat_effects(
-        &self,
-        py: Python<'_>,
-        stats: Option<StrOrList>,
-    ) -> PyResult<PyDataFrame> {
-        let selected = if let Some(stats) = stats {
-            let names = stats.into_vec();
-            if names.is_empty() {
-                return Err(pyo3::exceptions::PyValueError::new_err(
-                    "stat_effects(): stats must not be empty",
-                ));
-            }
-            let mut selected = boon_parser::StatMask::default();
-            for name in names {
-                let Some(stat) = boon_parser::StatId::from_name(&name) else {
-                    let valid: Vec<_> = boon_parser::StatId::ALL
-                        .into_iter()
-                        .map(boon_parser::StatId::name)
-                        .collect();
-                    return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "stat_effects(): unknown stat {name:?}; valid stats: {valid:?}"
-                    )));
-                };
-                selected.insert(stat);
-            }
-            selected
-        } else {
-            boon_parser::StatMask::ALL
-        };
-
-        py.detach(|| self.build_stat_effects(selected))
-            .map(PyDataFrame)
+        let frame = py.detach(|| self.build_player_positions(ticks))?;
+        PyDataFrame(frame).into_py_any(py)
     }
 
     /// Convert a tick number to seconds elapsed, excluding paused time.

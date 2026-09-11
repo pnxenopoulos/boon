@@ -169,66 +169,6 @@ Return one DataFrame for one dataset. Return a dictionary for multiple datasets.
 A window without another selector returns each tick in the window. A request
 without a selector raises `ValueError`.
 
-#### `stat_ticks()`
-
-```python
-demo.stat_ticks(
-    ["bullet_resist", "spirit_resist", "fire_rate_bonus"],
-    every=64,
-)
-```
-
-Sample calculated player stats without adding columns to each `player_ticks`
-row. Use the same tick selectors as `snapshots()`: `ticks`, `every`,
-`seconds`, `events`, `start_tick`, and `end_tick`. Multiple requested
-stats use one entity and modifier pass. Boon processes keyframe segments in
-parallel.
-
-Supported stat names are `bullet_resist`, `spirit_resist`, `spirit_power`,
-`fire_rate_bonus`, `weapon_damage_bonus`, `cooldown_reduction`,
-`status_resist`, `bullet_lifesteal`, and `spirit_lifesteal`. Percentage
-stats are returned in percentage points; spirit power is returned in points.
-
-For each requested stat, the frame contains four columns:
-
-- `*_native`: the hero value at the current level.
-- `*_baseline`: native plus persistent progression and purchased items.
-- `*_effective`: baseline plus applicable live modifiers at that tick.
-- `*_complete`: true when each known contribution uses a supported formula.
-
-Boon does not guess an unsupported stack rule. It applies one copy and sets
-`*_complete` to false. A modifier does not apply when
-`in_aura_range == false`. Boon removes a permanent item modifier when the
-baseline already contains the item contribution.
-
-A finite modifier stops at `last_applied_time + duration`. An explicit
-removal, an aura exit, or slot reuse can stop it earlier. Boon compares these
-fields with the replicated Source 2 simulation clock, not the HUD match clock.
-If an old demo does not contain a compatible simulation clock, Boon uses only
-the recorded state transitions. Boon does not remove all modifiers when a
-player dies because some modifiers persist after death.
-
-Boon calculates these values from recorded state and the generated VData
-catalog. The demo does not provide a final server value for every stat.
-`*_complete` is true when Boon evaluates each matching catalog effect. It does
-not verify engine-only caps, operation order, or live conditions. See
-{doc}`known-issues`.
-
-#### `stat_effects()`
-
-```python
-demo.stat_effects(["bullet_resist", "spirit_resist"])
-```
-
-Return source details for stat changes. Each row identifies the player, stat,
-event, operation, calculated value, layer, and item or modifier source. It also
-contains ability IDs, modifier IDs, names, runtime serial, provider, stacks,
-duration, active state, and completeness. Without a `stats` argument, the
-result contains all supported stats.
-
-Use this dataset to check formulas and join changes to `stat_ticks`. The
-dataset is not part of `load()`. Boon calculates it on demand while it
-releases the Python interpreter lock.
 
 #### `summary()`
 
@@ -622,7 +562,11 @@ Per-tick, per-player state. Returns one row per player per tick.
 Rows where the pawn is not found or `hero_id == 0` are skipped.
 Boon loads this dataset on first access.
 
-**Pawn fields** (from `CCitadelPlayerPawn`):
+The `stat_modifier_*` columns are signed sums of known entries in the
+controller's `m_vecStatViewerModifierValues` vector. They do not include base
+hero stats or all temporary effects. Do not use them as final or effective stats.
+
+**Player fields** (from the player pawn and controller):
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -642,8 +586,16 @@ Boon loads this dataset on first access.
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
 | `barrier` | `float` | Current barrier remaining; `0.0` when no tracker is present |
-| `bullet_resist_baseline` | `float` | Baseline bullet/gun resistance from hero progression and unconditional equipped-item stats |
-| `spirit_resist_baseline` | `float` | Baseline spirit resistance from hero progression and unconditional equipped-item stats |
+| `stat_modifier_health` | `float` | Observed health modifier total |
+| `stat_modifier_spirit_power` | `float` | Observed spirit-power modifier total |
+| `stat_modifier_fire_rate` | `float` | Observed fire-rate modifier total |
+| `stat_modifier_weapon_damage` | `float` | Observed weapon-damage modifier total |
+| `stat_modifier_cooldown_reduction` | `float` | Observed cooldown-reduction modifier total |
+| `stat_modifier_ammo` | `float` | Observed ammo modifier total |
+| `stat_modifier_bullet_resist` | `float` | Observed bullet-resistance modifier total |
+| `stat_modifier_spirit_resist` | `float` | Observed spirit-resistance modifier total |
+| `stat_modifier_values_available` | `bool` | The demo serializer contains the stat-viewer vector |
+| `unknown_stat_modifier_count` | `int` | Vector entries with an unknown nonzero value type |
 | `lifestate` | `int` | Life state value (use `lifestate_names()` to resolve) |
 | `souls` | `int` | Current souls (currency) |
 | `spent_souls` | `int` | Total spent souls |

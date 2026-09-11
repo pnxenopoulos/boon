@@ -1,339 +1,6 @@
 use crate::*;
 
 impl Demo {
-    pub(super) fn build_stat_ticks_parallel(
-        &self,
-        selected: boon_parser::StatMask,
-        predicate: &TickPredicate,
-    ) -> PyResult<DataFrame> {
-        let filter: HashSet<&str> = ["CCitadelPlayerPawn", "CCitadelPlayerController"]
-            .into_iter()
-            .collect();
-        let init = self.parser.parse_init().map_err(to_py_err)?;
-        let keys = PtKeys::resolve(&init);
-        drop(init);
-
-        let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
-        let segment_count = parallel_segments().min(offsets.len().max(1));
-        let merged = if segment_count <= 1 {
-            let mut segment = StatSegment::default();
-            self.parser
-                .decode_segment(None, i32::MAX, &filter, |ctx| {
-                    segment.update(ctx, &keys);
-                    if predicate.matches(ctx.tick()) {
-                        segment
-                            .columns
-                            .collect_tick(ctx, &keys, &segment.modifiers, selected);
-                    }
-                })
-                .map_err(to_py_err)?;
-            segment
-        } else {
-            let ranges = segment_ranges(&offsets, segment_count);
-            let parser = &self.parser;
-            let parts: std::result::Result<Vec<StatSegment>, String> =
-                std::thread::scope(|scope| {
-                    let handles: Vec<_> = ranges
-                        .iter()
-                        .map(|&(start, end_tick)| {
-                            let filter = &filter;
-                            let keys = &keys;
-                            scope.spawn(move || -> std::result::Result<StatSegment, String> {
-                                let mut segment = StatSegment::default();
-                                parser
-                                    .decode_segment(start, end_tick, filter, |ctx| {
-                                        segment.update(ctx, keys);
-                                        if predicate.matches(ctx.tick()) {
-                                            segment.columns.collect_tick(
-                                                ctx,
-                                                keys,
-                                                &segment.modifiers,
-                                                selected,
-                                            );
-                                        }
-                                    })
-                                    .map_err(|error| error.to_string())?;
-                                Ok(segment)
-                            })
-                        })
-                        .collect();
-                    handles
-                        .into_iter()
-                        .map(|handle| handle.join().expect("stat segment thread panicked"))
-                        .collect()
-                });
-            let mut merged = StatSegment::default();
-            for part in parts.map_err(InvalidDemoError::new_err)? {
-                merged.columns.append(part.columns, selected);
-            }
-            merged
-        };
-        merged.columns.into_dataframe(selected)
-    }
-
-    pub(super) fn stat_ticks_at(
-        &self,
-        tick: i32,
-        selected: boon_parser::StatMask,
-    ) -> PyResult<DataFrame> {
-        let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
-        let mut segment = StatSegment::default();
-        if ctx.tick() == tick {
-            let keys = PtKeys::resolve(&ctx);
-            segment
-                .modifiers
-                .rebuild(&ctx, current_simulation_time(&ctx, keys.simulation_time));
-            segment.initialized = true;
-            segment
-                .columns
-                .collect_tick(&ctx, &keys, &segment.modifiers, selected);
-        }
-        segment.columns.into_dataframe(selected)
-    }
-
-    pub(super) fn build_stat_effects(
-        &self,
-        selected: boon_parser::StatMask,
-    ) -> PyResult<DataFrame> {
-        let filter: HashSet<&str> = ["CCitadelPlayerPawn", "CCitadelPlayerController"]
-            .into_iter()
-            .collect();
-        let init = self.parser.parse_init().map_err(to_py_err)?;
-        let keys = PtKeys::resolve(&init);
-        drop(init);
-
-        let mut rows = StatEffectCols::default();
-        let mut modifiers = boon_parser::EffectiveModifierState::default();
-        let mut signatures: HashMap<u32, ModifierEffectSignature> = HashMap::new();
-        let mut serial_owners: HashMap<u32, i64> = HashMap::new();
-        let mut previous_upgrades: HashMap<i64, HashSet<u32>> = HashMap::new();
-        let mut last_inputs: HashMap<i64, PlayerStatInputs> = HashMap::new();
-        let mut known_entity_to_hero: HashMap<i32, i64> = HashMap::new();
-
-        self.parser
-            .decode_segment(None, i32::MAX, &filter, |ctx| {
-                let mut by_pawn: HashMap<i32, PlayerStatInputs> = HashMap::new();
-                let mut current_entity_to_hero: HashMap<i32, i64> = HashMap::new();
-
-                for (controller_index, controller) in ctx
-                    .entities()
-                    .iter()
-                    .filter(|(_, entity)| entity.class_name.as_ref() == "CCitadelPlayerController")
-                {
-                    let Some(pawn_handle) = controller.get_handle(keys.pawn_handle) else {
-                        continue;
-                    };
-                    let Some(pawn) = ctx.entities().get_by_handle(pawn_handle) else {
-                        continue;
-                    };
-                    if pawn.class_name.as_ref() != "CCitadelPlayerPawn" {
-                        continue;
-                    }
-                    let hero_id = pawn.get_i64(keys.hero_id);
-                    let Some(pawn_index) = boon_parser::protobuf_handle_index(Some(pawn_handle))
-                    else {
-                        continue;
-                    };
-                    if hero_id == 0 {
-                        continue;
-                    }
-                    let (upgrades, ability_tiers) = stat_inputs(controller, &keys);
-                    let inputs = PlayerStatInputs {
-                        hero_id,
-                        level: controller.get_i64(keys.level),
-                        upgrades,
-                        ability_tiers,
-                    };
-                    by_pawn.insert(pawn_index, inputs.clone());
-                    current_entity_to_hero.insert(controller_index, hero_id);
-                    current_entity_to_hero.insert(pawn_index, hero_id);
-                }
-                known_entity_to_hero.extend(
-                    current_entity_to_hero
-                        .iter()
-                        .map(|(&entity, &hero)| (entity, hero)),
-                );
-
-                // Purchased item changes explain baseline contributions. Compare
-                // sets rather than vector positions because upgrades may reorder.
-                let mut players: Vec<_> = by_pawn.values().cloned().collect();
-                players.sort_by_key(|inputs| inputs.hero_id);
-                for inputs in players {
-                    let current: HashSet<u32> = inputs.upgrades.iter().copied().collect();
-                    let previous = previous_upgrades
-                        .get(&inputs.hero_id)
-                        .cloned()
-                        .unwrap_or_default();
-                    let layers = boon_parser::evaluate_player_stats(
-                        inputs.hero_id,
-                        inputs.level,
-                        &inputs.upgrades,
-                        &inputs.ability_tiers,
-                        std::iter::empty(),
-                    );
-                    let spirit_power = layers.baseline[boon_parser::StatId::SpiritPower];
-
-                    let mut added: Vec<_> = current.difference(&previous).copied().collect();
-                    let mut removed: Vec<_> = previous.difference(&current).copied().collect();
-                    added.sort_unstable();
-                    removed.sort_unstable();
-                    for (event, active, upgrades) in
-                        [("applied", true, added), ("removed", false, removed)]
-                    {
-                        for ability_id in upgrades {
-                            for &effect in boon_parser::stat_catalog::item_stat_effects(ability_id)
-                            {
-                                if !selected.contains(effect.stat) {
-                                    continue;
-                                }
-                                rows.push(ModifierEffectRow {
-                                    tick: ctx.tick(),
-                                    hero_id: inputs.hero_id,
-                                    event,
-                                    effect,
-                                    source_type: "item",
-                                    layer: "baseline",
-                                    ability_id,
-                                    modifier_id: 0,
-                                    serial: 0,
-                                    caster_hero_id: inputs.hero_id,
-                                    provider_hero_id: 0,
-                                    stacks: 1,
-                                    duration: -1.0,
-                                    active,
-                                    spirit_power,
-                                    ability_tier: 0,
-                                });
-                            }
-                        }
-                    }
-                    previous_upgrades.insert(inputs.hero_id, current);
-                    last_inputs.insert(inputs.hero_id, inputs);
-                }
-
-                let game_time = current_simulation_time(ctx, keys.simulation_time);
-                for change in modifiers.update(ctx, game_time) {
-                    let entry = &change.entry;
-                    let ability_id = entry.ability_subclass.unwrap_or(0);
-                    let modifier_id = entry.modifier_subclass.unwrap_or(0);
-                    let stacks = entry.stack_count.unwrap_or(0);
-                    let signature = ModifierEffectSignature {
-                        ability_id,
-                        modifier_id,
-                        stacks,
-                        in_aura_range: entry.in_aura_range,
-                    };
-
-                    if change.kind == boon_parser::ModifierChangeKind::Changed
-                        && signatures.get(&change.serial) == Some(&signature)
-                    {
-                        continue;
-                    }
-
-                    let parent_index = boon_parser::protobuf_handle_index(entry.parent);
-                    let hero_id = parent_index
-                        .and_then(|index| by_pawn.get(&index))
-                        .map(|inputs| inputs.hero_id)
-                        .or_else(|| serial_owners.get(&change.serial).copied())
-                        .unwrap_or(0);
-                    if hero_id == 0 {
-                        continue;
-                    }
-                    if change.kind != boon_parser::ModifierChangeKind::Removed {
-                        serial_owners.insert(change.serial, hero_id);
-                        signatures.insert(change.serial, signature);
-                    }
-
-                    let Some(inputs) = by_pawn
-                        .values()
-                        .find(|inputs| inputs.hero_id == hero_id)
-                        .or_else(|| last_inputs.get(&hero_id))
-                    else {
-                        continue;
-                    };
-
-                    // An item's permanent auto-registered modifier duplicates
-                    // the baseline item row emitted above.
-                    let duration = entry.duration.unwrap_or(-1.0);
-                    if duration < 0.0 && inputs.upgrades.contains(&ability_id) {
-                        if change.kind == boon_parser::ModifierChangeKind::Removed {
-                            signatures.remove(&change.serial);
-                            serial_owners.remove(&change.serial);
-                        }
-                        continue;
-                    }
-
-                    let layers = boon_parser::evaluate_player_stats(
-                        inputs.hero_id,
-                        inputs.level,
-                        &inputs.upgrades,
-                        &inputs.ability_tiers,
-                        std::iter::empty(),
-                    );
-                    let spirit_power = layers.baseline[boon_parser::StatId::SpiritPower];
-                    let ability_tier = inputs.ability_tiers.get(&ability_id).copied().unwrap_or(0);
-                    let caster_hero_id = boon_parser::protobuf_handle_index(entry.caster)
-                        .and_then(|index| {
-                            current_entity_to_hero
-                                .get(&index)
-                                .or_else(|| known_entity_to_hero.get(&index))
-                        })
-                        .copied()
-                        .unwrap_or(0);
-                    let provider_hero_id =
-                        boon_parser::protobuf_handle_index(entry.aura_provider_ehandle)
-                            .and_then(|index| {
-                                current_entity_to_hero
-                                    .get(&index)
-                                    .or_else(|| known_entity_to_hero.get(&index))
-                            })
-                            .copied()
-                            .unwrap_or(0);
-                    let active = change.kind != boon_parser::ModifierChangeKind::Removed
-                        && entry.in_aura_range != Some(false);
-                    let layer = if duration < 0.0 {
-                        "baseline"
-                    } else {
-                        "effective"
-                    };
-
-                    for &effect in
-                        boon_parser::stat_catalog::modifier_stat_effects(ability_id, modifier_id)
-                    {
-                        if !selected.contains(effect.stat) {
-                            continue;
-                        }
-                        rows.push(ModifierEffectRow {
-                            tick: ctx.tick(),
-                            hero_id,
-                            event: change.kind.as_str(),
-                            effect,
-                            source_type: "modifier",
-                            layer,
-                            ability_id,
-                            modifier_id,
-                            serial: change.serial,
-                            caster_hero_id,
-                            provider_hero_id,
-                            stacks,
-                            duration,
-                            active,
-                            spirit_power,
-                            ability_tier,
-                        });
-                    }
-
-                    if change.kind == boon_parser::ModifierChangeKind::Removed {
-                        signatures.remove(&change.serial);
-                        serial_owners.remove(&change.serial);
-                    }
-                }
-            })
-            .map_err(to_py_err)?;
-
-        rows.into_dataframe()
-    }
-
     pub(super) fn ensure_snapshots_detached(
         &mut self,
         py: Python<'_>,
@@ -552,6 +219,77 @@ impl Demo {
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
 
+    /// Decode only player positions at selected ticks.
+    pub(super) fn build_player_positions(&self, mut ticks: Vec<i32>) -> PyResult<DataFrame> {
+        ticks.sort_unstable();
+        ticks.dedup();
+
+        let filter: HashSet<&str> = ["CCitadelPlayerPawn", "CCitadelPlayerController"]
+            .into_iter()
+            .collect();
+        let init = self.parser.parse_init().map_err(to_py_err)?;
+        let keys = PtKeys::resolve(&init);
+        drop(init);
+
+        let mut merged = PlayerPositionCols::default();
+        if ticks.len() <= 4 {
+            for tick in ticks {
+                let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
+                if ctx.tick() == tick {
+                    merged.collect_tick(&ctx, &keys);
+                }
+            }
+            return merged.into_dataframe();
+        }
+
+        let selected: HashSet<i32> = ticks.into_iter().collect();
+        let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
+        let count = parallel_segments().min(offsets.len().max(1));
+        if count <= 1 {
+            self.parser
+                .decode_segment(None, i32::MAX, &filter, |ctx| {
+                    if selected.contains(&ctx.tick()) {
+                        merged.collect_tick(ctx, &keys);
+                    }
+                })
+                .map_err(to_py_err)?;
+            return merged.into_dataframe();
+        }
+
+        let ranges = segment_ranges(&offsets, count);
+        let parser = &self.parser;
+        let parts: std::result::Result<Vec<PlayerPositionCols>, String> =
+            std::thread::scope(|scope| {
+                let handles: Vec<_> = ranges
+                    .iter()
+                    .map(|&(start, end_tick)| {
+                        let filter = &filter;
+                        let keys = &keys;
+                        let selected = &selected;
+                        scope.spawn(move || -> std::result::Result<PlayerPositionCols, String> {
+                            let mut columns = PlayerPositionCols::default();
+                            parser
+                                .decode_segment(start, end_tick, filter, |ctx| {
+                                    if selected.contains(&ctx.tick()) {
+                                        columns.collect_tick(ctx, keys);
+                                    }
+                                })
+                                .map_err(|error| error.to_string())?;
+                            Ok(columns)
+                        })
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|handle| handle.join().expect("position segment thread panicked"))
+                    .collect()
+            });
+        for part in parts.map_err(InvalidDemoError::new_err)? {
+            merged.append(part);
+        }
+        merged.into_dataframe()
+    }
+
     /// Decode requested snapshot datasets in one parallel pass.
     ///
     /// Each full packet contains a new keyframe for the required entity state.
@@ -589,7 +327,6 @@ impl Demo {
 
         let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
         let n = parallel_segments().min(offsets.len().max(1));
-
         let merged = if n <= 1 {
             let mut cols = SegSnap::default();
             self.parser
@@ -619,7 +356,7 @@ impl Demo {
                                         cols.collect_tick(ctx, keys, wants);
                                     }
                                 })
-                                .map_err(|e| e.to_string())?;
+                                .map_err(|error| error.to_string())?;
                             Ok(cols)
                         })
                     })
@@ -699,6 +436,29 @@ impl Demo {
         ))
     }
 
+    /// Get requested datasets at a small set of ticks with direct seeks.
+    ///
+    /// Sort and deduplicate the ticks so row order matches a normal decode.
+    /// The caller limits this path to small explicit requests. A full pass is
+    /// faster when the request contains many ticks.
+    pub(super) fn snapshots_at_ticks(
+        &self,
+        mut ticks: Vec<i32>,
+        wants: SnapWants,
+    ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
+        ticks.sort_unstable();
+        ticks.dedup();
+
+        let mut merged = (None, None, None);
+        for tick in ticks {
+            let (pt, wt, tr) = self.snapshot_at_tick(tick, wants)?;
+            append_snapshot_frame(&mut merged.0, pt)?;
+            append_snapshot_frame(&mut merged.1, wt)?;
+            append_snapshot_frame(&mut merged.2, tr)?;
+        }
+        Ok(merged)
+    }
+
     /// Populate the caches for the requested snapshot datasets that aren't
     /// already loaded, using a single parallel decode pass over the demo.
     pub(super) fn ensure_snapshots(&mut self, mut wants: SnapWants) -> PyResult<()> {
@@ -763,9 +523,106 @@ impl Demo {
         &mut self,
         names: &[String],
     ) -> PyResult<std::collections::HashSet<i32>> {
+        let missing: Vec<&str> = names
+            .iter()
+            .map(String::as_str)
+            .filter(|name| self.cached_frame(name).is_none())
+            .collect();
+        if missing
+            .iter()
+            .all(|name| direct_event_message_type(name).is_some())
+        {
+            let mut set = std::collections::HashSet::new();
+            for name in names {
+                let Some(df) = self.cached_frame(name) else {
+                    continue;
+                };
+                let tick = df
+                    .column("tick")
+                    .and_then(|column| column.i32())
+                    .map_err(|_| {
+                        pyo3::exceptions::PyValueError::new_err(format!(
+                            "snapshots(events=): '{name}' has no i32 tick column"
+                        ))
+                    })?;
+                set.extend(tick.into_iter().flatten());
+            }
+            if missing.is_empty() {
+                return Ok(set);
+            }
+
+            // These datasets have one row for each valid message. Read only the
+            // selected messages. Do not decode entity state or build a frame.
+            let event_types: HashSet<u32> = missing
+                .iter()
+                .filter_map(|name| direct_event_message_type(name))
+                .collect();
+            let events = self
+                .parser
+                .events_filtered(None, &event_types)
+                .map_err(to_py_err)?;
+            for event in events {
+                let has_row = match event.msg_type {
+                    value if value == Msg::KEUserMsgHeroKilled as u32 => {
+                        boon_proto::proto::CCitadelUserMsgHeroKilled::decode(
+                            event.payload.as_slice(),
+                        )
+                        .map(|_| true)
+                        .map_err(|error| {
+                            DemoMessageError::new_err(format!(
+                                "Failed to decode HeroKilled event: {error}"
+                            ))
+                        })?
+                    }
+                    value if value == Msg::KEUserMsgDamage as u32 => {
+                        boon_proto::proto::CCitadelUserMessageDamage::decode(
+                            event.payload.as_slice(),
+                        )
+                        .map(|_| true)
+                        .map_err(|error| {
+                            DemoMessageError::new_err(format!(
+                                "Failed to decode Damage event: {error}"
+                            ))
+                        })?
+                    }
+                    value if value == Msg::KEUserMsgFlexSlotUnlocked as u32 => {
+                        boon_proto::proto::CCitadelUserMsgFlexSlotUnlocked::decode(
+                            event.payload.as_slice(),
+                        )
+                        .is_ok()
+                    }
+                    value if value == Msg::KEUserMsgImportantAbilityUsed as u32 => {
+                        boon_proto::proto::CCitadelUserMessageImportantAbilityUsed::decode(
+                            event.payload.as_slice(),
+                        )
+                        .is_ok()
+                    }
+                    value if value == Msg::KEUserMsgAbilitiesChanged as u32 => {
+                        boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
+                            event.payload.as_slice(),
+                        )
+                        .is_ok()
+                    }
+                    value if value == Msg::KEUserMsgChatMsg as u32 => {
+                        boon_proto::proto::CCitadelUserMsgChatMsg::decode(event.payload.as_slice())
+                            .is_ok()
+                    }
+                    _ => false,
+                };
+                if has_row {
+                    set.insert(event.tick);
+                }
+            }
+            return Ok(set);
+        }
+
+        // Load all missing event datasets in one parser pass. Loading each name
+        // inside the loop makes compatible datasets scan the full demo once per
+        // name, although `load` can collect them together.
+        Python::attach(|py| self.load(py, names.to_vec()))?;
+
         let mut set = std::collections::HashSet::new();
         for name in names {
-            Python::attach(|py| self.load(py, vec![name.clone()]))?;
             let df = self.cached_frame(name).ok_or_else(|| {
                 pyo3::exceptions::PyValueError::new_err(format!(
                     "snapshots(events=): '{name}' is not an event dataset with a tick column"
@@ -781,5 +638,31 @@ impl Demo {
             }
         }
         Ok(set)
+    }
+}
+
+fn append_snapshot_frame(output: &mut Option<DataFrame>, next: Option<DataFrame>) -> PyResult<()> {
+    let Some(next) = next else {
+        return Ok(());
+    };
+    if let Some(output) = output {
+        output.vstack_mut(&next).map_err(|error| {
+            InvalidDemoError::new_err(format!("Failed to combine snapshot frames: {error}"))
+        })?;
+    } else {
+        *output = Some(next);
+    }
+    Ok(())
+}
+
+fn direct_event_message_type(name: &str) -> Option<u32> {
+    match name {
+        "kills" => Some(Msg::KEUserMsgHeroKilled as u32),
+        "damage" => Some(Msg::KEUserMsgDamage as u32),
+        "flex_slots" => Some(Msg::KEUserMsgFlexSlotUnlocked as u32),
+        "abilities" => Some(Msg::KEUserMsgImportantAbilityUsed as u32),
+        "item_purchases" => Some(Msg::KEUserMsgAbilitiesChanged as u32),
+        "chat" => Some(Msg::KEUserMsgChatMsg as u32),
+        _ => None,
     }
 }

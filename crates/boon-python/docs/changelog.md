@@ -4,14 +4,29 @@
 
 ### boon
 
+- Removed the VData-derived `resistances`, `stat_catalog`, and `stats`
+  modules and their generated tables. The Rust API now exposes only the
+  version-aware decoder and aggregator for stat-modifier values recorded in a
+  demo. The name-table generator no longer downloads `heroes.vdata` or
+  generates gameplay values.
+
 - New `EffectiveModifierState` separates replicated `ActiveModifiers` rows
   from modifiers that still have a gameplay effect. It ends a positive,
   finite-duration modifier at its `GameTime_t` deadline and retains the raw
   row for later partial protobuf updates. An explicit removal, an aura exit,
   or slot reuse can end the modifier earlier. Zero, negative, and incomplete
   durations continue until a recorded state transition ends them.
-
 ### boon-python
+
+- **Breaking:** Removed `demo.stat_ticks(...)` and `demo.stat_effects(...)`.
+  These APIs calculated values from current VData instead of reading an
+  authoritative value from the demo.
+- Replaced `bullet_resist_baseline` and `spirit_resist_baseline` in
+  `demo.player_ticks` with eight `stat_modifier_*` columns read from
+  each controller's `m_vecStatViewerModifierValues` vector. New
+  `stat_modifier_values_available` and `unknown_stat_modifier_count`
+  columns report source availability and unrecognized value types. These values
+  are observed modifier contributions, not complete player stats.
 
 - New `demo.barriers()` derived dataset reports each barrier a hero gained and
   how much of it stopped damage. Rows include `tick`, `hero_id`, `granted`,
@@ -42,12 +57,21 @@
   over rather than assumed constant, so it is exact per demo. All return `None` when
   the demo has no game-over event, does not replicate the match clock, or does not
   start in the pre-game (a recording that begins after the barrier drop).
-- Fixed finite modifiers that stayed active in `active_modifiers`,
-  `stat_effects(...)`, and `stat_ticks(...)` after their duration ended.
+- Fixed finite modifiers that stayed active in `active_modifiers` after
+  their duration ended.
   Boon now compares the modifier deadline with the replicated Source 2
   simulation clock. Old demos without a compatible simulation clock keep the
   recorded transition behavior. Boon does not clear all modifiers when a
   player dies because some modifiers persist after death.
+- Faster `demo.snapshots(...)`. Multiple event selectors now share one load,
+  direct event messages can supply ticks without an entity pass, and requests
+  for up to four explicit ticks use direct seeks.
+- Compatible lazy datasets now share one parser pass. The cohorts are
+  `damage` with `healing`, `kills` with `abilities`, and `item_purchases` with
+  `chat` and `ability_upgrades`.
+- `demo.troopers` no longer allocates one owned type string for each row.
+  `demo.barriers()` partitions its required columns once, and
+  `demo.teamfights()` decodes only player positions at damage ticks.
 
 ## 0.8.0
 

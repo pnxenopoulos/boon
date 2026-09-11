@@ -34,6 +34,15 @@ def test_specific_ticks_match_full_frame(demo: Demo) -> None:
     assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
 
 
+def test_player_positions_match_snapshot_columns(demo: Demo) -> None:
+    ticks = sorted(demo.player_ticks["tick"].unique().to_list())[100:103]
+    expected = demo.snapshots(ticks=ticks).select("tick", "hero_id", "x", "y")
+    positions = demo._player_positions(ticks)
+    assert positions.sort(["tick", "hero_id"]).equals(
+        expected.sort(["tick", "hero_id"])
+    )
+
+
 def test_single_tick_matches_full_frame(demo: Demo) -> None:
     full = demo.player_ticks
     t = sorted(full["tick"].unique().to_list())[500]
@@ -61,6 +70,33 @@ def test_events_align_to_event_ticks(demo: Demo) -> None:
     snap = demo.snapshots(events="kills")
     kill_ticks = set(demo.kills["tick"].to_list())
     assert set(snap["tick"].unique().to_list()) <= kill_ticks
+
+
+def test_multiple_events_align_to_union_of_event_ticks(demo: Demo) -> None:
+    snap = demo.snapshots(events=["kills", "damage"])
+    event_ticks = set(demo.kills["tick"].to_list())
+    event_ticks.update(demo.damage["tick"].to_list())
+    assert set(snap["tick"].unique().to_list()) <= event_ticks
+
+
+def test_message_only_event_ticks_match_loaded_datasets() -> None:
+    events = [
+        "kills",
+        "damage",
+        "flex_slots",
+        "abilities",
+        "item_purchases",
+        "chat",
+    ]
+    direct_demo = Demo(_fixture())
+    direct = direct_demo.snapshots(events=events)
+
+    loaded_demo = Demo(_fixture())
+    loaded_demo.load(*events)
+    loaded = loaded_demo.snapshots(events=events)
+
+    keys = ["tick", "hero_id"]
+    assert direct.sort(keys).equals(loaded.sort(keys))
 
 
 def test_single_dataset_returns_frame(demo: Demo) -> None:

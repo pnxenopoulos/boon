@@ -4,8 +4,8 @@ use crate::*;
 impl Demo {
     /// Per-tick, per-player state as a Polars DataFrame.
     ///
-    /// Returns a DataFrame with 51 columns covering position, health, barrier, resistance, combat
-    /// timers, kills, deaths, net worth, and more for every player at every tick.
+    /// Returns a DataFrame with 60 columns covering position, health, barrier, observed stat
+    /// modifiers, combat timers, kills, deaths, net worth, and more for every player at every tick.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
