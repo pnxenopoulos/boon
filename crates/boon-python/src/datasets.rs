@@ -36,32 +36,114 @@ impl IntOrList {
     }
 }
 
-pub(super) const VALID_DATASETS: &[&str] = &[
-    "abilities",
-    "ability_upgrades",
-    "ability_ticks",
-    "chat",
-    "mid_boss",
-    "objectives",
-    "player_ticks",
-    "world_ticks",
-    "kills",
-    "damage",
-    "healing",
-    "flex_slots",
-    "item_purchases",
-    "troopers",
-    "neutrals",
-    "breakables",
-    "sinners_sacrifice",
-    "stat_modifier_events",
-    "active_modifiers",
-    "urn",
-    "rift",
-];
+/// A dataset name validated at the Python API boundary.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum Dataset {
+    Abilities,
+    AbilityUpgrades,
+    AbilityTicks,
+    Chat,
+    MidBoss,
+    Objectives,
+    PlayerTicks,
+    WorldTicks,
+    Kills,
+    Damage,
+    Healing,
+    FlexSlots,
+    ItemPurchases,
+    Troopers,
+    Neutrals,
+    Breakables,
+    SinnersSacrifice,
+    StatModifierEvents,
+    ActiveModifiers,
+    Urn,
+    Rift,
+    StreetBrawlTicks,
+    StreetBrawlRounds,
+}
 
-pub(super) const VALID_STREET_BRAWL_DATASETS: &[&str] =
-    &["street_brawl_ticks", "street_brawl_rounds"];
+impl Dataset {
+    pub(super) const ALL: [Self; 23] = [
+        Self::Abilities,
+        Self::AbilityUpgrades,
+        Self::AbilityTicks,
+        Self::Chat,
+        Self::MidBoss,
+        Self::Objectives,
+        Self::PlayerTicks,
+        Self::WorldTicks,
+        Self::Kills,
+        Self::Damage,
+        Self::Healing,
+        Self::FlexSlots,
+        Self::ItemPurchases,
+        Self::Troopers,
+        Self::Neutrals,
+        Self::Breakables,
+        Self::SinnersSacrifice,
+        Self::StatModifierEvents,
+        Self::ActiveModifiers,
+        Self::Urn,
+        Self::Rift,
+        Self::StreetBrawlTicks,
+        Self::StreetBrawlRounds,
+    ];
+
+    pub(super) const fn as_str(self) -> &'static str {
+        match self {
+            Self::Abilities => "abilities",
+            Self::AbilityUpgrades => "ability_upgrades",
+            Self::AbilityTicks => "ability_ticks",
+            Self::Chat => "chat",
+            Self::MidBoss => "mid_boss",
+            Self::Objectives => "objectives",
+            Self::PlayerTicks => "player_ticks",
+            Self::WorldTicks => "world_ticks",
+            Self::Kills => "kills",
+            Self::Damage => "damage",
+            Self::Healing => "healing",
+            Self::FlexSlots => "flex_slots",
+            Self::ItemPurchases => "item_purchases",
+            Self::Troopers => "troopers",
+            Self::Neutrals => "neutrals",
+            Self::Breakables => "breakables",
+            Self::SinnersSacrifice => "sinners_sacrifice",
+            Self::StatModifierEvents => "stat_modifier_events",
+            Self::ActiveModifiers => "active_modifiers",
+            Self::Urn => "urn",
+            Self::Rift => "rift",
+            Self::StreetBrawlTicks => "street_brawl_ticks",
+            Self::StreetBrawlRounds => "street_brawl_rounds",
+        }
+    }
+
+    pub(super) const fn is_street_brawl(self) -> bool {
+        matches!(self, Self::StreetBrawlTicks | Self::StreetBrawlRounds)
+    }
+}
+
+impl std::str::FromStr for Dataset {
+    type Err = PyErr;
+
+    fn from_str(name: &str) -> Result<Self, Self::Err> {
+        Self::ALL.into_iter().find(|dataset| dataset.as_str() == name).ok_or_else(|| {
+            let mut standard = Vec::new();
+            let mut street_brawl = Vec::new();
+            for dataset in Self::ALL {
+                if dataset.is_street_brawl() {
+                    street_brawl.push(dataset.as_str());
+                } else {
+                    standard.push(dataset.as_str());
+                }
+            }
+            pyo3::exceptions::PyValueError::new_err(format!(
+                "Unknown dataset: {name:?}. Valid datasets: {standard:?}, street brawl: {street_brawl:?}"
+            ))
+        })
+    }
+}
 
 /// Known Rift ("Koth") cash-in sites in the form `([x, y], lane)`.
 ///
@@ -172,6 +254,7 @@ pub(super) struct SummaryFrames {
     pub(super) last_hits: DataFrame,
     pub(super) objectives: DataFrame,
     pub(super) damage: DataFrame,
+    pub(super) healing: DataFrame,
 }
 
 #[derive(Clone, Copy)]
@@ -538,4 +621,71 @@ pub(super) fn build_damage_frame(
         Column::new("sample_time_s".into(), sample_time_s),
         Column::new("damage".into(), damage),
     ])
+}
+
+/// Recorded healing and regeneration per source/target/sample interval.
+/// Category totals duplicate the specific-source amounts and are excluded.
+/// Use the complete sample list for interval starts: sparse sources can begin
+/// later or skip intervals with no healing.
+pub(super) fn build_healing_frame(
+    match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+    damage: &DataFrame,
+) -> PolarsResult<DataFrame> {
+    let stat_type = damage.column("stat_type")?.str()?;
+    let category = damage.column("is_category")?.bool()?;
+    let mask = (stat_type.equal("healing") | stat_type.equal("regen"))
+        & !category
+        & damage.column("damage")?.u32()?.gt(0);
+    let mut healing = damage.filter(&mask)?;
+    let times = match_info
+        .damage_matrix
+        .as_ref()
+        .map_or(&[][..], |matrix| matrix.sample_time_s.as_slice());
+    let starts: HashMap<u32, u32> = times
+        .iter()
+        .copied()
+        .zip(std::iter::once(0).chain(times.iter().copied()))
+        .collect();
+    let interval_starts: Vec<u32> = healing
+        .column("sample_time_s")?
+        .u32()?
+        .into_iter()
+        .map(|end| {
+            end.and_then(|end| starts.get(&end).copied())
+                .ok_or_else(|| {
+                    PolarsError::ComputeError("healing sample has no recorded interval".into())
+                })
+        })
+        .collect::<PolarsResult<_>>()?;
+    healing.with_column(Column::new("interval_start_s".into(), interval_starts))?;
+    for (old, new) in [
+        ("sample_time_s", "interval_end_s"),
+        ("dealer_player_slot", "healer_player_slot"),
+        ("dealer_hero_id", "healer_hero_id"),
+        ("damage", "amount"),
+    ] {
+        healing.rename(old, new.into())?;
+    }
+    healing
+        .select([
+            "interval_start_s",
+            "interval_end_s",
+            "healer_player_slot",
+            "healer_hero_id",
+            "target_player_slot",
+            "target_hero_id",
+            "source_name",
+            "stat_type",
+            "amount",
+        ])?
+        .sort(
+            [
+                "interval_end_s",
+                "healer_player_slot",
+                "target_player_slot",
+                "source_name",
+                "stat_type",
+            ],
+            SortMultipleOptions::default(),
+        )
 }

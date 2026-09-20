@@ -9,14 +9,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots_detached(
-            py,
-            SnapWants {
-                player_ticks: true,
-                ..Default::default()
-            },
-        )?;
-        Ok(PyDataFrame(self.cached_player_ticks.clone().unwrap()))
+        self.dataset_frame(py, Dataset::PlayerTicks)
     }
 
     /// World state at every tick as a Polars DataFrame.
@@ -25,14 +18,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn world_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots_detached(
-            py,
-            SnapWants {
-                world_ticks: true,
-                ..Default::default()
-            },
-        )?;
-        Ok(PyDataFrame(self.cached_world_ticks.clone().unwrap()))
+        self.dataset_frame(py, Dataset::WorldTicks)
     }
 
     /// Hero kill events as a Polars DataFrame.
@@ -46,10 +32,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn kills(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_kills.is_none() {
-            self.load(py, vec!["kills".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_kills.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Kills)
     }
 
     /// Damage events as a Polars DataFrame.
@@ -58,6 +41,12 @@ impl Demo {
     /// - tick: The game tick when the damage occurred
     /// - damage: The damage dealt
     /// - pre_damage: The damage before mitigation
+    /// - damage_absorbed: Recorded barrier absorption, null when absent. Uses the
+    ///   legacy integer field when the float field is absent.
+    /// - victim_shield_new: Remaining shield after this hit, null when absent
+    /// - victim_shield_max: Shield capacity, null when absent
+    /// - is_secondary_stat: Recorded secondary-stat flag, null when absent
+    /// - server_tick: Server tick, distinct from demo tick; null when absent
     /// - victim_hero_id: The hero ID of the victim (0 if not a hero)
     /// - attacker_hero_id: The hero ID of the attacker (0 if not a hero)
     /// - victim_health_new: The victim's health after damage
@@ -80,36 +69,22 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn damage(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_damage.is_none() {
-            self.load(py, vec!["damage".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_damage.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Damage)
     }
 
-    /// Per-event healing as a Polars DataFrame.
+    /// Recorded healing and regeneration per sample interval.
     ///
-    /// Returns a DataFrame with columns:
-    /// - tick: The game tick when the heal occurred
-    /// - target_hero_id: The healed hero (0 if not a hero)
-    /// - source_hero_id: The healer (0 if not a hero or self / none)
-    /// - amount: Health restored (positive)
-    /// - ability_id: The ability/item that healed (0 if absent; use
-    ///   ``ability_names()`` to resolve it)
-    /// - citadel_type: The Deadlock damage category the heal came through
-    ///
-    /// Heals ride on ``CCitadelUserMessage_Damage`` as a negative
-    /// ``health_lost`` (the ``damage`` field itself stays non-negative). This
-    /// dataset keeps only those rows and reports ``amount`` as the positive
-    /// health restored. Barrier / shield grants are not present in this
-    /// message, so this is health healing only.
-    ///
-    /// Not loaded by default. Boon loads this dataset on first access.
+    /// Shares the cached frame returned by ``summary()["healing"]``.
+    /// Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
+    /// ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+    /// ``stat_type`` (``healing`` or ``regen``), and ``amount``.
+    /// Bounds use match-clock seconds, usually 180 seconds apart. These are
+    /// interval totals, not individual heals. Hero IDs come from the match roster.
+    /// Category duplicates are excluded. Raises ``DemoMessageError`` when the
+    /// recording has no post-match details. Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn healing(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_healing.is_none() {
-            self.load(py, vec!["healing".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_healing.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Healing)
     }
 
     /// Flex slot unlock events as a Polars DataFrame.
@@ -118,10 +93,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn flex_slots(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_flex_slots.is_none() {
-            self.load(py, vec!["flex_slots".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_flex_slots.clone().unwrap()))
+        self.dataset_frame(py, Dataset::FlexSlots)
     }
 
     /// Ability usage events as a Polars DataFrame.
@@ -130,10 +102,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn abilities(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_abilities.is_none() {
-            self.load(py, vec!["abilities".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_abilities.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Abilities)
     }
 
     /// Hero ability upgrade events (skill point spending) as a Polars DataFrame.
@@ -142,10 +111,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn ability_upgrades(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_ability_upgrades.is_none() {
-            self.load(py, vec!["ability_upgrades".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_ability_upgrades.clone().unwrap()))
+        self.dataset_frame(py, Dataset::AbilityUpgrades)
     }
 
     /// Item purchase/sell/upgrade events as a Polars DataFrame.
@@ -154,10 +120,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_item_purchases.is_none() {
-            self.load(py, vec!["item_purchases".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_item_purchases.clone().unwrap()))
+        self.dataset_frame(py, Dataset::ItemPurchases)
     }
 
     /// Chat messages as a Polars DataFrame.
@@ -166,10 +129,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn chat(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_chat.is_none() {
-            self.load(py, vec!["chat".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_chat.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Chat)
     }
 
     /// Objective health state changes as a Polars DataFrame.
@@ -179,10 +139,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn objectives(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_objectives.is_none() {
-            self.load(py, vec!["objectives".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_objectives.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Objectives)
     }
 
     /// Mid boss lifecycle events as a Polars DataFrame.
@@ -192,10 +149,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn mid_boss(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_mid_boss.is_none() {
-            self.load(py, vec!["mid_boss".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_mid_boss.clone().unwrap()))
+        self.dataset_frame(py, Dataset::MidBoss)
     }
 
     /// Rift lifecycle as a Polars DataFrame — one row per Rift.
@@ -210,10 +164,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn rift(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_rift.is_none() {
-            self.load(py, vec!["rift".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_rift.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Rift)
     }
 
     /// Per-tick alive lane trooper state as a Polars DataFrame.
@@ -228,14 +179,7 @@ impl Demo {
     /// Access this property or call ``load("troopers")`` explicitly.
     #[getter]
     pub(crate) fn troopers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        self.ensure_snapshots_detached(
-            py,
-            SnapWants {
-                troopers: true,
-                ..Default::default()
-            },
-        )?;
-        Ok(PyDataFrame(self.cached_troopers.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Troopers)
     }
 
     /// Neutral creep state changes as a Polars DataFrame.
@@ -251,10 +195,7 @@ impl Demo {
     /// ``load("neutrals")`` explicitly.
     #[getter]
     pub(crate) fn neutrals(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_neutrals.is_none() {
-            self.load(py, vec!["neutrals".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_neutrals.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Neutrals)
     }
 
     /// Breakable map-prop destruction events as a Polars DataFrame.
@@ -276,10 +217,7 @@ impl Demo {
     /// ``load("breakables")`` explicitly.
     #[getter]
     pub(crate) fn breakables(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_breakables.is_none() {
-            self.load(py, vec!["breakables".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_breakables.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Breakables)
     }
 
     /// Sinner's Sacrifice machine lifecycle and hit events as a Polars DataFrame.
@@ -303,10 +241,7 @@ impl Demo {
     /// ``load("sinners_sacrifice")``.
     #[getter]
     pub(crate) fn sinners_sacrifice(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_sinners_sacrifice.is_none() {
-            self.load(py, vec!["sinners_sacrifice".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_sinners_sacrifice.clone().unwrap()))
+        self.dataset_frame(py, Dataset::SinnersSacrifice)
     }
 
     /// Permanent stat bonus change events as a Polars DataFrame.
@@ -322,12 +257,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn stat_modifier_events(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_stat_modifier_events.is_none() {
-            self.load(py, vec!["stat_modifier_events".to_string()])?;
-        }
-        Ok(PyDataFrame(
-            self.cached_stat_modifier_events.clone().unwrap(),
-        ))
+        self.dataset_frame(py, Dataset::StatModifierEvents)
     }
 
     /// Active buff/debuff modifier events as a Polars DataFrame.
@@ -347,10 +277,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn active_modifiers(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_active_modifiers.is_none() {
-            self.load(py, vec!["active_modifiers".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_active_modifiers.clone().unwrap()))
+        self.dataset_frame(py, Dataset::ActiveModifiers)
     }
 
     /// Ability cooldown / charge state changes as a Polars DataFrame.
@@ -371,10 +298,7 @@ impl Demo {
     /// ``load("ability_ticks")``.
     #[getter]
     pub(crate) fn ability_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_ability_ticks.is_none() {
-            self.load(py, vec!["ability_ticks".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_ability_ticks.clone().unwrap()))
+        self.dataset_frame(py, Dataset::AbilityTicks)
     }
 
     /// Urn (idol) lifecycle events as a Polars DataFrame.
@@ -391,10 +315,7 @@ impl Demo {
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn urn(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.cached_urn.is_none() {
-            self.load(py, vec!["urn".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_urn.clone().unwrap()))
+        self.dataset_frame(py, Dataset::Urn)
     }
 
     /// Per-tick street brawl state as a Polars DataFrame.
@@ -410,15 +331,7 @@ impl Demo {
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
     #[getter]
     pub(crate) fn street_brawl_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.game_mode != 4 {
-            return Err(NotStreetBrawlError::new_err(
-                "Street brawl datasets are only available for street brawl demos (game_mode=4)",
-            ));
-        }
-        if self.cached_street_brawl_ticks.is_none() {
-            self.load(py, vec!["street_brawl_ticks".to_string()])?;
-        }
-        Ok(PyDataFrame(self.cached_street_brawl_ticks.clone().unwrap()))
+        self.dataset_frame(py, Dataset::StreetBrawlTicks)
     }
 
     /// Street brawl round scoring events as a Polars DataFrame.
@@ -433,17 +346,7 @@ impl Demo {
     ///     NotStreetBrawlError: If the demo is not a street brawl game.
     #[getter]
     pub(crate) fn street_brawl_rounds(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        if self.game_mode != 4 {
-            return Err(NotStreetBrawlError::new_err(
-                "Street brawl datasets are only available for street brawl demos (game_mode=4)",
-            ));
-        }
-        if self.cached_street_brawl_rounds.is_none() {
-            self.load(py, vec!["street_brawl_rounds".to_string()])?;
-        }
-        Ok(PyDataFrame(
-            self.cached_street_brawl_rounds.clone().unwrap(),
-        ))
+        self.dataset_frame(py, Dataset::StreetBrawlRounds)
     }
 
     /// The team number of the winning team.

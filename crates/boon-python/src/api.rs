@@ -86,7 +86,6 @@ impl Demo {
             cached_world_ticks: None,
             cached_kills: None,
             cached_damage: None,
-            cached_healing: None,
             cached_summary: None,
             game_over: None,
             game_over_match_clock: None,
@@ -194,7 +193,7 @@ impl Demo {
 
     /// Parse the post-match summary from the demo's ``PostMatchDetails`` event.
     ///
-    /// Returns a dictionary with four top-level keys:
+    /// Returns a dictionary with five top-level keys:
     ///
     /// - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
     ///   Snapshots are taken at intervals through the match (not every minute);
@@ -218,55 +217,21 @@ impl Demo {
     ///   category (``is_category`` true) and a specific source, so filter to
     ///   ``is_category == False`` to avoid double-counting, then ``sum``.
     ///
-    /// The decoded message and all four frames are cached after the first call;
+    /// - ``healing``: positive recorded healing and regeneration intervals.
+    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
+    ///   ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+    ///   ``stat_type`` (``healing`` or ``regen``), and ``amount``. Duplicate category
+    ///   rows are excluded. Bounds are match-clock seconds, usually 180 seconds apart.
+    ///   These are interval totals, not individual heals. Hero IDs come from the
+    ///   match roster; player slots remain the identity across hero changes.
+    ///
+    /// The decoded message and all five frames are cached after the first call;
     /// repeated calls do not parse the demo or rebuild the frames.
     ///
     /// Raises ``DemoMessageError`` if the demo contains no post-match details
     /// (for example, an incomplete recording).
     pub(crate) fn summary(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
-
-        if self.cached_summary.is_none() {
-            let frames = py.detach(|| {
-                let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
-                let events = self
-                    .parser
-                    .events_filtered(None, &event_types)
-                    .map_err(to_py_err)?;
-                let event = events
-                    .iter()
-                    .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
-                    .ok_or_else(|| {
-                        DemoMessageError::new_err("no PostMatchDetails event found in demo")
-                    })?;
-
-                let outer = CCitadelUserMsgPostMatchDetails::decode(event.payload.as_slice())
-                    .map_err(|e| {
-                        DemoMessageError::new_err(format!("failed to decode PostMatchDetails: {e}"))
-                    })?;
-                let details_bytes = outer.match_details.as_ref().ok_or_else(|| {
-                    DemoMessageError::new_err("PostMatchDetails has no match_details bytes")
-                })?;
-                let contents = CMsgMatchMetaDataContents::decode(details_bytes.as_slice())
-                    .map_err(|e| {
-                        DemoMessageError::new_err(format!("failed to decode match metadata: {e}"))
-                    })?;
-                let match_info = contents
-                    .match_info
-                    .ok_or_else(|| DemoMessageError::new_err("match metadata has no match_info"))?;
-
-                let to_df_err = |e: PolarsError| {
-                    DemoMessageError::new_err(format!("failed to build summary: {e}"))
-                };
-                Ok::<SummaryFrames, PyErr>(SummaryFrames {
-                    snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
-                    last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
-                    objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
-                    damage: build_damage_frame(&match_info).map_err(to_df_err)?,
-                })
-            })?;
-            self.cached_summary = Some(frames);
-        }
+        self.ensure_summary(py)?;
 
         let frames = self
             .cached_summary
@@ -277,6 +242,7 @@ impl Demo {
         dict.set_item("last_hits", PyDataFrame(frames.last_hits.clone()))?;
         dict.set_item("objectives", PyDataFrame(frames.objectives.clone()))?;
         dict.set_item("damage", PyDataFrame(frames.damage.clone()))?;
+        dict.set_item("healing", PyDataFrame(frames.healing.clone()))?;
         Ok(dict.into_any().unbind())
     }
 
@@ -421,22 +387,27 @@ impl Demo {
                 self.build_snapshots_parallel(wants, &pred)
             }
         })?;
-        let frame_for = |name: &str| -> Option<DataFrame> {
-            match name {
-                "player_ticks" => pt.clone(),
-                "world_ticks" => wt.clone(),
-                "troopers" => tr.clone(),
+        let frame_for = |name: &str| -> PyResult<DataFrame> {
+            let frame = match name {
+                "player_ticks" => pt.as_ref(),
+                "world_ticks" => wt.as_ref(),
+                "troopers" => tr.as_ref(),
                 _ => None,
-            }
+            };
+            frame.cloned().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "snapshot dataset '{name}' was not built"
+                ))
+            })
         };
 
         if names.len() == 1 {
-            let df = frame_for(&names[0]).unwrap();
+            let df = frame_for(&names[0])?;
             PyDataFrame(df).into_py_any(py)
         } else {
             let dict = PyDict::new(py);
             for n in &names {
-                dict.set_item(n, PyDataFrame(frame_for(n).unwrap()))?;
+                dict.set_item(n, PyDataFrame(frame_for(n)?))?;
             }
             Ok(dict.into_any().unbind())
         }
@@ -638,8 +609,6 @@ impl Demo {
     ///     A list of valid dataset name strings.
     #[staticmethod]
     pub(crate) fn available_datasets() -> Vec<&'static str> {
-        let mut all = VALID_DATASETS.to_vec();
-        all.extend_from_slice(VALID_STREET_BRAWL_DATASETS);
-        all
+        Dataset::ALL.into_iter().map(Dataset::as_str).collect()
     }
 }

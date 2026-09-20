@@ -1,12 +1,74 @@
 use crate::*;
 
 impl Demo {
-    pub(super) fn ensure_snapshots_detached(
+    /// Share the post-match cache between summary() and the healing dataset.
+    pub(super) fn ensure_summary(&mut self, py: Python<'_>) -> PyResult<()> {
+        use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
+
+        if self.cached_summary.is_none() {
+            let frames = py.detach(|| {
+                let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
+                let events = self
+                    .parser
+                    .events_filtered(None, &event_types)
+                    .map_err(to_py_err)?;
+                let event = events
+                    .iter()
+                    .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
+                    .ok_or_else(|| {
+                        DemoMessageError::new_err("no PostMatchDetails event found in demo")
+                    })?;
+
+                let outer = CCitadelUserMsgPostMatchDetails::decode(event.payload.as_slice())
+                    .map_err(|e| {
+                        DemoMessageError::new_err(format!("failed to decode PostMatchDetails: {e}"))
+                    })?;
+                let details_bytes = outer.match_details.as_ref().ok_or_else(|| {
+                    DemoMessageError::new_err("PostMatchDetails has no match_details bytes")
+                })?;
+                let contents = CMsgMatchMetaDataContents::decode(details_bytes.as_slice())
+                    .map_err(|e| {
+                        DemoMessageError::new_err(format!("failed to decode match metadata: {e}"))
+                    })?;
+                let match_info = contents
+                    .match_info
+                    .ok_or_else(|| DemoMessageError::new_err("match metadata has no match_info"))?;
+
+                let to_df_err = |e: PolarsError| {
+                    DemoMessageError::new_err(format!("failed to build summary: {e}"))
+                };
+                let damage = build_damage_frame(&match_info).map_err(to_df_err)?;
+                let healing = build_healing_frame(&match_info, &damage).map_err(to_df_err)?;
+                Ok::<SummaryFrames, PyErr>(SummaryFrames {
+                    snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
+                    last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
+                    objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
+                    damage,
+                    healing,
+                })
+            })?;
+            self.cached_summary = Some(frames);
+        }
+
+        Ok(())
+    }
+
+    pub(super) fn dataset_frame(
         &mut self,
         py: Python<'_>,
-        wants: SnapWants,
-    ) -> PyResult<()> {
-        py.detach(|| self.ensure_snapshots(wants))
+        dataset: Dataset,
+    ) -> PyResult<PyDataFrame> {
+        self.load_datasets(py, &[dataset])?;
+        self.loaded_frame(dataset).cloned().map(PyDataFrame)
+    }
+
+    fn loaded_frame(&self, dataset: Dataset) -> PyResult<&DataFrame> {
+        self.cached_frame(dataset).ok_or_else(|| {
+            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                "dataset '{}' was not cached after loading",
+                dataset.as_str()
+            ))
+        })
     }
 
     /// Build the paused_ticks cache from world_ticks if not already done.
@@ -14,23 +76,24 @@ impl Demo {
         if self.paused_ticks.is_some() {
             return Ok(());
         }
-        // Ensure world_ticks is loaded
         if self.cached_world_ticks.is_none() {
-            Python::attach(|py| self.load(py, vec!["world_ticks".to_string()]))?;
+            Python::attach(|py| self.load_datasets(py, &[Dataset::WorldTicks]))?;
         }
-        let wt = self.cached_world_ticks.as_ref().unwrap();
-        let tick_col = wt.column("tick").unwrap();
-        let paused_col = wt.column("is_paused").unwrap();
-        let ticks = tick_col.i32().unwrap();
-        let paused = paused_col.bool().unwrap();
-
-        let mut paused_ticks = Vec::new();
-        for i in 0..ticks.len() {
-            if paused.get(i).unwrap_or(false) {
-                paused_ticks.push(ticks.get(i).unwrap());
-            }
-        }
-        self.paused_ticks = Some(paused_ticks);
+        let world_ticks = self.loaded_frame(Dataset::WorldTicks)?;
+        let (ticks, paused) = world_ticks
+            .column("tick")
+            .and_then(|column| column.i32())
+            .and_then(|ticks| Ok((ticks, world_ticks.column("is_paused")?.bool()?)))
+            .map_err(|error| {
+                InvalidDemoError::new_err(format!("Failed to read pause state: {error}"))
+            })?;
+        self.paused_ticks = Some(
+            ticks
+                .into_iter()
+                .zip(paused)
+                .filter_map(|(tick, paused)| tick.filter(|_| paused == Some(true)))
+                .collect(),
+        );
         Ok(())
     }
 
@@ -487,33 +550,32 @@ impl Demo {
         Ok(())
     }
 
-    /// The cached DataFrame for a loaded dataset, by name (for `snapshots(events=)`).
-    pub(super) fn cached_frame(&self, name: &str) -> Option<&DataFrame> {
-        match name {
-            "abilities" => self.cached_abilities.as_ref(),
-            "ability_upgrades" => self.cached_ability_upgrades.as_ref(),
-            "ability_ticks" => self.cached_ability_ticks.as_ref(),
-            "chat" => self.cached_chat.as_ref(),
-            "mid_boss" => self.cached_mid_boss.as_ref(),
-            "objectives" => self.cached_objectives.as_ref(),
-            "player_ticks" => self.cached_player_ticks.as_ref(),
-            "world_ticks" => self.cached_world_ticks.as_ref(),
-            "kills" => self.cached_kills.as_ref(),
-            "damage" => self.cached_damage.as_ref(),
-            "healing" => self.cached_healing.as_ref(),
-            "flex_slots" => self.cached_flex_slots.as_ref(),
-            "item_purchases" => self.cached_item_purchases.as_ref(),
-            "troopers" => self.cached_troopers.as_ref(),
-            "neutrals" => self.cached_neutrals.as_ref(),
-            "breakables" => self.cached_breakables.as_ref(),
-            "sinners_sacrifice" => self.cached_sinners_sacrifice.as_ref(),
-            "stat_modifier_events" => self.cached_stat_modifier_events.as_ref(),
-            "active_modifiers" => self.cached_active_modifiers.as_ref(),
-            "urn" => self.cached_urn.as_ref(),
-            "street_brawl_ticks" => self.cached_street_brawl_ticks.as_ref(),
-            "street_brawl_rounds" => self.cached_street_brawl_rounds.as_ref(),
-            "rift" => self.cached_rift.as_ref(),
-            _ => None,
+    /// Borrow a cached frame for a validated dataset.
+    fn cached_frame(&self, dataset: Dataset) -> Option<&DataFrame> {
+        match dataset {
+            Dataset::Abilities => self.cached_abilities.as_ref(),
+            Dataset::AbilityUpgrades => self.cached_ability_upgrades.as_ref(),
+            Dataset::AbilityTicks => self.cached_ability_ticks.as_ref(),
+            Dataset::Chat => self.cached_chat.as_ref(),
+            Dataset::MidBoss => self.cached_mid_boss.as_ref(),
+            Dataset::Objectives => self.cached_objectives.as_ref(),
+            Dataset::PlayerTicks => self.cached_player_ticks.as_ref(),
+            Dataset::WorldTicks => self.cached_world_ticks.as_ref(),
+            Dataset::Kills => self.cached_kills.as_ref(),
+            Dataset::Damage => self.cached_damage.as_ref(),
+            Dataset::Healing => self.cached_summary.as_ref().map(|frames| &frames.healing),
+            Dataset::FlexSlots => self.cached_flex_slots.as_ref(),
+            Dataset::ItemPurchases => self.cached_item_purchases.as_ref(),
+            Dataset::Troopers => self.cached_troopers.as_ref(),
+            Dataset::Neutrals => self.cached_neutrals.as_ref(),
+            Dataset::Breakables => self.cached_breakables.as_ref(),
+            Dataset::SinnersSacrifice => self.cached_sinners_sacrifice.as_ref(),
+            Dataset::StatModifierEvents => self.cached_stat_modifier_events.as_ref(),
+            Dataset::ActiveModifiers => self.cached_active_modifiers.as_ref(),
+            Dataset::Urn => self.cached_urn.as_ref(),
+            Dataset::StreetBrawlTicks => self.cached_street_brawl_ticks.as_ref(),
+            Dataset::StreetBrawlRounds => self.cached_street_brawl_rounds.as_ref(),
+            Dataset::Rift => self.cached_rift.as_ref(),
         }
     }
 
@@ -523,18 +585,28 @@ impl Demo {
         &mut self,
         names: &[String],
     ) -> PyResult<std::collections::HashSet<i32>> {
-        let missing: Vec<&str> = names
+        let datasets: Vec<Dataset> = names
             .iter()
-            .map(String::as_str)
-            .filter(|name| self.cached_frame(name).is_none())
+            .map(|name| name.parse())
+            .collect::<PyResult<_>>()?;
+        if datasets.contains(&Dataset::Healing) {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "snapshots(events=): healing contains interval statistics, not event ticks",
+            ));
+        }
+        let missing: Vec<Dataset> = datasets
+            .iter()
+            .copied()
+            .filter(|&dataset| self.cached_frame(dataset).is_none())
             .collect();
         if missing
             .iter()
-            .all(|name| direct_event_message_type(name).is_some())
+            .all(|name| direct_event_message_type(*name).is_some())
         {
             let mut set = std::collections::HashSet::new();
-            for name in names {
-                let Some(df) = self.cached_frame(name) else {
+            for &dataset in &datasets {
+                let name = dataset.as_str();
+                let Some(df) = self.cached_frame(dataset) else {
                     continue;
                 };
                 let tick = df
@@ -555,7 +627,7 @@ impl Demo {
             // selected messages. Do not decode entity state or build a frame.
             let event_types: HashSet<u32> = missing
                 .iter()
-                .filter_map(|name| direct_event_message_type(name))
+                .filter_map(|name| direct_event_message_type(*name))
                 .collect();
             let events = self
                 .parser
@@ -619,11 +691,12 @@ impl Demo {
         // Load all missing event datasets in one parser pass. Loading each name
         // inside the loop makes compatible datasets scan the full demo once per
         // name, although `load` can collect them together.
-        Python::attach(|py| self.load(py, names.to_vec()))?;
+        Python::attach(|py| self.load_datasets(py, &datasets))?;
 
         let mut set = std::collections::HashSet::new();
-        for name in names {
-            let df = self.cached_frame(name).ok_or_else(|| {
+        for &dataset in &datasets {
+            let name = dataset.as_str();
+            let df = self.cached_frame(dataset).ok_or_else(|| {
                 pyo3::exceptions::PyValueError::new_err(format!(
                     "snapshots(events=): '{name}' is not an event dataset with a tick column"
                 ))
@@ -655,14 +728,14 @@ fn append_snapshot_frame(output: &mut Option<DataFrame>, next: Option<DataFrame>
     Ok(())
 }
 
-fn direct_event_message_type(name: &str) -> Option<u32> {
-    match name {
-        "kills" => Some(Msg::KEUserMsgHeroKilled as u32),
-        "damage" => Some(Msg::KEUserMsgDamage as u32),
-        "flex_slots" => Some(Msg::KEUserMsgFlexSlotUnlocked as u32),
-        "abilities" => Some(Msg::KEUserMsgImportantAbilityUsed as u32),
-        "item_purchases" => Some(Msg::KEUserMsgAbilitiesChanged as u32),
-        "chat" => Some(Msg::KEUserMsgChatMsg as u32),
+fn direct_event_message_type(dataset: Dataset) -> Option<u32> {
+    match dataset {
+        Dataset::Kills => Some(Msg::KEUserMsgHeroKilled as u32),
+        Dataset::Damage => Some(Msg::KEUserMsgDamage as u32),
+        Dataset::FlexSlots => Some(Msg::KEUserMsgFlexSlotUnlocked as u32),
+        Dataset::Abilities => Some(Msg::KEUserMsgImportantAbilityUsed as u32),
+        Dataset::ItemPurchases => Some(Msg::KEUserMsgAbilitiesChanged as u32),
+        Dataset::Chat => Some(Msg::KEUserMsgChatMsg as u32),
         _ => None,
     }
 }

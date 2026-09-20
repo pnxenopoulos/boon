@@ -152,9 +152,7 @@ impl ModifierState {
                 });
             }
             std::collections::hash_map::Entry::Occupied(mut slot) => {
-                let previous = slot.get().clone();
-                merge_entry(slot.get_mut(), delta);
-                if *slot.get() != previous {
+                if merge_entry(slot.get_mut(), delta) {
                     changes.push(ModifierChange {
                         kind: ModifierChangeKind::Changed,
                         serial,
@@ -335,12 +333,14 @@ pub fn modifier_is_effective_at(entry: &CModifierTableEntry, game_time: Option<f
     duration <= 0.0 || now < applied + duration
 }
 
-/// Merge present protobuf fields into an existing entry.
-fn merge_entry(current: &mut CModifierTableEntry, delta: CModifierTableEntry) {
+/// Merge present fields and report whether the delta changes the stored values.
+fn merge_entry(current: &mut CModifierTableEntry, delta: CModifierTableEntry) -> bool {
+    let mut changed = false;
     macro_rules! merge {
         ($($field:ident),+ $(,)?) => {
-            $(if delta.$field.is_some() {
-                current.$field = delta.$field;
+            $(if let Some(value) = delta.$field {
+                changed |= current.$field.as_ref() != Some(&value);
+                current.$field = Some(value);
             })+
         };
     }
@@ -397,6 +397,7 @@ fn merge_entry(current: &mut CModifierTableEntry, delta: CModifierTableEntry) {
         string3,
         string4,
     );
+    changed
 }
 
 #[cfg(test)]
@@ -437,6 +438,47 @@ mod tests {
         assert_eq!(entry.stack_count, Some(2));
         assert_eq!(entry.duration, Some(5.0));
         assert_eq!(entry.float1, Some(7.0));
+    }
+
+    #[test]
+    fn unchanged_deltas_preserve_owned_payloads_without_emitting_changes() {
+        let mut state = ModifierState::default();
+        let original = CModifierTableEntry {
+            string1: Some("retained payload".into()),
+            int1: Some(12),
+            ..active(7)
+        };
+        state.apply_delta(3, original.clone());
+
+        for delta in [
+            original.clone(),
+            CModifierTableEntry {
+                serial_number: Some(7),
+                ..Default::default()
+            },
+        ] {
+            assert!(state.apply_delta(3, delta).is_empty());
+            assert_eq!(state.get(7), Some(&original));
+        }
+
+        let changes = state.apply_delta(
+            3,
+            CModifierTableEntry {
+                serial_number: Some(7),
+                string1: Some(String::new()),
+                int1: Some(0),
+                ..Default::default()
+            },
+        );
+        assert_eq!(changes.len(), 1);
+        assert_eq!(changes[0].kind, ModifierChangeKind::Changed);
+        assert_eq!(changes[0].entry.string1.as_deref(), Some(""));
+        assert_eq!(changes[0].entry.int1, Some(0));
+        assert_eq!(changes[0].entry.float1, original.float1);
+        assert_eq!(
+            changes[0].entry.modifier_subclass,
+            original.modifier_subclass
+        );
     }
 
     #[test]

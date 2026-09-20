@@ -12,19 +12,18 @@ keywords = ["deadlock", "demo", "parser", "replay", "source2"]
 categories = ["game-development", "parser-implementations", "encoding", "parsing"]
 
 [dependencies]
-anyhow = "1.0"
 memmap2 = "0.9"
 pbdems2 = { workspace = true }
-prost = "0.14"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+prost.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 snap = "1.1"
 thiserror = "2.0"
 
 boon-proto = { workspace = true }
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
 
 [lib]
 name = "boon"
@@ -33,3 +32,6 @@ path = "src/lib.rs"
 [[bench]]
 name = "parse"
 harness = false
+
+[lints]
+workspace = true

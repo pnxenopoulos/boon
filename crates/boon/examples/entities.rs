@@ -37,9 +37,8 @@ fn main() {
 
     for (idx, entity) in &pawns {
         let serializer = ctx.serializers().get(&entity.class_name);
-        let ser = match serializer {
-            Some(s) => s,
-            None => continue,
+        let Some(ser) = serializer else {
+            continue;
         };
 
         // Read basic fields using get_by_name

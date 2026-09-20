@@ -121,6 +121,23 @@ def test_validation(demo: Demo) -> None:
         demo.snapshots(every=0)  # must be >= 1
 
 
+@pytest.mark.parametrize("cached", [False, True])
+def test_event_selection_rejects_unknown_names_consistently(cached: bool) -> None:
+    parsed = Demo(_fixture())
+    if cached:
+        parsed.load("kills")
+    with pytest.raises(ValueError, match="Unknown dataset"):
+        parsed.snapshots(events=["kills", "not_a_dataset"])
+
+
+def test_duplicate_snapshot_names_preserve_return_shape(demo: Demo) -> None:
+    expected = demo.snapshots("world_ticks", ticks=1000)
+    repeated = demo.snapshots(["world_ticks", "world_ticks"], ticks=1000)
+    assert isinstance(repeated, dict)
+    assert list(repeated) == ["world_ticks"]
+    assert repeated["world_ticks"].equals(expected)
+
+
 def test_snapshots_release_gil() -> None:
     parsed = Demo(_fixture())
     ready = threading.Event()

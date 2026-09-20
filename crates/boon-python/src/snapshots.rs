@@ -355,19 +355,15 @@ impl BarrierState {
     }
 
     pub(super) fn rebuild(&mut self, ctx: &boon_parser::Context) {
-        self.modifiers.rebuild(ctx);
+        let mut modifiers = std::mem::take(&mut self.modifiers);
+        modifiers.rebuild(ctx);
         self.remaining_by_pawn.clear();
         self.serial_to_pawn.clear();
         self.pawn_to_serial.clear();
-        let entries: Vec<_> = self
-            .modifiers
-            .entries()
-            .iter()
-            .map(|(&serial, entry)| (serial, entry.clone()))
-            .collect();
-        for (serial, entry) in entries {
-            self.apply_live_entry(serial, &entry);
+        for (&serial, entry) in modifiers.entries() {
+            self.apply_live_entry(serial, entry);
         }
+        self.modifiers = modifiers;
     }
 
     pub(super) fn remaining(&self, pawn_handle: u32) -> f32 {

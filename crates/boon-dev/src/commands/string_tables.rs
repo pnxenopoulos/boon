@@ -5,18 +5,18 @@ use colored::Colorize;
 use serde::Serialize;
 
 #[derive(Serialize)]
-struct StringTableEntryOutput {
+struct StringTableEntryOutput<'a> {
     index: usize,
-    key: String,
+    key: &'a str,
     data_size: Option<usize>,
 }
 
 #[derive(Serialize)]
-struct StringTableOutput {
-    name: String,
+struct StringTableOutput<'a> {
+    name: &'a str,
     entry_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    entries: Option<Vec<StringTableEntryOutput>>,
+    entries: Option<Vec<StringTableEntryOutput<'a>>>,
 }
 
 pub fn run(
@@ -43,7 +43,7 @@ pub fn run(
             .iter()
             .take(limit)
             .map(|table| StringTableOutput {
-                name: table.name().to_string(),
+                name: table.name(),
                 entry_count: table.entries().len(),
                 entries: if summary {
                     None
@@ -55,7 +55,7 @@ pub fn run(
                             .enumerate()
                             .map(|(i, entry)| StringTableEntryOutput {
                                 index: i,
-                                key: entry.string.clone().unwrap_or_default(),
+                                key: entry.string.as_deref().unwrap_or_default(),
                                 data_size: entry.user_data.as_ref().map(|d| d.len()),
                             })
                             .collect(),

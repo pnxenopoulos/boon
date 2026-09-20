@@ -138,6 +138,7 @@ class Demo:
         Already-loaded datasets are skipped. Event/entity datasets requested
         together share one filtered pass; snapshot datasets share one parallel
         keyframe-segmented pass, including in mixed requests.
+        Healing uses a separate, cached post-match statistics pass.
 
         Args:
             *datasets: One or more dataset names to load.
@@ -146,6 +147,7 @@ class Demo:
             ValueError: If an unknown dataset name is provided.
             NotStreetBrawlError: If a street brawl dataset is requested on a
                 non-street-brawl demo.
+            DemoMessageError: If healing is requested without post-match details.
 
         Example:
             >>> demo = Demo("match.dem")
@@ -204,10 +206,10 @@ class Demo:
         """The tick rate of the demo (ticks per second)."""
         ...
 
-    def summary(self) -> dict[str, pl.DataFrame | None]:
+    def summary(self) -> dict[str, pl.DataFrame]:
         """Parse the post-match summary from the demo's ``PostMatchDetails`` event.
 
-        Returns a dict with four top-level keys:
+        Returns a dict with five top-level keys:
 
         - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
           Snapshots are taken at intervals through the match (not every minute);
@@ -242,7 +244,15 @@ class Demo:
           to ``is_category == False`` for the complete, non-overlapping
           breakdown.
 
-        The decoded message and all four frames are cached after the first call;
+        - ``healing``: positive recorded healing and regeneration intervals, without
+          duplicate category rows. Columns: ``interval_start_s``, ``interval_end_s``,
+          ``healer_player_slot``, ``healer_hero_id``, ``target_player_slot``,
+          ``target_hero_id``, ``source_name``, ``stat_type`` (``healing`` or ``regen``),
+          and ``amount``. Bounds use match-clock seconds, usually 180 seconds apart.
+          Hero IDs come from the match roster; player slots identify players across
+          hero changes. These are interval totals, not individual heal events.
+
+        The decoded message and all five frames are cached after the first call;
         repeated calls do not parse the demo or rebuild the frames.
 
         Raises ``DemoMessageError`` if the demo contains no post-match details
@@ -611,6 +621,11 @@ class Demo:
             - **tick** (*int*) -- The game tick when the damage occurred.
             - **damage** (*int*) -- The damage dealt.
             - **pre_damage** (*float*) -- The damage before mitigation.
+            - **damage_absorbed** (*float | None*) -- Recorded absorption; falls back to the legacy integer field when needed.
+            - **victim_shield_new** (*int | None*) -- Remaining shield after the hit.
+            - **victim_shield_max** (*int | None*) -- Shield capacity.
+            - **is_secondary_stat** (*bool | None*) -- Recorded secondary-stat flag.
+            - **server_tick** (*int | None*) -- Server tick, distinct from demo tick.
             - **victim_hero_id** (*int*) -- The hero ID of the victim (0 if not a hero).
             - **attacker_hero_id** (*int*) -- The hero ID of the attacker (0 if not a hero).
             - **victim_health_new** (*int*) -- The victim's health after damage.
@@ -629,23 +644,28 @@ class Demo:
 
     @property
     def healing(self) -> pl.DataFrame:
-        """Per-event healing as a Polars DataFrame.
+        """Recorded healing and regeneration intervals, shared with summary()["healing"].
 
-        Heals are carried by ``CCitadelUserMessage_Damage`` as a negative
-        ``health_lost`` (the ``damage`` field itself stays non-negative). This
-        dataset keeps only those rows and reports ``amount`` as the positive
-        health restored. Barrier / shield grants are not in this message, so
-        this is health healing only; shielding needs another source.
+        Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
+        ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+        ``stat_type`` (``healing`` or ``regen``), and ``amount``.
+        Bounds use match-clock seconds, usually 180 seconds apart. These are
+        interval totals, not individual heals. Hero IDs come from the match roster.
+        Category duplicates are excluded. Loads on first access or load("healing").
+        Raises DemoMessageError if the demo has no post-match details.
+        """
+        ...
 
-        Not loaded by default. Access this property or call ``load("healing")`` explicitly.
+    def barriers(self) -> pl.DataFrame:
+        """Recorded barrier absorption: one row per player-targeted damage message.
 
-        Columns:
-            - **tick** (*int*) -- The game tick when the heal occurred.
-            - **target_hero_id** (*int*) -- The healed hero (0 if not a hero).
-            - **source_hero_id** (*int*) -- The healer (0 if not a hero or self / none).
-            - **amount** (*int*) -- Health restored (positive).
-            - **ability_id** (*int*) -- The ability / item that healed (0 if absent).
-            - **citadel_type** (*int*) -- The Deadlock damage category the heal came through.
+        Columns: ``tick``, ``server_tick``, ``hero_id``, ``victim_entity_id``,
+        ``attacker_hero_id``, ``ability_id``, ``absorbed``, ``remaining``,
+        ``capacity``, and ``is_secondary_stat``. Server tick, shield values, and
+        the secondary-stat flag are null when absent. ``ability_id`` identifies
+        the attack, not the barrier grant. Secondary-stat messages are retained.
+        Fully blocked hits count; rows are messages, not bullets or grants.
+        Only ``damage`` is loaded. Grant and expiration amounts are not inferred.
         """
         ...
 

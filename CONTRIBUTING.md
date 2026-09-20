@@ -69,6 +69,21 @@ cargo clippy --workspace --all-targets --all-features -- -D warnings
 cargo nextest run --workspace --all-features
 ```
 
+### Rust Conventions
+
+Shared dependency versions and lint settings are in the workspace `Cargo.toml`.
+Each crate inherits those settings. Enable specific Clippy lints when they fit
+this codebase. Do not enable all pedantic or nursery lints at once.
+
+- Parse public string inputs into typed values before internal dispatch.
+- Return errors for failed input or data operations. Reserve `expect` for
+  documented invariants that indicate a programming error.
+- Borrow data used only for inspection or serialization. Clone when the caller
+  needs independent ownership.
+- Preserve absent fields when applying partial replay updates.
+- Document unsafe operations and keep their scope small.
+- Keep examples fallible with `?`, and test behavior that a refactor could change.
+
 ## Writing Style
 
 Use ASD-STE100 English where practical. Apply this rule to maintained

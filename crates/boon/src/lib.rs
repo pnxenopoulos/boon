@@ -9,9 +9,10 @@
 //! use std::path::Path;
 //! use boon::Parser;
 //!
-//! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
-//! let header = parser.file_header().unwrap();
+//! let parser = Parser::from_file(Path::new("match.dem"))?;
+//! let header = parser.file_header()?;
 //! println!("Map: {:?}", header.map_name);
+//! # Ok::<(), boon::Error>(())
 //! ```
 //!
 //! # Reading game events
@@ -20,11 +21,12 @@
 //! use std::path::Path;
 //! use boon::Parser;
 //!
-//! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
-//! let events = parser.events(None).unwrap();
+//! let parser = Parser::from_file(Path::new("match.dem"))?;
+//! let events = parser.events(None)?;
 //! for event in &events {
 //!     println!("[tick {}] {} (msg_type {})", event.tick, event.name, event.msg_type);
 //! }
+//! # Ok::<(), boon::Error>(())
 //! ```
 //!
 //! # Iterating entities per tick
@@ -33,14 +35,15 @@
 //! use std::path::Path;
 //! use boon::Parser;
 //!
-//! let parser = Parser::from_file(Path::new("match.dem")).unwrap();
+//! let parser = Parser::from_file(Path::new("match.dem"))?;
 //! parser.run_to_end(|ctx| {
 //!     for (idx, entity) in ctx.entities().iter() {
 //!         if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
 //!             // Access entity fields by resolved key
 //!         }
 //!     }
-//! }).unwrap();
+//! })?;
+//! # Ok::<(), boon::Error>(())
 //! ```
 //!
 //! # Name lookups
@@ -86,7 +89,7 @@ pub use entity::{
 };
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};
-pub use heroes::{all_heroes, hero_name};
+pub use heroes::{all_heroes, hero_id_for_player_slot, hero_name};
 pub use hitgroups::{all_hitgroups, hitgroup_name};
 pub use lifestates::{all_lifestates, lifestate_name};
 pub use modifier_state::{

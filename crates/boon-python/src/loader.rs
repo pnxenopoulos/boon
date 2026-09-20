@@ -7,84 +7,76 @@ impl Demo {
     /// Already-loaded datasets are skipped. Event/entity datasets requested
     /// together share one filtered pass; snapshot datasets share one parallel
     /// keyframe-segmented pass, including when both groups are requested.
+    /// Healing uses a separate, cached post-match statistics pass.
     #[pyo3(signature = (*datasets))]
     pub(crate) fn load(&mut self, py: Python<'_>, datasets: Vec<String>) -> PyResult<()> {
-        // Validate dataset names
-        for name in &datasets {
-            if !VALID_DATASETS.contains(&name.as_str())
-                && !VALID_STREET_BRAWL_DATASETS.contains(&name.as_str())
-            {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Unknown dataset: {name:?}. Valid datasets: {VALID_DATASETS:?}, street brawl: {VALID_STREET_BRAWL_DATASETS:?}"
-                )));
-            }
-        }
-
-        // Check game mode for street brawl datasets
-        if datasets
+        let datasets: Vec<Dataset> = datasets
             .iter()
-            .any(|s| VALID_STREET_BRAWL_DATASETS.contains(&s.as_str()))
-            && self.game_mode != 4
-        {
+            .map(|name| name.parse())
+            .collect::<PyResult<_>>()?;
+        self.load_datasets(py, &datasets)
+    }
+}
+
+impl Demo {
+    pub(super) fn load_datasets(&mut self, py: Python<'_>, datasets: &[Dataset]) -> PyResult<()> {
+        // Check game mode for street brawl datasets
+        if datasets.iter().any(|dataset| dataset.is_street_brawl()) && self.game_mode != 4 {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
         }
 
+        if datasets.contains(&Dataset::Healing) {
+            self.ensure_summary(py)?;
+        }
+
         // Load small datasets together when they use the same entity class or
         // event stream. A later property access can then use the cache instead
         // of scanning the demo again.
-        let requested = |name: &str| datasets.iter().any(|dataset| dataset == name);
-        let damage_cohort = requested("damage") || requested("healing");
-        let kill_cohort = requested("kills") || requested("abilities");
-        let controller_cohort =
-            requested("ability_upgrades") || requested("item_purchases") || requested("chat");
+        let requested = |dataset| datasets.contains(&dataset);
+        let kill_cohort = requested(Dataset::Kills) || requested(Dataset::Abilities);
+        let controller_cohort = requested(Dataset::AbilityUpgrades)
+            || requested(Dataset::ItemPurchases)
+            || requested(Dataset::Chat);
 
         // Determine what to load (skip already cached)
         let load_abilities = kill_cohort && self.cached_abilities.is_none();
         let mut load_player_ticks =
-            datasets.iter().any(|s| s == "player_ticks") && self.cached_player_ticks.is_none();
+            requested(Dataset::PlayerTicks) && self.cached_player_ticks.is_none();
         let mut load_world_ticks =
-            datasets.iter().any(|s| s == "world_ticks") && self.cached_world_ticks.is_none();
+            requested(Dataset::WorldTicks) && self.cached_world_ticks.is_none();
         let load_kills = kill_cohort && self.cached_kills.is_none();
-        let load_damage = damage_cohort && self.cached_damage.is_none();
-        let load_healing = damage_cohort && self.cached_healing.is_none();
-        let load_flex_slots =
-            datasets.iter().any(|s| s == "flex_slots") && self.cached_flex_slots.is_none();
+        let load_damage = requested(Dataset::Damage) && self.cached_damage.is_none();
+        let load_flex_slots = requested(Dataset::FlexSlots) && self.cached_flex_slots.is_none();
         let load_ability_upgrades = controller_cohort && self.cached_ability_upgrades.is_none();
         let load_item_purchases = controller_cohort && self.cached_item_purchases.is_none();
         let load_chat = controller_cohort && self.cached_chat.is_none();
-        let load_objectives =
-            datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
-        let load_mid_boss =
-            datasets.iter().any(|s| s == "mid_boss") && self.cached_mid_boss.is_none();
-        let mut load_troopers =
-            datasets.iter().any(|s| s == "troopers") && self.cached_troopers.is_none();
-        let load_neutrals =
-            datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
-        let load_breakables =
-            datasets.iter().any(|s| s == "breakables") && self.cached_breakables.is_none();
-        let load_sinners_sacrifice = datasets.iter().any(|s| s == "sinners_sacrifice")
-            && self.cached_sinners_sacrifice.is_none();
-        let load_stat_modifier_events = datasets.iter().any(|s| s == "stat_modifier_events")
-            && self.cached_stat_modifier_events.is_none();
-        let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
-            && self.cached_active_modifiers.is_none();
+        let load_objectives = requested(Dataset::Objectives) && self.cached_objectives.is_none();
+        let load_mid_boss = requested(Dataset::MidBoss) && self.cached_mid_boss.is_none();
+        let mut load_troopers = requested(Dataset::Troopers) && self.cached_troopers.is_none();
+        let load_neutrals = requested(Dataset::Neutrals) && self.cached_neutrals.is_none();
+        let load_breakables = requested(Dataset::Breakables) && self.cached_breakables.is_none();
+        let load_sinners_sacrifice =
+            requested(Dataset::SinnersSacrifice) && self.cached_sinners_sacrifice.is_none();
+        let load_stat_modifier_events =
+            requested(Dataset::StatModifierEvents) && self.cached_stat_modifier_events.is_none();
+        let load_active_modifiers =
+            requested(Dataset::ActiveModifiers) && self.cached_active_modifiers.is_none();
         let load_ability_ticks =
-            datasets.iter().any(|s| s == "ability_ticks") && self.cached_ability_ticks.is_none();
-        let load_urn = datasets.iter().any(|s| s == "urn") && self.cached_urn.is_none();
-        let load_street_brawl_ticks = datasets.iter().any(|s| s == "street_brawl_ticks")
-            && self.cached_street_brawl_ticks.is_none();
-        let load_street_brawl_rounds = datasets.iter().any(|s| s == "street_brawl_rounds")
-            && self.cached_street_brawl_rounds.is_none();
-        let load_rift = datasets.iter().any(|s| s == "rift") && self.cached_rift.is_none();
+            requested(Dataset::AbilityTicks) && self.cached_ability_ticks.is_none();
+        let load_urn = requested(Dataset::Urn) && self.cached_urn.is_none();
+        let load_street_brawl_ticks =
+            requested(Dataset::StreetBrawlTicks) && self.cached_street_brawl_ticks.is_none();
+        let load_street_brawl_rounds =
+            requested(Dataset::StreetBrawlRounds) && self.cached_street_brawl_rounds.is_none();
+        let load_rift = requested(Dataset::Rift) && self.cached_rift.is_none();
 
         if !load_abilities
             && !load_player_ticks
             && !load_world_ticks
             && !load_kills
             && !load_damage
-            && !load_healing
             && !load_flex_slots
             && !load_ability_upgrades
             && !load_item_purchases
@@ -114,7 +106,6 @@ impl Demo {
         let only_snapshots = !load_abilities
             && !load_kills
             && !load_damage
-            && !load_healing
             && !load_flex_slots
             && !load_ability_upgrades
             && !load_item_purchases
@@ -160,7 +151,6 @@ impl Demo {
         let need_events = load_abilities
             || load_kills
             || load_damage
-            || load_healing
             || load_sinners_sacrifice
             || load_flex_slots
             || load_item_purchases
@@ -180,7 +170,7 @@ impl Demo {
         if load_kills {
             event_types.insert(Msg::KEUserMsgHeroKilled as u32);
         }
-        if load_damage || load_sinners_sacrifice || load_healing {
+        if load_damage || load_sinners_sacrifice {
             event_types.insert(Msg::KEUserMsgDamage as u32);
         }
         if load_flex_slots {
@@ -235,7 +225,6 @@ impl Demo {
         if load_abilities
             || load_kills
             || load_damage
-            || load_healing
             || load_sinners_sacrifice
             || load_mid_boss
             || load_active_modifiers
@@ -362,8 +351,12 @@ impl Demo {
         }
         let mut raw_kill_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMsgHeroKilled>> =
             Vec::new();
-        let mut raw_damage_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMessageDamage>> =
-            Vec::new();
+        struct RawDamageEvent {
+            event: RawEvent<boon_proto::proto::CCitadelUserMessageDamage>,
+            victim_hero_id: i64,
+            attacker_hero_id: i64,
+        }
+        let mut raw_damage_events = Vec::new();
         let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut entity_to_hero_built = false;
         let mut found_game_over: Option<(i32, i32)> = None;
@@ -373,8 +366,6 @@ impl Demo {
         let mut ability_ticks: Vec<i32> = Vec::new();
         let mut ability_hero_ids: Vec<i64> = Vec::new();
         let mut ability_names: Vec<String> = Vec::new();
-        let mut slot_to_hero: HashMap<i32, i64> = HashMap::new();
-        let mut slot_to_hero_built = false;
 
         // ── Column vectors for ability_upgrades ──
         let mut au_ticks: Vec<i32> = Vec::new();
@@ -875,7 +866,7 @@ impl Demo {
                 }
 
                 if !keys_resolved {
-                    if load_abilities || load_player_ticks || load_kills || load_damage || load_healing || load_sinners_sacrifice || load_active_modifiers || load_urn || load_ability_ticks {
+                    if load_abilities || load_player_ticks || load_kills || load_damage || load_sinners_sacrifice || load_active_modifiers || load_urn || load_ability_ticks {
                         if let Some(s) = $ctx.serializers().get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
@@ -1449,7 +1440,7 @@ impl Demo {
                 // pawns attributed to the wrong hero and never appeared under the real one.
                 // Do the full scan once, then refresh the pawns touched each tick so the
                 // settled hero id wins.
-                if load_abilities || load_kills || load_damage || load_healing || load_sinners_sacrifice || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks {
+                if load_abilities || load_kills || load_damage || load_sinners_sacrifice || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks {
                     if !entity_to_hero_built {
                         for (idx, entity) in $ctx.entities().iter() {
                             if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
@@ -1472,22 +1463,6 @@ impl Demo {
                                 }
                             }
                         }
-                    }
-                }
-
-                // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
-                if (load_item_purchases || load_chat) && !slot_to_hero_built {
-                    for (idx, entity) in $ctx.entities().iter() {
-                        if entity.class_name.as_ref() == "CCitadelPlayerController" {
-                            let hid = entity.get_i64(ck_hero_id);
-                            if hid != 0 {
-                                // userid is 0-based, controller entity index is 1-based
-                                slot_to_hero.insert(idx - 1, hid);
-                            }
-                        }
-                    }
-                    if !slot_to_hero.is_empty() {
-                        slot_to_hero_built = true;
                     }
                 }
 
@@ -2326,7 +2301,7 @@ impl Demo {
                                     ),
                                 });
                             }
-                            if (load_damage || load_sinners_sacrifice || load_healing)
+                            if (load_damage || load_sinners_sacrifice)
                                 && event.msg_type == Msg::KEUserMsgDamage as u32
                             {
                                 // Decode once even when both the generic damage
@@ -2386,10 +2361,31 @@ impl Demo {
                                     }
                                 }
 
-                                if load_damage || load_healing {
-                                    raw_damage_events.push(RawEvent {
-                                        tick: event.tick,
-                                        message,
+                                if load_damage {
+                                    // Capture hero identity at the event tick, before a
+                                    // later hero swap or entity-index reuse can change it.
+                                    let hero_id = |index: Option<i32>| {
+                                        index
+                                            .and_then(|index| ctx.entities().get(index))
+                                            .filter(|entity| {
+                                                entity.class_name.as_ref() == "CCitadelPlayerPawn"
+                                            })
+                                            .map_or(0, |entity| entity.get_i64(pk_hero_id))
+                                    };
+                                    let (victim_hero_id, attacker_hero_id) =
+                                        message.as_ref().map_or((0, 0), |msg| {
+                                            (
+                                                hero_id(msg.entindex_victim),
+                                                hero_id(msg.entindex_attacker),
+                                            )
+                                        });
+                                    raw_damage_events.push(RawDamageEvent {
+                                        event: RawEvent {
+                                            tick: event.tick,
+                                            message,
+                                        },
+                                        victim_hero_id,
+                                        attacker_hero_id,
                                     });
                                 }
                             }
@@ -2444,8 +2440,11 @@ impl Demo {
                                         event.payload.as_slice(),
                                     )
                             {
-                                let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
-                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let hero_id = boon_parser::hero_id_for_player_slot(
+                                    ctx.entities(),
+                                    msg.purchaser_player_slot,
+                                    ck_hero_id,
+                                );
                                 let ability_id = msg.ability_id.unwrap_or(0);
                                 let change = match msg.change.unwrap_or(-1) {
                                     0 => "purchased",
@@ -2467,8 +2466,11 @@ impl Demo {
                                     event.payload.as_slice(),
                                 )
                             {
-                                let player_slot = msg.player_slot.unwrap_or(-1);
-                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let hero_id = boon_parser::hero_id_for_player_slot(
+                                    ctx.entities(),
+                                    msg.player_slot,
+                                    ck_hero_id,
+                                );
                                 let chat_type = if msg.all_chat.unwrap_or(false) {
                                     "all"
                                 } else {
@@ -2749,7 +2751,7 @@ impl Demo {
         }
 
         if load_damage {
-            // Decode raw damage events and resolve entity indices to hero IDs
+            // Build damage rows with the hero identities captured at each event.
             let n = raw_damage_events.len();
             let mut dmg_tick: Vec<i32> = Vec::with_capacity(n);
             let mut dmg_damage: Vec<i32> = Vec::with_capacity(n);
@@ -2768,28 +2770,23 @@ impl Demo {
             let mut dmg_flags: Vec<u64> = Vec::with_capacity(n);
             let mut dmg_is_melee: Vec<bool> = Vec::with_capacity(n);
             let mut dmg_melee_type: Vec<Option<&'static str>> = Vec::with_capacity(n);
+            let mut dmg_absorbed: Vec<Option<f32>> = Vec::with_capacity(n);
+            let mut dmg_shield_new: Vec<Option<i32>> = Vec::with_capacity(n);
+            let mut dmg_shield_max: Vec<Option<i32>> = Vec::with_capacity(n);
+            let mut dmg_secondary: Vec<Option<bool>> = Vec::with_capacity(n);
+            let mut dmg_server_tick: Vec<Option<i32>> = Vec::with_capacity(n);
 
             for raw in &raw_damage_events {
-                let msg = raw.message.as_ref().map_err(|e| {
+                let msg = raw.event.message.as_ref().map_err(|e| {
                     DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
                 })?;
 
-                dmg_tick.push(raw.tick);
+                dmg_tick.push(raw.event.tick);
                 dmg_damage.push(msg.damage.unwrap_or(0));
                 dmg_pre_damage.push(msg.pre_damage.unwrap_or(0.0));
                 dmg_victim_entity_id.push(msg.entindex_victim.unwrap_or(-1));
-                dmg_victim_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_victim.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
-                dmg_attacker_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_attacker.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
+                dmg_victim_hero_id.push(raw.victim_hero_id);
+                dmg_attacker_hero_id.push(raw.attacker_hero_id);
                 dmg_victim_health_new.push(msg.victim_health_new.unwrap_or(0));
                 dmg_hitgroup_id.push(msg.hitgroup_id.unwrap_or(0));
                 dmg_crit_damage.push(msg.crit_damage.unwrap_or(0.0));
@@ -2805,6 +2802,14 @@ impl Demo {
                 dmg_flags.push(damage_flags);
                 dmg_is_melee.push(is_melee);
                 dmg_melee_type.push(melee_type);
+                dmg_absorbed.push(
+                    msg.damage_absorbed
+                        .or_else(|| msg.damage_absorbed_deprecated.map(|amount| amount as f32)),
+                );
+                dmg_shield_new.push(msg.victim_shield_new);
+                dmg_shield_max.push(msg.victim_shield_max);
+                dmg_secondary.push(msg.is_secondary_stat);
+                dmg_server_tick.push(msg.server_tick);
             }
 
             let df = df_from_columns(vec![
@@ -2825,58 +2830,14 @@ impl Demo {
                 Column::new("damage_flags".into(), dmg_flags),
                 Column::new("is_melee".into(), dmg_is_melee),
                 Column::new("melee_type".into(), dmg_melee_type),
+                Column::new("damage_absorbed".into(), dmg_absorbed),
+                Column::new("victim_shield_new".into(), dmg_shield_new),
+                Column::new("victim_shield_max".into(), dmg_shield_max),
+                Column::new("is_secondary_stat".into(), dmg_secondary),
+                Column::new("server_tick".into(), dmg_server_tick),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_damage = Some(df);
-        }
-
-        if load_healing {
-            // A heal is a damage message with a negative health_lost; emit it as a
-            // positive amount. See the `healing` getter for the full contract.
-            let mut heal_tick: Vec<i32> = Vec::new();
-            let mut heal_target_hero_id: Vec<i64> = Vec::new();
-            let mut heal_source_hero_id: Vec<i64> = Vec::new();
-            let mut heal_amount: Vec<i32> = Vec::new();
-            let mut heal_ability_id: Vec<u32> = Vec::new();
-            let mut heal_citadel_type: Vec<i32> = Vec::new();
-
-            for raw in &raw_damage_events {
-                let msg = raw.message.as_ref().map_err(|e| {
-                    DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
-                })?;
-
-                let health_lost = msg.health_lost.unwrap_or(0);
-                if health_lost >= 0 {
-                    continue;
-                }
-                heal_tick.push(raw.tick);
-                heal_target_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_victim.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
-                heal_source_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_attacker.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
-                heal_amount.push(-health_lost);
-                heal_ability_id.push(msg.ability_id.unwrap_or(0));
-                heal_citadel_type.push(msg.citadel_type.unwrap_or(0));
-            }
-
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), heal_tick),
-                Column::new("target_hero_id".into(), heal_target_hero_id),
-                Column::new("source_hero_id".into(), heal_source_hero_id),
-                Column::new("amount".into(), heal_amount),
-                Column::new("ability_id".into(), heal_ability_id),
-                Column::new("citadel_type".into(), heal_citadel_type),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_healing = Some(df);
         }
 
         if load_abilities {

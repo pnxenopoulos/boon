@@ -55,8 +55,8 @@ demo.load("kills", "player_ticks", "world_ticks")
 
 Load one or more datasets from the demo in one pass. Use `available_datasets()` to get valid names.
 
-Boon skips datasets that are already loaded. Datasets in one request use one
-parse pass.
+Boon skips datasets that are already loaded. Compatible datasets share a
+parse pass. Healing uses a separate, cached post-match statistics pass.
 
 **Parameters:**
 
@@ -66,6 +66,7 @@ parse pass.
 
 - `ValueError` -- If an unknown dataset name is provided.
 - `NotStreetBrawlError` -- If a street brawl dataset is requested on a non-street-brawl demo.
+- `DemoMessageError` -- If healing is requested but post-match details are absent.
 
 ---
 
@@ -174,15 +175,16 @@ without a selector raises `ValueError`.
 
 ```python
 summary = demo.summary()
-summary.keys()                 # dict_keys(['snapshots', 'last_hits', 'objectives', 'damage'])
+summary.keys()                 # dict_keys(['snapshots', 'last_hits', 'objectives', 'damage', 'healing'])
 summary["snapshots"]           # pl.DataFrame -- one row per (snapshot, player)
 summary["last_hits"]           # pl.DataFrame -- hero_id, last_hits
 summary["objectives"]          # pl.DataFrame -- post-match objective records
 summary["damage"]              # pl.DataFrame -- damage matrix (long form)
+summary["healing"]             # pl.DataFrame -- healing and regeneration intervals
 ```
 
 Parse the post-match summary from the demo's `PostMatchDetails` event. Returns a
-dict with four top-level keys:
+dict with five top-level keys:
 
 - **`snapshots`** -- a Polars DataFrame with one row per (snapshot, player).
   Snapshots are taken at intervals through the match (not every minute);
@@ -223,6 +225,44 @@ dict with four top-level keys:
       .group_by("dealer_player_slot", "target_player_slot")
       .agg(pl.col("damage").sum()))
   ```
+
+- **`healing`** -- recorded healing and regeneration amounts per interval.
+  Only positive amounts and specific sources are included; duplicate category
+  rows are excluded.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `interval_start_s` | `int` | Previous matrix sample time, or zero for the first interval |
+| `interval_end_s` | `int` | Recorded matrix sample time |
+| `healer_player_slot` | `int` | Player slot credited with the amount |
+| `healer_hero_id` | `int` or null | Healer's hero in the post-match roster |
+| `target_player_slot` | `int` | Recipient player slot |
+| `target_hero_id` | `int` or null | Recipient's hero in the post-match roster |
+| `source_name` | `str` | Recorded ability, item, or regeneration source |
+| `stat_type` | `str` | `healing` or `regen`; these remain distinct |
+| `amount` | `int` | Recorded amount during this interval |
+
+```python
+import polars as pl
+
+intervals = demo.summary()["healing"]
+healing = intervals.filter(pl.col("stat_type") == "healing")
+regeneration = intervals.filter(pl.col("stat_type") == "regen")
+```
+
+Bounds use match-clock seconds, not demo ticks. Samples are usually 180 seconds
+apart, with a shorter final interval. A sparse source uses the previous matrix
+sample as its start, even when its previous positive amount was much earlier.
+These are recorded interval totals, not individual healing events. Player slots
+identify players across hero changes; roster hero IDs do not establish which
+hero was active throughout an interval. Non-player hero IDs are null.
+
+An absent damage matrix produces an empty healing frame with the same schema.
+A recording without post-match details raises `DemoMessageError`.
+The same frame is available as `demo.healing` and through `load("healing")`.
+The old event schema was replaced because it misclassified damage after lethal
+hits. `hero_healing` and `self_healing` in `player_ticks` remain sampled cumulative
+counters.
 
 **Returns:** `dict` -- The post-match summary (Polars DataFrames keyed by name).
 
@@ -685,6 +725,11 @@ Damage events. Boon loads this dataset on first access.
 | `tick` | `int` | The game tick when the damage occurred |
 | `damage` | `int` | The damage dealt |
 | `pre_damage` | `float` | The damage before mitigation |
+| `damage_absorbed` | `float` or null | Recorded absorption; legacy integer fallback when the float field is absent |
+| `victim_shield_new` | `int` or null | Remaining shield after the hit |
+| `victim_shield_max` | `int` or null | Shield capacity |
+| `is_secondary_stat` | `bool` or null | Recorded secondary-stat flag; null means absent |
+| `server_tick` | `int` or null | Server tick, distinct from the demo tick |
 | `victim_hero_id` | `int` | The hero ID of the victim (0 if not a hero) |
 | `attacker_hero_id` | `int` | The hero ID of the attacker (0 if not a hero) |
 | `victim_health_new` | `int` | The victim's health after damage |
@@ -704,6 +749,54 @@ and `DFLAG_HEAVY_MELEE` bits identify light and heavy hits.
 `melee_type="other"` identifies melee abilities, NPC attacks, and unclear
 flag combinations. Boon does not use the ability name or damage value to
 classify melee damage.
+
+---
+
+#### `healing`
+
+```python
+demo.healing                    # pl.DataFrame; loads on first access
+demo.load("healing")             # optional eager loading
+demo.healing.equals(demo.summary()["healing"])  # True
+```
+
+Recorded healing and regeneration interval statistics. This property and
+`summary()["healing"]` share one cache. The columns and interval semantics
+are described under `summary()` above. `stat_type` distinguishes `healing`
+from `regen`. There is no per-event `tick` column. Missing post-match details
+raise `DemoMessageError`; missing matrix data yields an empty frame.
+
+---
+
+#### `barriers()`
+
+```python
+absorptions = demo.barriers()
+```
+
+One row per player-targeted damage message with positive, finite recorded
+barrier absorption. Fully blocked hits are included even when health damage
+is zero. This method loads only `damage`; it does not reconstruct grants from
+`player_ticks.barrier`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `int` | Demo tick |
+| `server_tick` | `int` or null | Recorded server tick |
+| `hero_id` | `int` | Victim hero at the event tick |
+| `victim_entity_id` | `int` | Victim entity index |
+| `attacker_hero_id` | `int` | Attacker hero, or zero for a non-hero |
+| `ability_id` | `int` | Attacking ability/weapon, not the barrier grant source |
+| `absorbed` | `float` | Recorded absorbed damage |
+| `remaining` | `int` or null | Recorded shield remaining after this message |
+| `capacity` | `int` or null | Recorded shield capacity |
+| `is_secondary_stat` | `bool` or null | Recorded secondary-stat flag |
+
+Secondary-stat messages remain visible. Row counts represent messages, not
+individual bullets or barrier grants. Floating-point absorption totals can
+differ from integer scoreboard statistics. No `granted`, `expired`, or
+per-grant `hits` values are inferred. Those columns from the previous heuristic
+are removed because pool changes cannot establish these amounts reliably.
 
 ---
 

@@ -4,6 +4,18 @@ Valve changes Deadlock and its demo format frequently. This page lists known Boo
 
 Report other problems on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
 
+## Barrier pool snapshots are not grant events
+
+`player_ticks.barrier` mirrors the replicated modifier tracker. A full-packet
+snapshot can introduce a partial pool before the ordinary grant update.
+For example, match 100655353 shows a partial pool at tick 149761 and the grant
+update at tick 150923. Do not treat every pool rise as a new barrier grant or
+every fall as absorption. Exact grant lifecycles remain unresolved.
+
+`demo.barriers()` uses explicit damage-message absorption and shield fields.
+It does not use these pool transitions. Secondary-stat messages are retained
+and marked; event sums need not equal scoreboard accounting.
+
 ## Player stat modifiers are not final stats
 
 `demo.player_ticks` reads `m_vecStatViewerModifierValues` from each player

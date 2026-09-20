@@ -1,5 +1,30 @@
 # 📝 Changelog
 
+## Unreleased
+
+- **Breaking:** `demo.barriers()` now returns recorded absorption messages.
+  Replaced inferred `granted`, `expired`, and `hits` columns with attacker,
+  ability, shield, and server-tick fields. Fully blocked hits are included.
+  It loads only `damage` and does not treat barrier pool keyframes as grants.
+- Added `demo.healing`, `load("healing")`, and `summary()["healing"]`, sharing
+  one cache of positive healing and regeneration statistics
+  with interval start/end times, healer, recipient, source, and amount.
+  `stat_type` distinguishes healing from regeneration. Category duplicates
+  are excluded; individual heal timing is not inferred.
+- Added nullable `damage_absorbed`, `victim_shield_new`, `victim_shield_max`,
+  `is_secondary_stat`, and `server_tick` columns to `damage`. Older recordings
+  use the integer absorption field when the float field is absent.
+  Damage rows now retain the hero identities observed at their event tick.
+
+- **Breaking:** Replaced the unsupported per-event `demo.healing` schema with
+  recorded interval statistics. Negative `health_lost` values can describe
+  damage after lethal hits, not healing. Use `stat_type == "healing"` to select
+  healing separately from regeneration.
+
+- Fixed hero IDs in chat and item purchases after a player changes heroes.
+  Both the Python API and developer CLI now read the current player controller
+  for each event. Earlier events keep their original hero IDs.
+
 ## 0.9.0
 
 ### boon
