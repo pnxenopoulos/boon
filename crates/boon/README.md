@@ -98,10 +98,10 @@ let x = entity.get_by_name(
 
 ### Helper Functions
 
-- `ability_name(id)` &mdash; resolve an ability hash to its name
-- `ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
+- `CatalogNames::load(version)` &mdash; load verified boon-data names, downloading missing data
+- `CatalogNames::ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
 - `breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
-- `modifier_name(id)` &mdash; resolve a modifier hash to its name
+- `CatalogNames::modifier_name(id)` &mdash; resolve a modifier hash to its name
 - `decode_stat_modifier_value_type(value_type)` &mdash; normalize observed cross-build stat-modifier enum values
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload
 
@@ -127,7 +127,7 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 |---------|---------------|
 | [`info`](examples/info.rs) | `file_header()`, `file_info()`, match metadata and player list |
 | [`events`](examples/events.rs) | `events()`, event filtering, `decode_event_payload()` |
-| [`entities`](examples/entities.rs) | `parse_to_tick()`, entity iteration, `get_by_name()`, `ability_name()` |
+| [`entities`](examples/entities.rs) | `parse_to_tick()`, entity iteration, `get_by_name()`, `CatalogNames::ability_name()` |
 | [`player_ticks`](examples/player_ticks.rs) | `run_to_end_filtered()`, `resolve_field_key()`, per-tick streaming |
 
 ## Performance

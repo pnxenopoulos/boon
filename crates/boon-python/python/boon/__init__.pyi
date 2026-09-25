@@ -2,6 +2,10 @@ from pathlib import Path
 
 import polars as pl
 
+from . import data as data
+
+__version__: str
+
 class InvalidDemoError(Exception):
     """Raised when a demo file is invalid or cannot be parsed."""
 
@@ -27,7 +31,7 @@ class NotStreetBrawlError(Exception):
 
     ...
 
-def hero_names() -> dict[int, str]:
+def hero_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of hero ID to hero name."""
     ...
 
@@ -35,11 +39,11 @@ def team_names() -> dict[int, str]:
     """Return a mapping of team number to team name."""
     ...
 
-def ability_names() -> dict[int, str]:
+def ability_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of MurmurHash2 ability ID to ability name."""
     ...
 
-def ability_display_names() -> dict[str, str]:
+def ability_display_names(version: str | None = None) -> dict[str, str]:
     """Return exact internal ability/item names mapped to English display names.
 
     Includes exact localized top-level entries such as ability_*, upgrade_*,
@@ -48,7 +52,7 @@ def ability_display_names() -> dict[str, str]:
     """
     ...
 
-def modifier_names() -> dict[int, str]:
+def modifier_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of MurmurHash2 modifier ID to modifier name."""
     ...
 
@@ -138,7 +142,6 @@ class Demo:
         Already-loaded datasets are skipped. Event/entity datasets requested
         together share one filtered pass; snapshot datasets share one parallel
         keyframe-segmented pass, including in mixed requests.
-        Healing uses a separate, cached post-match statistics pass.
 
         Args:
             *datasets: One or more dataset names to load.
@@ -147,7 +150,6 @@ class Demo:
             ValueError: If an unknown dataset name is provided.
             NotStreetBrawlError: If a street brawl dataset is requested on a
                 non-street-brawl demo.
-            DemoMessageError: If healing is requested without post-match details.
 
         Example:
             >>> demo = Demo("match.dem")
@@ -209,7 +211,7 @@ class Demo:
     def summary(self) -> dict[str, pl.DataFrame]:
         """Parse the post-match summary from the demo's ``PostMatchDetails`` event.
 
-        Returns a dict with five top-level keys:
+        Returns a dict with four top-level keys:
 
         - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
           Snapshots are taken at intervals through the match (not every minute);
@@ -244,15 +246,7 @@ class Demo:
           to ``is_category == False`` for the complete, non-overlapping
           breakdown.
 
-        - ``healing``: positive recorded healing and regeneration intervals, without
-          duplicate category rows. Columns: ``interval_start_s``, ``interval_end_s``,
-          ``healer_player_slot``, ``healer_hero_id``, ``target_player_slot``,
-          ``target_hero_id``, ``source_name``, ``stat_type`` (``healing`` or ``regen``),
-          and ``amount``. Bounds use match-clock seconds, usually 180 seconds apart.
-          Hero IDs come from the match roster; player slots identify players across
-          hero changes. These are interval totals, not individual heal events.
-
-        The decoded message and all five frames are cached after the first call;
+        The decoded message and all four frames are cached after the first call;
         repeated calls do not parse the demo or rebuild the frames.
 
         Raises ``DemoMessageError`` if the demo contains no post-match details
@@ -304,8 +298,7 @@ class Demo:
         ...
 
     def _player_positions(self, ticks: list[int]) -> pl.DataFrame: ...
-
-    def in_combat(self) -> pl.DataFrame:
+    def in_combat(self, /) -> pl.DataFrame:
         """Whether each player is in combat, per tick.
 
         Convenience method delegating to :func:`boon.stats.in_combat`. Returns
@@ -316,7 +309,7 @@ class Demo:
         ...
 
     def kill_participation(
-        self, *, start_tick: int | None = ..., end_tick: int | None = ...
+        self, /, *, start_tick: int | None = ..., end_tick: int | None = ...
     ) -> pl.DataFrame:
         """Kill participation per player: ``(kills + assists) / team_kills``.
 
@@ -327,7 +320,7 @@ class Demo:
         """
         ...
 
-    def time_dead(self) -> pl.DataFrame:
+    def time_dead(self, /) -> pl.DataFrame:
         """Time each player spent dead during regulation (non-paused ticks).
 
         Convenience method delegating to :func:`boon.stats.time_dead`. Returns
@@ -339,7 +332,12 @@ class Demo:
         ...
 
     def teamfights(
-        self, *, gap_seconds: float = ..., radius: float = ..., min_players: int = ...
+        self,
+        /,
+        *,
+        gap_seconds: float = ...,
+        radius: float = ...,
+        min_players: int = ...,
     ) -> pl.DataFrame:
         """Detect teamfights from hero-vs-hero damage, clustered in space and time.
 
@@ -470,7 +468,6 @@ class Demo:
         """
         ...
 
-
     @property
     def players(self) -> pl.DataFrame:
         """Player information as a Polars DataFrame.
@@ -502,7 +499,7 @@ class Demo:
 
         Columns:
             - **hero_id** (*int*) -- The banned hero's ID (joins to ``players.hero_id``).
-            - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID that predates the bundled hero table.
+            - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID absent from the selected boon-data catalog.
         """
         ...
 
@@ -639,33 +636,6 @@ class Demo:
             - **damage_flags** (*int*) -- Raw Valve damage flags.
             - **is_melee** (*bool*) -- Whether this is melee-typed damage (``citadel_type == 3``).
             - **melee_type** (*str | None*) -- ``"light"``, ``"heavy"``, or ``"other"`` for melee-typed damage; null otherwise.
-        """
-        ...
-
-    @property
-    def healing(self) -> pl.DataFrame:
-        """Recorded healing and regeneration intervals, shared with summary()["healing"].
-
-        Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-        ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
-        ``stat_type`` (``healing`` or ``regen``), and ``amount``.
-        Bounds use match-clock seconds, usually 180 seconds apart. These are
-        interval totals, not individual heals. Hero IDs come from the match roster.
-        Category duplicates are excluded. Loads on first access or load("healing").
-        Raises DemoMessageError if the demo has no post-match details.
-        """
-        ...
-
-    def barriers(self) -> pl.DataFrame:
-        """Recorded barrier absorption: one row per player-targeted damage message.
-
-        Columns: ``tick``, ``server_tick``, ``hero_id``, ``victim_entity_id``,
-        ``attacker_hero_id``, ``ability_id``, ``absorbed``, ``remaining``,
-        ``capacity``, and ``is_secondary_stat``. Server tick, shield values, and
-        the secondary-stat flag are null when absent. ``ability_id`` identifies
-        the attack, not the barrier grant. Secondary-stat messages are retained.
-        Fully blocked hits count; rows are messages, not bullets or grants.
-        Only ``damage`` is loaded. Grant and expiration amounts are not inferred.
         """
         ...
 

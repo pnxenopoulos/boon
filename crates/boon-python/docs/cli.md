@@ -120,6 +120,25 @@ Check that a file is a valid Deadlock demo.
 boon verify match.dem
 ```
 
+### `get`, `versions`, and `remove`
+
+Download boon-data JSON catalogs and list client versions with source build dates,
+build times, and local installation status:
+
+```bash
+boon get                         # latest client version in versions.json
+boon versions                    # client version, build date/time, installed status
+boon get 6698                     # a specific Deadlock client version
+boon versions --local             # offline installation listing
+boon remove 6698                  # remove a local version offline
+```
+
+All three commands support `--json`. Files are stored under `~/.boon/<client-version>/`.
+`get --force` replaces an installation only after verifying the new download.
+`remove VERSION` requires an explicit version and also works on corrupt caches.
+See {doc}`data` for the Python API, integrity checks, cache configuration, and
+how client versions differ from replay build numbers.
+
 ## boon-dev
 
 `boon-dev` is a low-level debugging CLI, built from the `boon-dev` crate. It is

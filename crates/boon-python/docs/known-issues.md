@@ -12,10 +12,6 @@ For example, match 100655353 shows a partial pool at tick 149761 and the grant
 update at tick 150923. Do not treat every pool rise as a new barrier grant or
 every fall as absorption. Exact grant lifecycles remain unresolved.
 
-`demo.barriers()` uses explicit damage-message absorption and shield fields.
-It does not use these pool transitions. Secondary-stat messages are retained
-and marked; event sums need not equal scoreboard accounting.
-
 ## Player stat modifiers are not final stats
 
 `demo.player_ticks` reads `m_vecStatViewerModifierValues` from each player

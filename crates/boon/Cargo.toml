@@ -18,6 +18,9 @@ prost.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snap = "1.1"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+sha2 = "0.10"
+tempfile = "3"
 thiserror = "2.0"
 
 boon-proto = { workspace = true }

@@ -31,6 +31,8 @@ getting-started
 examples
 api
 cli
+data
+demo-checklist
 faq
 known-issues
 reference/index

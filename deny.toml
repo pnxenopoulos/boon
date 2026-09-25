@@ -18,6 +18,8 @@ ignore = [
 # Unlisted licenses are denied by default.
 allow = [
     "MIT",
+    "ISC",                  # rustls certificate verification
+    "CDLA-Permissive-2.0",  # bundled webpki root certificates
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",

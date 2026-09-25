@@ -49,6 +49,7 @@ pub fn run(
 ) -> Result<()> {
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
+    let names = boon::CatalogNames::load(None)?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
 
@@ -169,12 +170,12 @@ pub fn run(
                     match prev_modifiers.entry(serial) {
                         // New modifier (not seen before)
                         std::collections::hash_map::Entry::Vacant(e) => {
-                            let modifier_name =
-                                boon::modifier_name(modifier.modifier_subclass.unwrap_or(0))
-                                    .to_string();
-                            let ability_name =
-                                boon::ability_name(modifier.ability_subclass.unwrap_or(0))
-                                    .to_string();
+                            let modifier_name = names
+                                .modifier_name(modifier.modifier_subclass.unwrap_or(0))
+                                .to_string();
+                            let ability_name = names
+                                .ability_name(modifier.ability_subclass.unwrap_or(0))
+                                .to_string();
                             let duration = modifier.duration.unwrap_or(-1.0);
                             let caster_hero_id = boon::protobuf_handle_index(modifier.caster)
                                 .and_then(|i| entity_to_hero.get(&i).copied())

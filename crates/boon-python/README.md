@@ -54,7 +54,7 @@ from boon import (
     ability_display_names, ability_names, hero_names, modifier_names, team_names,
 )
 
-print(hero_names())      # {0: "Base", 1: "Infernus", ...}
+print(hero_names())      # {1: "Infernus", ...}; reads local boon-data or downloads latest
 print(team_names())      # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
 print(ability_names())   # {46922526: "inherent_base", ...}
 print(modifier_names())  # {2059539911: "timer", ...}

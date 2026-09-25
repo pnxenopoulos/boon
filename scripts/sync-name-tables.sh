@@ -1,41 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Fetch name-table vdata from SteamDatabase/GameTracking-Deadlock
-# and regenerate the name lookup tables in crates/boon/src/.
-#
-# What it does:
-# 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
-# 2) Copies the required VData and English hero/item localization files to the
-#    repo root
-# 3) Runs the generator to refresh the name tables in crates/boon/src
-# 4) Runs `cargo fmt --all` so the regenerated tables are correctly formatted
-# 5) Cleans up the temporary generator inputs
-#
-# The modifier table is built purely from these two vdata files: modifiers.vdata
-# (top-level keys + nested `_my_subclass_name` values) plus the modifier
-# subclasses nested in abilities.vdata. See scripts/generate-name-tables/main.rs.
-#
-# Environment:
-#   DEADLOCK_REF=<ref>   optional: branch/tag/commit to checkout
+# Refresh the remaining static breakable table from misc.vdata.
+# Hero, ability, and modifier names are provided by boon-data at runtime.
+# Set DEADLOCK_REF to pin an upstream commit.
 
-REPO_URL="https://github.com/SteamDatabase/GameTracking-Deadlock.git"
+REPO_URL="https://github.com/SteamTracking/GameTracking-Deadlock.git"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
 
 VDATA_DIR="game/citadel/pak01_dir/scripts"
-HERO_LOCALIZATION_DIR="game/citadel/resource/localization/citadel_heroes"
-ITEM_LOCALIZATION_DIR="game/citadel/resource/localization/citadel_gc_mod_names"
-# modifiers.vdata holds the generic modifiers; the bulk of gameplay modifiers are
-# nested as modifier subclasses inside abilities.vdata (see
-# scripts/generate-name-tables/main.rs).
-VDATA_FILES=(abilities.vdata modifiers.vdata misc.vdata)
-LOCALIZATION_FILES=(citadel_heroes_english.txt citadel_gc_mod_names_english.txt)
-LOCALIZATION_SOURCES=(
-  "$HERO_LOCALIZATION_DIR/citadel_heroes_english.txt"
-  "$ITEM_LOCALIZATION_DIR/citadel_gc_mod_names_english.txt"
-)
+VDATA_FILES=(misc.vdata)
 
 DEADLOCK_REF="${DEADLOCK_REF:-}"
 
@@ -51,9 +27,7 @@ cleanup() {
   for file in "${VDATA_FILES[@]}"; do
     rm -f "$ROOT_DIR/$file"
   done
-  for file in "${LOCALIZATION_FILES[@]}"; do
-    rm -f "$ROOT_DIR/$file"
-  done
+
 }
 trap cleanup EXIT
 
@@ -75,7 +49,7 @@ clone_repo() {
 
   if has_sparse_checkout; then
     git sparse-checkout init --cone >/dev/null 2>&1 || true
-    git sparse-checkout set "$VDATA_DIR" "$HERO_LOCALIZATION_DIR" "$ITEM_LOCALIZATION_DIR" >/dev/null 2>&1 || true
+    git sparse-checkout set "$VDATA_DIR" >/dev/null 2>&1 || true
   fi
 
   if [[ -n "$DEADLOCK_REF" ]]; then
@@ -92,13 +66,7 @@ copy_vdata() {
     cp -f "$src" "$ROOT_DIR/"
     echo "Copied $file to repo root"
   done
-  for index in "${!LOCALIZATION_FILES[@]}"; do
-    local file="${LOCALIZATION_FILES[$index]}"
-    local src="$REPO_DIR/${LOCALIZATION_SOURCES[$index]}"
-    [[ -f "$src" ]] || die "Missing localization file in upstream: $src"
-    cp -f "$src" "$ROOT_DIR/$file"
-    echo "Copied $file to repo root"
-  done
+
 }
 
 generate_tables() {

@@ -7,7 +7,6 @@ impl Demo {
     /// Already-loaded datasets are skipped. Event/entity datasets requested
     /// together share one filtered pass; snapshot datasets share one parallel
     /// keyframe-segmented pass, including when both groups are requested.
-    /// Healing uses a separate, cached post-match statistics pass.
     #[pyo3(signature = (*datasets))]
     pub(crate) fn load(&mut self, py: Python<'_>, datasets: Vec<String>) -> PyResult<()> {
         let datasets: Vec<Dataset> = datasets
@@ -25,10 +24,6 @@ impl Demo {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
-        }
-
-        if datasets.contains(&Dataset::Healing) {
-            self.ensure_summary(py)?;
         }
 
         // Load small datasets together when they use the same entity class or

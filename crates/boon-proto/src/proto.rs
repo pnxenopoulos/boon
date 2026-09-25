@@ -7175,6 +7175,15 @@ pub struct CsoCitadelParty {
     pub mm_preference: ::core::option::Option<i32>,
     #[prost(string, optional, tag = "21")]
     pub hideout_search_key: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(
+        enumeration = "ECitadelRankedType",
+        optional,
+        tag = "26",
+        default = "KECitadelRankedTypeInvalid"
+    )]
+    pub ranked_type: ::core::option::Option<i32>,
+    #[prost(uint32, optional, tag = "27")]
+    pub rank_interval: ::core::option::Option<u32>,
 }
 /// Nested message and enum types in `CSOCitadelParty`.
 pub mod cso_citadel_party {
@@ -26747,9 +26756,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1")]
+    #[prost(uint32, optional, tag = "1", default = "0")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -27553,7 +27562,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,

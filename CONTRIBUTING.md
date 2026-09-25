@@ -20,7 +20,7 @@ boon/
 ├── scripts/
 │   ├── sync-protos.sh                  # Fetch latest Deadlock .proto files
 │   ├── build-protos/                   # Regenerate Rust code from .proto files
-│   └── generate-name-tables/           # Regenerate ability and modifier name lookup tables
+│   └── generate-name-tables/           # Regenerate the remaining breakable name table
 └── .github/workflows/ci.yml    # CI pipeline
 ```
 
@@ -116,31 +116,21 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 The command updates the files in `crates/boon-proto/proto/`. It also regenerates
 `crates/boon-proto/src/proto.rs`.
 
-## Updating the Name Lookup Tables
+## Updating Name Data
 
-Ability, item, modifier, and breakable subclass IDs are MurmurHash2 hashes of
-internal names. The generator joins three Deadlock VData files to the English
-hero and item localization catalogs. The VData files are `abilities.vdata`,
-`modifiers.vdata`, and `misc.vdata`. The generator creates token lookups and
-display names. Boon does not generate or embed gameplay values from VData.
+Hero, ability/item, and modifier names are read from boon-data releases at runtime.
+Use `boon get` to install the latest catalogs. The lookup functions select the
+newest local client version or download latest when none is installed.
+Rust callers use `CatalogNames::load`; Python functions accept `version=`.
+Update the boon-data pipeline when the source catalog format changes.
+
+The separate breakable table remains generated from `misc.vdata`:
 
 ```bash
-# Fetch the latest vdata files from SteamDB and regenerate the tables
 ./scripts/sync-name-tables.sh
 ```
 
-This regenerates `abilities.rs`, `ability_display_names.rs`, `breakables.rs`,
-and `modifiers.rs` under `crates/boon/src/`.
-
-If you already have those VData and localization inputs locally (for example,
-after extracting the game's VPK data with
-[Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)),
-place all five files in the repository root and run the generator directly:
-
-```bash
-# Run from the repo root with the three VData and two localization files present
-cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
-```
+The script updates only `crates/boon/src/breakables.rs`.
 
 ## Release Strategy
 

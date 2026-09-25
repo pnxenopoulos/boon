@@ -1,7 +1,7 @@
 use crate::*;
 
 impl Demo {
-    /// Share the post-match cache between summary() and the healing dataset.
+    /// Load and cache the post-match summary frames on first access.
     pub(super) fn ensure_summary(&mut self, py: Python<'_>) -> PyResult<()> {
         use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
 
@@ -38,13 +38,11 @@ impl Demo {
                     DemoMessageError::new_err(format!("failed to build summary: {e}"))
                 };
                 let damage = build_damage_frame(&match_info).map_err(to_df_err)?;
-                let healing = build_healing_frame(&match_info, &damage).map_err(to_df_err)?;
                 Ok::<SummaryFrames, PyErr>(SummaryFrames {
                     snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
                     last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
                     objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
                     damage,
-                    healing,
                 })
             })?;
             self.cached_summary = Some(frames);
@@ -563,7 +561,6 @@ impl Demo {
             Dataset::WorldTicks => self.cached_world_ticks.as_ref(),
             Dataset::Kills => self.cached_kills.as_ref(),
             Dataset::Damage => self.cached_damage.as_ref(),
-            Dataset::Healing => self.cached_summary.as_ref().map(|frames| &frames.healing),
             Dataset::FlexSlots => self.cached_flex_slots.as_ref(),
             Dataset::ItemPurchases => self.cached_item_purchases.as_ref(),
             Dataset::Troopers => self.cached_troopers.as_ref(),
@@ -589,11 +586,6 @@ impl Demo {
             .iter()
             .map(|name| name.parse())
             .collect::<PyResult<_>>()?;
-        if datasets.contains(&Dataset::Healing) {
-            return Err(pyo3::exceptions::PyValueError::new_err(
-                "snapshots(events=): healing contains interval statistics, not event ticks",
-            ));
-        }
         let missing: Vec<Dataset> = datasets
             .iter()
             .copied()

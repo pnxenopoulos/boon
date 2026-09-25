@@ -44,8 +44,6 @@ def test_overkill_remains_damage(demo: Demo) -> None:
         (54, -11),
         (10, -21),
     ]
-    assert "tick" not in demo.healing.columns
-    assert demo.healing.equals(demo.summary()["healing"])
 
 
 def test_summary_healing_uses_recorded_statistics(demo: Demo) -> None:

@@ -1,40 +1,14 @@
-//! Run: cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
-//!
-//! Generates ability, modifier, and breakable names plus English ability and item
-//! display names from Deadlock's abilities.vdata, modifiers.vdata, misc.vdata,
-//! and English localization files.
-//!
-//! Source2Viewer (ValveResourceFormat) extracts these files from Deadlock VPK
-//! data. The files use Valve KV3. Top-level keys have one tab of indentation.
-//!
-//! Source 2 uses CUtlStringToken (MurmurHash2 with seed 0x31415926) for ability
-//! and modifier subclass IDs. In a demo, `modifier_subclass` on
-//! `CModifierTableEntry` identifies a modifier. The token is the hash of
-//! `_my_subclass_name`. A generic modifier in modifiers.vdata uses its
-//! top-level key.
-//!
-//! Ability names are top-level keys in abilities.vdata. A display name requires
-//! the same key in abilities.vdata and Valve's English localization catalogs.
-//! This intersection excludes description, search-alias, modifier, and stale
-//! tokens. It covers `ability_*`, `upgrade_*`, and `citadel_ability_*` names.
-//!
-//! The modifier name table combines three VData sources:
-//!   1. Each top-level key in modifiers.vdata.
-//!   2. Each nested `_my_subclass_name` in modifiers.vdata.
-//!   3. Each modifier `_my_subclass_name` in abilities.vdata.
-//!
-//! Source 3 contains modifier, scale-function, ability, and item subclasses.
-//! Each subclass has `_my_subclass_name`. The generator selects entries whose
-//! `_class` starts with `modifier_`.
+//! Generate the remaining static breakable lookup from misc.vdata.
+//! Hero, ability, and modifier names are read from boon-data at runtime.
 
-use std::collections::{BTreeMap, HashSet};
-use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 const SEED: u32 = 0x31415926;
 
-/// MurmurHash2 (32-bit) matching Source 2's CUtlStringToken implementation.
 fn murmur_hash2(key: &[u8]) -> u32 {
     const M: u32 = 0x5BD1E995;
     const R: i32 = 24;
@@ -87,128 +61,6 @@ fn kv3_string_value<'a>(line: &'a str, key: &str) -> Option<&'a str> {
 ///
 /// Matches lines like `\tkey_name = ` — one tab of indent followed by
 /// a word-character key. Skips metadata keys (`generic_data_type`, `_include`).
-fn extract_top_level_keys(content: &str) -> Vec<&str> {
-    let skip = ["generic_data_type", "_include"];
-    let mut names = Vec::new();
-
-    for line in content.lines() {
-        // Require one tab and then one word character.
-        let Some(rest) = line.strip_prefix('\t') else {
-            continue;
-        };
-        if rest.starts_with('\t') {
-            continue;
-        }
-
-        // Get the word characters before whitespace or `=`.
-        let key_end = rest
-            .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-            .unwrap_or(rest.len());
-        if key_end == 0 {
-            continue;
-        }
-        let key = &rest[..key_end];
-
-        // Require `=` after optional whitespace.
-        let after = rest[key_end..].trim_start();
-        if !after.starts_with('=') {
-            continue;
-        }
-
-        if skip.contains(&key) {
-            continue;
-        }
-
-        names.push(key);
-    }
-
-    names
-}
-
-/// Extract all quoted strings from one Valve localization line.
-///
-/// Valve's localization format is KV1-like rather than KV3. Most lines hold a
-/// quoted token and quoted value, but a few upstream lines contain more than
-/// one pair. This scanner handles both cases, escaped quotes, and `//` comments
-/// without treating quoted `//` text as a comment.
-fn quoted_localization_values(line: &str) -> Vec<String> {
-    let mut values = Vec::new();
-    let mut chars = line.chars().peekable();
-
-    while let Some(ch) = chars.next() {
-        if ch == '/' && chars.peek() == Some(&'/') {
-            break;
-        }
-        if ch != '"' {
-            continue;
-        }
-
-        let mut value = String::new();
-        while let Some(ch) = chars.next() {
-            match ch {
-                '"' => {
-                    values.push(value);
-                    break;
-                }
-                '\\' => {
-                    let Some(escaped) = chars.next() else {
-                        value.push('\\');
-                        break;
-                    };
-                    match escaped {
-                        'n' => value.push('\n'),
-                        'r' => value.push('\r'),
-                        't' => value.push('\t'),
-                        '"' => value.push('"'),
-                        '\\' => value.push('\\'),
-                        other => {
-                            value.push('\\');
-                            value.push(other);
-                        }
-                    }
-                }
-                other => value.push(other),
-            }
-        }
-    }
-
-    values
-}
-
-/// Join exact top-level VData keys to their English localization values.
-/// Missing localization is valid for hidden, test, and retired entries, so
-/// those names are omitted rather than synthesized.
-fn extract_ability_display_names(
-    ability_names: &[&str],
-    localization_contents: &[&str],
-) -> Vec<(String, String)> {
-    let known_names: HashSet<&str> = ability_names.iter().copied().collect();
-    let mut display_names = BTreeMap::new();
-
-    for content in localization_contents {
-        for line in content.lines() {
-            let values = quoted_localization_values(line);
-            for pair in values.chunks_exact(2) {
-                let internal_name = &pair[0];
-                let display_name = &pair[1];
-                if !known_names.contains(internal_name.as_str()) || display_name.is_empty() {
-                    continue;
-                }
-
-                if let Some(previous) =
-                    display_names.insert(internal_name.clone(), display_name.clone())
-                {
-                    assert_eq!(
-                        previous, *display_name,
-                        "conflicting English display names for {internal_name}"
-                    );
-                }
-            }
-        }
-    }
-
-    display_names.into_iter().collect()
-}
 
 /// Extract top-level object names whose direct `_class` matches `target_class`.
 ///
@@ -221,9 +73,7 @@ fn extract_top_level_keys_by_class<'a>(content: &'a str, target_class: &str) -> 
     let mut current_matches = false;
 
     let flush = |name: &mut Option<&'a str>, matches: &mut bool, names: &mut Vec<&'a str>| {
-        if *matches
-            && let Some(name) = name.take()
-        {
+        if *matches && let Some(name) = name.take() {
             names.push(name);
         }
         *name = None;
@@ -261,72 +111,6 @@ fn extract_top_level_keys_by_class<'a>(content: &'a str, target_class: &str) -> 
     names
 }
 
-/// Extract every `_my_subclass_name` value in a vdata file, at any nesting
-/// depth and regardless of the enclosing `_class`. Used for modifiers.vdata,
-/// whose nested subclasses are all modifiers.
-fn extract_subclass_names(content: &str) -> Vec<&str> {
-    content
-        .lines()
-        .filter_map(|line| kv3_string_value(line.trim(), "_my_subclass_name"))
-        .collect()
-}
-
-/// Extract the `_my_subclass_name` of each modifier `subclass:` block nested in
-/// abilities.vdata.
-///
-/// abilities.vdata interleaves three kinds of subclass — modifiers,
-/// scale-functions and abilities/items — all of which carry a
-/// `_my_subclass_name`, so only the modifier blocks belong in the modifier
-/// table. The reliable discriminator is the block's own `_class`: modifiers are
-/// `modifier_*` (`modifier_base`, `modifier_slow_base`, …), scale-functions
-/// `scale_function_*`, abilities `citadel_ability_*`/`citadel_item`/….
-///
-/// The walk tracks object scopes by brace depth — in this KV3 text dump every
-/// `{`/`}` sits alone on its line and `_class`/`_my_subclass_name` never share a
-/// line with a brace — recording each scope's `_class` and `_my_subclass_name`
-/// independently and emitting the name when the scope closes iff its own
-/// `_class` is a modifier. Scoping per-block this way is order-independent (the
-/// two fields appear in either order) and stops a modifier `_class` from leaking
-/// onto a nested scale-function child or a sibling block.
-fn extract_modifier_subclass_names(content: &str) -> Vec<&str> {
-    // One entry per open object scope: (its `_class` is a modifier, its
-    // `_my_subclass_name` if seen yet).
-    // Runtime tokens may use a concrete modifier class or a named subclass.
-    let mut stack: Vec<(Option<&str>, Option<&str>)> = Vec::new();
-    let mut names = Vec::new();
-
-    for line in content.lines() {
-        let trimmed = line.trim();
-        match trimmed {
-            "{" => stack.push((None, None)),
-            "}" | "}," => {
-                if let Some((class, subclass)) = stack.pop() {
-                    if let Some(class) = class.filter(|class| class.starts_with("modifier_")) {
-                        names.push(class);
-                        if let Some(subclass) = subclass {
-                            names.push(subclass);
-                        }
-                    }
-                }
-            }
-            _ => {
-                if let Some(value) = kv3_string_value(trimmed, "_class")
-                    && let Some(scope) = stack.last_mut()
-                {
-                    scope.0 = Some(value);
-                } else if let Some(value) = kv3_string_value(trimmed, "_my_subclass_name")
-                    && let Some(scope) = stack.last_mut()
-                {
-                    scope.1 = Some(value);
-                }
-            }
-        }
-    }
-
-    names
-}
-
-/// Hash a list of names and return the (hash, name) pairs sorted by hash.
 fn hash_entries<'a>(names: &[&'a str]) -> Vec<(u32, &'a str)> {
     let mut entries: Vec<(u32, &str)> = names
         .iter()
@@ -457,270 +241,24 @@ fn write_hash_table(
     );
 }
 
-/// Generate the exact internal-name → English display-name table.
-fn write_ability_display_name_table(
-    output_path: &Path,
-    entries: &[(String, String)],
-    today: &str,
-) {
-    let mut out = fs::File::create(output_path).expect("failed to create output file");
-
-    writeln!(
-        out,
-        "//! Auto-generated by scripts/generate-name-tables from abilities.vdata"
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "//! and Deadlock's English hero/item localization catalogs."
-    )
-    .unwrap();
-    writeln!(out, "//! Maps exact internal ability/item names to English display names.")
-        .unwrap();
-    writeln!(out, "//!").unwrap();
-    writeln!(out, "//! Last updated: {today}").unwrap();
-    writeln!(out).unwrap();
-
-    writeln!(
-        out,
-        "/// All known (internal name, English display name) pairs sorted by internal name."
-    )
-    .unwrap();
-    writeln!(out, "const ENTRIES: &[(&str, &str)] = &[").unwrap();
-    for (internal_name, display_name) in entries {
-        writeln!(out, "    ({internal_name:?}, {display_name:?}),").unwrap();
-    }
-    writeln!(out, "];").unwrap();
-    writeln!(out).unwrap();
-
-    writeln!(
-        out,
-        "/// Look up an English display name by exact internal ability/item name."
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "pub fn ability_display_name(internal_name: &str) -> Option<&'static str> {{"
-    )
-    .unwrap();
-    writeln!(out, "    match internal_name {{").unwrap();
-    for (internal_name, display_name) in entries {
-        writeln!(
-            out,
-            "        {internal_name:?} => Some({display_name:?}),"
-        )
-        .unwrap();
-    }
-    writeln!(out, "        _ => None,").unwrap();
-    writeln!(out, "    }}").unwrap();
-    writeln!(out, "}}").unwrap();
-    writeln!(out).unwrap();
-
-    writeln!(
-        out,
-        "/// Return all exact internal-name to English display-name pairs."
-    )
-    .unwrap();
-    writeln!(
-        out,
-        "pub fn all_ability_display_names() -> &'static [(&'static str, &'static str)] {{"
-    )
-    .unwrap();
-    writeln!(out, "    ENTRIES").unwrap();
-    writeln!(out, "}}").unwrap();
-    writeln!(out).unwrap();
-
-    writeln!(out, "#[cfg(test)]").unwrap();
-    writeln!(out, "mod tests {{").unwrap();
-    writeln!(out, "    use super::*;").unwrap();
-    if let Some((internal_name, display_name)) = entries.first() {
-        writeln!(out).unwrap();
-        writeln!(out, "    #[test]").unwrap();
-        writeln!(out, "    fn known_entry() {{").unwrap();
-        writeln!(
-            out,
-            "        assert_eq!(ability_display_name({internal_name:?}), Some({display_name:?}));"
-        )
-        .unwrap();
-        writeln!(out, "    }}").unwrap();
-    }
-    writeln!(out).unwrap();
-    writeln!(out, "    #[test]").unwrap();
-    writeln!(out, "    fn unknown_name() {{").unwrap();
-    writeln!(
-        out,
-        "        assert_eq!(ability_display_name(\"not_a_real_ability\"), None);"
-    )
-    .unwrap();
-    writeln!(out, "    }}").unwrap();
-    writeln!(out, "}}").unwrap();
-
-    eprintln!(
-        "Wrote {} with {} localized entries",
-        output_path.display(),
-        entries.len()
-    );
-}
-
-/// Read a vdata file if it exists, returning its contents (so the borrowed
-/// `&str` names taken from it outlive their use).
-fn read_optional_vdata(path: &Path) -> Option<String> {
-    if !path.exists() {
-        return None;
-    }
-    Some(fs::read_to_string(path).unwrap_or_else(|e| panic!("failed to read {}: {e}", path.display())))
-}
-
 fn main() {
-    let today = chrono_free_today();
-
-    let vdata_dir = std::env::var_os("BOON_VDATA_DIR")
+    let directory = std::env::var_os("BOON_VDATA_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."));
-    let abilities_path = vdata_dir.join("abilities.vdata");
-    let modifiers_path = vdata_dir.join("modifiers.vdata");
-    let misc_path = vdata_dir.join("misc.vdata");
-    let hero_localization_path = vdata_dir.join("citadel_heroes_english.txt");
-    let item_localization_path = vdata_dir.join("citadel_gc_mod_names_english.txt");
-    let abilities_output = Path::new("crates/boon/src/abilities.rs");
-    let ability_display_names_output = Path::new("crates/boon/src/ability_display_names.rs");
-    let breakables_output = Path::new("crates/boon/src/breakables.rs");
-    let modifiers_output = Path::new("crates/boon/src/modifiers.rs");
-
-    // Read the generator inputs up front so borrowed names outlive their use.
-    let abilities_content = read_optional_vdata(&abilities_path);
-    let modifiers_content = read_optional_vdata(&modifiers_path);
-    let misc_content = read_optional_vdata(&misc_path);
-    let hero_localization_content = read_optional_vdata(&hero_localization_path);
-    let item_localization_content = read_optional_vdata(&item_localization_path);
-
-    // Ability names are simply the top-level keys.
-    if let Some(content) = &abilities_content {
-        let names = extract_top_level_keys(content);
-        eprintln!("Extracted {} ability names from abilities.vdata", names.len());
-        let entries = hash_entries(&names);
-        write_hash_table(
-            abilities_output,
-            &entries,
-            "abilities.vdata",
-            "ability_name",
-            "all_abilities",
-            "ABILITY_NOT_FOUND",
-            &today,
-        );
-
-        let localization_contents: Vec<&str> = [
-            hero_localization_content.as_deref(),
-            item_localization_content.as_deref(),
-        ]
-        .into_iter()
-        .flatten()
-        .collect();
-        if localization_contents.is_empty() {
-            eprintln!(
-                "English hero/item localization not found (skipping ability_display_names.rs)"
-            );
-        } else {
-            let display_entries = extract_ability_display_names(&names, &localization_contents);
-            eprintln!(
-                "Localized {} of {} top-level ability/item names",
-                display_entries.len(),
-                names.len()
-            );
-            write_ability_display_name_table(
-                ability_display_names_output,
-                &display_entries,
-                &today,
-            );
-        }
-    } else {
-        eprintln!("abilities.vdata not found (skipping abilities.rs)");
-    }
-
-    // Breakable subclass IDs are CUtlStringToken hashes of the top-level
-    // misc.vdata names whose gameplay class is citadel_breakable_prop.
-    if let Some(content) = &misc_content {
-        let names = extract_top_level_keys_by_class(content, "citadel_breakable_prop");
-        eprintln!(
-            "Extracted {} breakable subclass names from misc.vdata",
-            names.len()
-        );
-        let entries = hash_entries(&names);
-        write_hash_table(
-            breakables_output,
-            &entries,
-            "misc.vdata (`citadel_breakable_prop` entries)",
-            "breakable_name",
-            "all_breakables",
-            "BREAKABLE_NOT_FOUND",
-            &today,
-        );
-    } else {
-        eprintln!("misc.vdata not found (skipping breakables.rs)");
-    }
-
-    // --- modifiers → modifiers.rs ---
-    //
-    // The modifier table is the union of three vdata-derived sources:
-    //   1. modifiers.vdata top-level keys      (generic/global modifiers)
-    //   2. modifiers.vdata nested `_my_subclass_name` values
-    //   3. modifier subclasses nested in abilities.vdata (those whose `_class`
-    //      starts with `modifier_`).
-    if abilities_content.is_none() && modifiers_content.is_none() {
-        eprintln!(
-            "No modifier sources found: need modifiers.vdata and/or abilities.vdata at the repo root."
-        );
-        eprintln!("Run this from the repo root (see scripts/sync-name-tables.sh).");
-        return;
-    }
-
-    let modifiers_str = modifiers_content.as_deref().unwrap_or_default();
-    let abilities_str = abilities_content.as_deref().unwrap_or_default();
-
-    // Collect candidate names in priority order, then deduplicate.
-    let mut seen = HashSet::new();
-    let mut all_names: Vec<&str> = Vec::new();
-
-    let top_level = extract_top_level_keys(modifiers_str);
-    let nested = extract_subclass_names(modifiers_str);
-    eprintln!(
-        "Extracted {} top-level + {} nested subclass names from modifiers.vdata",
-        top_level.len(),
-        nested.len()
-    );
-    for name in top_level.iter().chain(nested.iter()) {
-        if seen.insert(*name) {
-            all_names.push(name);
-        }
-    }
-
-    let ability_modifiers = extract_modifier_subclass_names(abilities_str);
-    let before = all_names.len();
-    for name in &ability_modifiers {
-        if seen.insert(*name) {
-            all_names.push(name);
-        }
-    }
-    eprintln!(
-        "Extracted {} modifier class/subclass names from abilities.vdata ({} new)",
-        ability_modifiers.len(),
-        all_names.len() - before
-    );
-
-    let entries = hash_entries(&all_names);
-
+    let content = fs::read_to_string(directory.join("misc.vdata"))
+        .expect("read misc.vdata from BOON_VDATA_DIR");
+    let names = extract_top_level_keys_by_class(&content, "citadel_breakable_prop");
     write_hash_table(
-        modifiers_output,
-        &entries,
-        "modifiers.vdata + modifier classes/subclasses in abilities.vdata",
-        "modifier_name",
-        "all_modifiers",
-        "MODIFIER_NOT_FOUND",
-        &today,
+        Path::new("crates/boon/src/breakables.rs"),
+        &hash_entries(&names),
+        "misc.vdata (`citadel_breakable_prop` entries)",
+        "breakable_name",
+        "all_breakables",
+        "BREAKABLE_NOT_FOUND",
+        &chrono_free_today(),
     );
 }
 
-/// Return today's date as YYYY-MM-DD without pulling in chrono.
 fn chrono_free_today() -> String {
     // Use std::process::Command to get the date
     let output = std::process::Command::new("date")
@@ -736,53 +274,6 @@ fn chrono_free_today() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parses_localization_pairs_and_escapes() {
-        let line = r#"	"ability_test" "A \"Quoted\" // Name" "upgrade_test" "Line\nTwo" // "ignored" "Ignored""#;
-
-        assert_eq!(
-            quoted_localization_values(line),
-            vec![
-                "ability_test",
-                "A \"Quoted\" // Name",
-                "upgrade_test",
-                "Line\nTwo",
-            ]
-        );
-    }
-
-    #[test]
-    fn display_names_require_exact_vdata_keys() {
-        let ability_names = vec![
-            "ability_test",
-            "upgrade_test",
-            "ability_missing",
-            "citadel_ability_test",
-        ];
-        let hero_localization = concat!(
-            "	\"ability_test\" \"Hero Ability\"\n",
-            "	\"ability_test_desc\" \"Not a display name\"\n",
-            "	\"ability_stale\" \"No matching VData entry\"\n",
-            "	\"citadel_ability_test\" \"Class-prefixed Ability\"\n",
-        );
-        let item_localization = "	\"upgrade_test\" \"Shop Item\"\n";
-
-        assert_eq!(
-            extract_ability_display_names(
-                &ability_names,
-                &[hero_localization, item_localization]
-            ),
-            vec![
-                ("ability_test".to_string(), "Hero Ability".to_string()),
-                (
-                    "citadel_ability_test".to_string(),
-                    "Class-prefixed Ability".to_string(),
-                ),
-                ("upgrade_test".to_string(), "Shop Item".to_string()),
-            ]
-        );
-    }
 
     #[test]
     fn extracts_only_direct_breakable_classes() {

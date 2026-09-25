@@ -2,24 +2,58 @@
 
 ## Unreleased
 
-- **Breaking:** `demo.barriers()` now returns recorded absorption messages.
-  Replaced inferred `granted`, `expired`, and `hits` columns with attacker,
-  ability, shield, and server-tick fields. Fully blocked hits are included.
-  It loads only `damage` and does not treat barrier pool keyframes as grants.
-- Added `demo.healing`, `load("healing")`, and `summary()["healing"]`, sharing
-  one cache of positive healing and regeneration statistics
-  with interval start/end times, healer, recipient, source, and amount.
-  `stat_type` distinguishes healing from regeneration. Category duplicates
-  are excluded; individual heal timing is not inferred.
+- Hero, ability/item, localized ability, and modifier names now come from
+  boon-data JSON catalogs. Removed their embedded Rust tables and generator code.
+  Python lookup functions accept `version=`. Name access uses the newest verified
+  local version, or downloads latest when no valid installation exists.
+  `demo.banned_heroes` and CLI player names use the same data. Indexes without
+  a designated latest use the highest published client version.
+- **Breaking (Rust):** Replaced static name lookup functions with
+  `CatalogNames::load(version)` and its lookup methods. Rust and `boon-dev`
+  automatically download missing catalogs into the same `BOON_DATA_DIR` cache
+  used by Python. Load once and reuse the maps for repeated event lookups.
+- Modifier names include both unqualified and owner-qualified IDs. Repeated
+  definitions with the same name are deduplicated; conflicting names are errors.
+- Synced protobufs to client **6701**, SourceRevision **11038876**, from upstream
+  commit `33e0801209b9f54be4ea284f3e521b030276d8db`.
+  `boon-proto` is now `0.3.11038876+6701`.
+
+- Added a replay verification checklist and `scripts/check-demo.py` to export
+  review tables, check API consistency and CLI/data commands, and validate
+  independently recorded observations with explicit coverage gaps.
+
+- **Breaking:** Removed `demo.healing`, `load("healing")`, and
+  `summary()["healing"]`, including the interval builder and its cached frame.
+  `summary()` now returns `snapshots`, `last_hits`, `objectives`, and `damage`.
+- **Breaking:** Removed `demo.barriers()` and the `boon.barriers` module.
+  Dedicated healing and barrier datasets are withdrawn pending a redesign.
+  Recorded damage fields, player healing counters, barrier pool snapshots,
+  and the original post-match damage matrix remain available.
+
+- Added `boon get`, `boon versions`, and `boon.data` for downloading and storing
+  versioned boon-data JSON catalogs in `~/.boon/<client-version>/`. Downloads
+  verify file sizes, SHA-256 checksums, and manifest metadata before installation;
+  failed downloads preserve existing files, and `--force` repairs installations.
+- Version listings show Deadlock client versions, `VersionDate` and `VersionTime`
+  from `steam.inf`, and verified local installation status. Removed the
+  "Released at" table column; release timestamps remain in `--json` output.
+  `--local` lists installed versions without network access.
+  Installation metadata retains the source revision.
+- Added `boon remove VERSION` and `boon.data.remove()` for offline cache removal,
+  including corrupt or incomplete installations. Downloads require `misc.json`
+  alongside abilities, heroes, modifiers, and the manifest.
+  Catalog acquisition does not calculate hero stats.
+- Simplified boon-data metadata: removed schema version counters and compatibility
+  paths for old release formats. Releases use numeric client-version tags and
+  all five JSON files; provenance and checksum verification remain in place.
+- Updated the locked `pbdems2` dependency to 0.3.2.
+- Recognize permanent spirit-power modifier ID 159 in client 6698, retaining
+  earlier aliases for the permanent stat-viewer vector.
+
 - Added nullable `damage_absorbed`, `victim_shield_new`, `victim_shield_max`,
   `is_secondary_stat`, and `server_tick` columns to `damage`. Older recordings
   use the integer absorption field when the float field is absent.
   Damage rows now retain the hero identities observed at their event tick.
-
-- **Breaking:** Replaced the unsupported per-event `demo.healing` schema with
-  recorded interval statistics. Negative `health_lost` values can describe
-  damage after lethal hits, not healing. Use `stat_type == "healing"` to select
-  healing separately from regeneration.
 
 - Fixed hero IDs in chat and item purchases after a player changes heroes.
   Both the Python API and developer CLI now read the current player controller

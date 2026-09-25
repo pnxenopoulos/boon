@@ -43,6 +43,8 @@ def test_datasets_lists_kills() -> None:
     result = runner.invoke(app, ["datasets"])
     assert result.exit_code == 0
     assert "kills" in result.stdout
+    assert "healing" not in result.stdout
+    assert "barriers" not in result.stdout
 
 
 def test_info() -> None:
@@ -70,8 +72,9 @@ def test_show_dataset() -> None:
     assert "cols" in result.output
 
 
-def test_show_unknown_dataset() -> None:
-    result = runner.invoke(app, ["show", str(_fixture()), "not_a_dataset"])
+@pytest.mark.parametrize("dataset", ["not_a_dataset", "healing", "barriers"])
+def test_show_unknown_dataset(dataset: str) -> None:
+    result = runner.invoke(app, ["show", str(_fixture()), dataset])
     assert result.exit_code == 1
 
 

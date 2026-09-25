@@ -12,8 +12,11 @@ a match straight from the terminal without writing any code::
     boon show match.dem kills --limit 20      # any dataset as a table
     boon summary match.dem                    # post-match summary
     boon stats match.dem -m kill-participation # derived metrics
+    boon get                                 # download the latest JSON catalogs
+    boon versions                            # list client versions and installation status
+    boon remove 6698                         # remove a local catalog version
 
-Every command loads the demo lazily and prints Polars DataFrames. Pass
+Demo inspection commands load the demo lazily. Pass
 ``--json`` (where available) for machine-readable output.
 """
 
@@ -21,7 +24,6 @@ from __future__ import annotations
 
 import json as _json
 from pathlib import Path
-from typing import Optional
 
 import polars as pl
 import typer
@@ -33,9 +35,10 @@ from boon import (
     hero_names,
     team_names,
 )
+from boon import data as game_data
 
 app = typer.Typer(
-    help="Boon — inspect Deadlock demo (.dem) files.",
+    help="Boon — inspect Deadlock demos and download versioned JSON catalogs.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -58,13 +61,15 @@ def _open(path: Path) -> Demo:
     """Open a demo file, turning any parse failure into a clean CLI error."""
     try:
         return Demo(str(path))
-    except Exception as exc:  # noqa: BLE001 - surface any parse error cleanly
-        typer.secho(f"error: could not open {path}: {exc}", fg=typer.colors.RED, err=True)
+    except Exception as exc:  # surface any parse error cleanly
+        typer.secho(
+            f"error: could not open {path}: {exc}", fg=typer.colors.RED, err=True
+        )
         raise typer.Exit(1) from exc
 
 
 def _print_df(
-    df: pl.DataFrame, *, limit: Optional[int], tail: bool, as_json: bool
+    df: pl.DataFrame, *, limit: int | None, tail: bool, as_json: bool
 ) -> None:
     """Print a DataFrame as a full-width table, or as JSON when requested.
 
@@ -103,7 +108,7 @@ def _main(
         help="Show the Boon version and exit.",
     ),
 ) -> None:
-    """Boon — inspect Deadlock demo (.dem) files."""
+    """Boon — inspect Deadlock demos and download versioned JSON catalogs."""
 
 
 @app.command()
@@ -142,7 +147,11 @@ def players(file: Path = _FILE_ARG, as_json: bool = _JSON_OPT) -> None:
     """Show the player roster (name, Steam ID, hero, team, start lane)."""
     demo = _open(file)
     roster = demo.players
-    names = hero_names()
+    try:
+        names = hero_names()
+    except game_data.DataError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
     name_df = pl.DataFrame(
         {"hero_id": list(names.keys()), "hero": list(names.values())}
     ).with_columns(pl.col("hero_id").cast(roster.schema["hero_id"]))
@@ -170,13 +179,15 @@ def show(
     """Load and display one dataset from the demo as a table."""
     available = Demo.available_datasets()
     if dataset not in available:
-        typer.secho(f"error: unknown dataset '{dataset}'", fg=typer.colors.RED, err=True)
+        typer.secho(
+            f"error: unknown dataset '{dataset}'", fg=typer.colors.RED, err=True
+        )
         typer.echo("available: " + ", ".join(available), err=True)
         raise typer.Exit(1)
     demo = _open(file)
     try:
         df = getattr(demo, dataset)
-    except Exception as exc:  # noqa: BLE001 - surface dataset load failures cleanly
+    except Exception as exc:  # surface dataset load failures cleanly
         typer.secho(
             f"error: could not load '{dataset}': {exc}", fg=typer.colors.RED, err=True
         )
@@ -204,7 +215,7 @@ def summary(
     demo = _open(file)
     try:
         result = demo.summary()
-    except Exception as exc:  # noqa: BLE001 - demos without post-match details
+    except Exception as exc:  # demos without post-match details
         typer.secho(
             f"error: no post-match summary available: {exc}",
             fg=typer.colors.RED,
@@ -256,7 +267,7 @@ def stats(
         raise typer.Exit(1)
     try:
         df = fn()
-    except Exception as exc:  # noqa: BLE001 - metrics can require a game-over event
+    except Exception as exc:  # metrics can require a game-over event
         typer.secho(
             f"error: could not compute '{metric}': {exc}", fg=typer.colors.RED, err=True
         )
@@ -269,10 +280,130 @@ def verify(file: Path = _FILE_ARG) -> None:
     """Check that a file is a valid Deadlock demo."""
     try:
         Demo(str(file))
-    except Exception as exc:  # noqa: BLE001 - report invalid demos as a clean failure
+    except Exception as exc:  # report invalid demos as a clean failure
         typer.secho(f"invalid: {file}: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
     typer.secho(f"valid: {file}", fg=typer.colors.GREEN)
+
+
+@app.command(rich_help_panel="Game data")
+def get(
+    version: str | None = typer.Argument(
+        None, help="Deadlock client version from `boon versions`; defaults to latest."
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Replace installed files after verifying a fresh download.",
+    ),
+    as_json: bool = _JSON_OPT,
+) -> None:
+    """Download boon-data JSON catalogs to ~/.boon/<client-version>/."""
+    try:
+        path = game_data.update(version, force=force)
+        files = game_data.available_files(path.name)
+    except game_data.DataError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    result = {
+        "client_version": path.name,
+        "path": str(path),
+        "files": files,
+    }
+    if as_json:
+        typer.echo(_json.dumps(result, indent=2))
+    else:
+        typer.echo(f"{path.name}: {len(files)} JSON files in {path}")
+
+
+@app.command(rich_help_panel="Game data")
+def remove(
+    version: str = typer.Argument(
+        ..., help="Installed Deadlock client version to remove."
+    ),
+    as_json: bool = _JSON_OPT,
+) -> None:
+    """Remove one installed boon-data version from the local cache; works offline."""
+    try:
+        path = game_data.remove(version)
+    except game_data.DataError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    if as_json:
+        typer.echo(
+            _json.dumps(
+                {"client_version": path.name, "path": str(path), "removed": True},
+                indent=2,
+            )
+        )
+    else:
+        typer.echo(f"Removed {path.name} from {path}")
+
+
+@app.command(rich_help_panel="Game data")
+def versions(
+    local: bool = typer.Option(
+        False,
+        "--local",
+        help="List installed versions only; do not access the network.",
+    ),
+    as_json: bool = _JSON_OPT,
+) -> None:
+    """Show client versions, source build dates/times, and installed status."""
+    try:
+        cached = {
+            entry["client_version"]: entry for entry in game_data.local_versions()
+        }
+    except game_data.DataError as exc:
+        typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from exc
+    entries = dict(cached)
+    error = None
+    if not local:
+        try:
+            entries.update(
+                {
+                    entry["client_version"]: entry
+                    for entry in game_data.available_versions()
+                }
+            )
+        except game_data.DataError as exc:
+            error = str(exc)
+            typer.echo(f"could not list published versions: {exc}", err=True)
+    rows = []
+    for version in sorted(entries, key=int, reverse=True):
+        entry = entries[version]
+        installed = (
+            version in cached and cached[version]["artifacts"] == entry["artifacts"]
+        )
+        rows.append(
+            {
+                "client_version": version,
+                "released_at": entry["released_at"],
+                "version_date": entry.get("version_date"),
+                "version_time": entry.get("version_time"),
+                "installed": installed,
+                "path": str(game_data.BOON_DATA_DIR / version) if installed else None,
+            }
+        )
+    if as_json:
+        typer.echo(_json.dumps({"versions": rows, "error": error}, indent=2))
+    elif rows:
+        typer.echo(
+            f"{'Client version':<16} {'Version date':<13} {'Version time':<12} Installed"
+        )
+        for row in rows:
+            typer.echo(
+                f"{row['client_version']:<16} {row['version_date'] or '-':<13} "
+                f"{row['version_time'] or '-':<12} "
+                f"{'yes' if row['installed'] else 'no'}"
+            )
+    else:
+        typer.echo(
+            "no installed versions" if local or error else "no published versions"
+        )
+    if error and not rows:
+        raise typer.Exit(1)
 
 
 if __name__ == "__main__":  # pragma: no cover

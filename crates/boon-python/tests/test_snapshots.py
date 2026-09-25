@@ -122,12 +122,15 @@ def test_validation(demo: Demo) -> None:
 
 
 @pytest.mark.parametrize("cached", [False, True])
-def test_event_selection_rejects_unknown_names_consistently(cached: bool) -> None:
+@pytest.mark.parametrize("dataset", ["not_a_dataset", "healing", "barriers"])
+def test_event_selection_rejects_unknown_names_consistently(
+    cached: bool, dataset: str
+) -> None:
     parsed = Demo(_fixture())
     if cached:
         parsed.load("kills")
     with pytest.raises(ValueError, match="Unknown dataset"):
-        parsed.snapshots(events=["kills", "not_a_dataset"])
+        parsed.snapshots(events=["kills", dataset])
 
 
 def test_duplicate_snapshot_names_preserve_return_shape(demo: Demo) -> None:

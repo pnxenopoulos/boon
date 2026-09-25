@@ -114,11 +114,8 @@ struct Demo {
 #[pymodule]
 fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Demo>()?;
-    m.add_function(wrap_pyfunction!(hero_names, m)?)?;
+    m.add_function(wrap_pyfunction!(_read_catalog_names, m)?)?;
     m.add_function(wrap_pyfunction!(team_names, m)?)?;
-    m.add_function(wrap_pyfunction!(ability_names, m)?)?;
-    m.add_function(wrap_pyfunction!(ability_display_names, m)?)?;
-    m.add_function(wrap_pyfunction!(modifier_names, m)?)?;
     m.add_function(wrap_pyfunction!(game_mode_names, m)?)?;
     m.add_function(wrap_pyfunction!(patron_phase_names, m)?)?;
     m.add_function(wrap_pyfunction!(hitgroup_names, m)?)?;

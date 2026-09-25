@@ -193,7 +193,7 @@ impl Demo {
 
     /// Parse the post-match summary from the demo's ``PostMatchDetails`` event.
     ///
-    /// Returns a dictionary with five top-level keys:
+    /// Returns a dictionary with four top-level keys:
     ///
     /// - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
     ///   Snapshots are taken at intervals through the match (not every minute);
@@ -217,15 +217,7 @@ impl Demo {
     ///   category (``is_category`` true) and a specific source, so filter to
     ///   ``is_category == False`` to avoid double-counting, then ``sum``.
     ///
-    /// - ``healing``: positive recorded healing and regeneration intervals.
-    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-    ///   ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
-    ///   ``stat_type`` (``healing`` or ``regen``), and ``amount``. Duplicate category
-    ///   rows are excluded. Bounds are match-clock seconds, usually 180 seconds apart.
-    ///   These are interval totals, not individual heals. Hero IDs come from the
-    ///   match roster; player slots remain the identity across hero changes.
-    ///
-    /// The decoded message and all five frames are cached after the first call;
+    /// The decoded message and all four frames are cached after the first call;
     /// repeated calls do not parse the demo or rebuild the frames.
     ///
     /// Raises ``DemoMessageError`` if the demo contains no post-match details
@@ -242,7 +234,6 @@ impl Demo {
         dict.set_item("last_hits", PyDataFrame(frames.last_hits.clone()))?;
         dict.set_item("objectives", PyDataFrame(frames.objectives.clone()))?;
         dict.set_item("damage", PyDataFrame(frames.damage.clone()))?;
-        dict.set_item("healing", PyDataFrame(frames.healing.clone()))?;
         Ok(dict.into_any().unbind())
     }
 
@@ -574,7 +565,7 @@ impl Demo {
     /// Returns a DataFrame with columns:
     /// - hero_id: The banned hero's ID (joins to ``players.hero_id``)
     /// - hero_name: The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID
-    ///   that predates the bundled hero table
+    ///   absent from the selected boon-data catalog
     ///
     /// Read the ``BannedHeroes`` user message. The server can send this
     /// message once before the match starts. The message contains only hero
@@ -594,7 +585,18 @@ impl Demo {
             .iter()
             .map(|&id| id as i64)
             .collect();
-        let names: Vec<&'static str> = ids.iter().map(|&id| boon_parser::hero_name(id)).collect();
+        let lookup: HashMap<i64, String> = if ids.is_empty() {
+            HashMap::new()
+        } else {
+            py.import("boon")?
+                .getattr("hero_names")?
+                .call0()?
+                .extract()?
+        };
+        let names: Vec<&str> = ids
+            .iter()
+            .map(|id| lookup.get(id).map_or("HERO_NOT_FOUND", String::as_str))
+            .collect();
         let df = df_from_columns(vec![
             Column::new("hero_id".into(), ids),
             Column::new("hero_name".into(), names),

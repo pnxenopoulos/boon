@@ -866,8 +866,8 @@ class TestBannedHeroes:
             assert row["hero_name"] == names.get(row["hero_id"], "HERO_NOT_FOUND")
 
     def test_hero_ids_are_known(self, demo: Demo) -> None:
-        # HERO_NOT_FOUND means that the bundled table does not contain the hero.
-        # Regenerate heroes.rs in this case.
+        # The offline catalog fixture must include the heroes banned in test demos.
+        # Production lookups resolve names from the selected boon-data version.
         unknown = demo.banned_heroes.filter(pl.col("hero_name") == "HERO_NOT_FOUND")
         assert len(unknown) == 0, f"unknown banned hero id(s): {unknown['hero_id'].to_list()}"
 
@@ -969,7 +969,9 @@ class TestBulkLoad:
         assert isinstance(demo.kills, pl.DataFrame)
         assert isinstance(demo.damage, pl.DataFrame)
 
-    @pytest.mark.parametrize("dataset", ["not_a_real_dataset", "Healing"])
+    @pytest.mark.parametrize(
+        "dataset", ["not_a_real_dataset", "Healing", "healing", "barriers"]
+    )
     def test_load_invalid_dataset_raises(self, dataset: str) -> None:
         path = _require_demo_fixture()
         d = Demo(str(path))
@@ -1029,6 +1031,6 @@ def test_summary_repeated_access_is_stable() -> None:
         pytest.skip("demo has no post-match summary")
 
     second = demo.summary()
-    assert set(first) == {"snapshots", "last_hits", "objectives", "damage", "healing"}
+    assert set(first) == {"snapshots", "last_hits", "objectives", "damage"}
     for name in first:
         assert first[name].equals(second[name]), name

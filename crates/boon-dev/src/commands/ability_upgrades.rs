@@ -32,6 +32,7 @@ pub fn run(
 ) -> Result<()> {
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
+    let names = boon::CatalogNames::load(None)?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerController"].into_iter().collect();
 
@@ -104,7 +105,7 @@ pub fn run(
                                 tick: ctx.tick(),
                                 hero_id,
                                 ability_id,
-                                ability: boon::ability_name(ability_id).to_string(),
+                                ability: names.ability_name(ability_id).to_string(),
                                 tier: upgrade_bits.count_ones() as i32 - 1,
                             });
                         }

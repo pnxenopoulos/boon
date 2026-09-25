@@ -48,18 +48,26 @@
 //!
 //! # Name lookups
 //!
+//! Hero, ability, and modifier names come from boon-data. The first lookup
+//! downloads latest if no verified local version exists. Reuse the maps:
+//!
+//! ```no_run
+//! let names = boon::CatalogNames::load(None)?;
+//! assert_eq!(names.hero_name(1), "Infernus");
+//! # Ok::<(), boon::data::DataError>(())
+//! ```
+//!
 //! ```
 //! // Resolve numeric IDs to human-readable names
-//! assert_eq!(boon::hero_name(1), "Infernus");
 //! assert_eq!(boon::team_name(2), "Hidden King");
 //! assert_eq!(boon::team_name(3), "Archmother");
 //! assert_eq!(boon::hitgroup_name(1), "head");
 //! assert_eq!(boon::lifestate_name(0), "alive");
 //! ```
 
-pub mod abilities;
-pub mod ability_display_names;
 pub mod breakables;
+pub mod catalog_names;
+pub mod data;
 pub mod demo;
 pub mod entity;
 pub mod error;
@@ -69,16 +77,14 @@ pub mod hitgroups;
 pub mod io;
 pub mod lifestates;
 pub mod modifier_state;
-pub mod modifiers;
 pub mod patron_phases;
 pub mod position;
 pub mod stat_modifiers;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
-pub use abilities::{ability_name, all_abilities};
-pub use ability_display_names::{ability_display_name, all_ability_display_names};
 pub use breakables::{all_breakables, breakable_name};
+pub use catalog_names::CatalogNames;
 pub use demo::{
     CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name, decode_event_payload,
 };
@@ -89,14 +95,13 @@ pub use entity::{
 };
 pub use error::{Error, Result};
 pub use game_modes::{all_game_modes, game_mode_name};
-pub use heroes::{all_heroes, hero_id_for_player_slot, hero_name};
+pub use heroes::hero_id_for_player_slot;
 pub use hitgroups::{all_hitgroups, hitgroup_name};
 pub use lifestates::{all_lifestates, lifestate_name};
 pub use modifier_state::{
     EffectiveModifierState, ModifierChange, ModifierChangeKind, ModifierState,
     modifier_is_effective_at,
 };
-pub use modifiers::{all_modifiers, modifier_name};
 pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
 pub use stat_modifiers::{

@@ -72,21 +72,6 @@ impl Demo {
         self.dataset_frame(py, Dataset::Damage)
     }
 
-    /// Recorded healing and regeneration per sample interval.
-    ///
-    /// Shares the cached frame returned by ``summary()["healing"]``.
-    /// Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-    /// ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
-    /// ``stat_type`` (``healing`` or ``regen``), and ``amount``.
-    /// Bounds use match-clock seconds, usually 180 seconds apart. These are
-    /// interval totals, not individual heals. Hero IDs come from the match roster.
-    /// Category duplicates are excluded. Raises ``DemoMessageError`` when the
-    /// recording has no post-match details. Boon loads this dataset on first access.
-    #[getter]
-    pub(crate) fn healing(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
-        self.dataset_frame(py, Dataset::Healing)
-    }
-
     /// Flex slot unlock events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``team_num``.
