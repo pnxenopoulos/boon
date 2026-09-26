@@ -520,5 +520,217 @@
       "qualified_modifier_id": 229220981,
       "qualified_modifier_name": "modifier_rejuv_pickup_aura/timer"
     }
+  ],
+  "misc": [
+    {
+      "misc_id": 50204002,
+      "misc_name": "citadel_base_glass_horiz_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3508462982,
+      "misc_name": "citadel_base_glass_vert_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3719077267,
+      "misc_name": "citadel_breakable_item_container",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 4027046556,
+      "misc_name": "citadel_breakable_jar_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2168482585,
+      "misc_name": "citadel_breakable_lion_statue",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1786047166,
+      "misc_name": "citadel_breakable_prop_base",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2286845008,
+      "misc_name": "citadel_breakable_prop_box_multi",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1402417399,
+      "misc_name": "citadel_breakable_prop_car",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3017498471,
+      "misc_name": "citadel_breakable_prop_drop_gold",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3457071437,
+      "misc_name": "citadel_breakable_prop_drop_powerups",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1070887086,
+      "misc_name": "citadel_breakable_prop_pumpkin01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1413828045,
+      "misc_name": "citadel_breakable_prop_pumpkin02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2572218233,
+      "misc_name": "citadel_breakable_prop_pumpkin03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 841549549,
+      "misc_name": "citadel_breakable_prop_pumpkin04",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3040869273,
+      "misc_name": "citadel_breakable_prop_vase",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3986897915,
+      "misc_name": "citadel_breakable_prop_wooden_crate",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1467120186,
+      "misc_name": "citadel_breakable_prop_xmaspresent01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1580763103,
+      "misc_name": "citadel_breakable_prop_xmaspresent02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 4154240310,
+      "misc_name": "citadel_breakable_prop_xmaspresent03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1153939632,
+      "misc_name": "citadel_breakable_sake_barrel",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1075096886,
+      "misc_name": "citadel_breakable_wooden_crate_02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 985941184,
+      "misc_name": "citadel_breakable_wooden_crate_03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2812656400,
+      "misc_name": "vehicle_bike_flying",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 844909675,
+      "misc_name": "vehicle_car_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3283028508,
+      "misc_name": "vehicle_car_04",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 479455394,
+      "misc_name": "vehicle_car_05",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3087609631,
+      "misc_name": "vehicle_ground_ship_03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1702726906,
+      "misc_name": "vehicle_large_truck_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 818456624,
+      "misc_name": "vehicle_large_truck_02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2902681599,
+      "misc_name": "vehicle_mini_truck_03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    }
   ]
 }

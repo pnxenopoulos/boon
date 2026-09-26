@@ -6,14 +6,15 @@ is required. These commands download, verify, and store the JSON files locally.
 
 ## Automatic name lookups
 
-`hero_names()`, `ability_names()`, `ability_display_names()`, and `modifier_names()`
+`hero_names()`, `ability_names()`, `ability_display_names()`, `modifier_names()`,
+and `breakable_names()`
 read these catalogs. They use the newest verified local client version. If none
 is installed, they download the latest version automatically. An explicit
 `version="6698"` selects that client version and downloads it if missing.
 Existing installations work offline; lookup calls do not check for newer releases.
 `boon get` explicitly downloads the latest published version.
 
-The CLI and `demo.banned_heroes` follow the same policy when resolving names.
+The CLI, `demo.banned_heroes`, and `demo.breakables` follow the same policy when resolving names.
 Importing Boon or parsing datasets that contain raw IDs does not download data.
 
 Rust uses the same cache and download verification:

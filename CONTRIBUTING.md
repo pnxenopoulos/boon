@@ -19,8 +19,7 @@ boon/
 │   └── boon-python/    # Python bindings (PyO3 + pyo3-polars)
 ├── scripts/
 │   ├── sync-protos.sh                  # Fetch latest Deadlock .proto files
-│   ├── build-protos/                   # Regenerate Rust code from .proto files
-│   └── generate-name-tables/           # Regenerate the remaining breakable name table
+│   └── build-protos/                   # Regenerate Rust code from .proto files
 └── .github/workflows/ci.yml    # CI pipeline
 ```
 
@@ -118,19 +117,15 @@ The command updates the files in `crates/boon-proto/proto/`. It also regenerates
 
 ## Updating Name Data
 
-Hero, ability/item, and modifier names are read from boon-data releases at runtime.
+Hero, ability/item, modifier, and breakable names are read from boon-data releases at runtime.
 Use `boon get` to install the latest catalogs. The lookup functions select the
 newest local client version or download latest when none is installed.
 Rust callers use `CatalogNames::load`; Python functions accept `version=`.
 Update the boon-data pipeline when the source catalog format changes.
 
-The separate breakable table remains generated from `misc.vdata`:
-
-```bash
-./scripts/sync-name-tables.sh
-```
-
-The script updates only `crates/boon/src/breakables.rs`.
+Breakable subclass names use `misc_id` and `misc_name` from `misc.json` records
+whose `definition._class` is `citadel_breakable_prop`. Boon has no VData name-table
+generator or embedded breakable table.
 
 ## Release Strategy
 

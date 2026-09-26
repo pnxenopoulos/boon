@@ -952,6 +952,11 @@ Therefore, the dataset does not contain these columns. Position and team use
 the last values before the final leave.
 
 Boon does not load this dataset by default. Access the property or call `load("breakables")`.
+Subclass names come from the newest verified local boon-data `misc.json`,
+automatically downloading latest if no installation exists. The recorded
+`subclass_id` is preserved even when no catalog entry matches it. To resolve
+those IDs against a different version, use `breakable_names(version="6698")`.
+Catalog acquisition failures raise `boon.data.DataError` before parsing begins.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -1156,7 +1161,7 @@ Boon loads this dataset on first access.
 ## Name Lookup Functions
 
 Module-level functions resolve IDs to names without parsing a demo.
-`hero_names`, `ability_names`, `ability_display_names`, and `modifier_names`
+`hero_names`, `ability_names`, `ability_display_names`, `modifier_names`, and `breakable_names`
 read boon-data catalogs. Each accepts an optional `version` client-version string.
 Without it, Boon selects the newest verified local installation. If none exists,
 it downloads the latest release automatically. Explicit missing versions are
@@ -1241,6 +1246,20 @@ Boon never invents a display name by stripping prefixes or title-casing.
 name mapping.
 
 ---
+
+### `breakable_names()`
+
+```python
+from boon import breakable_names
+
+breakable_names().get(3986897915)  # -> "citadel_breakable_prop_wooden_crate"
+breakable_names(version="6698")  # explicitly select a client version
+```
+
+Returns `{subclass_id: internal_name}` from `misc.json`, restricted to records
+whose `definition._class` is `citadel_breakable_prop`. Other misc definitions
+such as pickups are excluded. IDs absent from the catalog are not in the map;
+`demo.breakables.subclass_name` uses `"BREAKABLE_NOT_FOUND"` for them.
 
 ### `game_mode_names()`
 

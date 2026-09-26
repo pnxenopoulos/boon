@@ -65,7 +65,6 @@
 //! assert_eq!(boon::lifestate_name(0), "alive");
 //! ```
 
-pub mod breakables;
 pub mod catalog_names;
 pub mod data;
 pub mod demo;
@@ -83,7 +82,6 @@ pub mod stat_modifiers;
 pub mod teams;
 
 // Re-export commonly used types at the crate root for convenience
-pub use breakables::{all_breakables, breakable_name};
 pub use catalog_names::CatalogNames;
 pub use demo::{
     CmdHeader, Context, GameEvent, MessageInfo, Parser, command_name, decode_event_payload,

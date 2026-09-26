@@ -1,6 +1,20 @@
 # 📝 Changelog
 
-## Unreleased
+## 0.10.0
+
+- Added a `demo.players` regression for match `100655353`: the player who
+  switches from Silver to Victor appears as Victor in the final roster, with
+  no Silver entry. CI downloads this fixture in the Python 3.13 job, also
+  exercising its existing chat, item-purchase, and damage regressions.
+
+- Breakable subclass names now come from boon-data `misc.json`, using `misc_id`
+  and `misc_name` for `citadel_breakable_prop` definitions. Added Python
+  `breakable_names(version=None)`; `demo.breakables` and CLI output use the same
+  automatic acquisition and local cache as other names. Raw replay subclass IDs
+  remain unchanged, and unknown IDs retain `BREAKABLE_NOT_FOUND`.
+- **Breaking (Rust):** Replaced `breakable_name` / `all_breakables` with
+  `CatalogNames::breakable_name` and `CatalogNames::breakables`. Removed the
+  embedded table and the obsolete name-table generation/sync scripts.
 
 - Hero, ability/item, localized ability, and modifier names now come from
   boon-data JSON catalogs. Removed their embedded Rust tables and generator code.

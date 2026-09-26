@@ -3,7 +3,6 @@
 import polars as pl
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR
 
 FIXTURE_PATH = FIXTURES_DIR / "100655353.dem"
@@ -16,6 +15,13 @@ def demo() -> Demo:
     replay = Demo(str(FIXTURE_PATH))
     replay.load("chat", "item_purchases")
     return replay
+
+
+def test_players_uses_victor_after_silver_swap(demo: Demo) -> None:
+    roster = demo.players
+    player = roster.filter(pl.col("steam_id") == 76561198853347303)
+    assert player.select("player_name", "hero_id").rows() == [("jejaimeb", 66)]
+    assert roster.filter(pl.col("hero_id") == 80).is_empty()
 
 
 def test_chat_uses_victor_after_silver_swap(demo: Demo) -> None:

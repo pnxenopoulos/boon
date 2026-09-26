@@ -125,8 +125,10 @@ jobs:
     env:
       # Space-separated list of public URLs for demo fixture files.
       DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/70555151/70555151.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem"
-      # This 458 MB fixture runs once. The fixture test skips in other jobs.
-      CURRENT_DEMO_URL: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/103129247/103129247.dem"
+      # Large regression fixtures run on Python 3.13; their tests skip in other jobs.
+      REGRESSION_DEMO_URLS: >-
+        https://github.com/pnxenopoulos/boon-fixtures/releases/download/103129247/103129247.dem
+        https://github.com/pnxenopoulos/boon-fixtures/releases/download/100655353/100655353.dem
 
     steps:
       - name: Checkout
@@ -156,10 +158,10 @@ jobs:
             echo "No DEMO_URLS configured — skipping fixture download"
           fi
           if [ "${{ matrix.python-version }}" = "3.13" ]; then
-            echo "Downloading $CURRENT_DEMO_URL ..."
-            curl -fSL --retry 3 \
-              -o "tests/fixtures/$(basename "$CURRENT_DEMO_URL")" \
-              "$CURRENT_DEMO_URL"
+            for url in $REGRESSION_DEMO_URLS; do
+              echo "Downloading $url ..."
+              curl -fSL --retry 3 -o "tests/fixtures/$(basename "$url")" "$url"
+            done
           fi
 
       - name: Install wheel and test dependencies

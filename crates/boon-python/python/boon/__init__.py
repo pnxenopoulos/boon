@@ -18,7 +18,13 @@ from boon.errors import (
     InvalidDemoError,
     NotStreetBrawlError,
 )
-from boon.names import ability_display_names, ability_names, hero_names, modifier_names
+from boon.names import (
+    ability_display_names,
+    ability_names,
+    breakable_names,
+    hero_names,
+    modifier_names,
+)
 
 __version__ = version("boon-deadlock")
 
@@ -39,6 +45,7 @@ __all__ = [
     "NotStreetBrawlError",
     "ability_display_names",
     "ability_names",
+    "breakable_names",
     "data",
     "game_mode_names",
     "hero_names",

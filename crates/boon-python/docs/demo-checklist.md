@@ -1,12 +1,169 @@
 # Replay verification checklist
 
-Use this checklist with the current Boon build and `scripts/check-demo.py` in the
-repository. The script requires Boon and Polars in the Python environment used
-to run it. It does not change the replay or the parser.
+Use this checklist with the demo open in the game viewer and the current Boon
+build installed. Record what you see in the viewer **before** inspecting Boon's
+answer. A successful parse alone does not establish that the data is correct.
 
-A successful parse does **not** prove that values match the game. The script
-checks API behavior and internal consistency, exports evidence, and leaves
-in-game verification to you. Complete both parts before signing off a replay.
+## Manual pass with the viewer open
+
+For each check, record **pass**, **fail**, **not observed**, or **not directly
+observable**. An event missing from this match is a coverage gap, not a pass.
+Use this log for discrepancies:
+
+| Demo tick / match clock | Player / entity | Dataset and field | Viewer observation | Boon value | Outcome / notes |
+| --- | --- | --- | --- | --- | --- |
+| | | | | | |
+
+### 1. Establish identity and time
+
+- [ ] Match ID, map, mode, player names and teams agree with `demo` metadata and
+  `demo.players`. Compare bans if the viewer exposes them.
+- [ ] Hero names agree with the viewer. Hero, ability and modifier lookups come
+  from boon-data; record the catalog client version used. A name lookup can
+  download data automatically if no verified local version is installed.
+- [ ] Compare `demo.tick_to_match_clock(tick)` with the displayed match clock
+  near the start, middle and end. Include a match pause if one occurred.
+- [ ] Record demo ticks wherever the viewer exposes them. Do not infer a tick
+  simply by multiplying the displayed match clock by the tick rate.
+- [ ] If someone switches heroes, check events before and after the switch.
+  `demo.players` describes the game-over/final snapshot, not the starting roster;
+  use player identity and event time to follow a switch.
+
+### 2. Pause at three quiet moments
+
+Choose an early, middle and late tick. Check **every player** at each tick using
+`demo.snapshots(ticks=[...])`:
+
+- [ ] Current/max health, level, alive/dead state and kills/deaths/assists match
+  the HUD or scoreboard.
+- [ ] Souls, last hits and denies match where visible. Compare the same quantity:
+  current spendable currency is not total earned souls or net worth.
+- [ ] Position and facing agree with the view/minimap. Exact world coordinates
+  and angles require a coordinate readout; a visual match checks only placement.
+- [ ] Shop/regen-zone flags and rejuvenator/rebirth possession match where
+  independently observable.
+
+### 3. Follow clear gameplay events
+
+For each event, inspect a tick before, the event tick, and a tick after. Start
+with isolated actions; use a busy fight as an additional check.
+
+- [ ] **Kills:** check at least three victims, killers and visible assist credits
+  against `kills`; confirm the corresponding K/D/A changes in `player_ticks`.
+- [ ] **Death/respawn:** follow one complete cycle; check `is_alive`, health and
+  the respawn transition. Include rebirth if present.
+- [ ] **Damage:** inspect a body shot, headshot, light/heavy melee and an ability
+  hit where available. Check source, recipient, damage and resulting health in
+  `damage`. One damage message need not equal one bullet or the net health drop
+  between two snapshots; simultaneous damage, regeneration and absorption matter.
+- [ ] **Abilities:** compare recorded casts in `abilities`, an upgrade in
+  `ability_upgrades`, and cooldown/charge transitions in `ability_ticks`.
+  `abilities` records important usage events, not necessarily every cast.
+  `ability_ticks` is change-only; retain the last state when checking later ticks.
+  Its timer timestamps use engine game time, not the displayed match clock.
+- [ ] **Items:** verify a purchase, upgrade and sale/swap if present against
+  `item_purchases`. Check the item, hero, action and timing.
+- [ ] **Chat:** verify visible text, sender, channel and current hero in `chat`.
+  Include messages after a hero switch when available.
+- [ ] **Buffs/debuffs:** compare visible application and stack changes with
+  `active_modifiers`. Check source and recipient where known. Record visible
+  expiry separately from replicated modifier removal; they may differ.
+- [ ] **Permanent pickups:** compare a visible permanent bonus with
+  `stat_modifier_events`. These are recorded bonus changes, not final attributes.
+
+### 4. Follow the map events present in this match
+
+- [ ] `objectives` and `flex_slots`: verify destruction, team, timing, patron
+  phase changes and slot unlocks.
+- [ ] `world_ticks` and `mid_boss`: verify actual match pause/resume, boss
+  spawn/death and rejuvenator events. Pausing playback is not a match pause.
+- [ ] `urn` and `rift`: follow carrier transitions/delivery-point activation,
+  and Rift activation/capture/expiry. Check teams and locations.
+- [ ] `troopers` and `neutrals`: follow a wave and a camp through combat/death;
+  compare team, location and health where visible.
+- [ ] `breakables` and `sinners_sacrifice`: verify an actual prop destruction,
+  and Sacrifice spawn/hits/reset where present.
+- [ ] For Street Brawl, check `street_brawl_ticks` and `street_brawl_rounds`
+  against round transitions, countdowns, scoring team and cumulative scores.
+  These require a Street Brawl replay.
+
+### 5. Check the ending and derived results
+
+- [ ] Winner and game-over timing agree with the viewer.
+- [ ] The four `demo.summary()` tables agree with the corresponding available
+  post-match screens: snapshots, last hits, objectives and damage. Compare like
+  categories; do not add category totals to their component rows.
+- [ ] Manually calculate one player's kill participation and death duration,
+  then compare `kill_participation()` and `time_dead()`. Death duration excludes
+  match pauses and post-game time.
+- [ ] Review `in_combat()` and `teamfights()` separately. Combat windows may lack
+  a direct viewer readout; teamfights use a heuristic and have no official
+  scoreboard answer. Do not count visual plausibility as exact verification.
+
+### 6. Record the limits of the check
+
+- [ ] Leave unobservable IDs, exact timers and coordinates marked unverified
+  unless you have an independent readout. Record HUD rounding or interpolation
+  differences rather than silently shifting ticks to make values agree.
+- [ ] Do not expect `demo.healing`, `demo.barriers()` or calculated hero stats.
+  Raw healing counters, `player_ticks.barrier` and damage shield fields remain;
+  they do not reconstruct healing or barrier events.
+- [ ] Do not compare `stat_modifier_*` directly with final UI ammo, fire rate,
+  lifesteal or resistances. These columns omit base values and some effects.
+- [ ] Record a second replay needed for missing features, such as hero switching,
+  pauses, Street Brawl, or an optional map event.
+
+## Inspect a tick while watching
+
+This uses the Python API directly. Neither `--cli` nor `--data-version` is
+required. Replace the filename and ticks with those you are viewing.
+
+```python
+import polars as pl
+from boon import Demo, hero_names
+
+demo = Demo("106996573.dem")
+ticks = [50707]
+names = hero_names()
+
+print(demo.players)
+for tick in ticks:
+    print(tick, demo.tick_to_match_clock(tick))
+
+state = demo.snapshots(["player_ticks", "world_ticks"], ticks=ticks)
+players = state["player_ticks"].with_columns(
+    pl.col("hero_id").replace_strict(names, default=None).alias("hero")
+)
+with pl.Config(tbl_rows=40, tbl_cols=12):
+    print(players.select(
+        "tick", "hero_id", "hero", "health", "max_health", "level",
+        "is_alive", "souls", "kills", "deaths", "assists",
+    ))
+    print(state["world_ticks"])
+```
+
+The helper below inspects nearby event messages. Use it for event tables with a
+`tick` column; it does not reconstruct change-only state at an arbitrary tick.
+
+```python
+def events_near(dataset: str, tick: int, seconds: float = 1.0) -> pl.DataFrame:
+    radius = round(seconds * demo.tick_rate)
+    return (
+        getattr(demo, dataset)
+        .filter(pl.col("tick").is_between(tick - radius, tick + radius))
+        .sort("tick")
+    )
+
+print(events_near("kills", ticks[0]))
+print(events_near("damage", ticks[0]))
+print(events_near("item_purchases", ticks[0]))
+```
+
+## Optional automated audit
+
+`scripts/check-demo.py` checks API behavior and internal consistency and exports
+evidence for the manual checks. It requires Boon and Polars in the environment
+used to run it. It does not change the replay or parser.
 
 ## Run the automated checks
 
@@ -15,7 +172,7 @@ From the repository root, with the current Boon build installed:
 ```bash
 python scripts/check-demo.py 106996573.dem \
   --out target/demo-checks/106996573 \
-  --ticks 50707 --cli
+  --ticks 50707
 ```
 
 Use a new output directory for each run. On Windows, enter the command on one
@@ -54,7 +211,7 @@ Output:
 - `selected_*.parquet`: player, world, and trooper snapshots at your review ticks.
 - `in_combat.parquet`, `kill_participation.parquet`, `time_dead.parquet`, and
   `teamfights.parquet`: derived metrics when their prerequisites are available.
-- `*_names.json`: the installed parser's name lookup tables.
+- `*_names.json`: the resolved name lookup tables, including those read from boon-data.
 
 `PASS` means the automated check passed. `FAIL` means an exception or a checked
 inconsistency. `REVIEW` needs human investigation, including empty datasets or
@@ -93,7 +250,7 @@ Use the known player/Steam identity, their hero history, and the event time.
   the match had no bans; some clients omit the message.
 - [ ] Name lookups: verify hero, team, ability/internal item name, localized
   ability name, modifier, game mode, patron phase, hitgroup, and lifestate labels.
-  Unknown IDs need review and possibly a name-table update.
+  Unknown IDs need review of the selected boon-data version and catalog coverage.
 - [ ] Check `tick_to_seconds`, `tick_to_clock_time`, `tick_to_match_seconds`, and
   `tick_to_match_clock` at pregame, start, middle, and end. Include a pause.
   Demo time and the displayed game clock have different semantics; record any
@@ -175,9 +332,9 @@ event. Mark missing events **not observed**, and find another replay if needed.
 - [ ] Invalid filenames, invalid dataset names, missing snapshot selectors, and
   incompatible selectors fail cleanly. Retired datasets are absent from
   `boon datasets` and rejected by `load()`/`show`/event selection.
-- [ ] `boon versions`: client version, source `VersionDate`/`VersionTime`, release
-  timestamp and installed status are plausible. Source dates have no inferred
-  timezone. `boon versions --local` works offline.
+- [ ] `boon versions`: client version, source `VersionDate`/`VersionTime`, and
+  installed status are plausible. The release timestamp remains available in
+  `--json`, not the table. Source dates have no inferred timezone. `boon versions --local` works offline.
 - [ ] `boon get VERSION` downloads the exact selected release, repeated get uses
   the verified cache, and installed JSON assets/manifest/checksums agree.
   `boon remove VERSION` removes only that local version. Test `--force` and

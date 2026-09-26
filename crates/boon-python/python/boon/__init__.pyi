@@ -56,6 +56,9 @@ def modifier_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of MurmurHash2 modifier ID to modifier name."""
     ...
 
+def breakable_names(version: str | None = None) -> dict[int, str]:
+    """Return breakable subclass IDs mapped to internal names from misc.json."""
+
 def game_mode_names() -> dict[int, str]:
     """Return a mapping of game mode ID to game mode name."""
     ...
@@ -828,6 +831,8 @@ class Demo:
         does not report a final health-zero or dead state.
 
         Not loaded by default. Access this property or call load("breakables") explicitly.
+        Subclass names use boon-data misc.json, downloading latest if no verified
+        local data exists. Recorded IDs are preserved even when names are unknown.
 
         Columns:
             - **tick** (*int*) -- The game tick when the prop was broken.

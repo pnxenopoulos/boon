@@ -18,7 +18,7 @@ def _names(version: str | None):
     try:
         signature = tuple(
             (stat.st_mtime_ns, stat.st_size)
-            for name in ("heroes", "abilities", "modifiers")
+            for name in ("heroes", "abilities", "modifiers", "misc")
             for stat in [(directory / f"{name}.json").stat()]
         )
         return _read_names(directory, signature)
@@ -54,3 +54,12 @@ def modifier_names(version: str | None = None) -> dict[int, str]:
     names raise DataError rather than choosing a definition arbitrarily.
     """
     return _names(version)[3].copy()
+
+
+def breakable_names(version: str | None = None) -> dict[int, str]:
+    """Breakable subclass IDs to internal names from misc.json.
+
+    Includes only records whose definition._class is citadel_breakable_prop.
+    Uses the same version selection and automatic acquisition as hero_names().
+    """
+    return _names(version)[4].copy()

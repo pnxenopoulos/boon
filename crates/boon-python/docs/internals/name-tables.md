@@ -1,6 +1,6 @@
 # Name lookups
 
-Hero, ability/item, and modifier names come from versioned
+Hero, ability/item, modifier, and breakable names come from versioned
 [boon-data](https://github.com/pnxenopoulos/boon-data) JSON catalogs.
 Boon does not embed these maps in its source or compiled package.
 
@@ -14,6 +14,10 @@ Boon does not embed these maps in its source or compiled package.
 - `modifiers.json`: both `modifier_id` and `qualified_modifier_id` are accepted.
   They resolve to `modifier_name` and `qualified_modifier_name`, respectively.
 
+- `misc.json`: records with `definition._class = "citadel_breakable_prop"`
+  supply `misc_id` to `misc_name` lookups. The ID matches the replay's raw
+  breakable `m_nSubclassID`; names are not inferred from a prefix.
+
 String tokens are unsigned MurmurHash2 hashes with seed `0x31415926`.
 Boon consumes the IDs already computed by boon-data; it does not rehash names.
 Repeated definitions can share an ID and name. A name map deduplicates those
@@ -26,7 +30,7 @@ IDs absent from the selected catalog remain unresolved; no names are invented.
 Python name functions accept `version=None`. The default chooses the newest
 verified local client version. With no valid local installation, Boon downloads
 latest from the version index. An explicit version is downloaded if missing.
-The Python CLI and `demo.banned_heroes` use these same functions.
+The Python CLI, `demo.banned_heroes`, and `demo.breakables` use these same functions.
 
 Rust callers use `CatalogNames::load(None)` or `CatalogNames::load(Some("6698"))`.
 `boon-dev` also uses this loader. Keep the returned maps across a parse so each
@@ -46,9 +50,8 @@ the caller. This method does not use the network.
 ## Other lookup tables
 
 Protocol enums for teams, game modes, hitgroups, life states, and patron phases
-remain in Boon. The separate breakable subclass lookup is still generated from
-`misc.vdata` by `scripts/sync-name-tables.sh`. That script only updates breakables;
-it cannot regenerate embedded hero, ability, or modifier tables.
+remain in Boon. All VData name lookups come from boon-data; no name-table
+generation script is needed.
 
 If the published index has no designated `latest` (for example, after only
 historical backfills), automatic downloads use the highest published client

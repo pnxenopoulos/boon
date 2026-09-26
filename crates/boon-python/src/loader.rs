@@ -93,6 +93,16 @@ impl Demo {
             return Ok(());
         }
 
+        // Resolve once, before advancing the parser, so acquisition failures are retryable.
+        let breakable_names: HashMap<u32, String> = if load_breakables {
+            py.import("boon")?
+                .getattr("breakable_names")?
+                .call0()?
+                .extract()?
+        } else {
+            HashMap::new()
+        };
+
         // One-pass fast path: if everything still to load is a parallel-safe
         // snapshot dataset (player_ticks / world_ticks / troopers), decode them
         // together in a single parallel keyframe-segmented pass and skip the
@@ -2570,7 +2580,12 @@ impl Demo {
                 bk_entity_id.push(id.index);
                 bk_entity_serial.push(id.serial);
                 bk_subclass_id.push(state.subclass_id);
-                bk_subclass_name.push(boon_parser::breakable_name(state.subclass_id).to_string());
+                bk_subclass_name.push(
+                    breakable_names
+                        .get(&state.subclass_id)
+                        .map_or("BREAKABLE_NOT_FOUND", String::as_str)
+                        .to_owned(),
+                );
                 bk_team_num.push(state.team_num);
                 bk_x.push(state.x);
                 bk_y.push(state.y);

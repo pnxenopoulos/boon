@@ -38,4 +38,6 @@ from . import (
 
 def _read_catalog_names(
     directory: Path,
-) -> tuple[dict[int, str], dict[int, str], dict[str, str], dict[int, str]]: ...
+) -> tuple[
+    dict[int, str], dict[int, str], dict[str, str], dict[int, str], dict[int, str]
+]: ...

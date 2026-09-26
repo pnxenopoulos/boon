@@ -85,6 +85,7 @@ pub(super) fn _read_catalog_names(py: Python<'_>, directory: PathBuf) -> PyResul
         names.abilities,
         names.ability_display_names,
         names.modifiers,
+        names.breakables,
     )
         .into_py_any(py)
 }

@@ -100,7 +100,7 @@ let x = entity.get_by_name(
 
 - `CatalogNames::load(version)` &mdash; load verified boon-data names, downloading missing data
 - `CatalogNames::ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
-- `breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
+- `CatalogNames::breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
 - `CatalogNames::modifier_name(id)` &mdash; resolve a modifier hash to its name
 - `decode_stat_modifier_value_type(value_type)` &mdash; normalize observed cross-build stat-modifier enum values
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload

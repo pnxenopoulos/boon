@@ -17,6 +17,8 @@ pub struct CatalogNames {
     pub ability_display_names: HashMap<String, String>,
     /// Both unqualified and owner-qualified modifier tokens.
     pub modifiers: HashMap<u32, String>,
+    /// Breakable subclass IDs and internal names from misc.json.
+    pub breakables: HashMap<u32, String>,
 }
 
 #[derive(Deserialize)]
@@ -47,6 +49,19 @@ struct Modifier {
     modifier_name: String,
     qualified_modifier_id: u32,
     qualified_modifier_name: String,
+}
+
+#[derive(Deserialize)]
+struct Misc {
+    misc_id: u32,
+    misc_name: String,
+    definition: MiscDefinition,
+}
+
+#[derive(Deserialize)]
+struct MiscDefinition {
+    #[serde(rename = "_class")]
+    class: Option<String>,
 }
 
 fn read<T: serde::de::DeserializeOwned>(directory: &Path, name: &str) -> Result<Catalog<T>> {
@@ -90,10 +105,13 @@ impl CatalogNames {
         let heroes: Catalog<Hero> = read(directory, "heroes")?;
         let abilities: Catalog<Ability> = read(directory, "abilities")?;
         let modifiers: Catalog<Modifier> = read(directory, "modifiers")?;
+        let misc: Catalog<Misc> = read(directory, "misc")?;
         if heroes.client_version != abilities.client_version
             || heroes.source_commit != abilities.source_commit
             || heroes.client_version != modifiers.client_version
             || heroes.source_commit != modifiers.source_commit
+            || heroes.client_version != misc.client_version
+            || heroes.source_commit != misc.source_commit
         {
             return Err(DataError::Invalid(
                 "name catalogs belong to different snapshots".into(),
@@ -137,6 +155,11 @@ impl CatalogNames {
                 modifier.qualified_modifier_name,
             )?;
         }
+        for entry in misc.records {
+            if entry.definition.class.as_deref() == Some("citadel_breakable_prop") {
+                insert(&mut names.breakables, entry.misc_id, entry.misc_name)?;
+            }
+        }
         Ok(names)
     }
 
@@ -154,6 +177,12 @@ impl CatalogNames {
 
     pub fn ability_display_name(&self, name: &str) -> Option<&str> {
         self.ability_display_names.get(name).map(String::as_str)
+    }
+
+    pub fn breakable_name(&self, id: u32) -> &str {
+        self.breakables
+            .get(&id)
+            .map_or("BREAKABLE_NOT_FOUND", String::as_str)
     }
 
     pub fn modifier_name(&self, id: u32) -> &str {
@@ -196,7 +225,26 @@ mod tests {
         );
         let modifier = json!({"modifier_id": 123, "modifier_name": "buff", "qualified_modifier_id": 456, "qualified_modifier_name": "new_item/buff"});
         write(directory.path(), "modifiers", json!([modifier, modifier]));
+        write(
+            directory.path(),
+            "misc",
+            json!([
+                {"misc_id": 3986897915_u32, "misc_name": "citadel_breakable_prop_wooden_crate", "definition": {"_class": "citadel_breakable_prop"}},
+                {"misc_id": 844909675, "misc_name": "vehicle_car_01", "definition": {"_class": "citadel_breakable_prop"}},
+                {"misc_id": 1, "misc_name": "citadel_breakable_not_a_prop", "definition": {"_class": "citadel_pickup_modifier", "child": {"_class": "citadel_breakable_prop"}}},
+                {"misc_id": 2, "misc_name": "template", "definition": {}},
+            ]),
+        );
         let names = CatalogNames::from_directory(directory.path()).unwrap();
+        assert_eq!(
+            names.breakable_name(3986897915),
+            "citadel_breakable_prop_wooden_crate"
+        );
+        assert_eq!(names.breakable_name(844909675), "vehicle_car_01");
+        assert_eq!(names.breakable_name(1), "BREAKABLE_NOT_FOUND");
+        assert_eq!(names.breakable_name(2), "BREAKABLE_NOT_FOUND");
+        assert_eq!(names.breakable_name(u32::MAX), "BREAKABLE_NOT_FOUND");
+        assert_eq!(names.breakables.len(), 2);
         assert_eq!(names.hero_name(123), "New Hero");
         assert_eq!(names.hero_name(456), "hero_hidden");
         assert_eq!(names.hero_name(1), "HERO_NOT_FOUND");
@@ -224,16 +272,19 @@ mod tests {
     #[test]
     fn rejects_mixed_snapshots_and_wrong_catalog_types() {
         let directory = tempfile::tempdir().unwrap();
-        for name in ["heroes", "abilities", "modifiers"] {
+        for name in ["heroes", "abilities", "modifiers", "misc"] {
             write(directory.path(), name, json!([]));
         }
-        let path = directory.path().join("heroes.json");
-        let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        for field in ["client_version", "source_commit", "catalog"] {
-            let mut bad = original.clone();
-            bad[field] = json!("different");
-            fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
-            assert!(CatalogNames::from_directory(directory.path()).is_err());
+        for catalog in ["heroes", "misc"] {
+            let path = directory.path().join(format!("{catalog}.json"));
+            let original: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            for field in ["client_version", "source_commit", "catalog"] {
+                let mut bad = original.clone();
+                bad[field] = json!("different");
+                fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
+                assert!(CatalogNames::from_directory(directory.path()).is_err());
+            }
+            fs::write(&path, serde_json::to_vec(&original).unwrap()).unwrap();
         }
     }
 }
