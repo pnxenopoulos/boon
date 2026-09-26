@@ -24,14 +24,14 @@ Use this log for discrepancies:
 - [ ] Compare `demo.tick_to_match_clock(tick)` with the displayed match clock
   near the start, middle and end. Include a match pause if one occurred.
 - [ ] Record demo ticks wherever the viewer exposes them. Do not infer a tick
-  simply by multiplying the displayed match clock by the tick rate.
-- [ ] If someone switches heroes, check events before and after the switch.
+  by multiplying the displayed match clock by the tick rate.
+- [ ] If a player switches heroes, compare events before and after the switch.
   `demo.players` describes the game-over/final snapshot, not the starting roster;
   use player identity and event time to follow a switch.
 
 ### 2. Pause at three quiet moments
 
-Choose an early, middle and late tick. Check **every player** at each tick using
+Choose an early, middle and late tick. Do a check of **each player** at each tick with
 `demo.snapshots(ticks=[...])`:
 
 - [ ] Current/max health, level, alive/dead state and kills/deaths/assists match
@@ -39,7 +39,7 @@ Choose an early, middle and late tick. Check **every player** at each tick using
 - [ ] Souls, last hits and denies match where visible. Compare the same quantity:
   current spendable currency is not total earned souls or net worth.
 - [ ] Position and facing agree with the view/minimap. Exact world coordinates
-  and angles require a coordinate readout; a visual match checks only placement.
+  and angles require a coordinate readout; a visual comparison shows only placement.
 - [ ] Shop/regen-zone flags and rejuvenator/rebirth possession match where
   independently observable.
 
@@ -48,26 +48,26 @@ Choose an early, middle and late tick. Check **every player** at each tick using
 For each event, inspect a tick before, the event tick, and a tick after. Start
 with isolated actions; use a busy fight as an additional check.
 
-- [ ] **Kills:** check at least three victims, killers and visible assist credits
+- [ ] **Kills:** compare at least three victims, killers and visible assist credits
   against `kills`; confirm the corresponding K/D/A changes in `player_ticks`.
-- [ ] **Death/respawn:** follow one complete cycle; check `is_alive`, health and
+- [ ] **Death/respawn:** observe one full cycle; compare `is_alive`, health and
   the respawn transition. Include rebirth if present.
 - [ ] **Damage:** inspect a body shot, headshot, light/heavy melee and an ability
-  hit where available. Check source, recipient, damage and resulting health in
-  `damage`. One damage message need not equal one bullet or the net health drop
+  hit where available. Compare source, recipient, damage and resulting health with
+  `damage`. One damage message can differ from one bullet or the net health decrease
   between two snapshots; simultaneous damage, regeneration and absorption matter.
 - [ ] **Abilities:** compare recorded casts in `abilities`, an upgrade in
   `ability_upgrades`, and cooldown/charge transitions in `ability_ticks`.
   `abilities` records important usage events, not necessarily every cast.
-  `ability_ticks` is change-only; retain the last state when checking later ticks.
+  `ability_ticks` is change-only; retain the last state for comparisons with later ticks.
   Its timer timestamps use engine game time, not the displayed match clock.
 - [ ] **Items:** verify a purchase, upgrade and sale/swap if present against
-  `item_purchases`. Check the item, hero, action and timing.
+  `item_purchases`. Compare the item, hero, action and timing.
 - [ ] **Chat:** verify visible text, sender, channel and current hero in `chat`.
   Include messages after a hero switch when available.
 - [ ] **Buffs/debuffs:** compare visible application and stack changes with
-  `active_modifiers`. Check source and recipient where known. Record visible
-  expiry separately from replicated modifier removal; they may differ.
+  `active_modifiers`. Compare source and recipient where known. Record visible
+  expiry separately from replicated modifier removal; they can differ.
 - [ ] **Permanent pickups:** compare a visible permanent bonus with
   `stat_modifier_events`. These are recorded bonus changes, not final attributes.
 
@@ -78,16 +78,16 @@ with isolated actions; use a busy fight as an additional check.
 - [ ] `world_ticks` and `mid_boss`: verify actual match pause/resume, boss
   spawn/death and rejuvenator events. Pausing playback is not a match pause.
 - [ ] `urn` and `rift`: follow carrier transitions/delivery-point activation,
-  and Rift activation/capture/expiry. Check teams and locations.
+  and Rift activation/capture/expiry. Compare teams and locations.
 - [ ] `troopers` and `neutrals`: follow a wave and a camp through combat/death;
   compare team, location and health where visible.
 - [ ] `breakables` and `sinners_sacrifice`: verify an actual prop destruction,
   and Sacrifice spawn/hits/reset where present.
-- [ ] For Street Brawl, check `street_brawl_ticks` and `street_brawl_rounds`
+- [ ] For Street Brawl, compare `street_brawl_ticks` and `street_brawl_rounds`
   against round transitions, countdowns, scoring team and cumulative scores.
   These require a Street Brawl replay.
 
-### 5. Check the ending and derived results
+### 5. Compare the ending and calculated results
 
 - [ ] Winner and game-over timing agree with the viewer.
 - [ ] The four `demo.summary()` tables agree with the corresponding available
@@ -96,8 +96,8 @@ with isolated actions; use a busy fight as an additional check.
 - [ ] Manually calculate one player's kill participation and death duration,
   then compare `kill_participation()` and `time_dead()`. Death duration excludes
   match pauses and post-game time.
-- [ ] Review `in_combat()` and `teamfights()` separately. Combat windows may lack
-  a direct viewer readout; teamfights use a heuristic and have no official
+- [ ] Review `in_combat()` and `teamfights()` separately. Combat windows can have no
+  direct viewer readout; teamfights use a heuristic and have no official
   scoreboard answer. Do not count visual plausibility as exact verification.
 
 ### 6. Record the limits of the check
@@ -110,8 +110,8 @@ with isolated actions; use a busy fight as an additional check.
   they do not reconstruct healing or barrier events.
 - [ ] Do not compare `stat_modifier_*` directly with final UI ammo, fire rate,
   lifesteal or resistances. These columns omit base values and some effects.
-- [ ] Record a second replay needed for missing features, such as hero switching,
-  pauses, Street Brawl, or an optional map event.
+- [ ] Record a second replay with features absent from the first. Examples include
+  hero switching, pauses, Street Brawl, and optional map events.
 
 ## Inspect a tick while watching
 
@@ -161,7 +161,7 @@ print(events_near("item_purchases", ticks[0]))
 
 ## Optional automated audit
 
-`scripts/check-demo.py` checks API behavior and internal consistency and exports
+`scripts/check-demo.py` does checks of API behavior and internal consistency. It exports
 evidence for the manual checks. It requires Boon and Polars in the environment
 used to run it. It does not change the replay or parser.
 
@@ -189,7 +189,7 @@ RAM and space for the Parquet files. Use `--skip-troopers` to export sampled
 troopers only; full trooper coverage will explicitly remain unverified.
 `--cli` launches additional parses to exercise the CLI.
 
-To also check real data downloads and removal:
+To also do checks of real data downloads and removal:
 
 ```bash
 python scripts/check-demo.py 106996573.dem \
@@ -213,8 +213,8 @@ Output:
   `teamfights.parquet`: derived metrics when their prerequisites are available.
 - `*_names.json`: the resolved name lookup tables, including those read from boon-data.
 
-`PASS` means the automated check passed. `FAIL` means an exception or a checked
-inconsistency. `REVIEW` needs human investigation, including empty datasets or
+`PASS` means the automated check passed. `FAIL` means an exception or an
+inconsistency. `REVIEW` identifies results for human investigation, including empty datasets or
 missing post-match data. `SKIP` means a path was not exercised. Exit code 1 means
 at least one failure; exit code 0 **does not** mean manual verification is complete.
 The script writes the report after each check, so partial progress survives a
@@ -229,7 +229,7 @@ No single replay can prove every feature. Track which file covers each case:
 - [ ] Early hero switch, including subsequent chat and purchases. Match
   `100655353.dem` is the existing Silver-to-Victor regression example.
 - [ ] Pause/resume, death/respawn, and rebirth/rejuvenator if available.
-- [ ] Older supported client: check absent fields and unknown name IDs explicitly.
+- [ ] Earlier supported client: do a check of absent fields and unknown name IDs.
 - [ ] Incomplete/late-start replay: missing pregame/end/summary must be handled
   honestly. A missing frame is not a zero-valued match statistic.
 - [ ] Replays containing the optional events below, including both captured and
@@ -250,7 +250,7 @@ Use the known player/Steam identity, their hero history, and the event time.
   the match had no bans; some clients omit the message.
 - [ ] Name lookups: verify hero, team, ability/internal item name, localized
   ability name, modifier, game mode, patron phase, hitgroup, and lifestate labels.
-  Unknown IDs need review of the selected boon-data version and catalog coverage.
+  For unknown IDs, examine the selected boon-data version and catalog contents.
 - [ ] Check `tick_to_seconds`, `tick_to_clock_time`, `tick_to_match_seconds`, and
   `tick_to_match_clock` at pregame, start, middle, and end. Include a pause.
   Demo time and the displayed game clock have different semantics; record any
@@ -260,8 +260,7 @@ Use the known player/Steam identity, their hero history, and the event time.
 
 ### Every registered dataset
 
-Use one clear event of each kind, then check at least one boundary or repeated
-event. Mark missing events **not observed**, and find another replay if needed.
+Use one clear event of each kind. Then do a check of a boundary or repeated event. Mark missing events **not observed**, and find another replay if necessary.
 
 | Dataset | What to compare with the replay |
 | --- | --- |
@@ -270,7 +269,7 @@ event. Mark missing events **not observed**, and find another replay if needed.
 | `kills` | Victim, killer, assistants, and tick for several kills, including any unusual death. |
 | `damage` | Attacker/victim, ability/weapon, damage, remaining health, crit/hitgroup, melee flags, and available shield/message fields. Check light/heavy melee and lethal overkill. Messages are not necessarily individual bullets. |
 | `abilities` | Who cast which ability and when. Distinguish signature casts from movement abilities where applicable. |
-| `ability_upgrades` | Which hero spent an ability point, on which ability, and the resulting tier. Older demos may have no supported upgrade data. |
+| `ability_upgrades` | Which hero spent an ability point, on which ability, and the resulting tier. Earlier demos can have no supported upgrade data. |
 | `ability_ticks` | Cooldown start/end and charge changes around a cast/recharge. This table is change-only; absence of a row on a later tick is not absence of the ability. |
 | `item_purchases` | Purchase, upgrade, sell/swap events that occur; verify item and hero identity after a hero switch. |
 | `chat` | Message text, sender, channel/team information, and the hero active when the message was sent. |
@@ -278,7 +277,7 @@ event. Mark missing events **not observed**, and find another replay if needed.
 | `objectives` | Objective identity/team, health changes, destruction, and patron phase transitions when recorded. |
 | `mid_boss` | Spawn/kill and recorded rejuvenator pickup/use/expiry events. |
 | `rift` | Announcement, activation, capture **or** expiry, winning team, lane and location. A Rift still active at EOF is omitted. |
-| `troopers` | One wave's team, lane, position and health; compare sampled rows with the full table. Entity indices may be reused later. |
+| `troopers` | One wave's team, lane, position and health; compare sampled rows with the full table. The game can reuse entity indices later. |
 | `neutrals` | A camp's entity identity, location and state changes through combat/death. This is not a full per-tick table. |
 | `breakables` | A visible destroyed prop, its position and entity/serial; moving out of view or a keyframe replacement must not create a false destruction. |
 | `sinners_sacrifice` | Spawn, hit and reset; attacker when known, damage and final tick health. Multiple hits in a tick can share end-of-tick health. |
@@ -290,24 +289,24 @@ event. Mark missing events **not observed**, and find another replay if needed.
 
 - [ ] All 22 rows above have a recorded outcome or an explicit coverage gap.
 - [ ] The recorded `player_ticks.barrier`, healing counters, and damage-message
-  shield fields are checked only as their documented raw observations. There is
+  shield fields are compared only with their documented raw observations. There is
   no `demo.healing`, `demo.barriers()`, or calculated hero-attribute API.
 - [ ] Check `stat_modifier_values_available` and `unknown_stat_modifier_count`.
   Never compare `stat_modifier_*` directly with final UI resistances/fire rate.
 - [ ] Do not require `health <= max_health` at every transitional tick without
-  checking the game; temporary health effects and replication can complicate it.
+  a comparison with the game; temporary health effects and replication can complicate it.
 
 ### Summary and derived metrics
 
 - [ ] `summary()` has exactly `snapshots`, `last_hits`, `objectives`, `damage`.
   Compare final kills/deaths/assists, net worth, last hits, objectives and damage
   totals with the scoreboard and post-match screens.
-- [ ] In `summary_damage`, filter `stat_type` to the quantity being checked and
+- [ ] In `summary_damage`, filter `stat_type` to the quantity for comparison and
   exclude category duplicates (`is_category=False`). Values are interval
   amounts; summing categories and individual sources double-counts them.
   Raw healing/regen categories remain part of this original matrix.
 - [ ] `kill_participation()`: manually count kills, assists and team kills for
-  one hero; test a bounded interval too. No team kills should produce a null ratio.
+  one hero; test a bounded interval too. If the team has no kills, the ratio is null.
 - [ ] `in_combat()`: inspect entry/exit around one hero hit and one NPC hit;
   compare with the recorded combat window, including pause behavior.
 - [ ] `time_dead()`: verify one death/respawn interval and a player's match total;
@@ -321,10 +320,10 @@ event. Mark missing events **not observed**, and find another replay if needed.
 
 - [ ] Fresh property access, bulk `load()`, repeated access, and duplicate load
   requests produce consistent data. The script exercises the bulk/cache paths;
-  use `Demo(path, preload=False)` to spot-check independent lazy loads below.
+  use `Demo(path, preload=False)` for checks of separate lazy loads below.
 - [ ] Snapshot selection works for single/list ticks, windows, `every`, `seconds`,
   and event unions. Single-dataset results are frames; multiple datasets return
-  a dictionary. The script compares sampled rows against full frames and checks
+  a dictionary. The script compares sampled rows against full frames and does a check of
   the fresh versus cached event path.
 - [ ] `boon --version`, `verify`, `info`, `players`, `datasets`, `show`, `summary`,
   and each supported `stats --metric` command agree with the Python results.
@@ -355,7 +354,7 @@ tick, hero = 50707, 66
 players = pl.scan_parquet(folder / "player_ticks.parquet")
 print(players.filter((pl.col("tick") == tick) & (pl.col("hero_id") == hero)).collect())
 
-# Inspect nearby messages; a kill/cast/hit need not occur at the exact selected tick.
+# Inspect nearby messages; a kill/cast/hit can occur at a different tick.
 hits = pl.scan_parquet(folder / "damage.parquet")
 print(hits.filter(
     pl.col("tick").is_between(tick - 64, tick + 64)
@@ -368,7 +367,7 @@ print(matrix.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
       .group_by("dealer_player_slot").agg(pl.col("damage").sum()))
 ```
 
-A fresh lazy load can be checked against the exported bulk-loaded evidence:
+Compare a fresh lazy load with the exported evidence from the bulk load:
 
 ```python
 from boon import Demo

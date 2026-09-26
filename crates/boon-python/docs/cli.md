@@ -143,7 +143,7 @@ how client versions differ from replay build numbers.
 
 `boon-dev` is a low-level debugging CLI, built from the `boon-dev` crate. It is
 **not shipped** — there are no release binaries and no crates.io package. Build
-it from source when you need it:
+it from source:
 
 ```bash
 cargo build --release -p boon-dev

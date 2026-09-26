@@ -21,7 +21,7 @@ Runs use explicit local demo files and separate processes for each case.
 They record build and input fingerprints, thread settings, initialization and
 operation times, output sizes, process peak RSS where supported, and output
 fingerprints. Downloads are excluded; install catalogs with `boon get` before
-benchmarking features that need names.
+measurements of features that use names.
 
 Use the same harness and environment for both revisions. Compare the reports:
 

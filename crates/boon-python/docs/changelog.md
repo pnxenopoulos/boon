@@ -2,6 +2,9 @@
 
 ## 0.10.0
 
+- Corrected more documentation vocabulary against confirmed ASD-STE100 entries.
+  The full dictionary and contextual vocabulary review are still incomplete.
+
 - Removed the unreachable serial snapshot collector. Player, world, and trooper
   snapshots use the existing parallel collector for all load requests.
 - Shared Rift lane identification between the Rust CLI and Python bindings.

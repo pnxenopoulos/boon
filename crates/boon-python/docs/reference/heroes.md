@@ -14,7 +14,7 @@ for hero_id, name in sorted(names.items()):
 
 The catalog's `hero_id` comes from the hero definition's `m_HeroID`.
 Names use English localization when available and internal names otherwise.
-Templates without a hero ID are omitted. Unreleased and test heroes may appear.
+Templates without a hero ID are omitted. Unreleased and test heroes can appear.
 Unknown IDs have no mapping in that snapshot.
 
 Names and available heroes can change between client versions. See {doc}`../data`

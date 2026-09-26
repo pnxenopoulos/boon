@@ -8,7 +8,7 @@ The file name usually contains the match ID. For example, `70555151.dem` contain
 ## Why does boon return Polars DataFrames instead of pandas?
 
 [Polars](https://pola.rs) is fast for common replay analysis operations. These operations include filters, groups, and joins.
-Polars also uses memory efficiently. Use `df.to_pandas()` when you need a pandas DataFrame.
+Polars also uses memory efficiently. Use `df.to_pandas()` to get a pandas DataFrame.
 
 ## Why do DataFrames use integer IDs instead of names?
 
@@ -59,4 +59,4 @@ The repository also contains the low-level `boon-dev` debug tool. Build it with 
 
 ## Something is not working. Where do I report it?
 
-Check {doc}`known-issues` first. If the page does not list the problem, create a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in [Discord](https://discord.gg/WmjZHxWrCD).
+Read {doc}`known-issues` first. If the page does not list the problem, create a [GitHub issue](https://github.com/pnxenopoulos/boon/issues) or ask in [Discord](https://discord.gg/WmjZHxWrCD).

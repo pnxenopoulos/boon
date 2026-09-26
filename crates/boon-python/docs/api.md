@@ -287,7 +287,7 @@ The totals use the same time limits as `regulation_ticks` and
 | `pct_regulation_dead` | `float` | `ticks_dead / regulation_ticks` as a percentage in `[0, 100]` |
 
 **Raises:** `ValueError` — If the demo has no game-over event (regulation time,
-and therefore this metric, is undefined).
+and thus this metric, is undefined).
 
 (in-combat)=
 
@@ -415,7 +415,7 @@ demo.winning_team_num  # int | None
 ```
 
 The team number of the winning team, or `None` if no game-over event was found.
-Uses the cached `k_EUserMsg_GameOver` event, or scans for it if needed.
+Uses the cached `k_EUserMsg_GameOver` event, or scans for it if necessary.
 
 ---
 
@@ -426,7 +426,7 @@ demo.game_over_tick  # int | None
 ```
 
 The tick when the game ended, or `None` if no game-over event was found.
-Uses the cached `k_EUserMsg_GameOver` event, or scans for it if needed.
+Uses the cached `k_EUserMsg_GameOver` event, or scans for it if necessary.
 
 ---
 
@@ -1292,7 +1292,7 @@ Return unqualified and owner-qualified modifier IDs mapped to their correspondin
 names. For example, an owner-qualified token resolves to
 `ability_afterburn/modifier_afterburn_dot`. Repeated records with the same ID and
 name share one entry. Conflicting names raise `DataError`; use the raw boon-data
-record indexes when you need all candidate definitions and their effects.
+record indexes to get all candidate definitions and their effects.
 
 **Returns:** `dict[int, str]` -- Modifier hash to name mapping.
 

@@ -11,7 +11,7 @@ and `breakable_names()`
 read these catalogs. They use the newest verified local client version. If none
 is installed, they download the latest version automatically. An explicit
 `version="6698"` selects that client version and downloads it if missing.
-Existing installations work offline; lookup calls do not check for newer releases.
+Existing installations work offline; lookup calls do not search for newer releases.
 `boon get` explicitly downloads the latest published version.
 
 The CLI, `demo.banned_heroes`, and `demo.breakables` follow the same policy when resolving names.
@@ -27,8 +27,7 @@ let historical = boon::CatalogNames::load(Some("6698"))?;
 ```
 
 Keep the returned Rust object for repeated lookups. `CatalogNames::from_directory`
-reads a locally built catalog directory without downloading or checking manifest
-hashes. `CatalogNames::load` verifies installed release files before reading them.
+reads a locally built catalog directory without downloads or manifest hash checks. `CatalogNames::load` verifies installed release files before reading them.
 
 ## Download a client version
 
@@ -138,7 +137,7 @@ for entry in data.local_versions():
 | `data.catalog_path(name, version=None)` | Return a verified local path; accepts `abilities` or `abilities.json` |
 
 Read helpers without a version prefer the newest installed client version.
-`data.update()` always checks the online index for the latest version.
+`data.update()` always reads the online index to find the latest version.
 `data.DataError` reports network, metadata, filesystem, and integrity failures.
 Set `data.BOON_DATA_DIR` to a `Path` to redirect an existing process.
 
@@ -147,7 +146,7 @@ Set `data.BOON_DATA_DIR` to a `Path` to redirect an existing process.
 A Deadlock `ClientVersion` is independent of Boon's package version.
 Boon does not map it to `demo.build`. Opening a `Demo` does not select a
 catalog version. Name lookups use the selection policy described above.
-Select `version=` explicitly when you need names from a particular client.
+Select `version=` explicitly to get names from a particular client.
 
 Catalogs provide names and definitions. They do not add calculated hero stats
 or change the raw IDs and values recorded in a demo.

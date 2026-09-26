@@ -77,8 +77,8 @@ this codebase. Do not enable all pedantic or nursery lints at once.
 - Parse public string inputs into typed values before internal dispatch.
 - Return errors for failed input or data operations. Reserve `expect` for
   documented invariants that indicate a programming error.
-- Borrow data used only for inspection or serialization. Clone when the caller
-  needs independent ownership.
+- Borrow data used only for inspection or serialization. Clone when independent ownership is necessary
+  for the caller.
 - Preserve absent fields when applying partial replay updates.
 - Document unsafe operations and keep their scope small.
 - Keep examples fallible with `?`, and test behavior that a refactor could change.
@@ -94,8 +94,8 @@ uv run --no-sync ty check python/boon
 uv run --no-sync sphinx-build -W -b html docs docs/_build/html
 ```
 
-CI checks the Python package with Ruff and ty. The quality dependency group
-pins their versions. Update these pins together after checking new diagnostics.
+CI uses Ruff and ty for checks of the Python package. The quality dependency group
+pins their versions. Update these pins together after a review of new diagnostics.
 Use `uv run --no-sync pytest tests/` after building the extension or installing
 a wheel. This prevents uv from replacing the build under test.
 
@@ -103,11 +103,11 @@ a wheel. This prevents uv from replacing the build under test.
 
 Use [ASD-STE100](https://www.asd-ste100.org/) as the writing target for maintained documentation, API text,
 command help, and code comments. A plain-language review alone does not establish
-full compliance. Check approved words, meanings, and technical terms before
+full compliance. Do a check of approved words, meanings, and technical terms before
 claiming compliance with the standard.
 
 - Use active voice.
-- Put one main idea in each sentence.
+- Put one idea in each sentence.
 - Limit descriptive sentences to 25 words. Limit procedural sentences to 20 words.
 - Use the same term for the same thing.
 - Do not use contractions.
@@ -288,4 +288,4 @@ See [the benchmark guide](crates/boon-python/benchmarks/README.md) for Python
 API workloads, Rust parser phases, before/after comparisons and profiling.
 Build optimized binaries, keep the benchmark harness identical across revisions,
 and compare output fingerprints as well as timing. CI smoke-tests the harness;
-performance decisions should use repeated measurements on an idle machine.
+use repeated measurements on an idle machine for performance decisions.

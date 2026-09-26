@@ -22,7 +22,7 @@ String tokens are unsigned MurmurHash2 hashes with seed `0x31415926`.
 Boon consumes the IDs already computed by boon-data; it does not rehash names.
 Repeated definitions can share an ID and name. A name map deduplicates those
 labels, but does not select a gameplay definition. Conflicting labels are errors.
-Use boon-data's record indexes when multiple modifier definitions need inspection.
+Use boon-data's record indexes to examine multiple modifier definitions.
 IDs absent from the selected catalog remain unresolved; no names are invented.
 
 ## Acquisition and caching
@@ -41,9 +41,9 @@ name lookup is an in-memory operation. Local files and Rust downloads share
 Downloads verify all five JSON assets, including sizes, SHA-256 hashes, and
 manifest consistency, before installation. A failed download leaves no partial
 installation. Installed versions work offline. Python caches parsed name maps
-and checks the files before reuse. Reinstalling a version invalidates its maps.
+and does file checks before reuse. Reinstalling a version invalidates its maps.
 
-`CatalogNames::from_directory` reads locally built JSONs directly. It checks
+`CatalogNames::from_directory` reads locally built JSONs directly. It does a check of
 catalog identities and shared provenance, but leaves checksum verification to
 the caller. This method does not use the network.
 
@@ -51,7 +51,7 @@ the caller. This method does not use the network.
 
 Protocol enums for teams, game modes, hitgroups, life states, and patron phases
 remain in Boon. All VData name lookups come from boon-data; no name-table
-generation script is needed.
+generation script is necessary.
 
 If the published index has no designated `latest` (for example, after only
 historical backfills), automatic downloads use the highest published client
