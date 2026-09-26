@@ -621,14 +621,13 @@ class Demo:
         With preloading disabled, the first access loads and caches the data.
 
         Columns:
-            - **tick** (*int*) -- The game tick when the damage occurred.
+            - **tick** (*int*) -- The enclosing demo command tick.
             - **damage** (*int*) -- The damage dealt.
             - **pre_damage** (*float*) -- The damage before mitigation.
             - **damage_absorbed** (*float | None*) -- Recorded absorption; falls back to the legacy integer field when needed.
             - **victim_shield_new** (*int | None*) -- Remaining shield after the hit.
             - **victim_shield_max** (*int | None*) -- Shield capacity.
-            - **is_secondary_stat** (*bool | None*) -- Recorded secondary-stat flag.
-            - **server_tick** (*int | None*) -- Server tick, distinct from demo tick.
+            - **server_tick** (*int | None*) -- Server tick recorded in the damage message.
             - **victim_hero_id** (*int*) -- The hero ID of the victim (0 if not a hero).
             - **attacker_hero_id** (*int*) -- The hero ID of the attacker (0 if not a hero).
             - **victim_health_new** (*int*) -- The victim's health after damage.

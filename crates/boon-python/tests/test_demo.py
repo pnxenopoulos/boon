@@ -61,7 +61,7 @@ DAMAGE_COLUMNS = {
     "ability_id", "damage_type", "citadel_type", "damage_flags",
     "is_melee", "melee_type",
     "damage_absorbed", "victim_shield_new", "victim_shield_max",
-    "is_secondary_stat", "server_tick",
+    "server_tick",
 }
 
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}

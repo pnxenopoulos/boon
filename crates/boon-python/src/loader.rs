@@ -2243,7 +2243,6 @@ impl Demo {
             let mut dmg_absorbed: Vec<Option<f32>> = Vec::with_capacity(n);
             let mut dmg_shield_new: Vec<Option<i32>> = Vec::with_capacity(n);
             let mut dmg_shield_max: Vec<Option<i32>> = Vec::with_capacity(n);
-            let mut dmg_secondary: Vec<Option<bool>> = Vec::with_capacity(n);
             let mut dmg_server_tick: Vec<Option<i32>> = Vec::with_capacity(n);
 
             for raw in &raw_damage_events {
@@ -2278,7 +2277,6 @@ impl Demo {
                 );
                 dmg_shield_new.push(msg.victim_shield_new);
                 dmg_shield_max.push(msg.victim_shield_max);
-                dmg_secondary.push(msg.is_secondary_stat);
                 dmg_server_tick.push(msg.server_tick);
             }
 
@@ -2303,7 +2301,6 @@ impl Demo {
                 Column::new("damage_absorbed".into(), dmg_absorbed),
                 Column::new("victim_shield_new".into(), dmg_shield_new),
                 Column::new("victim_shield_max".into(), dmg_shield_max),
-                Column::new("is_secondary_stat".into(), dmg_secondary),
                 Column::new("server_tick".into(), dmg_server_tick),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;

@@ -686,14 +686,13 @@ Damage events. Preloaded during construction unless `preload=False`.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `tick` | `int` | The game tick when the damage occurred |
+| `tick` | `int` | The enclosing demo command tick |
 | `damage` | `int` | The damage dealt |
 | `pre_damage` | `float` | The damage before mitigation |
 | `damage_absorbed` | `float` or null | Recorded absorption; legacy integer fallback when the float field is absent |
 | `victim_shield_new` | `int` or null | Remaining shield after the hit |
 | `victim_shield_max` | `int` or null | Shield capacity |
-| `is_secondary_stat` | `bool` or null | Recorded secondary-stat flag; null means absent |
-| `server_tick` | `int` or null | Server tick, distinct from the demo tick |
+| `server_tick` | `int` or null | Server tick recorded in the damage message |
 | `victim_hero_id` | `int` | The hero ID of the victim (0 if not a hero) |
 | `attacker_hero_id` | `int` | The hero ID of the attacker (0 if not a hero) |
 | `victim_health_new` | `int` | The victim's health after damage |
@@ -707,6 +706,23 @@ Damage events. Preloaded during construction unless `preload=False`.
 | `damage_flags` | `int` | Raw Valve damage flags used for detailed classification |
 | `is_melee` | `bool` | Whether this is melee-typed damage (`citadel_type == 3`) |
 | `melee_type` | `str` or null | `"light"`, `"heavy"`, or `"other"` for melee-typed damage; null otherwise |
+
+`tick` comes from the demo command that contains the damage message. Use this
+value with other Boon datasets and the tick-to-clock methods. `server_tick`
+comes from the damage message itself. These counters can differ. In
+`106996573.dem`, `server_tick - tick` is either 1,705 or 1,706. Thus, one fixed
+offset does not give an exact conversion for all rows. A null `server_tick`
+means the message does not contain this field.
+
+The shield fields are copied from the damage message. Observed hit sequences
+suggest that `victim_shield_new` is the shield remaining after the hit and
+`victim_shield_max` is the capacity of that shield pool. For example, in
+`103129247.dem`, five hits reduce the reported shield from 95 to 0 while its
+capacity stays at 127. The final hit absorbs about 3.30 damage and deals 11
+damage to health. The shield fields are integers; `damage_absorbed` can have
+a fractional value. These fields do not give a complete history of shield
+gains and expiry. They can be absent even when absorption is positive. Null
+means absent, not zero.
 
 `is_melee` contains Valve's melee damage category. The `DFLAG_LIGHT_MELEE`
 and `DFLAG_HEAVY_MELEE` bits identify light and heavy hits.

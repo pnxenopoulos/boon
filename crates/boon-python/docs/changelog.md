@@ -2,109 +2,48 @@
 
 ## 0.10.0
 
-- Corrected more documentation vocabulary against confirmed ASD-STE100 entries.
-  The full dictionary and contextual vocabulary review are still incomplete.
+- **API change:** Boon no longer provides `demo.healing`, `load("healing")`,
+  `summary()["healing"]`, `demo.barriers()`, or `boon.barriers`.
+  Recorded healing counters, barrier snapshots, and damage data remain available.
+  `summary()` returns `snapshots`, `last_hits`, `objectives`, and `damage`.
+- **Rust API change:** `CatalogNames::load(version)` and its methods replace the
+  static name functions. Use `CatalogNames::breakable_name` and
+  `CatalogNames::breakables` in place of `breakable_name` and `all_breakables`.
+- `Demo(path)` loads kills, damage, and abilities together during construction.
+  Use `preload=False` to load datasets on first access.
+  Demo construction can report errors from these datasets.
 
-- Removed the unreachable serial snapshot collector. Player, world, and trooper
-  snapshots use the existing parallel collector for all load requests.
-- Shared Rift lane identification between the Rust CLI and Python bindings.
-  Kept the observed site coordinates and unknown-location behavior unchanged.
-- Added Ruff and ty checks to CI. Python tests now keep the installed wheel
-  instead of allowing uv to replace it. Removed unused Sphinx themes.
-- Corrected preload, name lookup, and catalog examples. Reviewed maintained
-  documentation for short sentences and consistent technical terms. Documented
-  the client-version limits of the recorded stat-modifier aliases.
+- Boon reads hero, ability, item, modifier, and breakable names from boon-data JSON
+  catalogs. These catalogs replace the tables in the code.
+  Without a valid local version, Python, Rust, and `boon-dev` automatically
+  download the most recent catalogs.
+- Python name functions accept `version=`. Without this argument, Boon uses
+  the most recent valid local version. The new `breakable_names(version=None)`
+  function reads names from `misc.json`.
+- `boon get`, `boon versions`, `boon remove`, and `boon.data` manage catalogs in
+  `~/.boon/<client-version>/`. Boon verifies file sizes, SHA-256 checksums, and
+  manifest data before installation. Use `boon get VERSION --force` to repair
+  an installation.
+- `boon versions` shows client versions, source dates and times, and local
+  installation status. Use `--local` to list installed versions without network
+  access. Installation records also contain the source revision.
 
-- `Demo(path)` now preloads kills, damage, and abilities together. Use the
-  keyword-only `preload=False` option for lightweight construction and lazy
-  dataset access. Combat parsing errors can now surface during construction.
-  CLI commands opt out and load only their requested datasets.
-- Snapshot numeric columns transfer their buffers into Polars, and parallel
-  segments are combined as ordered chunks without merging all column vectors.
-  Schemas and row order are preserved.
-- Benchmarks explicitly disable default preloading for fresh-load cases and
-  measure combat preloading separately. Order fingerprints now index row hashes
-  instead of wide frames, avoiding large temporary allocations during checks.
-
-- Added a Python benchmark runner with isolated workload processes, explicit
-  fresh/cached cases, repeated wall/CPU timings, frame sizes, process peak RSS,
-  and output fingerprints. Reports record build, input and thread settings;
-  comparisons reject changed outputs or incompatible measurement conditions.
-  Covers datasets, grouped loads, snapshots, derived metrics and local catalog
-  lookups. Added benchmark smoke checks to Python 3.13 CI.
-- Added Rust fresh/prepared seek benchmarks, demo-specific Criterion IDs and
-  bounded input batches. Explicit missing benchmark demos now fail clearly.
-
-- Added a `demo.players` regression for match `100655353`: the player who
-  switches from Silver to Victor appears as Victor in the final roster, with
-  no Silver entry. CI downloads this fixture in the Python 3.13 job, also
-  exercising its existing chat, item-purchase, and damage regressions.
-
-- Breakable subclass names now come from boon-data `misc.json`, using `misc_id`
-  and `misc_name` for `citadel_breakable_prop` definitions. Added Python
-  `breakable_names(version=None)`; `demo.breakables` and CLI output use the same
-  automatic acquisition and local cache as other names. Raw replay subclass IDs
-  remain unchanged, and unknown IDs retain `BREAKABLE_NOT_FOUND`.
-- **Breaking (Rust):** Replaced `breakable_name` / `all_breakables` with
-  `CatalogNames::breakable_name` and `CatalogNames::breakables`. Removed the
-  embedded table and the obsolete name-table generation/sync scripts.
-
-- Hero, ability/item, localized ability, and modifier names now come from
-  boon-data JSON catalogs. Removed their embedded Rust tables and generator code.
-  Python lookup functions accept `version=`. Name access uses the newest verified
-  local version, or downloads latest when no valid installation exists.
-  `demo.banned_heroes` and CLI player names use the same data. Indexes without
-  a designated latest use the highest published client version.
-- **Breaking (Rust):** Replaced static name lookup functions with
-  `CatalogNames::load(version)` and its lookup methods. Rust and `boon-dev`
-  automatically download missing catalogs into the same `BOON_DATA_DIR` cache
-  used by Python. Load once and reuse the maps for repeated event lookups.
-- Modifier names include both unqualified and owner-qualified IDs. Repeated
-  definitions with the same name are deduplicated; conflicting names are errors.
-- Synced protobufs to client **6701**, SourceRevision **11038876**, from upstream
-  commit `33e0801209b9f54be4ea284f3e521b030276d8db`.
-  `boon-proto` is now `0.3.11038876+6701`.
-
-- Added a replay verification checklist and `scripts/check-demo.py` to export
-  review tables, check API consistency and CLI/data commands, and validate
-  independently recorded observations with explicit coverage gaps.
-
-- **Breaking:** Removed `demo.healing`, `load("healing")`, and
-  `summary()["healing"]`, including the interval builder and its cached frame.
-  `summary()` now returns `snapshots`, `last_hits`, `objectives`, and `damage`.
-- **Breaking:** Removed `demo.barriers()` and the `boon.barriers` module.
-  Dedicated healing and barrier datasets are withdrawn pending a redesign.
-  Recorded damage fields, player healing counters, barrier pool snapshots,
-  and the original post-match damage matrix remain available.
-
-- Added `boon get`, `boon versions`, and `boon.data` for downloading and storing
-  versioned boon-data JSON catalogs in `~/.boon/<client-version>/`. Downloads
-  verify file sizes, SHA-256 checksums, and manifest metadata before installation;
-  failed downloads preserve existing files, and `--force` repairs installations.
-- Version listings show Deadlock client versions, `VersionDate` and `VersionTime`
-  from `steam.inf`, and verified local installation status. Removed the
-  "Released at" table column; release timestamps remain in `--json` output.
-  `--local` lists installed versions without network access.
-  Installation metadata retains the source revision.
-- Added `boon remove VERSION` and `boon.data.remove()` for offline cache removal,
-  including corrupt or incomplete installations. Downloads require `misc.json`
-  alongside abilities, heroes, modifiers, and the manifest.
-  Catalog acquisition does not calculate hero stats.
-- Simplified boon-data metadata: removed schema version counters and compatibility
-  paths for old release formats. Releases use numeric client-version tags and
-  all five JSON files; provenance and checksum verification remain in place.
-- Updated the locked `pbdems2` dependency to 0.3.2.
-- Recognize permanent spirit-power modifier ID 159 in client 6698, retaining
-  earlier aliases for the permanent stat-viewer vector.
-
-- Added nullable `damage_absorbed`, `victim_shield_new`, `victim_shield_max`,
-  `is_secondary_stat`, and `server_tick` columns to `damage`. Older recordings
-  use the integer absorption field when the float field is absent.
-  Damage rows now retain the hero identities observed at their event tick.
-
-- Fixed hero IDs in chat and item purchases after a player changes heroes.
-  Both the Python API and developer CLI now read the current player controller
-  for each event. Earlier events keep their original hero IDs.
+- Hero IDs in chat, damage, and item purchases match the hero at the event
+  tick. A test for `100655353.dem` verifies that `demo.players` shows Victor after
+  the player changes from Silver.
+- The damage dataset includes `damage_absorbed`, `victim_shield_new`,
+  `victim_shield_max`, and `server_tick`. These fields can be null.
+  If the float field is absent, Boon reads the integer field `damage_absorbed_deprecated`.
+  Boon no longer includes `is_secondary_stat` because its meaning is unknown.
+- Boon reads permanent spirit-power modifier ID 159 in client 6698.
+- Snapshot collection uses parallel processing and fewer copies of numeric data.
+- New benchmarks measure execution time in Python and Rust.
+  Python reports also include memory use. Comparisons verify outputs and
+  measurement conditions.
+- CI includes Ruff, ty, and benchmark tests. The documentation includes corrected
+  examples and a [demo verification checklist](demo-checklist.md).
+- Boon uses `pbdems2` 0.3.2. The protobuf definitions use client 6701 and
+  `SourceRevision` 11038876. The `boon-proto` version is `0.3.11038876+6701`.
 
 ## 0.9.0
 

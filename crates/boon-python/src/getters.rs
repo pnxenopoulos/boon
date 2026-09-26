@@ -39,15 +39,14 @@ impl Demo {
     /// Damage events as a Polars DataFrame.
     ///
     /// Returns a DataFrame with columns:
-    /// - tick: The game tick when the damage occurred
+    /// - tick: The enclosing demo command tick
     /// - damage: The damage dealt
     /// - pre_damage: The damage before mitigation
     /// - damage_absorbed: Recorded barrier absorption, null when absent. Uses the
     ///   legacy integer field when the float field is absent.
     /// - victim_shield_new: Remaining shield after this hit, null when absent
     /// - victim_shield_max: Shield capacity, null when absent
-    /// - is_secondary_stat: Recorded secondary-stat flag, null when absent
-    /// - server_tick: Server tick, distinct from demo tick; null when absent
+    /// - server_tick: Server tick recorded in the damage message; null when absent
     /// - victim_hero_id: The hero ID of the victim (0 if not a hero)
     /// - attacker_hero_id: The hero ID of the attacker (0 if not a hero)
     /// - victim_health_new: The victim's health after damage
