@@ -10,7 +10,8 @@ name does not change its ID. Changes to internal names can change hashed IDs.
 
 Use the mapping functions to resolve IDs. `ability_names()` and `modifier_names()`
 return internal names. `ability_display_names()` returns localized ability labels.
-Each function returns `dict[int, str]`:
+ID lookups return `dict[int, str]`. `ability_display_names()` returns
+`dict[str, str]`, keyed by internal ability name:
 
 ```python
 from boon import hero_names, team_names, ability_names, modifier_names, game_mode_names
@@ -43,7 +44,7 @@ for row in demo.players.iter_rows(named=True):
 
 ## Match summary
 
-Print a quick overview of a match: duration, winner, and per-player KDA.
+Print the match duration, winner, and player roster.
 
 ```python
 from boon import Demo, hero_names, team_names

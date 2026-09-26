@@ -29,6 +29,7 @@ only the datasets they request.
 **Parameters:**
 
 - **path** (`str`) -- Path to the `.dem` file.
+- **preload** (`bool`, keyword-only) -- Load kills, damage, and abilities during construction. Default: `True`.
 
 ### Methods
 
@@ -153,7 +154,7 @@ negative clock.
 #### `snapshots()`
 
 ```python
-demo.snapshots(every=64)                          # ~1 row/sec of ticks
+demo.snapshots(every=64)                          # every 64 ticks
 demo.snapshots(ticks=[29000, 30000])              # specific ticks
 demo.snapshots(start_tick=29000, end_tick=30000)  # a contiguous window
 demo.snapshots("troopers", events="kills")        # troopers at kill ticks

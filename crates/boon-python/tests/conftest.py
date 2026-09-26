@@ -10,6 +10,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 ALL_DATASETS = [
     "abilities",
     "ability_upgrades",
+    "ability_ticks",
     "active_modifiers",
     "chat",
     "damage",

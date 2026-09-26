@@ -1,7 +1,7 @@
 """Command-line interface for inspecting Deadlock demo files.
 
 This is the Python / `Typer <https://typer.tiangolo.com>`_ counterpart to Boon's
-Rust ``boon`` binary. Installing ``boon-deadlock`` (``pip install
+Rust ``boon-dev`` tool. Installing ``boon-deadlock`` (``pip install
 boon-deadlock`` or ``uv add boon-deadlock``) exposes a ``boon`` command that
 reads a demo through the exact same parser the library uses, so you can inspect
 a match straight from the terminal without writing any code::
@@ -209,7 +209,7 @@ def summary(
     limit: int = _LIMIT_OPT,
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Show the post-match summary (souls, objectives, damage matrix)."""
+    """Show recorded post-match totals for souls, damage, healing, and objectives."""
     valid = [
         "snapshots", "last_hits", "objectives", "damage", "healing", "gold_sources", "all"
     ]

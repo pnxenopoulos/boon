@@ -29,7 +29,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon-deadlock = "0.8"
+boon-deadlock = "0.10"
 ```
 
 Requires Rust 1.88+ (edition 2024).
@@ -40,17 +40,18 @@ Requires Rust 1.88+ (edition 2024).
 use std::path::Path;
 use boon::Parser;
 
-let parser = Parser::from_file(Path::new("match.dem")).unwrap();
-parser.verify().unwrap();
+let parser = Parser::from_file(Path::new("match.dem"))?;
+parser.verify()?;
 
 // File header
-let header = parser.file_header().unwrap();
+let header = parser.file_header()?;
 println!("Map: {:?}", header.map_name);
 println!("Build: {:?}", header.build_num);
 
 // File info (playback time, players)
-let info = parser.file_info().unwrap();
+let info = parser.file_info()?;
 println!("Duration: {:?}s", info.playback_time);
+# Ok::<(), boon::Error>(())
 ```
 
 ## API Overview
@@ -76,24 +77,26 @@ The main entry point. Owns the demo file data (memory-mapped or in-memory).
 
 Returned by `parse_init`, `parse_to_tick`, and passed to tick callbacks. Contains:
 
-- `entities` &mdash; all active entities (`EntityContainer`)
-- `serializers` &mdash; field definitions per class
-- `class_info` &mdash; class ID to name mappings
-- `string_tables` &mdash; key-value tables (models, baselines, etc.)
-- `tick` &mdash; current tick
-- `tick_interval` &mdash; seconds per tick
+- `entities()` &mdash; all active entities (`EntityContainer`)
+- `serializers()` &mdash; field definitions per class
+- `class_info()` &mdash; class ID to name mappings
+- `string_tables()` &mdash; key-value tables (models, baselines, etc.)
+- `tick()` &mdash; current tick
+- `tick_interval()` &mdash; seconds per tick
 
 ### `Entity`
 
 A single networked entity with class name and decoded field values.
 
-```rust,ignore
+```rust,no_run
+# fn inspect(entity: &boon::Entity, serializer: &boon::Serializer) {
 // Look up fields by dotted path
 let health = entity.get_by_name("m_iHealth", serializer);
 let x = entity.get_by_name(
     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
     serializer,
 );
+# }
 ```
 
 ### Helper Functions
@@ -135,15 +138,19 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 Use `run_to_end_filtered` with a class filter when you need specific entity
 types. Boon does not decode fields for entities outside the filter.
 
-```rust,ignore
+```rust,no_run
 use std::collections::HashSet;
+use std::path::Path;
+use boon::Parser;
 
+let parser = Parser::from_file(Path::new("match.dem"))?;
 let filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
 parser.run_to_end_filtered(&filter, |ctx| {
-    for (_, entity) in ctx.entities.iter() {
-        // Track only CCitadelPlayerPawn entities.
+    for (_, entity) in ctx.entities().iter() {
+        println!("{}", entity.class_name);
     }
-}).unwrap();
+})?;
+# Ok::<(), boon::Error>(())
 ```
 
 ## License

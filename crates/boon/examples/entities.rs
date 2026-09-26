@@ -72,11 +72,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             z,
         );
 
-        // Show first ability slot as an example of ability_name() lookup
-        let ability_field = entity.get_by_name("m_vecAbilities.0000", ser);
-        if let Some(boon::FieldValue::U32(ability_id)) = ability_field {
-            let name = names.ability_name(*ability_id);
-            println!("    ability[0]: {} (id={})", name, ability_id);
+        // The slot contains an entity handle. Read the catalog ID from that entity.
+        let ability = entity
+            .get_handle(ser.resolve_field_key("m_CCitadelAbilityComponent.m_vecAbilities.0"))
+            .and_then(|handle| ctx.entities().get_by_handle(handle));
+        if let Some(ability) = ability
+            && let Some(serializer) = ctx.serializers().get(&ability.class_name)
+            && let Some(id) = ability.get_u64(serializer.resolve_field_key("m_nSubclassID"))
+            && let Ok(id) = u32::try_from(id)
+        {
+            println!("    ability[0]: {} (id={})", names.ability_name(id), id);
         }
     }
     Ok(())

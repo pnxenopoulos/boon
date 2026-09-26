@@ -43,7 +43,8 @@
   Python reports also include memory use. Comparisons verify outputs and
   measurement conditions.
 - CI includes Ruff, ty, and benchmark tests. The documentation includes corrected
-  examples and a [demo verification checklist](demo-checklist.md).
+  installation steps, API examples, and a [demo verification checklist](demo-checklist.md).
+  The Rust entity example reads ability IDs from ability entities.
 - Boon uses `pbdems2` 0.3.2. The protobuf definitions use client 6701 and
   `SourceRevision` 11038876. The `boon-proto` version is `0.3.11038876+6701`.
 

@@ -207,7 +207,7 @@ Output:
 - `report.json`: Boon version, replay metadata, checks, coverage gaps, schemas,
   row counts, previews, and selected tick/time conversions.
 - `<dataset>.parquet`: complete loaded tables, including players and bans.
-- `summary_*.parquet`: the four post-match tables, when available.
+- `summary_*.parquet`: the six post-match tables, when available.
 - `selected_*.parquet`: player, world, and trooper snapshots at your review ticks.
 - `in_combat.parquet`, `kill_participation.parquet`, `time_dead.parquet`, and
   `teamfights.parquet`: derived metrics when their prerequisites are available.

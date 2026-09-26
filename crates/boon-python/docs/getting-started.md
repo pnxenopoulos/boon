@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.11–3.14
 - Rust toolchain (for building from source)
 
 ## Installation

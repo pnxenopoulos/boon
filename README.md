@@ -12,7 +12,7 @@
 <p>
   <a href="https://pypi.org/project/boon-deadlock/"><img src="https://img.shields.io/pypi/v/boon-deadlock.svg?style=for-the-badge" alt="PyPI"></a>
   <a href="https://pepy.tech/project/boon-deadlock"><img src="https://img.shields.io/pepy/dt/boon-deadlock?style=for-the-badge" alt="Downloads"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11+"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11–3.14"></a>
 </p>
 
 <!-- <p>
@@ -79,7 +79,7 @@ Requires Python 3.11–3.14.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.8"
+boon-deadlock = "0.10"
 ```
 
 ## Quick Start

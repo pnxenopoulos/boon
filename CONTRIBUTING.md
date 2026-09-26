@@ -5,7 +5,8 @@ Thank you for your interest in Boon. This guide explains how to set up the proje
 ## Prerequisites
 
 - **Rust** (stable) &mdash; install with [rustup](https://rustup.rs)
-- **Python 3.11+** &mdash; for the Python bindings
+- **Python 3.11–3.14** &mdash; for the Python bindings
+- **cargo-nextest** &mdash; `cargo install cargo-nextest --locked`
 - **maturin** &mdash; `pip install maturin` (or `uv add maturin`)
 
 ## Repository Structure
@@ -33,7 +34,7 @@ cd boon
 cargo build --workspace
 
 # Run tests
-cargo nextest run --workspace --all-features
+cargo nextest run --workspace --all-features --locked --exclude boon-python
 
 # Build the dev / debug CLI
 cargo build --release -p boon-dev
@@ -65,7 +66,7 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Tests
-cargo nextest run --workspace --all-features
+cargo nextest run --workspace --all-features --locked --exclude boon-python
 ```
 
 ### Rust Conventions
@@ -226,6 +227,10 @@ gh release download 70537442 \
 gh release download 103129247 \
   --repo pnxenopoulos/boon-fixtures \
   --dir crates/boon-python/tests/fixtures/
+
+gh release download 100655353 \
+  --repo pnxenopoulos/boon-fixtures \
+  --dir crates/boon-python/tests/fixtures/
 ```
 
 Tests that require a missing fixture are skipped automatically.
@@ -264,6 +269,7 @@ def demo() -> Demo:
 | 70555151 | 6v6 | Standard 6v6 match |
 | 70537442 | Street Brawl | Street brawl (game_mode=4) match |
 | 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
+| 100655353 | 6v6 | Silver-to-Victor hero swap and post-match summary totals |
 
 ## Submitting Changes
 
