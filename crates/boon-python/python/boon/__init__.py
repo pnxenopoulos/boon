@@ -2,17 +2,12 @@
 
 from importlib.metadata import version
 
-__version__ = version("boon-deadlock")
-
+from boon import data, stats
 from boon._boon import (
     Demo,
-    ability_display_names,
-    ability_names,
     game_mode_names,
-    hero_names,
     hitgroup_names,
     lifestate_names,
-    modifier_names,
     patron_phase_names,
     team_names,
 )
@@ -23,16 +18,23 @@ from boon.errors import (
     InvalidDemoError,
     NotStreetBrawlError,
 )
-from boon import barriers, stats
+from boon.names import (
+    ability_display_names,
+    ability_names,
+    breakable_names,
+    hero_names,
+    modifier_names,
+)
+
+__version__ = version("boon-deadlock")
 
 # Surface derived datasets as convenience methods on Demo. The implementations live in
-# ``boon.stats`` / ``boon.barriers``; these are thin delegators so ``demo.teamfights()``
+# ``boon.stats``; these are thin delegators so ``demo.teamfights()``
 # and ``boon.stats.teamfights(demo)`` are the same computation.
 Demo.in_combat = stats.in_combat
 Demo.kill_participation = stats.kill_participation
 Demo.teamfights = stats.teamfights
 Demo.time_dead = stats.time_dead
-Demo.barriers = barriers.barriers
 
 __all__ = [
     "Demo",
@@ -43,7 +45,8 @@ __all__ = [
     "NotStreetBrawlError",
     "ability_display_names",
     "ability_names",
-    "barriers",
+    "breakable_names",
+    "data",
     "game_mode_names",
     "hero_names",
     "hitgroup_names",

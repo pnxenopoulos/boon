@@ -4,7 +4,7 @@ set -euo pipefail
 # Sync Deadlock protos + version info into ../crates/boon-proto
 #
 # What it does:
-# 1) Clones SteamDatabase/GameTracking-Deadlock (sparse checkout if available)
+# 1) Clones SteamTracking/GameTracking-Deadlock (sparse checkout if available)
 # 2) Copies ONLY the allowlisted Protobufs/*.proto into ../crates/boon-proto/proto/
 # 3) Reads game/citadel/steam.inf and updates ../crates/boon-proto/Cargo.toml:
 #    - Reads the compatibility epoch MAJOR.MINOR from [package].version
@@ -18,7 +18,7 @@ set -euo pipefail
 #   CLEAN_DEST=1         delete existing *.proto in DEST_DIR before copying
 #   DEADLOCK_REF=<ref>   optional: branch/tag/commit to checkout
 
-REPO_URL="https://github.com/SteamDatabase/GameTracking-Deadlock.git"
+REPO_URL="https://github.com/SteamTracking/GameTracking-Deadlock.git"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 

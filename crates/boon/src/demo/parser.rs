@@ -231,9 +231,8 @@ impl Parser {
 
         while reader.remaining() > 0 {
             let offset = reader.position() + HEADER_SIZE;
-            let header = match Self::read_cmd_header(&mut reader) {
-                Ok(h) => h,
-                Err(_) => break,
+            let Ok(header) = Self::read_cmd_header(&mut reader) else {
+                break;
             };
 
             messages.push(MessageInfo {
@@ -362,9 +361,8 @@ impl Parser {
         let mut descriptors: HashMap<i32, EventDescriptor> = HashMap::new();
 
         while reader.remaining() > 0 {
-            let header = match Self::read_cmd_header(&mut reader) {
-                Ok(h) => h,
-                Err(_) => break,
+            let Ok(header) = Self::read_cmd_header(&mut reader) else {
+                break;
             };
 
             if header.cmd == dem::STOP {

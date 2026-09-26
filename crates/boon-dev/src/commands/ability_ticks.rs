@@ -65,6 +65,7 @@ pub fn run(
 ) -> Result<()> {
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
+    let names = boon::CatalogNames::load(None)?;
 
     // Every ability is its own networked class (hundreds of them). Collect their
     // names from the send tables — any class whose name contains "Ability" — and
@@ -170,7 +171,9 @@ pub fn run(
                     events_out.push(AbilityTickOutput {
                         tick: ctx.tick(),
                         hero_id,
-                        ability: boon::ability_name(entity.get_u32(keys.subclass_id)).to_string(),
+                        ability: names
+                            .ability_name(entity.get_u32(keys.subclass_id))
+                            .to_string(),
                         slot: entity.get_i64(keys.slot) as i32,
                         cooldown_start: state.cooldown_start,
                         cooldown_end: state.cooldown_end,

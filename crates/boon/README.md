@@ -29,7 +29,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon-deadlock = "0.8"
+boon-deadlock = "0.10"
 ```
 
 Requires Rust 1.88+ (edition 2024).
@@ -40,17 +40,18 @@ Requires Rust 1.88+ (edition 2024).
 use std::path::Path;
 use boon::Parser;
 
-let parser = Parser::from_file(Path::new("match.dem")).unwrap();
-parser.verify().unwrap();
+let parser = Parser::from_file(Path::new("match.dem"))?;
+parser.verify()?;
 
 // File header
-let header = parser.file_header().unwrap();
+let header = parser.file_header()?;
 println!("Map: {:?}", header.map_name);
 println!("Build: {:?}", header.build_num);
 
 // File info (playback time, players)
-let info = parser.file_info().unwrap();
+let info = parser.file_info()?;
 println!("Duration: {:?}s", info.playback_time);
+# Ok::<(), boon::Error>(())
 ```
 
 ## API Overview
@@ -76,32 +77,34 @@ The main entry point. Owns the demo file data (memory-mapped or in-memory).
 
 Returned by `parse_init`, `parse_to_tick`, and passed to tick callbacks. Contains:
 
-- `entities` &mdash; all active entities (`EntityContainer`)
-- `serializers` &mdash; field definitions per class
-- `class_info` &mdash; class ID to name mappings
-- `string_tables` &mdash; key-value tables (models, baselines, etc.)
-- `tick` &mdash; current tick
-- `tick_interval` &mdash; seconds per tick
+- `entities()` &mdash; all active entities (`EntityContainer`)
+- `serializers()` &mdash; field definitions per class
+- `class_info()` &mdash; class ID to name mappings
+- `string_tables()` &mdash; key-value tables (models, baselines, etc.)
+- `tick()` &mdash; current tick
+- `tick_interval()` &mdash; seconds per tick
 
 ### `Entity`
 
 A single networked entity with class name and decoded field values.
 
-```rust,ignore
+```rust,no_run
+# fn inspect(entity: &boon::Entity, serializer: &boon::Serializer) {
 // Look up fields by dotted path
 let health = entity.get_by_name("m_iHealth", serializer);
 let x = entity.get_by_name(
     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
     serializer,
 );
+# }
 ```
 
 ### Helper Functions
 
-- `ability_name(id)` &mdash; resolve an ability hash to its name
-- `ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
-- `breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
-- `modifier_name(id)` &mdash; resolve a modifier hash to its name
+- `CatalogNames::load(version)` &mdash; load verified boon-data names, downloading missing data
+- `CatalogNames::ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
+- `CatalogNames::breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
+- `CatalogNames::modifier_name(id)` &mdash; resolve a modifier hash to its name
 - `decode_stat_modifier_value_type(value_type)` &mdash; normalize observed cross-build stat-modifier enum values
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload
 
@@ -127,7 +130,7 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 |---------|---------------|
 | [`info`](examples/info.rs) | `file_header()`, `file_info()`, match metadata and player list |
 | [`events`](examples/events.rs) | `events()`, event filtering, `decode_event_payload()` |
-| [`entities`](examples/entities.rs) | `parse_to_tick()`, entity iteration, `get_by_name()`, `ability_name()` |
+| [`entities`](examples/entities.rs) | `parse_to_tick()`, entity iteration, `get_by_name()`, `CatalogNames::ability_name()` |
 | [`player_ticks`](examples/player_ticks.rs) | `run_to_end_filtered()`, `resolve_field_key()`, per-tick streaming |
 
 ## Performance
@@ -135,15 +138,19 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 Use `run_to_end_filtered` with a class filter when you need specific entity
 types. Boon does not decode fields for entities outside the filter.
 
-```rust,ignore
+```rust,no_run
 use std::collections::HashSet;
+use std::path::Path;
+use boon::Parser;
 
+let parser = Parser::from_file(Path::new("match.dem"))?;
 let filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
 parser.run_to_end_filtered(&filter, |ctx| {
-    for (_, entity) in ctx.entities.iter() {
-        // Track only CCitadelPlayerPawn entities.
+    for (_, entity) in ctx.entities().iter() {
+        println!("{}", entity.class_name);
     }
-}).unwrap();
+})?;
+# Ok::<(), boon::Error>(())
 ```
 
 ## License

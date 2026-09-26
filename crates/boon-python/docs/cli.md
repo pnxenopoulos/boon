@@ -87,7 +87,7 @@ boon summary match.dem --part objectives
 
 | Flag | Description |
 |------|-------------|
-| `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, or `all` (default: `last_hits`) |
+| `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, `healing`, `gold_sources`, or `all` (default: `last_hits`) |
 | `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
 | `--json` | Emit JSON |
 
@@ -120,20 +120,40 @@ Check that a file is a valid Deadlock demo.
 boon verify match.dem
 ```
 
+### `get`, `versions`, and `remove`
+
+Download boon-data JSON catalogs and list client versions with source build dates,
+build times, and local installation status:
+
+```bash
+boon get                         # latest client version in versions.json
+boon versions                    # client version, build date/time, installed status
+boon get 6698                     # a specific Deadlock client version
+boon versions --local             # offline installation listing
+boon remove 6698                  # remove a local version offline
+```
+
+All three commands support `--json`. Files are stored under `~/.boon/<client-version>/`.
+`get --force` replaces an installation only after verifying the new download.
+`remove VERSION` requires an explicit version and also works on corrupt caches.
+See {doc}`data` for the Python API, integrity checks, cache configuration, and
+how client versions differ from replay build numbers.
+
 ## boon-dev
 
 `boon-dev` is a low-level debugging CLI, built from the `boon-dev` crate. It is
 **not shipped** — there are no release binaries and no crates.io package. Build
-it from source when you need it:
+it from source:
 
 ```bash
 cargo build --release -p boon-dev
 # Binary is at target/release/boon-dev
 ```
 
-Run `boon-dev --help` for the full list, or `boon-dev <command> --help` for the
-flags on any command (most take `--filter`, `--summary`, `--limit`, and
-`--min-tick` / `--max-tick`, plus the global `--json`).
+Run `boon-dev --help` for the command list.
+Run `boon-dev <command> --help` for the options on a command.
+Most commands support `--filter`, `--summary`, `--limit`, `--min-tick`, and
+`--max-tick`. The global `--json` option selects JSON output.
 
 ### Commands
 

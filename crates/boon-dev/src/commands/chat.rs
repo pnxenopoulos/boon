@@ -38,8 +38,6 @@ pub fn run(
 
     let mut keys_resolved = false;
     let mut ck_hero_id: Option<u64> = None;
-    let mut slot_to_hero: HashMap<i32, i64> = HashMap::new();
-    let mut slot_to_hero_built = false;
 
     let mut messages: Vec<ChatOutput> = Vec::new();
 
@@ -52,25 +50,13 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            if !slot_to_hero_built {
-                for (idx, entity) in ctx.entities().iter() {
-                    if entity.class_name.as_ref() == "CCitadelPlayerController" {
-                        let hid = entity.get_i64(ck_hero_id);
-                        if hid != 0 {
-                            slot_to_hero.insert(idx - 1, hid);
-                        }
-                    }
-                }
-                slot_to_hero_built = true;
-            }
-
             for event in events {
                 if event.msg_type == Msg::KEUserMsgChatMsg as u32
                     && let Ok(msg) =
                         boon_proto::proto::CCitadelUserMsgChatMsg::decode(event.payload.as_slice())
                 {
-                    let player_slot = msg.player_slot.unwrap_or(-1);
-                    let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                    let hero_id =
+                        boon::hero_id_for_player_slot(ctx.entities(), msg.player_slot, ck_hero_id);
                     let chat_type = if msg.all_chat.unwrap_or(false) {
                         "all"
                     } else {

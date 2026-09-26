@@ -1,5 +1,53 @@
 # 📝 Changelog
 
+## 0.10.0
+
+- **API change:** Boon no longer provides `demo.healing`, `load("healing")`,
+  `demo.barriers()`, or `boon.barriers`.
+  Recorded healing counters, barrier snapshots, and damage data remain available.
+- `summary()` retains healing and regeneration totals at each recorded reporting period.
+  It includes soul sources, player healing counters, and cumulative values in the damage matrix.
+  Periods with no increase remain available.
+- **Rust API change:** `CatalogNames::load(version)` and its methods replace the
+  static name functions. Use `CatalogNames::breakable_name` and
+  `CatalogNames::breakables` in place of `breakable_name` and `all_breakables`.
+- `Demo(path)` loads kills, damage, and abilities together during construction.
+  Use `preload=False` to load datasets on first access.
+  Demo construction can report errors from these datasets.
+
+- Boon reads hero, ability, item, modifier, and breakable names from boon-data JSON
+  catalogs. These catalogs replace the tables in the code.
+  Without a valid local version, Python, Rust, and `boon-dev` automatically
+  download the most recent catalogs.
+- Python name functions accept `version=`. Without this argument, Boon uses
+  the most recent valid local version. The new `breakable_names(version=None)`
+  function reads names from `misc.json`.
+- `boon get`, `boon versions`, `boon remove`, and `boon.data` manage catalogs in
+  `~/.boon/<client-version>/`. Boon verifies file sizes, SHA-256 checksums, and
+  manifest data before installation. Use `boon get VERSION --force` to repair
+  an installation.
+- `boon versions` shows client versions, source dates and times, and local
+  installation status. Use `--local` to list installed versions without network
+  access. Installation records also contain the source revision.
+
+- Hero IDs in chat, damage, and item purchases match the hero at the event
+  tick. A test for `100655353.dem` verifies that `demo.players` shows Victor after
+  the player changes from Silver.
+- The damage dataset includes `damage_absorbed`, `victim_shield_new`,
+  `victim_shield_max`, and `server_tick`. These fields can be null.
+  If the float field is absent, Boon reads the integer field `damage_absorbed_deprecated`.
+  Boon no longer includes `is_secondary_stat` because its meaning is unknown.
+- Boon reads permanent spirit-power modifier ID 159 in client 6698.
+- Snapshot collection uses parallel processing and fewer copies of numeric data.
+- New benchmarks measure execution time in Python and Rust.
+  Python reports also include memory use. Comparisons verify outputs and
+  measurement conditions.
+- CI includes Ruff, ty, and benchmark tests. The documentation includes corrected
+  installation steps, API examples, and a [demo verification checklist](demo-checklist.md).
+  The Rust entity example reads ability IDs from ability entities.
+- Boon uses `pbdems2` 0.3.2. The protobuf definitions use client 6701 and
+  `SourceRevision` 11038876. The `boon-proto` version is `0.3.11038876+6701`.
+
 ## 0.9.0
 
 ### boon

@@ -23,7 +23,7 @@ def _fixture() -> str:
 
 @pytest.fixture(scope="module")
 def demo() -> Demo:
-    return Demo(_fixture())
+    return Demo(_fixture(), preload=False)
 
 
 def test_specific_ticks_match_full_frame(demo: Demo) -> None:
@@ -88,10 +88,10 @@ def test_message_only_event_ticks_match_loaded_datasets() -> None:
         "item_purchases",
         "chat",
     ]
-    direct_demo = Demo(_fixture())
+    direct_demo = Demo(_fixture(), preload=False)
     direct = direct_demo.snapshots(events=events)
 
-    loaded_demo = Demo(_fixture())
+    loaded_demo = Demo(_fixture(), preload=False)
     loaded_demo.load(*events)
     loaded = loaded_demo.snapshots(events=events)
 
@@ -121,8 +121,28 @@ def test_validation(demo: Demo) -> None:
         demo.snapshots(every=0)  # must be >= 1
 
 
+@pytest.mark.parametrize("cached", [False, True])
+@pytest.mark.parametrize("dataset", ["not_a_dataset", "healing", "barriers"])
+def test_event_selection_rejects_unknown_names_consistently(
+    cached: bool, dataset: str
+) -> None:
+    parsed = Demo(_fixture(), preload=False)
+    if cached:
+        parsed.load("kills")
+    with pytest.raises(ValueError, match="Unknown dataset"):
+        parsed.snapshots(events=["kills", dataset])
+
+
+def test_duplicate_snapshot_names_preserve_return_shape(demo: Demo) -> None:
+    expected = demo.snapshots("world_ticks", ticks=1000)
+    repeated = demo.snapshots(["world_ticks", "world_ticks"], ticks=1000)
+    assert isinstance(repeated, dict)
+    assert list(repeated) == ["world_ticks"]
+    assert repeated["world_ticks"].equals(expected)
+
+
 def test_snapshots_release_gil() -> None:
-    parsed = Demo(_fixture())
+    parsed = Demo(_fixture(), preload=False)
     ready = threading.Event()
     stop = threading.Event()
     progress = [0]

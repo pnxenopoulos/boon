@@ -1,17 +1,5 @@
 use crate::*;
 
-/// Return a mapping of hero ID to hero name.
-///
-/// Returns:
-///     A dict mapping hero IDs (int) to hero names (str).
-#[pyfunction]
-pub(super) fn hero_names() -> HashMap<i64, &'static str> {
-    boon_parser::all_heroes()
-        .iter()
-        .map(|&(id, name)| (id, name))
-        .collect()
-}
-
 /// Return a mapping of team number to team name.
 ///
 /// Returns:
@@ -24,36 +12,6 @@ pub(super) fn team_names() -> HashMap<i64, &'static str> {
         .collect()
 }
 
-/// Return a mapping of ability hash ID to ability name.
-///
-/// Returns:
-///     A dict mapping MurmurHash2 ability IDs (int) to ability names (str).
-#[pyfunction]
-pub(super) fn ability_names() -> HashMap<u32, &'static str> {
-    boon_parser::all_abilities()
-        .iter()
-        .map(|&(id, name)| (id, name))
-        .collect()
-}
-
-/// Return exact internal ability/item names mapped to English display names.
-///
-/// Includes every exact top-level abilities.vdata name present in Valve's
-/// English hero/item localization catalogs, including ``ability_*``,
-/// ``upgrade_*``, and ``citadel_ability_*``. Hidden, test, retired, or
-/// otherwise unlocalized entries are omitted rather than assigned a
-/// synthesized display name.
-///
-/// Returns:
-///     A dict mapping internal names (str) to English in-game names (str).
-#[pyfunction]
-pub(super) fn ability_display_names() -> HashMap<&'static str, &'static str> {
-    boon_parser::all_ability_display_names()
-        .iter()
-        .copied()
-        .collect()
-}
-
 /// Return a mapping of game mode ID to game mode name.
 ///
 /// Returns:
@@ -61,18 +19,6 @@ pub(super) fn ability_display_names() -> HashMap<&'static str, &'static str> {
 #[pyfunction]
 pub(super) fn game_mode_names() -> HashMap<i64, &'static str> {
     boon_parser::all_game_modes()
-        .iter()
-        .map(|&(id, name)| (id, name))
-        .collect()
-}
-
-/// Return a mapping of modifier hash ID to modifier name.
-///
-/// Returns:
-///     A dict mapping MurmurHash2 modifier IDs (int) to modifier names (str).
-#[pyfunction]
-pub(super) fn modifier_names() -> HashMap<u32, &'static str> {
-    boon_parser::all_modifiers()
         .iter()
         .map(|&(id, name)| (id, name))
         .collect()
@@ -126,4 +72,20 @@ pub(super) fn lifestate_names() -> HashMap<i64, &'static str> {
         .iter()
         .map(|&(id, name)| (id, name))
         .collect()
+}
+
+/// Read name maps from a verified boon-data directory. Acquisition lives in Python's data module.
+#[pyfunction]
+pub(super) fn _read_catalog_names(py: Python<'_>, directory: PathBuf) -> PyResult<Py<PyAny>> {
+    let names = py
+        .detach(|| boon_parser::CatalogNames::from_directory(&directory))
+        .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?;
+    (
+        names.heroes,
+        names.abilities,
+        names.ability_display_names,
+        names.modifiers,
+        names.breakables,
+    )
+        .into_py_any(py)
 }

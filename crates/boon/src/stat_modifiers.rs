@@ -96,27 +96,30 @@ impl Index<StatModifierKind> for StatModifierTotals {
 /// | Canonical stat       | 10725 | 10854 |
 /// |----------------------|------:|------:|
 /// | health               |    31 |    43 |
-/// | spirit power         |    51 |   158 |
+/// | spirit power         |    51 | 158/159 |
 /// | fire rate            |    79 |    91 |
 /// | weapon damage        |    18 |    19 |
 /// | cooldown reduction   |   109 |    98 |
 /// | ammo                 |   172 |    63 |
 ///
-/// Each pair contains different numbers. This controller vector contains
-/// permanent stat-viewer modifiers. Therefore, this table can accept both
-/// layouts without ambiguity. It does not have to guess a layout from one
-/// controller snapshot. Build 10854 also uses values 32-35 for signed spirit
-/// and bullet resistance. Captured build-10725 vectors do not use these
-/// values.
+/// Build 10854 clients 6683/6684 use 158 for permanent spirit pickups,
+/// whereas client 6698 uses 159 (`MODIFIER_VALUE_TECH_POWER` in GameTracking
+/// revision a1139b2e4533, `DumpSource2/schemas/client/EModifierValue.h`).
+/// These aliases apply to this permanent stat-viewer vector only; 158 means
+/// `MODIFIER_VALUE_ARMOR_POWER` in the newer general modifier enum.
 ///
-/// This table contains observed aliases. It does not define stable wire IDs.
-/// For each new build, verify the observed `m_eValType` values. Do not add an
-/// alias if Valve assigns an existing number to a different stat. In that case,
-/// select the layout from the build number.
+/// These aliases cover the permanent pickups observed in the captured clients;
+/// they are not a general modifier-enum decoder. Build 10854 also uses values
+/// 32-35 for signed spirit and bullet resistance. Captured build-10725 vectors
+/// do not use those values.
+///
+/// For each new client, verify the observed `m_eValType` values. If an alias
+/// acquires a conflicting meaning in this vector, select the layout from the
+/// client version; the engine build number alone is not sufficient.
 pub const fn decode_stat_modifier_value_type(value_type: u32) -> Option<DecodedStatModifierValue> {
     let (kind, value_scale) = match value_type {
         31 | 43 => (StatModifierKind::Health, 1.0),
-        51 | 158 => (StatModifierKind::SpiritPower, 1.0),
+        51 | 158 | 159 => (StatModifierKind::SpiritPower, 1.0),
         79 | 91 => (StatModifierKind::FireRate, 1.0),
         18 | 19 => (StatModifierKind::WeaponDamage, 1.0),
         109 | 98 => (StatModifierKind::CooldownReduction, 1.0),
@@ -166,6 +169,7 @@ mod tests {
         (43, StatModifierKind::Health),
         (51, StatModifierKind::SpiritPower),
         (158, StatModifierKind::SpiritPower),
+        (159, StatModifierKind::SpiritPower),
         (79, StatModifierKind::FireRate),
         (91, StatModifierKind::FireRate),
         (18, StatModifierKind::WeaponDamage),
@@ -222,13 +226,14 @@ mod tests {
         let totals = aggregate_stat_modifier_values([
             (51, 6.0),
             (158, 9.0),
+            (159, 3.0),
             (34, 10.0),
             (35, 2.0),
             (999, 5.0),
             (0, 3.0),
         ]);
 
-        assert_eq!(totals[StatModifierKind::SpiritPower], 15.0);
+        assert_eq!(totals[StatModifierKind::SpiritPower], 18.0);
         assert_eq!(totals[StatModifierKind::BulletResist], 8.0);
         assert_eq!(totals.unknown_count, 1);
     }

@@ -4,6 +4,14 @@ Valve changes Deadlock and its demo format frequently. This page lists known Boo
 
 Report other problems on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
 
+## Barrier pool snapshots are not grant events
+
+`player_ticks.barrier` mirrors the replicated modifier tracker. A full-packet
+snapshot can introduce a partial pool before the ordinary grant update.
+For example, match 100655353 shows a partial pool at tick 149761 and the grant
+update at tick 150923. Do not treat every pool rise as a new barrier grant or
+every fall as absorption. Exact grant lifecycles remain unresolved.
+
 ## Player stat modifiers are not final stats
 
 `demo.player_ticks` reads `m_vecStatViewerModifierValues` from each player
@@ -15,6 +23,11 @@ effective player stats.
 `stat_modifier_values_available` is false when the demo serializer does not
 contain this vector. `unknown_stat_modifier_count` is the number of vector
 entries with a nonzero `EModifierValue` that this Boon version does not know.
+
+Valve can renumber these values between client versions. The decoder contains
+aliases observed in tested demos; it does not select a layout by client version.
+An unknown-count value of zero does not prove that all aliases are correct for
+a new client. The boon-data catalogs do not currently supply this numeric enum.
 
 ## Banned heroes are frequently absent
 

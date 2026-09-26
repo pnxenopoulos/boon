@@ -10,7 +10,14 @@ demo = Demo("match.dem")
 ```
 
 A Deadlock demo file. The constructor reads the file header, file information,
-and first tick. It uses this data to get match metadata.
+and first tick for match metadata, then preloads kills, damage, and abilities in
+one shared pass. Other datasets load on first access. Combat parsing errors are
+reported during construction when preloading is enabled.
+
+Use `Demo("match.dem", preload=False)` for lightweight construction. This
+keyword-only option disables combat preloading; datasets remain available on
+first access or through `demo.load(...)`. CLI commands use this mode to load
+only the datasets they request.
 
 **Raises:**
 
@@ -22,6 +29,7 @@ and first tick. It uses this data to get match metadata.
 **Parameters:**
 
 - **path** (`str`) -- Path to the `.dem` file.
+- **preload** (`bool`, keyword-only) -- Load kills, damage, and abilities during construction. Default: `True`.
 
 ### Methods
 
@@ -53,10 +61,11 @@ Return all dataset names. You can pass these names to `load()` or access them as
 demo.load("kills", "player_ticks", "world_ticks")
 ```
 
-Load one or more datasets from the demo in one pass. Use `available_datasets()` to get valid names.
+Load one or more datasets from the demo. Use `available_datasets()` to get valid names.
 
-Boon skips datasets that are already loaded. Datasets in one request use one
-parse pass.
+Boon skips datasets that are already loaded. Event and entity datasets share
+one filtered pass. Player, world, and trooper snapshots share a parallel pass.
+A request that includes both groups uses both passes.
 
 **Parameters:**
 
@@ -145,7 +154,7 @@ negative clock.
 #### `snapshots()`
 
 ```python
-demo.snapshots(every=64)                          # ~1 row/sec of ticks
+demo.snapshots(every=64)                          # every 64 ticks
 demo.snapshots(ticks=[29000, 30000])              # specific ticks
 demo.snapshots(start_tick=29000, end_tick=30000)  # a contiguous window
 demo.snapshots("troopers", events="kills")        # troopers at kill ticks
@@ -174,60 +183,122 @@ without a selector raises `ValueError`.
 
 ```python
 summary = demo.summary()
-summary.keys()                 # dict_keys(['snapshots', 'last_hits', 'objectives', 'damage'])
-summary["snapshots"]           # pl.DataFrame -- one row per (snapshot, player)
-summary["last_hits"]           # pl.DataFrame -- hero_id, last_hits
-summary["objectives"]          # pl.DataFrame -- post-match objective records
-summary["damage"]              # pl.DataFrame -- damage matrix (long form)
+summary["snapshots"]     # Player totals and state at each recorded snapshot
+summary["gold_sources"]  # Souls, kills, and damage by source at each snapshot
+summary["last_hits"]     # Final last-hit totals
+summary["objectives"]    # Recorded objective results
+summary["damage"]        # Source-to-target matrix: interval amounts and totals
+summary["healing"]       # Healing and regeneration from that matrix
 ```
 
-Parse the post-match summary from the demo's `PostMatchDetails` event. Returns a
-dict with four top-level keys:
+Boon decodes the demo's `PostMatchDetails` message. These tables contain recorded
+post-match statistics. They do not estimate healing from changes in health.
+The first call builds and caches all six tables.
 
-- **`snapshots`** -- a Polars DataFrame with one row per (snapshot, player).
-  Snapshots are taken at intervals through the match (not every minute);
-  `snapshot_time_s` marks each one. Columns hold that player's running totals at
-  that time: `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
-  `level`, `lane`, `creep_kills`, `neutral_kills`, `player_damage`, and the
-  per-source gold/orbs breakdown (`player_*`, `lane_creep_*`, `neutral_creep*`,
-  `boss_*`, `treasure_*`, `denies_*`, `team_bonus_*`, `breakable_*`,
-  `assassinate_*`, `trophy_collector_*`, `cultist_sacrifice_*`, `assists_*`, and
-  `unknown_*`).
-- **`last_hits`** -- a Polars DataFrame of `hero_id` and `last_hits`: the final
-  scoreboard last-hit (souls secured) total. This is only recorded per match,
-  not per snapshot, which is why it is a separate frame rather than a snapshot
-  column.
-- **`objectives`** -- a Polars DataFrame of post-match objective records:
-  `team_objective_id`, `team`, `destroyed_time_s`, `first_damage_time_s`,
-  `creep_damage`, `player_damage`, `player_spirit_damage`. `destroyed_time_s` and
-  `first_damage_time_s` are null when the objective was never destroyed/damaged.
-- **`damage`** -- a Polars DataFrame of the damage matrix in long form: one row
-  per (`dealer_player_slot`, `target_player_slot`, `source_name`,
-  `sample_time_s`). Dealer/target are also resolved to `dealer_hero_id` and
-  `target_hero_id` (null for non-player slots like `0`), so the frame joins to
-  `snapshots`/`last_hits` on `hero_id`. `damage` is the **per-interval, additive**
-  amount for that
-  `stat_type` dealt during the interval ending at that sample -- `sum` it for
-  totals, `cumsum` over `sample_time_s` for the running total. `stat_type` is a
-  string (`damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`,
-  `regen`). `is_category` (bool) flags Valve's coarse damage-type buckets
-  (`Bullet`/`Ability`/`Melee`/`Misc`/`UnknownAbility`), which duplicate the
-  specific-source rows for `damage`; filter to `is_category == False` for the
-  complete, non-overlapping per-source breakdown across all stat types.
+- **`snapshots`** has one row per player and `snapshot_time_s`. It includes
+  `player_slot`, `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
+  `level`, `lane`, `creep_kills`, and `neutral_kills`.
+  Recorded damage totals are `player_damage`, `creep_damage`, `neutral_damage`,
+  `boss_damage`, `self_damage`, and `player_damage_taken`.
+  Healing totals are `player_healing`, `teammate_healing`, and `self_healing`.
+  Other recorded counters are `damage_mitigated`, `damage_absorbed`,
+  `absorption_provided`, `heal_prevented`, and `heal_lost`.
+  The added counters are null when the message omits them.
+  Existing gold and orb columns remain available. Their prefixes are `player_*`,
+  `lane_creep_*`, `neutral_creep*`, `boss_*`, `treasure_*`, `denies_*`,
+  `team_bonus_*`, `breakable_*`, `assassinate_*`, `trophy_collector_*`,
+  `cultist_sacrifice_*`, `assists_*`, and `unknown_*`.
+  The `unknown_*` columns refer to the Goose Egg source.
+- **`gold_sources`** has one row per recorded player, snapshot, and soul source.
+  Columns are `snapshot_time_s`, `player_slot`, `hero_id`, `source_id`,
+  `source_name`, `gold`, `gold_orbs`, `kills`, and `damage`.
+  The counters are cumulative at that snapshot. `gold` and `gold_orbs` preserve
+  the separate counters from the message. Use `snapshots.net_worth` for net worth.
+  Source names are protobuf names, such as `k_ePlayers`, `k_eLaneCreeps`, and
+  `k_eAssists`. Unknown IDs remain available as `unknown_<id>`.
+  Absent source IDs, names, or counters are null. This table preserves sources
+  that have no column in `snapshots`.
+- **`last_hits`** contains `hero_id` and the final scoreboard `last_hits` total.
+- **`objectives`** contains `team_objective_id`, `team`, `destroyed_time_s`,
+  `first_damage_time_s`, `creep_damage`, `player_damage`, and
+  `player_spirit_damage`. Absent times are null.
+- **`damage`** contains the full recorded matrix. Each row identifies a
+  `dealer_player_slot`, `target_player_slot`, `source_name`, `stat_type`, and
+  `sample_time_s`. `dealer_hero_id` and `target_hero_id` identify roster heroes;
+  non-player slots have null hero IDs.
+  `damage` is the amount for the interval from `interval_start_s` to
+  `sample_time_s`. **`total` is the recorded cumulative amount at `sample_time_s`.**
+  `stat_type` is `damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`, or
+  `regen`. Unknown values use `unknown_<id>`.
+  `is_category=True` marks broad source categories such as `Bullet`, `Ability`,
+  `Melee`, `Misc`, and `UnknownAbility`. These rows duplicate specific sources.
+  Select categories or specific sources before aggregation. Do not add them together.
+- **`healing`** selects `healing` and `regen` rows from the matrix and excludes
+  category duplicates. Columns are `interval_start_s`, `interval_end_s`,
+  `healer_player_slot`, `healer_hero_id`, `target_player_slot`, `target_hero_id`,
+  `source_name`, `stat_type`, `amount`, and `total`.
+  `amount` is the interval amount. **`total` is the recorded cumulative amount
+  at `interval_end_s`.** Periods with no increase remain in the table.
+  `stat_type` separates healing from regeneration. `source_name` preserves the
+  recorded item, ability, modifier, or other source label.
 
-  ```python
-  import polars as pl
-  dmg = demo.summary()["damage"]
-  # player-vs-player damage matrix (totals) -- the obvious query just works:
-  (dmg.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
-      .group_by("dealer_player_slot", "target_player_slot")
-      .agg(pl.col("damage").sum()))
-  ```
+Times use match-clock seconds. Player snapshots and matrix samples can use
+**different reporting periods**. Use their recorded times; do not assume a fixed
+interval or join them by row number. Sparse matrix histories start at later
+samples. Boon does not add rows for unrecorded periods.
+Hero IDs come from the match roster. Use player slots to identify players across
+hero changes.
 
-**Returns:** `dict` -- The post-match summary (Polars DataFrames keyed by name).
+To get a total at one reporting period, select that time and sum `total` across
+sources. **Do not sum `total` across reporting periods.** To combine periods,
+sum the interval column (`damage` or `amount`).
 
-**Raises:** `DemoMessageError` -- If the demo contains no post-match details
-(for example, an incomplete recording).
+```python
+import polars as pl
+
+summary = demo.summary()
+healing = summary["healing"]
+matrix = summary["damage"]
+period = matrix["sample_time_s"].max()  # Select a recorded reporting period
+
+# Healing and regeneration totals by player and type at each period.
+healing_totals = healing.group_by(
+    "interval_end_s", "healer_player_slot", "stat_type"
+).agg(pl.col("total").sum())
+
+# Healing or regeneration by source for one player at one period.
+healing_sources = healing.filter(
+    (pl.col("interval_end_s") == period) & (pl.col("healer_player_slot") == 2)
+).group_by("stat_type", "source_name").agg(pl.col("total").sum())
+
+# Souls by source. This table uses the player snapshot schedule.
+souls = summary["gold_sources"].filter(pl.col("player_slot") == 2)
+
+# Damage dealt by type at one period: use only broad categories.
+damage_types = matrix.filter(
+    (pl.col("sample_time_s") == period)
+    & (pl.col("stat_type") == "damage")
+    & pl.col("is_category")
+).group_by("dealer_player_slot", "source_name").agg(pl.col("total").sum())
+
+# Damage to/from players: use only specific sources to prevent duplicates.
+player_damage = matrix.filter(
+    (pl.col("sample_time_s") == period)
+    & (pl.col("stat_type") == "damage")
+    & ~pl.col("is_category")
+    & pl.col("dealer_hero_id").is_not_null()
+    & pl.col("target_hero_id").is_not_null()
+).group_by("dealer_player_slot", "target_player_slot").agg(pl.col("total").sum())
+
+# Optional square matrix: rows deal damage, columns receive damage.
+damage_matrix = player_damage.pivot(
+    on="target_player_slot", index="dealer_player_slot", values="total"
+)
+```
+
+**Returns:** `dict[str, polars.DataFrame]` with the six tables above.
+
+**Raises:** `DemoMessageError` if the post-match message is absent or invalid.
 
 (kill-participation)=
 #### `kill_participation()`
@@ -237,11 +308,10 @@ demo.kill_participation()                          # whole match
 demo.kill_participation(start_tick=0, end_tick=18000)  # windowed
 ```
 
-Each player's kill participation: `(kills + assists) / team_kills`. A player is
-credited on a team kill as either the killer or an assister (never both), so the
-value is a fraction in `[0, 1]` — the share of their team's kills they were
-involved in. Convenience method that delegates to
-[`boon.stats.kill_participation()`](#stats); see that section for details.
+Each player's kill participation is `(kills + assists) / team_kills`.
+A kill credits a player as either the killer or an assister, never both.
+The ratio is in `[0, 1]`, or null if the team has no kills.
+This method calls [`boon.stats.kill_participation()`](#stats).
 
 Optional `start_tick` / `end_tick` restrict the count to kills within that tick
 window (the denominator is the team's kills in the same window).
@@ -265,11 +335,10 @@ window (the denominator is the team's kills in the same window).
 demo.time_dead()
 ```
 
-Time each player spent dead during regulation. A player is dead on any tick
-where they are not alive (`is_alive == False`); only non-paused ticks up to the
-game-over event are counted, so the totals align with `regulation_ticks` /
-`regulation_seconds`. Convenience method that delegates to
-[`boon.stats.time_dead()`](#stats).
+Time each player spent dead during regulation. A player is dead when
+`is_alive == False`. The function counts only unpaused ticks up to game over.
+The totals use the same time limits as `regulation_ticks` and
+`regulation_seconds`. This method calls [`boon.stats.time_dead()`](#stats).
 
 **Returns:** `polars.DataFrame` — one row per player, sorted by `team_num` then
 `hero_id`:
@@ -283,7 +352,7 @@ game-over event are counted, so the totals align with `regulation_ticks` /
 | `pct_regulation_dead` | `float` | `ticks_dead / regulation_ticks` as a percentage in `[0, 100]` |
 
 **Raises:** `ValueError` — If the demo has no game-over event (regulation time,
-and therefore this metric, is undefined).
+and thus this metric, is undefined).
 
 (in-combat)=
 
@@ -293,12 +362,11 @@ and therefore this metric, is undefined).
 demo.in_combat()
 ```
 
-Whether each player is in combat, per tick. Deadlock tracks combat on the pawn
-as a window (`in_combat_end_time` on `player_ticks`, pushed to
-`last_damage_time + delay` on every hit — ~0.5s for trooper/denizen damage, ~3.0s
-for hero damage); this derives the live boolean by comparing the current game
-time against that window. Convenience method that delegates to
-[`boon.stats.in_combat()`](#stats).
+Whether each player is in combat, per tick. Each hit updates the pawn's combat
+window to `last_damage_time + delay`. The observed delay is approximately
+0.5 seconds for trooper or denizen damage and 3 seconds for hero damage.
+The function compares game time with `player_ticks.in_combat_end_time`.
+This method calls [`boon.stats.in_combat()`](#stats).
 
 **Returns:** `polars.DataFrame` — one row per `(tick, hero_id)`, so it joins
 directly onto `player_ticks`, sorted by `tick` then `hero_id`:
@@ -412,7 +480,7 @@ demo.winning_team_num  # int | None
 ```
 
 The team number of the winning team, or `None` if no game-over event was found.
-Scans for the `k_EUserMsg_GameOver` event on first access.
+Uses the cached `k_EUserMsg_GameOver` event, or scans for it if necessary.
 
 ---
 
@@ -423,7 +491,7 @@ demo.game_over_tick  # int | None
 ```
 
 The tick when the game ended, or `None` if no game-over event was found.
-Scans for the `k_EUserMsg_GameOver` event on first access.
+Uses the cached `k_EUserMsg_GameOver` event, or scans for it if necessary.
 
 ---
 
@@ -445,13 +513,14 @@ and the game begins, ending the pre-game lobby. The counterpart to `game_over_ti
 demo.pregame_seconds  # float | None
 ```
 
-The pre-game lobby duration in seconds (about 30s). The demo starts recording during
-the pre-game, so tick 0 leads the on-screen match clock by this amount:
-`match clock = tick_to_seconds - pregame_seconds`. Read from the replicated match clock
-at game over rather than assumed constant, so it is exact per demo. `None` if the demo
-has no game-over event, does not replicate the match clock, or does not start in the
-pre-game (a recording that begins after the barrier drop). See `tick_to_match_seconds`
-/ `tick_to_match_clock`.
+The pregame duration in seconds, usually about 30 seconds.
+Boon reads the replicated match clock at game over to calculate the duration.
+It does not assume a fixed duration.
+
+`match clock = tick_to_seconds - pregame_seconds`.
+The result is `None` if the game-over event or match clock is absent.
+It is also `None` if recording starts after pregame.
+See `tick_to_match_seconds` and `tick_to_match_clock`.
 
 ---
 
@@ -527,7 +596,7 @@ contain the message.
 | Column | Type | Description |
 |--------|------|-------------|
 | `hero_id` | `int` | The banned hero's ID (joins to `players.hero_id`) |
-| `hero_name` | `str` | Resolved hero name, or `"HERO_NOT_FOUND"` for an ID that predates the bundled hero table |
+| `hero_name` | `str` | Resolved hero name, or `"HERO_NOT_FOUND"` for an ID absent from the selected boon-data catalog |
 
 The message contains only hero IDs. It does not contain the team, banning
 player, or draft order. Boon can list unavailable heroes, but it cannot build
@@ -661,7 +730,7 @@ Boon loads this dataset on first access.
 demo.kills  # polars.DataFrame
 ```
 
-Hero kill events. Boon loads this dataset on first access.
+Hero kill events. Preloaded during construction unless `preload=False`.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -678,13 +747,17 @@ Hero kill events. Boon loads this dataset on first access.
 demo.damage  # polars.DataFrame
 ```
 
-Damage events. Boon loads this dataset on first access.
+Damage events. Preloaded during construction unless `preload=False`.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `tick` | `int` | The game tick when the damage occurred |
+| `tick` | `int` | The enclosing demo command tick |
 | `damage` | `int` | The damage dealt |
 | `pre_damage` | `float` | The damage before mitigation |
+| `damage_absorbed` | `float` or null | Recorded absorption; legacy integer fallback when the float field is absent |
+| `victim_shield_new` | `int` or null | Remaining shield after the hit |
+| `victim_shield_max` | `int` or null | Shield capacity |
+| `server_tick` | `int` or null | Server tick recorded in the damage message |
 | `victim_hero_id` | `int` | The hero ID of the victim (0 if not a hero) |
 | `attacker_hero_id` | `int` | The hero ID of the attacker (0 if not a hero) |
 | `victim_health_new` | `int` | The victim's health after damage |
@@ -698,6 +771,23 @@ Damage events. Boon loads this dataset on first access.
 | `damage_flags` | `int` | Raw Valve damage flags used for detailed classification |
 | `is_melee` | `bool` | Whether this is melee-typed damage (`citadel_type == 3`) |
 | `melee_type` | `str` or null | `"light"`, `"heavy"`, or `"other"` for melee-typed damage; null otherwise |
+
+`tick` comes from the demo command that contains the damage message. Use this
+value with other Boon datasets and the tick-to-clock methods. `server_tick`
+comes from the damage message itself. These counters can differ. In
+`106996573.dem`, `server_tick - tick` is either 1,705 or 1,706. Thus, one fixed
+offset does not give an exact conversion for all rows. A null `server_tick`
+means the message does not contain this field.
+
+The shield fields are copied from the damage message. Observed hit sequences
+suggest that `victim_shield_new` is the shield remaining after the hit and
+`victim_shield_max` is the capacity of that shield pool. For example, in
+`103129247.dem`, five hits reduce the reported shield from 95 to 0 while its
+capacity stays at 127. The final hit absorbs about 3.30 damage and deals 11
+damage to health. The shield fields are integers; `damage_absorbed` can have
+a fractional value. These fields do not give a complete history of shield
+gains and expiry. They can be absent even when absorption is positive. Null
+means absent, not zero.
 
 `is_melee` contains Valve's melee damage category. The `DFLAG_LIGHT_MELEE`
 and `DFLAG_HEAVY_MELEE` bits identify light and heavy hits.
@@ -728,7 +818,7 @@ Flex slot unlock events. Boon loads this dataset on first access.
 demo.abilities  # polars.DataFrame
 ```
 
-Important ability usage events. Boon loads this dataset on first access.
+Important ability usage events. Preloaded during construction unless `preload=False`.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -841,9 +931,10 @@ demo.rift  # polars.DataFrame
 
 Rift lifecycle — one row per Rift. Boon loads this dataset on first access.
 
-The Rift is a periodic king-of-the-hill objective (`Koth` in the game files). It
-is announced, becomes contestable, and then either is captured by a team — which
-grants that team buffed troopers in the Rift's lane — or expires uncaptured.
+The Rift is a periodic king-of-the-hill objective (`Koth` in the game files).
+After the announcement, teams can capture it until it expires.
+A successful capture grants enhanced troopers to the winning team in the
+Rift's lane.
 
 Exactly one of `capture_tick` / `expire_tick` is set per row. Only completed
 Rifts appear: one still live when the demo ends is omitted.
@@ -861,9 +952,9 @@ Rifts appear: one still live when the demo ends is omitted.
 | `y` | `float` | Y position of the cash-in in world (Hammer) units |
 | `z` | `float` | Z position of the cash-in in world (Hammer) units |
 
-The winner comes from the game rules' scoring team, not from the Rift entity's
-own `m_iTeamNum` — that field tracks whoever last made capture progress and
-disagrees with the actual winner.
+Boon reads the winner from the game rules' scoring team.
+The Rift entity's `m_iTeamNum` records the last team to make capture progress.
+That team can differ from the winner.
 
 ```python
 demo.rift.select(["rift_num", "capture_tick", "winning_team", "lane"])
@@ -947,6 +1038,11 @@ Therefore, the dataset does not contain these columns. Position and team use
 the last values before the final leave.
 
 Boon does not load this dataset by default. Access the property or call `load("breakables")`.
+Subclass names come from the newest verified local boon-data `misc.json`,
+automatically downloading latest if no installation exists. The recorded
+`subclass_id` is preserved even when no catalog entry matches it. To resolve
+those IDs against a different version, use `breakable_names(version="6698")`.
+Catalog acquisition failures raise `boon.data.DataError` before parsing begins.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -1150,8 +1246,24 @@ Boon loads this dataset on first access.
 
 ## Name Lookup Functions
 
-Module-level functions for resolving IDs to human-readable names. These do not
-require a parsed demo.
+Module-level functions resolve IDs to names without parsing a demo.
+`hero_names`, `ability_names`, `ability_display_names`, `modifier_names`, and `breakable_names`
+read boon-data catalogs. Each accepts an optional `version` client-version string.
+Without it, Boon selects the newest verified local installation. If none exists,
+it downloads the latest release automatically. Explicit missing versions are
+also downloaded. Importing Boon and parsing raw IDs do not download data.
+
+Installed data works offline. Failed acquisition or invalid catalog contents
+raise `boon.data.DataError`. Use `boon versions` and `boon get VERSION` to manage
+installations; use `boon get VERSION --force` to repair corrupt files.
+See {doc}`data` for cache configuration and verification.
+
+```python
+from boon import ability_names, hero_names
+
+hero_names(version="6698")
+ability_names(version="6698")
+```
 
 ### `hero_names()`
 
@@ -1161,7 +1273,7 @@ from boon import hero_names
 hero_names()  # -> dict[int, str]
 ```
 
-Return a mapping of hero ID to hero name.
+Return hero IDs mapped to localized names. Unlocalized heroes use their internal names.
 
 **Returns:** `dict[int, str]` -- Hero ID to hero name mapping (for example, `{1: "Infernus", 2: "Seven", ...}`).
 
@@ -1221,6 +1333,20 @@ name mapping.
 
 ---
 
+### `breakable_names()`
+
+```python
+from boon import breakable_names
+
+breakable_names().get(3986897915)  # -> "citadel_breakable_prop_wooden_crate"
+breakable_names(version="6698")  # explicitly select a client version
+```
+
+Returns `{subclass_id: internal_name}` from `misc.json`, restricted to records
+whose `definition._class` is `citadel_breakable_prop`. Other misc definitions
+such as pickups are excluded. IDs absent from the catalog are not in the map;
+`demo.breakables.subclass_name` uses `"BREAKABLE_NOT_FOUND"` for them.
+
 ### `game_mode_names()`
 
 ```python
@@ -1243,7 +1369,11 @@ from boon import modifier_names
 modifier_names()  # -> dict[int, str]
 ```
 
-Return a mapping of MurmurHash2 modifier ID to modifier name.
+Return unqualified and owner-qualified modifier IDs mapped to their corresponding
+names. For example, an owner-qualified token resolves to
+`ability_afterburn/modifier_afterburn_dot`. Repeated records with the same ID and
+name share one entry. Conflicting names raise `DataError`; use the raw boon-data
+record indexes to get all candidate definitions and their effects.
 
 **Returns:** `dict[int, str]` -- Modifier hash to name mapping.
 
@@ -1274,11 +1404,11 @@ hitgroup_names()  # -> dict[int, str]
 ```
 
 Return a mapping of hit group ID to hit group name, for resolving the
-`hitgroup_id` column on the `damage` frame. Values are Source 2's `HitGroup_t`
-enum: `0=generic`, `1=head`, `2=chest`, `3=stomach`, the limbs (`4=left_arm`,
-`5=right_arm`, `6=left_leg`, `7=right_leg`), `8=neck`, `10=gear`, `11=special`,
-the tier-2 / drone boss weakpoints (`12`–`18`), `19=head_no_resist`, and
-`-1=invalid`. The `HITGROUP_COUNT` sentinel is omitted.
+`hitgroup_id` column on the `damage` frame. Values come from Source 2's `HitGroup_t` enum.
+The map includes `0=generic`, `1=head`, `2=chest`, and `3=stomach`.
+Limb values are `4=left_arm`, `5=right_arm`, `6=left_leg`, and `7=right_leg`.
+Other values include `8=neck`, `10=gear`, `11=special`, `19=head_no_resist`,
+and `-1=invalid`. Values `12`–`18` identify tier-2 and drone boss weakpoints. The `HITGROUP_COUNT` sentinel is omitted.
 
 **Returns:** `dict[int, str]` -- Hit group ID to name mapping.
 
@@ -1302,12 +1432,11 @@ Return a mapping of life state ID to life state name, for resolving the
 (stats)=
 ## Stats (`boon.stats`)
 
-An analysis layer of derived metrics computed from parsed demo data. Each
-function takes a [`Demo`](#demo) and returns a Polars DataFrame, keyed on
-`hero_id` so results join cleanly to the parser's other frames (`players`,
-`kills`, `player_ticks`, the `summary()` outputs, ...). Every metric is also
-surfaced as a convenience method on `Demo` (for example `demo.kill_participation()`
-delegates to `boon.stats.kill_participation(demo)` — same computation).
+These functions calculate metrics from parsed demo data. Each function takes
+a [`Demo`](#demo) and returns a Polars DataFrame. Most results use `hero_id`
+for joins with other datasets. `teamfights()` returns one row per fight.
+Each function also has a `Demo` method. For example,
+`demo.kill_participation()` calls `boon.stats.kill_participation(demo)`.
 
 ### `kill_participation()`
 
@@ -1319,11 +1448,11 @@ stats.kill_participation(demo, start_tick=0, end_tick=18000)  # windowed
 demo.kill_participation()                                   # equivalent method form
 ```
 
-Each player's `(kills + assists) / team_kills`. A player is credited on a team
-kill as either the killer or an assister (never both on the same kill), so the
-value is a fraction in `[0, 1]` — the share of their team's kills they were
-involved in. Pass `start_tick` / `end_tick` to count only kills within that tick
-window (the denominator is the team's kills in the same window).
+Each player's `(kills + assists) / team_kills`.
+A kill credits a player as either the killer or an assister, never both.
+The ratio is in `[0, 1]`, or null if the team has no kills.
+Use `start_tick` and `end_tick` to select a window.
+The denominator counts team kills in that same window.
 
 **Returns:** `polars.DataFrame` with columns `hero_id`, `team_num`, `kills`,
 `assists`, `team_kills`, `kill_participation` (see the
@@ -1338,9 +1467,9 @@ from boon import stats
 stats.time_dead(demo)   # equivalently: demo.time_dead()
 ```
 
-Time each player spent dead during regulation. A player is dead on any tick
-where `is_alive == False`; only non-paused ticks up to the game-over event are
-counted, so the totals align with `demo.regulation_ticks` /
+Time each player spent dead during regulation. A player is dead when
+`is_alive == False`. The function counts only unpaused ticks up to game over.
+The totals use the same time limits as `demo.regulation_ticks` and
 `demo.regulation_seconds`.
 
 **Returns:** `polars.DataFrame` with columns `hero_id`, `team_num`,

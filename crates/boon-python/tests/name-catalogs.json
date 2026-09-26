@@ -1,0 +1,736 @@
+{
+  "heroes": [
+    {
+      "hero_id": 67,
+      "hero_name": "hero_bookworm",
+      "display_name": "Paige"
+    },
+    {
+      "hero_id": 69,
+      "hero_name": "hero_doorman",
+      "display_name": "The Doorman"
+    },
+    {
+      "hero_id": 66,
+      "hero_name": "hero_frank",
+      "display_name": "Victor"
+    },
+    {
+      "hero_id": 2,
+      "hero_name": "hero_gigawatt",
+      "display_name": "Seven"
+    },
+    {
+      "hero_id": 1,
+      "hero_name": "hero_inferno",
+      "display_name": "Infernus"
+    },
+    {
+      "hero_id": 63,
+      "hero_name": "hero_vampirebat",
+      "display_name": "Mina"
+    },
+    {
+      "hero_id": 7,
+      "hero_name": "hero_wraith",
+      "display_name": "Wraith"
+    },
+    {
+      "hero_id": 15,
+      "hero_name": "hero_bebop",
+      "display_name": "Bebop"
+    },
+    {
+      "hero_id": 77,
+      "hero_name": "hero_fencer",
+      "display_name": "Apollo"
+    }
+  ],
+  "abilities": [
+    {
+      "ability_id": 1011349580,
+      "ability_name": "ability_unicorn_luminousstrike",
+      "display_name": "Radiant Daggers"
+    },
+    {
+      "ability_id": 4261702459,
+      "ability_name": "citadel_ability_climb_rope",
+      "display_name": null
+    },
+    {
+      "ability_id": 2207638101,
+      "ability_name": "citadel_ability_dash",
+      "display_name": "Dash"
+    },
+    {
+      "ability_id": 1928108461,
+      "ability_name": "citadel_ability_hook",
+      "display_name": "Grapple Arm"
+    },
+    {
+      "ability_id": 2402901451,
+      "ability_name": "citadel_weapon_archer_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3033433915,
+      "ability_name": "citadel_weapon_architect_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 669936916,
+      "ability_name": "citadel_weapon_astro_hand_cannon",
+      "display_name": null
+    },
+    {
+      "ability_id": 2082220949,
+      "ability_name": "citadel_weapon_astro_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1398703271,
+      "ability_name": "citadel_weapon_astro_set_shotgun",
+      "display_name": null
+    },
+    {
+      "ability_id": 4161463520,
+      "ability_name": "citadel_weapon_astro_set_shotgun_backwards",
+      "display_name": null
+    },
+    {
+      "ability_id": 3072845424,
+      "ability_name": "citadel_weapon_astro_set_shotgun_shared_base",
+      "display_name": null
+    },
+    {
+      "ability_id": 2743971415,
+      "ability_name": "citadel_weapon_astro_set_shotgun_shared_weapon_info",
+      "display_name": null
+    },
+    {
+      "ability_id": 1755130750,
+      "ability_name": "citadel_weapon_base_defense_turret",
+      "display_name": null
+    },
+    {
+      "ability_id": 3764085067,
+      "ability_name": "citadel_weapon_bebop_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1590129566,
+      "ability_name": "citadel_weapon_boho_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2605652378,
+      "ability_name": "citadel_weapon_bomber_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 353851685,
+      "ability_name": "citadel_weapon_bookworm_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 4260448939,
+      "ability_name": "citadel_weapon_bookworm_set2",
+      "display_name": null
+    },
+    {
+      "ability_id": 2976789773,
+      "ability_name": "citadel_weapon_bosstier2_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3317486525,
+      "ability_name": "citadel_weapon_bosstier3_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3609948706,
+      "ability_name": "citadel_weapon_bull_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3155417712,
+      "ability_name": "citadel_weapon_cadence_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2390964381,
+      "ability_name": "citadel_weapon_chrono_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1895060499,
+      "ability_name": "citadel_weapon_digger_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1273162367,
+      "ability_name": "citadel_weapon_digger_set2",
+      "display_name": null
+    },
+    {
+      "ability_id": 4144812912,
+      "ability_name": "citadel_weapon_doorman_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 3409956698,
+      "ability_name": "citadel_weapon_doorman_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2201766712,
+      "ability_name": "citadel_weapon_drifter_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 160782216,
+      "ability_name": "citadel_weapon_drifter_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1975078202,
+      "ability_name": "citadel_weapon_engineer_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1470169038,
+      "ability_name": "citadel_weapon_fencer_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 1769657144,
+      "ability_name": "citadel_weapon_fencer_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3877402249,
+      "ability_name": "citadel_weapon_fortuna_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2079380905,
+      "ability_name": "citadel_weapon_frank_set2",
+      "display_name": null
+    },
+    {
+      "ability_id": 1150061901,
+      "ability_name": "citadel_weapon_genericperson_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1558668879,
+      "ability_name": "citadel_weapon_ghost_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2695625322,
+      "ability_name": "citadel_weapon_gigawatt_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 581038282,
+      "ability_name": "citadel_weapon_graf_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3318975115,
+      "ability_name": "citadel_weapon_gunslinger2_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2790538565,
+      "ability_name": "citadel_weapon_gunslinger_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2679155647,
+      "ability_name": "citadel_weapon_haze_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3510968490,
+      "ability_name": "citadel_weapon_hornet_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 556186193,
+      "ability_name": "citadel_weapon_inferno_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1115497205,
+      "ability_name": "citadel_weapon_kali_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3576988085,
+      "ability_name": "citadel_weapon_kelvin_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2896288811,
+      "ability_name": "citadel_weapon_lash_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2014234803,
+      "ability_name": "citadel_weapon_magician_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2942562744,
+      "ability_name": "citadel_weapon_mirage_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3386449071,
+      "ability_name": "citadel_weapon_nano_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 3108987282,
+      "ability_name": "citadel_weapon_nano_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2834635521,
+      "ability_name": "citadel_weapon_necro_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3294175151,
+      "ability_name": "citadel_weapon_operative_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 519002049,
+      "ability_name": "citadel_weapon_priest_crossbow",
+      "display_name": "Ira Domini"
+    },
+    {
+      "ability_id": 2029849853,
+      "ability_name": "citadel_weapon_priest_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3395613043,
+      "ability_name": "citadel_weapon_punkgoat_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2470199706,
+      "ability_name": "citadel_weapon_rutger_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 215719738,
+      "ability_name": "citadel_weapon_shieldguy_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 225271804,
+      "ability_name": "citadel_weapon_shiv_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 3121968594,
+      "ability_name": "citadel_weapon_shiv_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2330506722,
+      "ability_name": "citadel_weapon_skyrunner_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 3977811669,
+      "ability_name": "citadel_weapon_skyrunner_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2080724972,
+      "ability_name": "citadel_weapon_slork_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 602440127,
+      "ability_name": "citadel_weapon_sumo_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1761919638,
+      "ability_name": "citadel_weapon_swan_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3383556212,
+      "ability_name": "citadel_weapon_synth_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1875978329,
+      "ability_name": "citadel_weapon_targetdummy_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 1961353863,
+      "ability_name": "citadel_weapon_tengu_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2914777625,
+      "ability_name": "citadel_weapon_thumper_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2053287272,
+      "ability_name": "citadel_weapon_tokamak_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2390247986,
+      "ability_name": "citadel_weapon_trapper_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3744272782,
+      "ability_name": "citadel_weapon_unicorn_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2502155040,
+      "ability_name": "citadel_weapon_vampirebat_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 57866690,
+      "ability_name": "citadel_weapon_vampirebat_set2",
+      "display_name": null
+    },
+    {
+      "ability_id": 2207852489,
+      "ability_name": "citadel_weapon_vandal_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 988091080,
+      "ability_name": "citadel_weapon_viper_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3413773852,
+      "ability_name": "citadel_weapon_viscous_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3819944797,
+      "ability_name": "citadel_weapon_viscous_set_2",
+      "display_name": null
+    },
+    {
+      "ability_id": 816395058,
+      "ability_name": "citadel_weapon_warden_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 3995444919,
+      "ability_name": "citadel_weapon_werewolf_claws",
+      "display_name": "Lycan Claws"
+    },
+    {
+      "ability_id": 3922245490,
+      "ability_name": "citadel_weapon_werewolf_rifle",
+      "display_name": null
+    },
+    {
+      "ability_id": 1427059555,
+      "ability_name": "citadel_weapon_wraith_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 495487721,
+      "ability_name": "citadel_weapon_wrecker_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2772141905,
+      "ability_name": "citadel_weapon_yakuza_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 2725537392,
+      "ability_name": "citadel_weapon_yamato_alt",
+      "display_name": null
+    },
+    {
+      "ability_id": 440716503,
+      "ability_name": "citadel_weapon_yamato_set",
+      "display_name": null
+    },
+    {
+      "ability_id": 46922526,
+      "ability_name": "inherent_base",
+      "display_name": null
+    },
+    {
+      "ability_id": 84321454,
+      "ability_name": "upgrade_quick_silver",
+      "display_name": "Quicksilver Reload"
+    }
+  ],
+  "modifiers": [
+    {
+      "modifier_id": 3285944580,
+      "modifier_name": "modifier_afterburn_dot",
+      "qualified_modifier_id": 1364211883,
+      "qualified_modifier_name": "ability_afterburn/modifier_afterburn_dot"
+    },
+    {
+      "modifier_id": 2059539911,
+      "modifier_name": "timer",
+      "qualified_modifier_id": 2905152593,
+      "qualified_modifier_name": "ability_golden_idol/timer"
+    },
+    {
+      "modifier_id": 2059539911,
+      "modifier_name": "timer",
+      "qualified_modifier_id": 3065421894,
+      "qualified_modifier_name": "citadel_ability_infinity_slash/timer"
+    },
+    {
+      "modifier_id": 2059539911,
+      "modifier_name": "timer",
+      "qualified_modifier_id": 1142786134,
+      "qualified_modifier_name": "modifier_early_gold_pickup_aura/timer"
+    },
+    {
+      "modifier_id": 2059539911,
+      "modifier_name": "timer",
+      "qualified_modifier_id": 1963793583,
+      "qualified_modifier_name": "modifier_neutral_gold_pickup_aura/timer"
+    },
+    {
+      "modifier_id": 2059539911,
+      "modifier_name": "timer",
+      "qualified_modifier_id": 229220981,
+      "qualified_modifier_name": "modifier_rejuv_pickup_aura/timer"
+    }
+  ],
+  "misc": [
+    {
+      "misc_id": 50204002,
+      "misc_name": "citadel_base_glass_horiz_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3508462982,
+      "misc_name": "citadel_base_glass_vert_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3719077267,
+      "misc_name": "citadel_breakable_item_container",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 4027046556,
+      "misc_name": "citadel_breakable_jar_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2168482585,
+      "misc_name": "citadel_breakable_lion_statue",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1786047166,
+      "misc_name": "citadel_breakable_prop_base",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2286845008,
+      "misc_name": "citadel_breakable_prop_box_multi",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1402417399,
+      "misc_name": "citadel_breakable_prop_car",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3017498471,
+      "misc_name": "citadel_breakable_prop_drop_gold",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3457071437,
+      "misc_name": "citadel_breakable_prop_drop_powerups",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1070887086,
+      "misc_name": "citadel_breakable_prop_pumpkin01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1413828045,
+      "misc_name": "citadel_breakable_prop_pumpkin02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2572218233,
+      "misc_name": "citadel_breakable_prop_pumpkin03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 841549549,
+      "misc_name": "citadel_breakable_prop_pumpkin04",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3040869273,
+      "misc_name": "citadel_breakable_prop_vase",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3986897915,
+      "misc_name": "citadel_breakable_prop_wooden_crate",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1467120186,
+      "misc_name": "citadel_breakable_prop_xmaspresent01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1580763103,
+      "misc_name": "citadel_breakable_prop_xmaspresent02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 4154240310,
+      "misc_name": "citadel_breakable_prop_xmaspresent03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1153939632,
+      "misc_name": "citadel_breakable_sake_barrel",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1075096886,
+      "misc_name": "citadel_breakable_wooden_crate_02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 985941184,
+      "misc_name": "citadel_breakable_wooden_crate_03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2812656400,
+      "misc_name": "vehicle_bike_flying",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 844909675,
+      "misc_name": "vehicle_car_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3283028508,
+      "misc_name": "vehicle_car_04",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 479455394,
+      "misc_name": "vehicle_car_05",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 3087609631,
+      "misc_name": "vehicle_ground_ship_03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 1702726906,
+      "misc_name": "vehicle_large_truck_01",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 818456624,
+      "misc_name": "vehicle_large_truck_02",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    },
+    {
+      "misc_id": 2902681599,
+      "misc_name": "vehicle_mini_truck_03",
+      "definition": {
+        "_class": "citadel_breakable_prop"
+      }
+    }
+  ]
+}

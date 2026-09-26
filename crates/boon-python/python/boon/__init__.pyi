@@ -2,6 +2,10 @@ from pathlib import Path
 
 import polars as pl
 
+from . import data as data
+
+__version__: str
+
 class InvalidDemoError(Exception):
     """Raised when a demo file is invalid or cannot be parsed."""
 
@@ -27,7 +31,7 @@ class NotStreetBrawlError(Exception):
 
     ...
 
-def hero_names() -> dict[int, str]:
+def hero_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of hero ID to hero name."""
     ...
 
@@ -35,11 +39,11 @@ def team_names() -> dict[int, str]:
     """Return a mapping of team number to team name."""
     ...
 
-def ability_names() -> dict[int, str]:
+def ability_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of MurmurHash2 ability ID to ability name."""
     ...
 
-def ability_display_names() -> dict[str, str]:
+def ability_display_names(version: str | None = None) -> dict[str, str]:
     """Return exact internal ability/item names mapped to English display names.
 
     Includes exact localized top-level entries such as ability_*, upgrade_*,
@@ -48,9 +52,12 @@ def ability_display_names() -> dict[str, str]:
     """
     ...
 
-def modifier_names() -> dict[int, str]:
+def modifier_names(version: str | None = None) -> dict[int, str]:
     """Return a mapping of MurmurHash2 modifier ID to modifier name."""
     ...
+
+def breakable_names(version: str | None = None) -> dict[int, str]:
+    """Return breakable subclass IDs mapped to internal names from misc.json."""
 
 def game_mode_names() -> dict[int, str]:
     """Return a mapping of game mode ID to game mode name."""
@@ -88,6 +95,8 @@ class Demo:
 
     Args:
         path: Path to the demo file.
+        preload: Load kills, damage, and abilities together during construction.
+            Defaults to True. Set False to load datasets on first access.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -100,11 +109,10 @@ class Demo:
         >>> demo.total_ticks
         54000
         >>> demo.players
-        shape: (12, 5)
         ...
     """
 
-    def __init__(self, path: str) -> None: ...
+    def __init__(self, path: str, *, preload: bool = True) -> None: ...
     def verify(self) -> bool:
         """Verify that the file is a valid demo file.
 
@@ -204,49 +212,36 @@ class Demo:
         """The tick rate of the demo (ticks per second)."""
         ...
 
-    def summary(self) -> dict[str, pl.DataFrame | None]:
-        """Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+    def summary(self) -> dict[str, pl.DataFrame]:
+        """Read the recorded ``PostMatchDetails`` message.
 
-        Returns a dict with four top-level keys:
+        Return six cached Polars DataFrames:
 
-        - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
-          Snapshots are taken at intervals through the match (not every minute);
-          ``snapshot_time_s`` marks each one. Columns hold that player's running
-          totals at that time: ``hero_id``, ``kills``, ``deaths``, ``assists``,
-          ``net_worth``, ``denies``, ``level``, ``lane``, ``creep_kills``,
-          ``neutral_kills``, ``player_damage``, and the per-source gold/orbs
-          breakdown (``player_*``, ``lane_creep_*``, ``neutral_creep*``,
-          ``boss_*``, ``treasure_*``, ``denies_*``, ``team_bonus_*``,
-          ``breakable_*``, ``assassinate_*``, ``trophy_collector_*``,
-          ``cultist_sacrifice_*``, ``assists_*``, and ``unknown_*``).
-        - ``last_hits``: a Polars DataFrame of ``hero_id`` and ``last_hits`` (the
-          final scoreboard last-hit / souls-secured total, only recorded per
-          match, not per snapshot).
-        - ``objectives``: a Polars DataFrame of post-match objective records
-          (``team_objective_id``, ``team``, ``destroyed_time_s``,
-          ``first_damage_time_s``, ``creep_damage``, ``player_damage``,
-          ``player_spirit_damage``). ``destroyed_time_s``/``first_damage_time_s``
-          are null when the objective was never destroyed/damaged.
-        - ``damage``: a Polars DataFrame of the damage matrix — one row per
-          (``dealer_player_slot``, ``target_player_slot``, ``source_name``,
-          ``sample_time_s``). Dealer/target are also given as resolved
-          ``dealer_hero_id``/``target_hero_id`` (null for non-player slots like
-          0), so the frame joins to ``snapshots``/``last_hits`` on ``hero_id``.
-          ``damage`` is the **per-interval** (additive) amount for that
-          ``stat_type`` dealt during the interval ending at that sample; ``sum``
-          for totals, ``cumsum`` over ``sample_time_s`` for the running total.
-          ``stat_type`` is a string (``damage``, ``healing``, ``heal_prevented``,
-          ``mitigated``, ``lethal``, ``regen``). ``is_category`` flags coarse
-          damage-type buckets (``Bullet``/``Ability``/``Melee``/``Misc``/
-          ``UnknownAbility``) which duplicate the specific-source rows, so filter
-          to ``is_category == False`` for the complete, non-overlapping
-          breakdown.
+        - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
+          Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+          ``player_healing``, ``teammate_healing``, and ``self_healing``.
+          Added counters are null when absent.
+        - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
+          for each player, snapshot, and source. Includes ``source_id`` and the protobuf
+          ``source_name``. Unknown IDs and absent counters remain available.
+        - ``last_hits``: final ``hero_id`` and ``last_hits`` totals.
+        - ``objectives``: recorded objective times and damage.
+        - ``damage``: the source-to-target matrix at each ``sample_time_s``.
+          ``damage`` is the interval amount; ``total`` is the recorded cumulative value.
+          The interval starts at ``interval_start_s``. Select ``stat_type`` for damage,
+          healing, regeneration, or another recorded statistic. Category rows
+          (``is_category=True``) duplicate specific sources; do not add them together.
+        - ``healing``: healing and regeneration rows without category duplicates.
+          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
+          ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+          ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
+          ``total`` is the recorded cumulative amount. Zero changes remain in the table.
 
-        The decoded message and all four frames are cached after the first call;
-        repeated calls do not parse the demo or rebuild the frames.
+        Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
+        Do not sum cumulative totals across periods. Use player slots across hero changes;
+        hero IDs come from the match roster. These tables do not contain individual heals.
 
-        Raises ``DemoMessageError`` if the demo contains no post-match details
-        (for example, an incomplete recording).
+        Raises ``DemoMessageError`` if the post-match message is absent or invalid.
         """
         ...
 
@@ -294,8 +289,7 @@ class Demo:
         ...
 
     def _player_positions(self, ticks: list[int]) -> pl.DataFrame: ...
-
-    def in_combat(self) -> pl.DataFrame:
+    def in_combat(self, /) -> pl.DataFrame:
         """Whether each player is in combat, per tick.
 
         Convenience method delegating to :func:`boon.stats.in_combat`. Returns
@@ -306,7 +300,7 @@ class Demo:
         ...
 
     def kill_participation(
-        self, *, start_tick: int | None = ..., end_tick: int | None = ...
+        self, /, *, start_tick: int | None = ..., end_tick: int | None = ...
     ) -> pl.DataFrame:
         """Kill participation per player: ``(kills + assists) / team_kills``.
 
@@ -317,7 +311,7 @@ class Demo:
         """
         ...
 
-    def time_dead(self) -> pl.DataFrame:
+    def time_dead(self, /) -> pl.DataFrame:
         """Time each player spent dead during regulation (non-paused ticks).
 
         Convenience method delegating to :func:`boon.stats.time_dead`. Returns
@@ -329,7 +323,12 @@ class Demo:
         ...
 
     def teamfights(
-        self, *, gap_seconds: float = ..., radius: float = ..., min_players: int = ...
+        self,
+        /,
+        *,
+        gap_seconds: float = ...,
+        radius: float = ...,
+        min_players: int = ...,
     ) -> pl.DataFrame:
         """Detect teamfights from hero-vs-hero damage, clustered in space and time.
 
@@ -460,7 +459,6 @@ class Demo:
         """
         ...
 
-
     @property
     def players(self) -> pl.DataFrame:
         """Player information as a Polars DataFrame.
@@ -492,7 +490,7 @@ class Demo:
 
         Columns:
             - **hero_id** (*int*) -- The banned hero's ID (joins to ``players.hero_id``).
-            - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID that predates the bundled hero table.
+            - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID absent from the selected boon-data catalog.
         """
         ...
 
@@ -591,7 +589,8 @@ class Demo:
     def kills(self) -> pl.DataFrame:
         """Hero kill events as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon preloads this dataset unless ``preload=False``.
+        With preloading disabled, the first access loads and caches the data.
 
         Columns:
             - **tick** (*int*) -- The game tick when the kill occurred.
@@ -605,12 +604,17 @@ class Demo:
     def damage(self) -> pl.DataFrame:
         """Damage events as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon preloads this dataset unless ``preload=False``.
+        With preloading disabled, the first access loads and caches the data.
 
         Columns:
-            - **tick** (*int*) -- The game tick when the damage occurred.
+            - **tick** (*int*) -- The enclosing demo command tick.
             - **damage** (*int*) -- The damage dealt.
             - **pre_damage** (*float*) -- The damage before mitigation.
+            - **damage_absorbed** (*float | None*) -- Recorded absorption; falls back to the legacy integer field when needed.
+            - **victim_shield_new** (*int | None*) -- Remaining shield after the hit.
+            - **victim_shield_max** (*int | None*) -- Shield capacity.
+            - **server_tick** (*int | None*) -- Server tick recorded in the damage message.
             - **victim_hero_id** (*int*) -- The hero ID of the victim (0 if not a hero).
             - **attacker_hero_id** (*int*) -- The hero ID of the attacker (0 if not a hero).
             - **victim_health_new** (*int*) -- The victim's health after damage.
@@ -624,28 +628,6 @@ class Demo:
             - **damage_flags** (*int*) -- Raw Valve damage flags.
             - **is_melee** (*bool*) -- Whether this is melee-typed damage (``citadel_type == 3``).
             - **melee_type** (*str | None*) -- ``"light"``, ``"heavy"``, or ``"other"`` for melee-typed damage; null otherwise.
-        """
-        ...
-
-    @property
-    def healing(self) -> pl.DataFrame:
-        """Per-event healing as a Polars DataFrame.
-
-        Heals are carried by ``CCitadelUserMessage_Damage`` as a negative
-        ``health_lost`` (the ``damage`` field itself stays non-negative). This
-        dataset keeps only those rows and reports ``amount`` as the positive
-        health restored. Barrier / shield grants are not in this message, so
-        this is health healing only; shielding needs another source.
-
-        Not loaded by default. Access this property or call ``load("healing")`` explicitly.
-
-        Columns:
-            - **tick** (*int*) -- The game tick when the heal occurred.
-            - **target_hero_id** (*int*) -- The healed hero (0 if not a hero).
-            - **source_hero_id** (*int*) -- The healer (0 if not a hero or self / none).
-            - **amount** (*int*) -- Health restored (positive).
-            - **ability_id** (*int*) -- The ability / item that healed (0 if absent).
-            - **citadel_type** (*int*) -- The Deadlock damage category the heal came through.
         """
         ...
 
@@ -665,7 +647,8 @@ class Demo:
     def abilities(self) -> pl.DataFrame:
         """Important ability usage events as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon preloads this dataset unless ``preload=False``.
+        With preloading disabled, the first access loads and caches the data.
 
         Columns:
             - **tick** (*int*) -- The game tick when the ability was used.
@@ -838,6 +821,8 @@ class Demo:
         does not report a final health-zero or dead state.
 
         Not loaded by default. Access this property or call load("breakables") explicitly.
+        Subclass names use boon-data misc.json, downloading latest if no verified
+        local data exists. Recorded IDs are preserved even when names are unknown.
 
         Columns:
             - **tick** (*int*) -- The game tick when the prop was broken.

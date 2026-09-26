@@ -13,17 +13,17 @@ keywords = ["deadlock", "demo", "parser", "replay", "source2"]
 categories = ["command-line-utilities", "game-development"]
 
 [dependencies]
-anyhow = "1.0"
+anyhow.workspace = true
 clap = { version = "4.5", features = ["derive"] }
 colored = "2"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-boon = { package = "boon-deadlock", path = "../boon" }
-boon-proto = { path = "../boon-proto" }
-prost = "0.14"
+serde.workspace = true
+serde_json.workspace = true
+boon.workspace = true
+boon-proto.workspace = true
+prost.workspace = true
 
 [dev-dependencies]
-criterion = "0.5"
+criterion.workspace = true
 
 [lib]
 name = "boon_dev"
@@ -36,3 +36,6 @@ path = "src/main.rs"
 [[bench]]
 name = "cli"
 harness = false
+
+[lints]
+workspace = true

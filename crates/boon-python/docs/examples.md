@@ -5,19 +5,22 @@ These examples show common Deadlock replay analysis tasks.
 ## Resolving IDs to names
 
 Boon DataFrames use integer IDs for heroes, teams, abilities, and modifiers.
-The IDs keep data compact and make operations fast. IDs do not change when
-Valve renames a hero or ability.
+The IDs keep data compact and make operations fast. A change to a display
+name does not change its ID. Changes to internal names can change hashed IDs.
 
-Use the module mapping functions to get human-readable names. They return `dict[int, str]`:
+Use the mapping functions to resolve IDs. `ability_names()` and `modifier_names()`
+return internal names. `ability_display_names()` returns localized ability labels.
+ID lookups return `dict[int, str]`. `ability_display_names()` returns
+`dict[str, str]`, keyed by internal ability name:
 
 ```python
 from boon import hero_names, team_names, ability_names, modifier_names, game_mode_names
 
 hero_names()       # {1: "Infernus", 2: "Seven", 3: "Vindicta", ...}
 team_names()       # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
-ability_names()    # {123456: "Spectral Wall", ...}  (MurmurHash2 IDs)
-modifier_names()   # {789012: "modifier_tentacle_debuff", ...}  (MurmurHash2 IDs)
-game_mode_names()  # {1: "Unranked", 2: "Ranked", 4: "StreetBrawl", ...}
+ability_names().get(2521299219)   # "ability_golden_idol"
+modifier_names().get(3388847715)  # "modifier_citadel_idol_return"
+game_mode_names()                # {1: "6v6", 4: "street_brawl"}
 ```
 
 Use these with Polars `replace_strict` to add name columns, or with `dict.get` when iterating rows:
@@ -41,7 +44,7 @@ for row in demo.players.iter_rows(named=True):
 
 ## Match summary
 
-Print a quick overview of a match: duration, winner, and per-player KDA.
+Print the match duration, winner, and player roster.
 
 ```python
 from boon import Demo, hero_names, team_names

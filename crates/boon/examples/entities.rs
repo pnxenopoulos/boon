@@ -7,15 +7,14 @@
 
 use std::path::Path;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = std::env::args().collect();
-    let path = args.get(1).expect("usage: entities <demo.dem> [tick]");
+    let path = args.get(1).ok_or("usage: entities <demo.dem> [tick]")?;
     let target_tick: i32 = args.get(2).and_then(|s| s.parse().ok()).unwrap_or(1000);
 
-    let parser = boon::Parser::from_file(Path::new(path)).expect("failed to open demo");
-    let ctx = parser
-        .parse_to_tick(target_tick)
-        .expect("failed to parse to tick");
+    let parser = boon::Parser::from_file(Path::new(path))?;
+    let names = boon::CatalogNames::load(None)?;
+    let ctx = parser.parse_to_tick(target_tick)?;
 
     println!(
         "Parsed to tick {}  ({} active entities)",
@@ -37,9 +36,8 @@ fn main() {
 
     for (idx, entity) in &pawns {
         let serializer = ctx.serializers().get(&entity.class_name);
-        let ser = match serializer {
-            Some(s) => s,
-            None => continue,
+        let Some(ser) = serializer else {
+            continue;
         };
 
         // Read basic fields using get_by_name
@@ -74,11 +72,17 @@ fn main() {
             z,
         );
 
-        // Show first ability slot as an example of ability_name() lookup
-        let ability_field = entity.get_by_name("m_vecAbilities.0000", ser);
-        if let Some(boon::FieldValue::U32(ability_id)) = ability_field {
-            let name = boon::ability_name(*ability_id);
-            println!("    ability[0]: {} (id={})", name, ability_id);
+        // The slot contains an entity handle. Read the catalog ID from that entity.
+        let ability = entity
+            .get_handle(ser.resolve_field_key("m_CCitadelAbilityComponent.m_vecAbilities.0"))
+            .and_then(|handle| ctx.entities().get_by_handle(handle));
+        if let Some(ability) = ability
+            && let Some(serializer) = ctx.serializers().get(&ability.class_name)
+            && let Some(id) = ability.get_u64(serializer.resolve_field_key("m_nSubclassID"))
+            && let Ok(id) = u32::try_from(id)
+        {
+            println!("    ability[0]: {} (id={})", names.ability_name(id), id);
         }
     }
+    Ok(())
 }

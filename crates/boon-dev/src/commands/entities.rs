@@ -6,11 +6,11 @@ use colored::Colorize;
 use serde::Serialize;
 
 #[derive(Serialize)]
-struct EntityOutput {
+struct EntityOutput<'a> {
     index: i32,
-    class_name: String,
+    class_name: &'a str,
     class_id: i32,
-    fields: HashMap<String, boon::FieldValue>,
+    fields: HashMap<String, &'a boon::FieldValue>,
 }
 
 #[derive(Serialize)]
@@ -92,7 +92,7 @@ pub fn run(
                 .take(limit)
                 .map(|(idx, entity)| {
                     let serializer = ctx.serializers().get(&entity.class_name);
-                    let resolved_fields: HashMap<String, boon::FieldValue> = entity
+                    let resolved_fields: HashMap<String, &boon::FieldValue> = entity
                         .fields
                         .iter()
                         .map(|(&key, value)| {
@@ -100,12 +100,12 @@ pub fn run(
                                 .as_ref()
                                 .and_then(|s| s.field_name_for_key(key))
                                 .unwrap_or_else(|| format!("{:#x}", key));
-                            (name, value.clone())
+                            (name, value)
                         })
                         .collect();
                     EntityOutput {
                         index: *idx,
-                        class_name: entity.class_name.to_string(),
+                        class_name: &entity.class_name,
                         class_id: entity.class_id,
                         fields: resolved_fields,
                     }

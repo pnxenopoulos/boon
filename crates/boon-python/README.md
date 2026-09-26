@@ -9,7 +9,7 @@
 **Python** &nbsp;
 [![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11+-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Python 3.11–3.14](https://img.shields.io/badge/python-3.11%E2%80%933.14-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 **Rust** &nbsp;
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
@@ -40,7 +40,8 @@ Requires Python 3.11–3.14.
 ```python
 from boon import Demo
 
-demo = Demo("match.dem")
+demo = Demo("match.dem")  # preloads kills, damage, and abilities
+# Use Demo("match.dem", preload=False) for lightweight construction.
 
 # Match metadata
 print(demo.match_id)         # 28309863
@@ -54,7 +55,7 @@ from boon import (
     ability_display_names, ability_names, hero_names, modifier_names, team_names,
 )
 
-print(hero_names())      # {0: "Base", 1: "Infernus", ...}
+print(hero_names())      # {1: "Infernus", ...}; reads local boon-data or downloads latest
 print(team_names())      # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
 print(ability_names())   # {46922526: "inherent_base", ...}
 print(modifier_names())  # {2059539911: "timer", ...}
@@ -69,7 +70,7 @@ print(demo.players)
 # │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane ┆ rank │
 # ...
 
-# Datasets (Polars DataFrames — all lazy-loaded on first access)
+# Datasets (combat is preloaded; other frames load on first access)
 player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
 kills            = demo.kills             # kill events

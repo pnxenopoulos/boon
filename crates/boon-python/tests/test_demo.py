@@ -60,11 +60,8 @@ DAMAGE_COLUMNS = {
     "attacker_class", "victim_class", "victim_entity_id",
     "ability_id", "damage_type", "citadel_type", "damage_flags",
     "is_melee", "melee_type",
-}
-
-HEALING_COLUMNS = {
-    "tick", "target_hero_id", "source_hero_id", "amount",
-    "ability_id", "citadel_type",
+    "damage_absorbed", "victim_shield_new", "victim_shield_max",
+    "server_tick",
 }
 
 FLEX_SLOTS_COLUMNS = {"tick", "team_num"}
@@ -150,7 +147,6 @@ DATASET_COLUMNS = {
     "world_ticks": WORLD_TICKS_COLUMNS,
     "kills": KILLS_COLUMNS,
     "damage": DAMAGE_COLUMNS,
-    "healing": HEALING_COLUMNS,
     "flex_slots": FLEX_SLOTS_COLUMNS,
     "abilities": ABILITIES_COLUMNS,
     "ability_upgrades": ABILITY_UPGRADES_COLUMNS,
@@ -335,12 +331,12 @@ class TestPlayersAndTeams:
 
         `players` reads the hero ID straight off each player controller, while
         `player_ticks` reaches it through the controller's pawn handle. A bad
-        handle mask drops players from `player_ticks` only, so the set of unique
-        hero IDs must match between the two datasets.
+        handle mask drops players from `player_ticks` only. Every roster hero
+        must appear in the snapshots; hero swaps can add earlier heroes.
         """
         player_heroes = set(demo.players["hero_id"].to_list())
         tick_heroes = set(demo.player_ticks["hero_id"].to_list())
-        assert tick_heroes == player_heroes
+        assert player_heroes <= tick_heroes
 
     def test_active_modifiers_covers_all_players(self, demo: Demo) -> None:
         """Every hero in `players` must be reachable in `active_modifiers`.
@@ -501,7 +497,7 @@ class TestDatasets:
 
     # Datasets that may be empty depending on game mode
     # "rift" is empty on demos from builds predating the Rift objective.
-    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "healing", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
+    POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
@@ -582,9 +578,9 @@ class TestAbilityTicks:
         at = demo.ability_ticks
         assert at["remaining_charges"].min() >= 0
 
-    def test_hero_ids_on_roster(self, demo: Demo) -> None:
-        roster = set(demo.players["hero_id"].to_list())
-        assert set(demo.ability_ticks["hero_id"].unique().to_list()) <= roster
+    def test_hero_ids_in_player_history(self, demo: Demo) -> None:
+        heroes = set(demo.player_ticks["hero_id"].unique().to_list())
+        assert set(demo.ability_ticks["hero_id"].unique().to_list()) <= heroes
 
     def test_ability_ids_resolve(self, demo: Demo) -> None:
         # At least some emitted ability_ids resolve to known ability names.
@@ -840,19 +836,6 @@ class TestSinnersSacrifice:
         assert len(known) == 1
 
 
-class TestHealing:
-    """The healing dataset: heal events (negative health_lost) as positive amounts."""
-
-    def test_schema(self, demo: Demo) -> None:
-        assert set(demo.healing.columns) == HEALING_COLUMNS
-
-    def test_amount_positive(self, demo: Demo) -> None:
-        # amount is -health_lost on rows kept for health_lost < 0, so it is
-        # always positive by construction.
-        df = demo.healing
-        assert (df["amount"] > 0).all()
-
-
 # ===================================================================
 # Banned heroes
 # ===================================================================
@@ -883,8 +866,8 @@ class TestBannedHeroes:
             assert row["hero_name"] == names.get(row["hero_id"], "HERO_NOT_FOUND")
 
     def test_hero_ids_are_known(self, demo: Demo) -> None:
-        # HERO_NOT_FOUND means that the bundled table does not contain the hero.
-        # Regenerate heroes.rs in this case.
+        # The offline catalog fixture must include the heroes banned in test demos.
+        # Production lookups resolve names from the selected boon-data version.
         unknown = demo.banned_heroes.filter(pl.col("hero_name") == "HERO_NOT_FOUND")
         assert len(unknown) == 0, f"unknown banned hero id(s): {unknown['hero_id'].to_list()}"
 
@@ -929,10 +912,10 @@ class TestBannedHeroesScanPaths:
         expected = EXPECTED_BANS[path.name]
 
         # Bare property access -> events-only scan.
-        assert Demo(str(path)).banned_heroes["hero_id"].to_list() == expected
+        assert Demo(str(path), preload=False).banned_heroes["hero_id"].to_list() == expected
 
         # After a load() that needs events -> the entity pass collects them.
-        loaded = Demo(str(path))
+        loaded = Demo(str(path), preload=False)
         loaded.load("kills")
         assert loaded.banned_heroes["hero_id"].to_list() == expected
 
@@ -941,7 +924,7 @@ class TestBannedHeroesScanPaths:
         # bans. The property must fall back to its own scan instead of caching
         # an empty result from that pass.
         path = self._fixture_with_bans()
-        demo = Demo(str(path))
+        demo = Demo(str(path), preload=False)
         demo.load("world_ticks")
         assert demo.banned_heroes["hero_id"].to_list() == EXPECTED_BANS[path.name]
 
@@ -986,11 +969,26 @@ class TestBulkLoad:
         assert isinstance(demo.kills, pl.DataFrame)
         assert isinstance(demo.damage, pl.DataFrame)
 
-    def test_load_invalid_dataset_raises(self) -> None:
+    @pytest.mark.parametrize(
+        "dataset", ["not_a_real_dataset", "Healing", "healing", "barriers"]
+    )
+    def test_load_invalid_dataset_raises(self, dataset: str) -> None:
         path = _require_demo_fixture()
         d = Demo(str(path))
-        with pytest.raises(ValueError):
-            d.load("not_a_real_dataset")
+        with pytest.raises(ValueError, match="Unknown dataset"):
+            d.load(dataset)
+
+    def test_duplicate_and_empty_requests_preserve_cached_data(self, demo: Demo) -> None:
+        expected = demo.kills.clone()
+        demo.load()
+        demo.load("kills", "kills")
+        assert demo.kills.equals(expected)
+
+    def test_invalid_batch_keeps_cached_data_usable(self, demo: Demo) -> None:
+        expected = demo.kills.clone()
+        with pytest.raises(ValueError, match="Unknown dataset"):
+            demo.load("kills", "not_a_real_dataset")
+        assert demo.kills.equals(expected)
 
     def test_load_idempotent(self, demo: Demo) -> None:
         """Loading the same dataset twice should not error."""
@@ -1033,6 +1031,6 @@ def test_summary_repeated_access_is_stable() -> None:
         pytest.skip("demo has no post-match summary")
 
     second = demo.summary()
-    assert set(first) == {"snapshots", "last_hits", "objectives", "damage"}
+    assert set(first) == {"snapshots", "last_hits", "objectives", "damage", "healing", "gold_sources"}
     for name in first:
         assert first[name].equals(second[name]), name

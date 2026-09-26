@@ -1,5 +1,13 @@
 use crate::*;
 
+/// Transfer primitive buffers into Polars without copying their values.
+fn numeric_column<T>(name: &str, values: Vec<T>) -> Column
+where
+    Series: NamedFromOwned<Vec<T>>,
+{
+    Series::from_vec(name.into(), values).into_column()
+}
+
 // ─────────────────────────── Parallel player_ticks ───────────────────────────
 //
 // `player_ticks` is a per-tick full snapshot of player pawn + controller state.
@@ -240,19 +248,12 @@ impl PlayerPositionCols {
         }
     }
 
-    pub(super) fn append(&mut self, mut other: Self) {
-        self.tick.append(&mut other.tick);
-        self.hero_id.append(&mut other.hero_id);
-        self.x.append(&mut other.x);
-        self.y.append(&mut other.y);
-    }
-
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
         df_from_columns(vec![
-            Column::new("tick".into(), self.tick),
-            Column::new("hero_id".into(), self.hero_id),
-            Column::new("x".into(), self.x),
-            Column::new("y".into(), self.y),
+            numeric_column("tick", self.tick),
+            numeric_column("hero_id", self.hero_id),
+            numeric_column("x", self.x),
+            numeric_column("y", self.y),
         ])
         .map_err(|error| {
             InvalidDemoError::new_err(format!("Failed to create position DataFrame: {error}"))
@@ -285,7 +286,7 @@ pub(super) fn current_simulation_time(ctx: &boon_parser::Context, key: Option<u6
 /// `modifier_barrier_tracker` entry in the `ActiveModifiers` string table.
 /// Deadlock stores barrier capacity in `float1` and the current amount in
 /// `float2`; demos without that tracker naturally stay at zero.
-pub(super) const BARRIER_TRACKER_MODIFIER_ID: u32 = 4_267_845_006;
+pub(super) const BARRIER_TRACKER_MODIFIER_ID: u32 = 4_267_845_006; // modifier_barrier_tracker
 
 #[derive(Default)]
 pub(super) struct BarrierState {
@@ -355,19 +356,15 @@ impl BarrierState {
     }
 
     pub(super) fn rebuild(&mut self, ctx: &boon_parser::Context) {
-        self.modifiers.rebuild(ctx);
+        let mut modifiers = std::mem::take(&mut self.modifiers);
+        modifiers.rebuild(ctx);
         self.remaining_by_pawn.clear();
         self.serial_to_pawn.clear();
         self.pawn_to_serial.clear();
-        let entries: Vec<_> = self
-            .modifiers
-            .entries()
-            .iter()
-            .map(|(&serial, entry)| (serial, entry.clone()))
-            .collect();
-        for (serial, entry) in entries {
-            self.apply_live_entry(serial, &entry);
+        for (&serial, entry) in modifiers.entries() {
+            self.apply_live_entry(serial, entry);
         }
+        self.modifiers = modifiers;
     }
 
     pub(super) fn remaining(&self, pawn_handle: u32) -> f32 {
@@ -543,67 +540,6 @@ impl PtCols {
         }
     }
 
-    /// Append another segment's rows onto this one (segments are joined in order).
-    pub(super) fn append(&mut self, mut o: PtCols) {
-        self.tick.append(&mut o.tick);
-        self.hero_id.append(&mut o.hero_id);
-        self.x.append(&mut o.x);
-        self.y.append(&mut o.y);
-        self.z.append(&mut o.z);
-        self.pitch.append(&mut o.pitch);
-        self.yaw.append(&mut o.yaw);
-        self.roll.append(&mut o.roll);
-        self.in_regen_zone.append(&mut o.in_regen_zone);
-        self.in_item_shop.append(&mut o.in_item_shop);
-        self.death_time.append(&mut o.death_time);
-        self.last_spawn_time.append(&mut o.last_spawn_time);
-        self.respawn_time.append(&mut o.respawn_time);
-        self.health.append(&mut o.health);
-        self.max_health.append(&mut o.max_health);
-        self.barrier.append(&mut o.barrier);
-        for kind in boon_parser::StatModifierKind::ALL {
-            self.stat_modifiers[kind.index()].append(&mut o.stat_modifiers[kind.index()]);
-        }
-        self.stat_modifier_values_available
-            .append(&mut o.stat_modifier_values_available);
-        self.unknown_stat_modifier_count
-            .append(&mut o.unknown_stat_modifier_count);
-        self.lifestate.append(&mut o.lifestate);
-        self.souls.append(&mut o.souls);
-        self.spent_souls.append(&mut o.spent_souls);
-        self.combat_end.append(&mut o.combat_end);
-        self.combat_last_dmg.append(&mut o.combat_last_dmg);
-        self.combat_start.append(&mut o.combat_start);
-        self.dmg_dealt_end.append(&mut o.dmg_dealt_end);
-        self.dmg_dealt_last.append(&mut o.dmg_dealt_last);
-        self.dmg_dealt_start.append(&mut o.dmg_dealt_start);
-        self.dmg_taken_end.append(&mut o.dmg_taken_end);
-        self.dmg_taken_last.append(&mut o.dmg_taken_last);
-        self.dmg_taken_start.append(&mut o.dmg_taken_start);
-        self.time_revealed.append(&mut o.time_revealed);
-        self.build_id.append(&mut o.build_id);
-        self.is_alive.append(&mut o.is_alive);
-        self.has_rebirth.append(&mut o.has_rebirth);
-        self.has_rejuvenator.append(&mut o.has_rejuvenator);
-        self.has_ultimate.append(&mut o.has_ultimate);
-        self.health_regen.append(&mut o.health_regen);
-        self.ult_cd_start.append(&mut o.ult_cd_start);
-        self.ult_cd_end.append(&mut o.ult_cd_end);
-        self.ap_nw.append(&mut o.ap_nw);
-        self.gold_nw.append(&mut o.gold_nw);
-        self.denies.append(&mut o.denies);
-        self.hero_damage.append(&mut o.hero_damage);
-        self.hero_healing.append(&mut o.hero_healing);
-        self.obj_damage.append(&mut o.obj_damage);
-        self.self_healing.append(&mut o.self_healing);
-        self.kill_streak.append(&mut o.kill_streak);
-        self.last_hits.append(&mut o.last_hits);
-        self.level.append(&mut o.level);
-        self.kills.append(&mut o.kills);
-        self.deaths.append(&mut o.deaths);
-        self.assists.append(&mut o.assists);
-    }
-
     /// Build the `player_ticks` DataFrame. Column order/names must match `load()`.
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
         let [
@@ -617,99 +553,75 @@ impl PtCols {
             stat_modifier_spirit_resist,
         ] = self.stat_modifiers;
         df_from_columns(vec![
-            Column::new("tick".into(), self.tick),
-            Column::new("hero_id".into(), self.hero_id),
-            Column::new("x".into(), self.x),
-            Column::new("y".into(), self.y),
-            Column::new("z".into(), self.z),
-            Column::new("pitch".into(), self.pitch),
-            Column::new("yaw".into(), self.yaw),
-            Column::new("roll".into(), self.roll),
+            numeric_column("tick", self.tick),
+            numeric_column("hero_id", self.hero_id),
+            numeric_column("x", self.x),
+            numeric_column("y", self.y),
+            numeric_column("z", self.z),
+            numeric_column("pitch", self.pitch),
+            numeric_column("yaw", self.yaw),
+            numeric_column("roll", self.roll),
             Column::new("in_regen_zone".into(), self.in_regen_zone),
             Column::new("in_item_shop".into(), self.in_item_shop),
-            Column::new("death_time".into(), self.death_time),
-            Column::new("last_spawn_time".into(), self.last_spawn_time),
-            Column::new("respawn_time".into(), self.respawn_time),
-            Column::new("health".into(), self.health),
-            Column::new("max_health".into(), self.max_health),
-            Column::new("barrier".into(), self.barrier),
-            Column::new("stat_modifier_health".into(), stat_modifier_health),
-            Column::new(
-                "stat_modifier_spirit_power".into(),
-                stat_modifier_spirit_power,
-            ),
-            Column::new("stat_modifier_fire_rate".into(), stat_modifier_fire_rate),
-            Column::new(
-                "stat_modifier_weapon_damage".into(),
-                stat_modifier_weapon_damage,
-            ),
-            Column::new(
-                "stat_modifier_cooldown_reduction".into(),
+            numeric_column("death_time", self.death_time),
+            numeric_column("last_spawn_time", self.last_spawn_time),
+            numeric_column("respawn_time", self.respawn_time),
+            numeric_column("health", self.health),
+            numeric_column("max_health", self.max_health),
+            numeric_column("barrier", self.barrier),
+            numeric_column("stat_modifier_health", stat_modifier_health),
+            numeric_column("stat_modifier_spirit_power", stat_modifier_spirit_power),
+            numeric_column("stat_modifier_fire_rate", stat_modifier_fire_rate),
+            numeric_column("stat_modifier_weapon_damage", stat_modifier_weapon_damage),
+            numeric_column(
+                "stat_modifier_cooldown_reduction",
                 stat_modifier_cooldown_reduction,
             ),
-            Column::new("stat_modifier_ammo".into(), stat_modifier_ammo),
-            Column::new(
-                "stat_modifier_bullet_resist".into(),
-                stat_modifier_bullet_resist,
-            ),
-            Column::new(
-                "stat_modifier_spirit_resist".into(),
-                stat_modifier_spirit_resist,
-            ),
+            numeric_column("stat_modifier_ammo", stat_modifier_ammo),
+            numeric_column("stat_modifier_bullet_resist", stat_modifier_bullet_resist),
+            numeric_column("stat_modifier_spirit_resist", stat_modifier_spirit_resist),
             Column::new(
                 "stat_modifier_values_available".into(),
                 self.stat_modifier_values_available,
             ),
-            Column::new(
-                "unknown_stat_modifier_count".into(),
+            numeric_column(
+                "unknown_stat_modifier_count",
                 self.unknown_stat_modifier_count,
             ),
-            Column::new("lifestate".into(), self.lifestate),
-            Column::new("souls".into(), self.souls),
-            Column::new("spent_souls".into(), self.spent_souls),
-            Column::new("in_combat_end_time".into(), self.combat_end),
-            Column::new("in_combat_last_damage_time".into(), self.combat_last_dmg),
-            Column::new("in_combat_start_time".into(), self.combat_start),
-            Column::new("player_damage_dealt_end_time".into(), self.dmg_dealt_end),
-            Column::new(
-                "player_damage_dealt_last_damage_time".into(),
-                self.dmg_dealt_last,
-            ),
-            Column::new(
-                "player_damage_dealt_start_time".into(),
-                self.dmg_dealt_start,
-            ),
-            Column::new("player_damage_taken_end_time".into(), self.dmg_taken_end),
-            Column::new(
-                "player_damage_taken_last_damage_time".into(),
-                self.dmg_taken_last,
-            ),
-            Column::new(
-                "player_damage_taken_start_time".into(),
-                self.dmg_taken_start,
-            ),
-            Column::new("time_revealed_by_npc".into(), self.time_revealed),
-            Column::new("build_id".into(), self.build_id),
+            numeric_column("lifestate", self.lifestate),
+            numeric_column("souls", self.souls),
+            numeric_column("spent_souls", self.spent_souls),
+            numeric_column("in_combat_end_time", self.combat_end),
+            numeric_column("in_combat_last_damage_time", self.combat_last_dmg),
+            numeric_column("in_combat_start_time", self.combat_start),
+            numeric_column("player_damage_dealt_end_time", self.dmg_dealt_end),
+            numeric_column("player_damage_dealt_last_damage_time", self.dmg_dealt_last),
+            numeric_column("player_damage_dealt_start_time", self.dmg_dealt_start),
+            numeric_column("player_damage_taken_end_time", self.dmg_taken_end),
+            numeric_column("player_damage_taken_last_damage_time", self.dmg_taken_last),
+            numeric_column("player_damage_taken_start_time", self.dmg_taken_start),
+            numeric_column("time_revealed_by_npc", self.time_revealed),
+            numeric_column("build_id", self.build_id),
             Column::new("is_alive".into(), self.is_alive),
             Column::new("has_rebirth".into(), self.has_rebirth),
             Column::new("has_rejuvenator".into(), self.has_rejuvenator),
             Column::new("has_ultimate_trained".into(), self.has_ultimate),
-            Column::new("health_regen".into(), self.health_regen),
-            Column::new("ultimate_cooldown_start".into(), self.ult_cd_start),
-            Column::new("ultimate_cooldown_end".into(), self.ult_cd_end),
-            Column::new("ap_net_worth".into(), self.ap_nw),
-            Column::new("gold_net_worth".into(), self.gold_nw),
-            Column::new("denies".into(), self.denies),
-            Column::new("hero_damage".into(), self.hero_damage),
-            Column::new("hero_healing".into(), self.hero_healing),
-            Column::new("objective_damage".into(), self.obj_damage),
-            Column::new("self_healing".into(), self.self_healing),
-            Column::new("kill_streak".into(), self.kill_streak),
-            Column::new("last_hits".into(), self.last_hits),
-            Column::new("level".into(), self.level),
-            Column::new("kills".into(), self.kills),
-            Column::new("deaths".into(), self.deaths),
-            Column::new("assists".into(), self.assists),
+            numeric_column("health_regen", self.health_regen),
+            numeric_column("ultimate_cooldown_start", self.ult_cd_start),
+            numeric_column("ultimate_cooldown_end", self.ult_cd_end),
+            numeric_column("ap_net_worth", self.ap_nw),
+            numeric_column("gold_net_worth", self.gold_nw),
+            numeric_column("denies", self.denies),
+            numeric_column("hero_damage", self.hero_damage),
+            numeric_column("hero_healing", self.hero_healing),
+            numeric_column("objective_damage", self.obj_damage),
+            numeric_column("self_healing", self.self_healing),
+            numeric_column("kill_streak", self.kill_streak),
+            numeric_column("last_hits", self.last_hits),
+            numeric_column("level", self.level),
+            numeric_column("kills", self.kills),
+            numeric_column("deaths", self.deaths),
+            numeric_column("assists", self.assists),
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
@@ -754,17 +666,11 @@ impl WtCols {
         }
     }
 
-    pub(super) fn append(&mut self, mut o: WtCols) {
-        self.tick.append(&mut o.tick);
-        self.is_paused.append(&mut o.is_paused);
-        self.next_midboss.append(&mut o.next_midboss);
-    }
-
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
         df_from_columns(vec![
-            Column::new("tick".into(), self.tick),
+            numeric_column("tick", self.tick),
             Column::new("is_paused".into(), self.is_paused),
-            Column::new("next_midboss".into(), self.next_midboss),
+            numeric_column("next_midboss", self.next_midboss),
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
@@ -857,31 +763,18 @@ impl TrCols {
         }
     }
 
-    pub(super) fn append(&mut self, mut o: TrCols) {
-        self.tick.append(&mut o.tick);
-        self.ttype.append(&mut o.ttype);
-        self.team_num.append(&mut o.team_num);
-        self.lane.append(&mut o.lane);
-        self.health.append(&mut o.health);
-        self.max_health.append(&mut o.max_health);
-        self.x.append(&mut o.x);
-        self.y.append(&mut o.y);
-        self.z.append(&mut o.z);
-        self.entity_id.append(&mut o.entity_id);
-    }
-
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
         df_from_columns(vec![
-            Column::new("tick".into(), self.tick),
+            numeric_column("tick", self.tick),
             Column::new("trooper_type".into(), self.ttype),
-            Column::new("team_num".into(), self.team_num),
-            Column::new("lane".into(), self.lane),
-            Column::new("health".into(), self.health),
-            Column::new("max_health".into(), self.max_health),
-            Column::new("x".into(), self.x),
-            Column::new("y".into(), self.y),
-            Column::new("z".into(), self.z),
-            Column::new("entity_id".into(), self.entity_id),
+            numeric_column("team_num", self.team_num),
+            numeric_column("lane", self.lane),
+            numeric_column("health", self.health),
+            numeric_column("max_health", self.max_health),
+            numeric_column("x", self.x),
+            numeric_column("y", self.y),
+            numeric_column("z", self.z),
+            numeric_column("entity_id", self.entity_id),
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }
@@ -908,6 +801,8 @@ pub(super) struct SnapKeys {
     pub(super) tk: TkKeys,
 }
 
+pub(super) type SnapshotFrames = (Option<DataFrame>, Option<DataFrame>, Option<DataFrame>);
+
 /// One segment's accumulated snapshot columns.
 #[derive(Default)]
 pub(super) struct SegSnap {
@@ -918,6 +813,23 @@ pub(super) struct SegSnap {
 }
 
 impl SegSnap {
+    pub(super) fn into_frames(self, wants: SnapWants) -> PyResult<SnapshotFrames> {
+        Ok((
+            wants
+                .player_ticks
+                .then(|| self.pt.into_dataframe())
+                .transpose()?,
+            wants
+                .world_ticks
+                .then(|| self.wt.into_dataframe())
+                .transpose()?,
+            wants
+                .troopers
+                .then(|| self.tr.into_dataframe())
+                .transpose()?,
+        ))
+    }
+
     pub(super) fn update(&mut self, ctx: &boon_parser::Context, wants: SnapWants) {
         if wants.player_ticks {
             self.barriers.update(ctx);
@@ -939,12 +851,6 @@ impl SegSnap {
         if wants.troopers {
             self.tr.collect_tick(ctx, &keys.tk);
         }
-    }
-
-    pub(super) fn append(&mut self, o: SegSnap) {
-        self.pt.append(o.pt);
-        self.wt.append(o.wt);
-        self.tr.append(o.tr);
     }
 }
 

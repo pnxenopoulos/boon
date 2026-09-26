@@ -1,3 +1,5 @@
+use boon_parser::rift::{RIFT_COORD_SANITY, rift_lane_for};
+
 use crate::*;
 
 #[pymethods]
@@ -9,23 +11,18 @@ impl Demo {
     /// keyframe-segmented pass, including when both groups are requested.
     #[pyo3(signature = (*datasets))]
     pub(crate) fn load(&mut self, py: Python<'_>, datasets: Vec<String>) -> PyResult<()> {
-        // Validate dataset names
-        for name in &datasets {
-            if !VALID_DATASETS.contains(&name.as_str())
-                && !VALID_STREET_BRAWL_DATASETS.contains(&name.as_str())
-            {
-                return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Unknown dataset: {name:?}. Valid datasets: {VALID_DATASETS:?}, street brawl: {VALID_STREET_BRAWL_DATASETS:?}"
-                )));
-            }
-        }
-
-        // Check game mode for street brawl datasets
-        if datasets
+        let datasets: Vec<Dataset> = datasets
             .iter()
-            .any(|s| VALID_STREET_BRAWL_DATASETS.contains(&s.as_str()))
-            && self.game_mode != 4
-        {
+            .map(|name| name.parse())
+            .collect::<PyResult<_>>()?;
+        self.load_datasets(py, &datasets)
+    }
+}
+
+impl Demo {
+    pub(super) fn load_datasets(&mut self, py: Python<'_>, datasets: &[Dataset]) -> PyResult<()> {
+        // Check game mode for street brawl datasets
+        if datasets.iter().any(|dataset| dataset.is_street_brawl()) && self.game_mode != 4 {
             return Err(NotStreetBrawlError::new_err(
                 "Street brawl datasets are only available for street brawl demos (game_mode=4)",
             ));
@@ -34,57 +31,48 @@ impl Demo {
         // Load small datasets together when they use the same entity class or
         // event stream. A later property access can then use the cache instead
         // of scanning the demo again.
-        let requested = |name: &str| datasets.iter().any(|dataset| dataset == name);
-        let damage_cohort = requested("damage") || requested("healing");
-        let kill_cohort = requested("kills") || requested("abilities");
-        let controller_cohort =
-            requested("ability_upgrades") || requested("item_purchases") || requested("chat");
+        let requested = |dataset| datasets.contains(&dataset);
+        let kill_cohort = requested(Dataset::Kills) || requested(Dataset::Abilities);
+        let controller_cohort = requested(Dataset::AbilityUpgrades)
+            || requested(Dataset::ItemPurchases)
+            || requested(Dataset::Chat);
 
         // Determine what to load (skip already cached)
         let load_abilities = kill_cohort && self.cached_abilities.is_none();
-        let mut load_player_ticks =
-            datasets.iter().any(|s| s == "player_ticks") && self.cached_player_ticks.is_none();
-        let mut load_world_ticks =
-            datasets.iter().any(|s| s == "world_ticks") && self.cached_world_ticks.is_none();
+        let load_player_ticks =
+            requested(Dataset::PlayerTicks) && self.cached_player_ticks.is_none();
+        let load_world_ticks = requested(Dataset::WorldTicks) && self.cached_world_ticks.is_none();
         let load_kills = kill_cohort && self.cached_kills.is_none();
-        let load_damage = damage_cohort && self.cached_damage.is_none();
-        let load_healing = damage_cohort && self.cached_healing.is_none();
-        let load_flex_slots =
-            datasets.iter().any(|s| s == "flex_slots") && self.cached_flex_slots.is_none();
+        let load_damage = requested(Dataset::Damage) && self.cached_damage.is_none();
+        let load_flex_slots = requested(Dataset::FlexSlots) && self.cached_flex_slots.is_none();
         let load_ability_upgrades = controller_cohort && self.cached_ability_upgrades.is_none();
         let load_item_purchases = controller_cohort && self.cached_item_purchases.is_none();
         let load_chat = controller_cohort && self.cached_chat.is_none();
-        let load_objectives =
-            datasets.iter().any(|s| s == "objectives") && self.cached_objectives.is_none();
-        let load_mid_boss =
-            datasets.iter().any(|s| s == "mid_boss") && self.cached_mid_boss.is_none();
-        let mut load_troopers =
-            datasets.iter().any(|s| s == "troopers") && self.cached_troopers.is_none();
-        let load_neutrals =
-            datasets.iter().any(|s| s == "neutrals") && self.cached_neutrals.is_none();
-        let load_breakables =
-            datasets.iter().any(|s| s == "breakables") && self.cached_breakables.is_none();
-        let load_sinners_sacrifice = datasets.iter().any(|s| s == "sinners_sacrifice")
-            && self.cached_sinners_sacrifice.is_none();
-        let load_stat_modifier_events = datasets.iter().any(|s| s == "stat_modifier_events")
-            && self.cached_stat_modifier_events.is_none();
-        let load_active_modifiers = datasets.iter().any(|s| s == "active_modifiers")
-            && self.cached_active_modifiers.is_none();
+        let load_objectives = requested(Dataset::Objectives) && self.cached_objectives.is_none();
+        let load_mid_boss = requested(Dataset::MidBoss) && self.cached_mid_boss.is_none();
+        let load_troopers = requested(Dataset::Troopers) && self.cached_troopers.is_none();
+        let load_neutrals = requested(Dataset::Neutrals) && self.cached_neutrals.is_none();
+        let load_breakables = requested(Dataset::Breakables) && self.cached_breakables.is_none();
+        let load_sinners_sacrifice =
+            requested(Dataset::SinnersSacrifice) && self.cached_sinners_sacrifice.is_none();
+        let load_stat_modifier_events =
+            requested(Dataset::StatModifierEvents) && self.cached_stat_modifier_events.is_none();
+        let load_active_modifiers =
+            requested(Dataset::ActiveModifiers) && self.cached_active_modifiers.is_none();
         let load_ability_ticks =
-            datasets.iter().any(|s| s == "ability_ticks") && self.cached_ability_ticks.is_none();
-        let load_urn = datasets.iter().any(|s| s == "urn") && self.cached_urn.is_none();
-        let load_street_brawl_ticks = datasets.iter().any(|s| s == "street_brawl_ticks")
-            && self.cached_street_brawl_ticks.is_none();
-        let load_street_brawl_rounds = datasets.iter().any(|s| s == "street_brawl_rounds")
-            && self.cached_street_brawl_rounds.is_none();
-        let load_rift = datasets.iter().any(|s| s == "rift") && self.cached_rift.is_none();
+            requested(Dataset::AbilityTicks) && self.cached_ability_ticks.is_none();
+        let load_urn = requested(Dataset::Urn) && self.cached_urn.is_none();
+        let load_street_brawl_ticks =
+            requested(Dataset::StreetBrawlTicks) && self.cached_street_brawl_ticks.is_none();
+        let load_street_brawl_rounds =
+            requested(Dataset::StreetBrawlRounds) && self.cached_street_brawl_rounds.is_none();
+        let load_rift = requested(Dataset::Rift) && self.cached_rift.is_none();
 
         if !load_abilities
             && !load_player_ticks
             && !load_world_ticks
             && !load_kills
             && !load_damage
-            && !load_healing
             && !load_flex_slots
             && !load_ability_upgrades
             && !load_item_purchases
@@ -106,6 +94,16 @@ impl Demo {
             return Ok(());
         }
 
+        // Resolve once, before advancing the parser, so acquisition failures are retryable.
+        let breakable_names: HashMap<u32, String> = if load_breakables {
+            py.import("boon")?
+                .getattr("breakable_names")?
+                .call0()?
+                .extract()?
+        } else {
+            HashMap::new()
+        };
+
         // One-pass fast path: if everything still to load is a parallel-safe
         // snapshot dataset (player_ticks / world_ticks / troopers), decode them
         // together in a single parallel keyframe-segmented pass and skip the
@@ -114,7 +112,6 @@ impl Demo {
         let only_snapshots = !load_abilities
             && !load_kills
             && !load_damage
-            && !load_healing
             && !load_flex_slots
             && !load_ability_upgrades
             && !load_item_purchases
@@ -152,15 +149,11 @@ impl Demo {
                     troopers: load_troopers,
                 })
             })?;
-            load_player_ticks = false;
-            load_world_ticks = false;
-            load_troopers = false;
         }
 
         let need_events = load_abilities
             || load_kills
             || load_damage
-            || load_healing
             || load_sinners_sacrifice
             || load_flex_slots
             || load_item_purchases
@@ -180,7 +173,7 @@ impl Demo {
         if load_kills {
             event_types.insert(Msg::KEUserMsgHeroKilled as u32);
         }
-        if load_damage || load_sinners_sacrifice || load_healing {
+        if load_damage || load_sinners_sacrifice {
             event_types.insert(Msg::KEUserMsgDamage as u32);
         }
         if load_flex_slots {
@@ -225,17 +218,12 @@ impl Demo {
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
-        if load_player_ticks {
-            class_names.push("CCitadelPlayerPawn");
-            class_names.push("CCitadelPlayerController");
-        }
-        if load_world_ticks || load_street_brawl_ticks || load_rift {
+        if load_street_brawl_ticks || load_rift {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
             || load_kills
             || load_damage
-            || load_healing
             || load_sinners_sacrifice
             || load_mid_boss
             || load_active_modifiers
@@ -252,10 +240,6 @@ impl Demo {
             class_names.push("CNPC_BarrackBoss");
             class_names.push("CNPC_MidBoss");
             class_names.push("CCitadel_Destroyable_Building");
-        }
-        if load_troopers {
-            class_names.push("CNPC_Trooper");
-            class_names.push("CNPC_TrooperBoss");
         }
         if load_neutrals {
             class_names.push("CNPC_TrooperNeutral");
@@ -284,77 +268,6 @@ impl Demo {
         }
         let class_filter: std::collections::HashSet<&str> = class_names.into_iter().collect();
 
-        // ── Column vectors for player_ticks ──
-        let pt_capacity = if load_player_ticks {
-            self.total_ticks as usize * 12
-        } else {
-            0
-        };
-        let mut pt_tick: Vec<i32> = Vec::with_capacity(pt_capacity);
-        let mut pt_hero_id: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_x: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_y: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_z: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_pitch: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_yaw: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_roll: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_in_regen_zone: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_in_item_shop: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_death_time: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_last_spawn_time: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_respawn_time: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_health: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_max_health: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_barrier: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_stat_modifiers: [Vec<f32>; boon_parser::StatModifierKind::COUNT] =
-            std::array::from_fn(|_| Vec::with_capacity(pt_capacity));
-        let mut pt_stat_modifier_values_available: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_unknown_stat_modifier_count: Vec<u32> = Vec::with_capacity(pt_capacity);
-        let mut pt_lifestate: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_souls: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_spent_souls: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_combat_end: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_combat_last_dmg: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_combat_start: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_dmg_dealt_end: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_dmg_dealt_last: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_dmg_dealt_start: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_dmg_taken_end: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_dmg_taken_last: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_dmg_taken_start: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_time_revealed: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_build_id: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_is_alive: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_has_rebirth: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_has_rejuvenator: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_has_ultimate: Vec<bool> = Vec::with_capacity(pt_capacity);
-        let mut pt_health_regen: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_ult_cd_start: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_ult_cd_end: Vec<f32> = Vec::with_capacity(pt_capacity);
-        let mut pt_ap_nw: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_gold_nw: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_denies: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_hero_damage: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_hero_healing: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_obj_damage: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_self_healing: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_kill_streak: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_last_hits: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_level: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_kills: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_deaths: Vec<i64> = Vec::with_capacity(pt_capacity);
-        let mut pt_assists: Vec<i64> = Vec::with_capacity(pt_capacity);
-
-        // ── Column vectors for world_ticks ──
-        let wt_capacity = if load_world_ticks {
-            self.total_ticks as usize
-        } else {
-            0
-        };
-        let mut wt_tick: Vec<i32> = Vec::with_capacity(wt_capacity);
-        let mut wt_is_paused: Vec<bool> = Vec::with_capacity(wt_capacity);
-        let mut wt_next_midboss: Vec<f32> = Vec::with_capacity(wt_capacity);
-
         // ── Kill / damage event collection ──
         struct RawEvent<T> {
             tick: i32,
@@ -362,8 +275,12 @@ impl Demo {
         }
         let mut raw_kill_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMsgHeroKilled>> =
             Vec::new();
-        let mut raw_damage_events: Vec<RawEvent<boon_proto::proto::CCitadelUserMessageDamage>> =
-            Vec::new();
+        struct RawDamageEvent {
+            event: RawEvent<boon_proto::proto::CCitadelUserMessageDamage>,
+            victim_hero_id: i64,
+            attacker_hero_id: i64,
+        }
+        let mut raw_damage_events = Vec::new();
         let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
         let mut entity_to_hero_built = false;
         let mut found_game_over: Option<(i32, i32)> = None;
@@ -373,8 +290,6 @@ impl Demo {
         let mut ability_ticks: Vec<i32> = Vec::new();
         let mut ability_hero_ids: Vec<i64> = Vec::new();
         let mut ability_names: Vec<String> = Vec::new();
-        let mut slot_to_hero: HashMap<i32, i64> = HashMap::new();
-        let mut slot_to_hero_built = false;
 
         // ── Column vectors for ability_upgrades ──
         let mut au_ticks: Vec<i32> = Vec::new();
@@ -416,18 +331,6 @@ impl Demo {
         let mut ip_hero_ids: Vec<i64> = Vec::new();
         let mut ip_ability_ids: Vec<u32> = Vec::new();
         let mut ip_changes: Vec<String> = Vec::new();
-
-        // ── Column vectors for troopers (lane only) ──
-        let mut tr_tick: Vec<i32> = Vec::new();
-        let mut tr_type: Vec<String> = Vec::new();
-        let mut tr_team_num: Vec<i64> = Vec::new();
-        let mut tr_lane: Vec<i64> = Vec::new();
-        let mut tr_health: Vec<i64> = Vec::new();
-        let mut tr_max_health: Vec<i64> = Vec::new();
-        let mut tr_x: Vec<f32> = Vec::new();
-        let mut tr_y: Vec<f32> = Vec::new();
-        let mut tr_z: Vec<f32> = Vec::new();
-        let mut tr_entity_id: Vec<i32> = Vec::new();
 
         // ── Column vectors for neutrals (change-detected) ──
         let mut nt_tick: Vec<i32> = Vec::new();
@@ -644,8 +547,8 @@ impl Demo {
         let mut abil_prev: HashMap<i32, AbilState> = HashMap::new();
 
         // Track idol modifiers for urn lifecycle
-        const GOLDEN_IDOL_ABILITY: u32 = 2521299219;
-        const IDOL_RETURN: u32 = 3388847715;
+        const GOLDEN_IDOL_ABILITY: u32 = 2_521_299_219; // ability_golden_idol
+        const IDOL_RETURN: u32 = 3_388_847_715; // modifier_citadel_idol_return
 
         // serial -> hero_id for golden_idol modifiers (carrying state)
         let mut urn_idol_serials: HashMap<u32, i64> = HashMap::new();
@@ -665,7 +568,7 @@ impl Demo {
         // ── Field keys ──
         let mut keys_resolved = false;
 
-        // Pawn keys (needed for player_ticks and kills entity_to_hero)
+        // Pawn keys for hero resolution and urn positions
         let mut pk_hero_id: Option<u64> = None;
         let mut pk_simulation_time: Option<u64> = None;
         let mut pk_vec_x: Option<u64> = None;
@@ -674,53 +577,6 @@ impl Demo {
         let mut pk_cell_x: Option<u64> = None;
         let mut pk_cell_y: Option<u64> = None;
         let mut pk_cell_z: Option<u64> = None;
-        let mut pk_camera: Option<u64> = None;
-        let mut pk_in_regen: Option<u64> = None;
-        let mut pk_in_item_shop: Option<u64> = None;
-        let mut pk_death_time: Option<u64> = None;
-        let mut pk_last_spawn: Option<u64> = None;
-        let mut pk_respawn: Option<u64> = None;
-        let mut pk_health: Option<u64> = None;
-        let mut pk_max_health: Option<u64> = None;
-        let mut pk_lifestate: Option<u64> = None;
-        let mut pk_souls: Option<u64> = None;
-        let mut pk_spent_souls: Option<u64> = None;
-        let mut pk_combat_end: Option<u64> = None;
-        let mut pk_combat_last_dmg: Option<u64> = None;
-        let mut pk_combat_start: Option<u64> = None;
-        let mut pk_dmg_dealt_end: Option<u64> = None;
-        let mut pk_dmg_dealt_last: Option<u64> = None;
-        let mut pk_dmg_dealt_start: Option<u64> = None;
-        let mut pk_dmg_taken_end: Option<u64> = None;
-        let mut pk_dmg_taken_last: Option<u64> = None;
-        let mut pk_dmg_taken_start: Option<u64> = None;
-        let mut pk_time_revealed: Option<u64> = None;
-        let mut pk_build_id: Option<u64> = None;
-
-        // Controller keys
-        let mut ck_pawn_handle: Option<u64> = None;
-        let mut ck_alive: Option<u64> = None;
-        let mut ck_rebirth: Option<u64> = None;
-        let mut ck_rejuvenator: Option<u64> = None;
-        let mut ck_ultimate: Option<u64> = None;
-        let mut ck_health_regen: Option<u64> = None;
-        let mut ck_health_max: Option<u64> = None;
-        let mut ck_ult_cd_end: Option<u64> = None;
-        let mut ck_ult_cd_start: Option<u64> = None;
-        let mut ck_ap_nw: Option<u64> = None;
-        let mut ck_gold_nw: Option<u64> = None;
-        let mut ck_denies: Option<u64> = None;
-        let mut ck_hero_damage: Option<u64> = None;
-        let mut ck_hero_healing: Option<u64> = None;
-        let mut ck_obj_damage: Option<u64> = None;
-        let mut ck_self_healing: Option<u64> = None;
-        let mut ck_kill_streak: Option<u64> = None;
-        let mut ck_last_hits: Option<u64> = None;
-        let mut ck_level: Option<u64> = None;
-        let mut ck_kills: Option<u64> = None;
-        let mut ck_deaths: Option<u64> = None;
-        let mut ck_assists: Option<u64> = None;
-
         // Controller hero_id key (for purchases/shop_events slot→hero mapping)
         let mut ck_hero_id: Option<u64> = None;
 
@@ -748,19 +604,6 @@ impl Demo {
         let mut shrine_cell_y: Option<u64> = None;
         let mut shrine_cell_z: Option<u64> = None;
         let mut shrine_team_num: Option<u64> = None;
-
-        // Trooper NPC keys (lane troopers)
-        let mut tk_health: Option<u64> = None;
-        let mut tk_max_health: Option<u64> = None;
-        let mut tk_team_num: Option<u64> = None;
-        let mut tk_lane: Option<u64> = None;
-        let mut tk_lifestate: Option<u64> = None;
-        let mut tk_vec_x: Option<u64> = None;
-        let mut tk_vec_y: Option<u64> = None;
-        let mut tk_vec_z: Option<u64> = None;
-        let mut tk_cell_x: Option<u64> = None;
-        let mut tk_cell_y: Option<u64> = None;
-        let mut tk_cell_z: Option<u64> = None;
 
         // Neutral NPC keys
         let mut ntk_health: Option<u64> = None;
@@ -799,10 +642,6 @@ impl Demo {
         let mut smk_count: Option<u64> = None;
         let mut smk_keys = [StatViewerKeys::default(); STAT_VIEWER_SLOTS];
 
-        // World keys
-        let mut wk_is_paused: Option<u64> = None;
-        let mut wk_next_midboss: Option<u64> = None;
-
         // Urn delivery trigger keys (CCitadelIdolReturnTrigger)
         let mut urnk_disabled: Option<u64> = None;
         let mut urnk_team_num: Option<u64> = None;
@@ -832,7 +671,6 @@ impl Demo {
         //
         // We use a macro to avoid duplicating the entity extraction code across
         // the events-aware and entities-only branches.
-        let mut pt_barriers = BarrierState::default();
 
         macro_rules! push_sinner_event {
             ($tick:expr, $event:expr, $id:expr, $attacker:expr, $damage:expr, $state:expr) => {{
@@ -875,13 +713,13 @@ impl Demo {
                 }
 
                 if !keys_resolved {
-                    if load_abilities || load_player_ticks || load_kills || load_damage || load_healing || load_sinners_sacrifice || load_active_modifiers || load_urn || load_ability_ticks {
+                    if load_abilities || load_kills || load_damage || load_sinners_sacrifice || load_active_modifiers || load_urn || load_ability_ticks {
                         if let Some(s) = $ctx.serializers().get("CCitadelPlayerPawn") {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
                             pk_simulation_time = s.resolve_field_key("m_flSimulationTime");
-                            if load_player_ticks || load_urn {
+                            if load_urn {
                                 pk_vec_x = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
                                 );
@@ -900,86 +738,7 @@ impl Demo {
                                 pk_cell_z = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
                                 );
-                                pk_camera = s.resolve_field_key("m_angClientCamera");
-                                pk_in_regen = s.resolve_field_key("m_bInRegenerationZone");
-                                pk_in_item_shop = s.resolve_field_key("m_bInItemShopZone");
-                                pk_death_time = s.resolve_field_key("m_flDeathTime");
-                                pk_last_spawn = s.resolve_field_key("m_flLastSpawnTime");
-                                pk_respawn = s.resolve_field_key("m_flRespawnTime");
-                                pk_health = s.resolve_field_key("m_iHealth");
-                                pk_max_health = s.resolve_field_key("m_iMaxHealth");
-                                pk_lifestate = s.resolve_field_key("m_lifeState");
-                                pk_souls = s.resolve_field_key("m_nCurrencies.m_nCurrencies");
-                                pk_spent_souls =
-                                    s.resolve_field_key("m_nSpentCurrencies.m_nSpentCurrencies");
-                                pk_combat_end = s.resolve_field_key("m_sInCombat.m_flEndTime");
-                                pk_combat_last_dmg =
-                                    s.resolve_field_key("m_sInCombat.m_flLastDamageTime");
-                                pk_combat_start = s.resolve_field_key("m_sInCombat.m_flStartTime");
-                                pk_dmg_dealt_end =
-                                    s.resolve_field_key("m_sPlayerDamageDealt.m_flEndTime");
-                                pk_dmg_dealt_last =
-                                    s.resolve_field_key("m_sPlayerDamageDealt.m_flLastDamageTime");
-                                pk_dmg_dealt_start =
-                                    s.resolve_field_key("m_sPlayerDamageDealt.m_flStartTime");
-                                pk_dmg_taken_end =
-                                    s.resolve_field_key("m_sPlayerDamageTaken.m_flEndTime");
-                                pk_dmg_taken_last =
-                                    s.resolve_field_key("m_sPlayerDamageTaken.m_flLastDamageTime");
-                                pk_dmg_taken_start =
-                                    s.resolve_field_key("m_sPlayerDamageTaken.m_flStartTime");
-                                pk_time_revealed =
-                                    s.resolve_field_key("m_timeRevealedOnMinimapByNPC");
-                                pk_build_id = s.resolve_field_key("m_unHeroBuildID");
                             }
-                        }
-                    }
-                    if load_player_ticks {
-                        if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
-                            ck_pawn_handle = s.resolve_field_key("m_hPawn");
-                            ck_alive = s.resolve_field_key("m_PlayerDataGlobal.m_bAlive");
-                            ck_rebirth =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_bHasRebirth");
-                            ck_rejuvenator =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_bHasRejuvenator");
-                            ck_ultimate =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_bUltimateTrained");
-                            ck_health_regen =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_flHealthRegen");
-                            // Effective max health. The pawn's m_iMaxHealth is a
-                            // base/stale value that current health routinely
-                            // exceeds; the controller's m_iHealthMax is the live
-                            // total (level + items + buffs).
-                            ck_health_max =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iHealthMax");
-                            ck_ult_cd_end = s
-                                .resolve_field_key("m_PlayerDataGlobal.m_flUltimateCooldownEnd");
-                            ck_ult_cd_start = s.resolve_field_key(
-                                "m_PlayerDataGlobal.m_flUltimateCooldownStart",
-                            );
-                            ck_ap_nw =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iAPNetWorth");
-                            ck_gold_nw =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iGoldNetWorth");
-                            ck_denies = s.resolve_field_key("m_PlayerDataGlobal.m_iDenies");
-                            ck_hero_damage =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iHeroDamage");
-                            ck_hero_healing =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iHeroHealing");
-                            ck_obj_damage =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iObjectiveDamage");
-                            ck_self_healing =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iSelfHealing");
-                            ck_kill_streak =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iKillStreak");
-                            ck_last_hits =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iLastHits");
-                            ck_level = s.resolve_field_key("m_PlayerDataGlobal.m_iLevel");
-                            ck_kills =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iPlayerKills");
-                            ck_deaths = s.resolve_field_key("m_PlayerDataGlobal.m_iDeaths");
-                            ck_assists =
-                                s.resolve_field_key("m_PlayerDataGlobal.m_iPlayerAssists");
                         }
                     }
                     if load_item_purchases || load_chat {
@@ -1005,7 +764,7 @@ impl Demo {
                             }
                         }
                     }
-                    if load_stat_modifier_events || load_player_ticks {
+                    if load_stat_modifier_events {
                         if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             if ck_hero_id.is_none() {
                                 ck_hero_id =
@@ -1049,36 +808,6 @@ impl Demo {
                             shrine_cell_x = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX");
                             shrine_cell_y = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY");
                             shrine_cell_z = s.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ");
-                        }
-                    }
-                    if load_troopers {
-                        for tr_class in &["CNPC_Trooper", "CNPC_TrooperBoss"] {
-                            if let Some(s) = $ctx.serializers().get(*tr_class) {
-                                tk_health = s.resolve_field_key("m_iHealth");
-                                tk_max_health = s.resolve_field_key("m_iMaxHealth");
-                                tk_team_num = s.resolve_field_key("m_iTeamNum");
-                                tk_lane = s.resolve_field_key("m_iLane");
-                                tk_lifestate = s.resolve_field_key("m_lifeState");
-                                tk_vec_x = s.resolve_field_key(
-                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
-                                );
-                                tk_vec_y = s.resolve_field_key(
-                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY",
-                                );
-                                tk_vec_z = s.resolve_field_key(
-                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ",
-                                );
-                                tk_cell_x = s.resolve_field_key(
-                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellX",
-                                );
-                                tk_cell_y = s.resolve_field_key(
-                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellY",
-                                );
-                                tk_cell_z = s.resolve_field_key(
-                                    "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_cellZ",
-                                );
-                                break;
-                            }
                         }
                     }
                     if load_neutrals {
@@ -1165,14 +894,6 @@ impl Demo {
                             }
                         }
                     }
-                    if load_world_ticks {
-                        if let Some(s) = $ctx.serializers().get("CCitadelGameRulesProxy") {
-                            wk_is_paused =
-                                s.resolve_field_key("m_pGameRules.m_bGamePaused");
-                            wk_next_midboss =
-                                s.resolve_field_key("m_pGameRules.m_tNextMidBossSpawnTime");
-                        }
-                    }
                     if load_urn {
                         if let Some(s) = $ctx.serializers().get("CCitadelIdolReturnTrigger") {
                             urnk_disabled = s.resolve_field_key("m_bDisabled");
@@ -1222,137 +943,22 @@ impl Demo {
                     keys_resolved = true;
                 }
 
-                // ── Collect player_ticks ──
-                if load_player_ticks {
-                    pt_barriers.update($ctx);
-                    let controllers: Vec<&boon_parser::Entity> = $ctx
-                        .entities()
-                        .iter()
-                        .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
-                        .map(|(_, e)| e)
-                        .collect();
-
-                    for ctrl in &controllers {
-                        let Some(pawn_handle) = ctrl.get_handle(ck_pawn_handle) else {
-                            continue;
-                        };
-                        let pawn = match $ctx.entities().get_by_handle(pawn_handle) {
-                            Some(p) if p.class_name.as_ref() == "CCitadelPlayerPawn" => p,
-                            _ => continue,
-                        };
-
-                        let hid = pawn.get_i64(pk_hero_id);
-                        if hid == 0 {
-                            continue;
-                        }
-
-                        pt_tick.push($ctx.tick());
-                        pt_hero_id.push(hid);
-                        let [pawn_x, pawn_y, pawn_z] = pawn.world_position(
-                            [pk_cell_x, pk_cell_y, pk_cell_z],
-                            [pk_vec_x, pk_vec_y, pk_vec_z],
-                        );
-                        pt_x.push(pawn_x);
-                        pt_y.push(pawn_y);
-                        pt_z.push(pawn_z);
-                        let angles = pawn.get_qangle(pk_camera);
-                        pt_pitch.push(angles[0]);
-                        pt_yaw.push(angles[1]);
-                        pt_roll.push(angles[2]);
-                        pt_in_regen_zone.push(pawn.get_bool(pk_in_regen));
-                        pt_in_item_shop.push(pawn.get_bool(pk_in_item_shop));
-                        pt_death_time.push(pawn.get_f32(pk_death_time));
-                        pt_last_spawn_time.push(pawn.get_f32(pk_last_spawn));
-                        pt_respawn_time.push(pawn.get_f32(pk_respawn));
-                        pt_health.push(pawn.get_i64(pk_health));
-                        // Prefer the controller's effective maximum.
-                        // Use the pawn base maximum until the controller is ready.
-                        let eff_max_health = ctrl.get_i64(ck_health_max);
-                        pt_max_health.push(if eff_max_health > 0 {
-                            eff_max_health
-                        } else {
-                            pawn.get_i64(pk_max_health)
-                        });
-                        pt_barrier.push(pt_barriers.remaining(pawn_handle));
-                        let stat_modifier_values_available =
-                            stat_viewer_values_available(smk_count, &smk_keys);
-                        let stat_modifier_count = ctrl
-                            .get_i64(smk_count)
-                            .clamp(0, STAT_VIEWER_SLOTS as i64) as usize;
-                        let stat_modifier_totals = boon_parser::aggregate_stat_modifier_values(
-                            smk_keys[..stat_modifier_count].iter().map(|keys| {
-                                (ctrl.get_u32(keys.value_type), ctrl.get_f32(keys.value))
-                            }),
-                        );
-                        for kind in boon_parser::StatModifierKind::ALL {
-                            pt_stat_modifiers[kind.index()].push(stat_modifier_totals[kind]);
-                        }
-                        pt_stat_modifier_values_available
-                            .push(stat_modifier_values_available);
-                        pt_unknown_stat_modifier_count
-                            .push(stat_modifier_totals.unknown_count);
-                        let level = ctrl.get_i64(ck_level);
-                        pt_lifestate.push(pawn.get_i64(pk_lifestate));
-                        pt_souls.push(pawn.get_i64(pk_souls));
-                        pt_spent_souls.push(pawn.get_i64(pk_spent_souls));
-                        pt_combat_end.push(pawn.get_f32(pk_combat_end));
-                        pt_combat_last_dmg.push(pawn.get_f32(pk_combat_last_dmg));
-                        pt_combat_start.push(pawn.get_f32(pk_combat_start));
-                        pt_dmg_dealt_end.push(pawn.get_f32(pk_dmg_dealt_end));
-                        pt_dmg_dealt_last.push(pawn.get_f32(pk_dmg_dealt_last));
-                        pt_dmg_dealt_start.push(pawn.get_f32(pk_dmg_dealt_start));
-                        pt_dmg_taken_end.push(pawn.get_f32(pk_dmg_taken_end));
-                        pt_dmg_taken_last.push(pawn.get_f32(pk_dmg_taken_last));
-                        pt_dmg_taken_start.push(pawn.get_f32(pk_dmg_taken_start));
-                        pt_time_revealed.push(pawn.get_f32(pk_time_revealed));
-                        pt_build_id.push(pawn.get_i64(pk_build_id));
-                        pt_is_alive.push(ctrl.get_bool(ck_alive));
-                        pt_has_rebirth.push(ctrl.get_bool(ck_rebirth));
-                        pt_has_rejuvenator.push(ctrl.get_bool(ck_rejuvenator));
-                        pt_has_ultimate.push(ctrl.get_bool(ck_ultimate));
-                        pt_health_regen.push(ctrl.get_f32(ck_health_regen));
-                        // Note: column start → field CooldownEnd, column end → field CooldownStart
-                        pt_ult_cd_start.push(ctrl.get_f32(ck_ult_cd_end));
-                        pt_ult_cd_end.push(ctrl.get_f32(ck_ult_cd_start));
-                        pt_ap_nw.push(ctrl.get_i64(ck_ap_nw));
-                        pt_gold_nw.push(ctrl.get_i64(ck_gold_nw));
-                        pt_denies.push(ctrl.get_i64(ck_denies));
-                        pt_hero_damage.push(ctrl.get_i64(ck_hero_damage));
-                        pt_hero_healing.push(ctrl.get_i64(ck_hero_healing));
-                        pt_obj_damage.push(ctrl.get_i64(ck_obj_damage));
-                        pt_self_healing.push(ctrl.get_i64(ck_self_healing));
-                        pt_kill_streak.push(ctrl.get_i64(ck_kill_streak));
-                        pt_last_hits.push(ctrl.get_i64(ck_last_hits));
-                        pt_level.push(level);
-                        pt_kills.push(ctrl.get_i64(ck_kills));
-                        pt_deaths.push(ctrl.get_i64(ck_deaths));
-                        pt_assists.push(ctrl.get_i64(ck_assists));
-                    }
-                }
-
-                // ── Collect world_ticks / street_brawl_ticks ──
-                if load_world_ticks || load_street_brawl_ticks {
+                // ── Collect street_brawl_ticks ──
+                if load_street_brawl_ticks {
                     if let Some((_, entity)) = $ctx
                         .entities()
                         .iter()
                         .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
                     {
-                        if load_world_ticks {
-                            wt_tick.push($ctx.tick());
-                            wt_is_paused.push(entity.get_bool(wk_is_paused));
-                            wt_next_midboss.push(entity.get_f32(wk_next_midboss));
-                        }
-                        if load_street_brawl_ticks {
-                            sbt_tick.push($ctx.tick());
-                            sbt_round.push(entity.get_i64(sbk_round) as i32);
-                            sbt_state.push(entity.get_i64(sbk_state) as i32);
-                            sbt_amber_score.push(entity.get_i64(sbk_amber_score) as i32);
-                            sbt_sapphire_score.push(entity.get_i64(sbk_sapphire_score) as i32);
-                            sbt_buy_countdown.push(entity.get_i64(sbk_buy_countdown) as i32);
-                            sbt_next_state_time.push(entity.get_f32(sbk_next_state_time));
-                            sbt_state_start_time.push(entity.get_f32(sbk_state_start_time));
-                            sbt_non_combat_time.push(entity.get_f32(sbk_non_combat_time));
-                        }
+                        sbt_tick.push($ctx.tick());
+                        sbt_round.push(entity.get_i64(sbk_round) as i32);
+                        sbt_state.push(entity.get_i64(sbk_state) as i32);
+                        sbt_amber_score.push(entity.get_i64(sbk_amber_score) as i32);
+                        sbt_sapphire_score.push(entity.get_i64(sbk_sapphire_score) as i32);
+                        sbt_buy_countdown.push(entity.get_i64(sbk_buy_countdown) as i32);
+                        sbt_next_state_time.push(entity.get_f32(sbk_next_state_time));
+                        sbt_state_start_time.push(entity.get_f32(sbk_state_start_time));
+                        sbt_non_combat_time.push(entity.get_f32(sbk_non_combat_time));
                     }
                 }
 
@@ -1449,7 +1055,7 @@ impl Demo {
                 // pawns attributed to the wrong hero and never appeared under the real one.
                 // Do the full scan once, then refresh the pawns touched each tick so the
                 // settled hero id wins.
-                if load_abilities || load_kills || load_damage || load_healing || load_sinners_sacrifice || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks {
+                if load_abilities || load_kills || load_damage || load_sinners_sacrifice || load_mid_boss || load_active_modifiers || load_urn || load_ability_ticks {
                     if !entity_to_hero_built {
                         for (idx, entity) in $ctx.entities().iter() {
                             if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
@@ -1472,22 +1078,6 @@ impl Demo {
                                 }
                             }
                         }
-                    }
-                }
-
-                // ── Build slot_to_hero map (for item_purchases/chat: userid → hero_id) ──
-                if (load_item_purchases || load_chat) && !slot_to_hero_built {
-                    for (idx, entity) in $ctx.entities().iter() {
-                        if entity.class_name.as_ref() == "CCitadelPlayerController" {
-                            let hid = entity.get_i64(ck_hero_id);
-                            if hid != 0 {
-                                // userid is 0-based, controller entity index is 1-based
-                                slot_to_hero.insert(idx - 1, hid);
-                            }
-                        }
-                    }
-                    if !slot_to_hero.is_empty() {
-                        slot_to_hero_built = true;
                     }
                 }
 
@@ -1578,42 +1168,6 @@ impl Demo {
                             obj_entity_id.push(idx);
                         }
 
-                    }
-                }
-
-                // ── Collect troopers (lane troopers, per-tick alive only) ──
-                if load_troopers {
-                    for (idx, entity) in $ctx.entities().iter() {
-                        if !entity.active {
-                            continue;
-                        }
-                        let ttype = match entity.class_name.as_ref() {
-                            "CNPC_Trooper" => "trooper",
-                            "CNPC_TrooperBoss" => "trooper_boss",
-                            _ => continue,
-                        };
-                        let max_hp = entity.get_i64(tk_max_health);
-                        if max_hp == 0 {
-                            continue;
-                        }
-                        let lifestate = entity.get_i64(tk_lifestate);
-                        if lifestate != 0 {
-                            continue;
-                        }
-                        tr_tick.push($ctx.tick());
-                        tr_type.push(ttype.to_string());
-                        tr_team_num.push(entity.get_i64(tk_team_num));
-                        tr_lane.push(entity.get_i64(tk_lane));
-                        tr_health.push(entity.get_i64(tk_health));
-                        tr_max_health.push(max_hp);
-                        let [trx, try_, trz] = entity.world_position(
-                            [tk_cell_x, tk_cell_y, tk_cell_z],
-                            [tk_vec_x, tk_vec_y, tk_vec_z],
-                        );
-                        tr_x.push(trx);
-                        tr_y.push(try_);
-                        tr_z.push(trz);
-                        tr_entity_id.push(idx);
                     }
                 }
 
@@ -2326,7 +1880,7 @@ impl Demo {
                                     ),
                                 });
                             }
-                            if (load_damage || load_sinners_sacrifice || load_healing)
+                            if (load_damage || load_sinners_sacrifice)
                                 && event.msg_type == Msg::KEUserMsgDamage as u32
                             {
                                 // Decode once even when both the generic damage
@@ -2386,10 +1940,31 @@ impl Demo {
                                     }
                                 }
 
-                                if load_damage || load_healing {
-                                    raw_damage_events.push(RawEvent {
-                                        tick: event.tick,
-                                        message,
+                                if load_damage {
+                                    // Capture hero identity at the event tick, before a
+                                    // later hero swap or entity-index reuse can change it.
+                                    let hero_id = |index: Option<i32>| {
+                                        index
+                                            .and_then(|index| ctx.entities().get(index))
+                                            .filter(|entity| {
+                                                entity.class_name.as_ref() == "CCitadelPlayerPawn"
+                                            })
+                                            .map_or(0, |entity| entity.get_i64(pk_hero_id))
+                                    };
+                                    let (victim_hero_id, attacker_hero_id) =
+                                        message.as_ref().map_or((0, 0), |msg| {
+                                            (
+                                                hero_id(msg.entindex_victim),
+                                                hero_id(msg.entindex_attacker),
+                                            )
+                                        });
+                                    raw_damage_events.push(RawDamageEvent {
+                                        event: RawEvent {
+                                            tick: event.tick,
+                                            message,
+                                        },
+                                        victim_hero_id,
+                                        attacker_hero_id,
                                     });
                                 }
                             }
@@ -2444,8 +2019,11 @@ impl Demo {
                                         event.payload.as_slice(),
                                     )
                             {
-                                let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
-                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let hero_id = boon_parser::hero_id_for_player_slot(
+                                    ctx.entities(),
+                                    msg.purchaser_player_slot,
+                                    ck_hero_id,
+                                );
                                 let ability_id = msg.ability_id.unwrap_or(0);
                                 let change = match msg.change.unwrap_or(-1) {
                                     0 => "purchased",
@@ -2467,8 +2045,11 @@ impl Demo {
                                     event.payload.as_slice(),
                                 )
                             {
-                                let player_slot = msg.player_slot.unwrap_or(-1);
-                                let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                                let hero_id = boon_parser::hero_id_for_player_slot(
+                                    ctx.entities(),
+                                    msg.player_slot,
+                                    ck_hero_id,
+                                );
                                 let chat_type = if msg.all_chat.unwrap_or(false) {
                                     "all"
                                 } else {
@@ -2573,7 +2154,12 @@ impl Demo {
                 bk_entity_id.push(id.index);
                 bk_entity_serial.push(id.serial);
                 bk_subclass_id.push(state.subclass_id);
-                bk_subclass_name.push(boon_parser::breakable_name(state.subclass_id).to_string());
+                bk_subclass_name.push(
+                    breakable_names
+                        .get(&state.subclass_id)
+                        .map_or("BREAKABLE_NOT_FOUND", String::as_str)
+                        .to_owned(),
+                );
                 bk_team_num.push(state.team_num);
                 bk_x.push(state.x);
                 bk_y.push(state.y);
@@ -2582,120 +2168,6 @@ impl Demo {
         }
 
         // ── Build and cache DataFrames ──
-
-        if load_player_ticks {
-            let [
-                stat_modifier_health,
-                stat_modifier_spirit_power,
-                stat_modifier_fire_rate,
-                stat_modifier_weapon_damage,
-                stat_modifier_cooldown_reduction,
-                stat_modifier_ammo,
-                stat_modifier_bullet_resist,
-                stat_modifier_spirit_resist,
-            ] = pt_stat_modifiers;
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), pt_tick),
-                Column::new("hero_id".into(), pt_hero_id),
-                Column::new("x".into(), pt_x),
-                Column::new("y".into(), pt_y),
-                Column::new("z".into(), pt_z),
-                Column::new("pitch".into(), pt_pitch),
-                Column::new("yaw".into(), pt_yaw),
-                Column::new("roll".into(), pt_roll),
-                Column::new("in_regen_zone".into(), pt_in_regen_zone),
-                Column::new("in_item_shop".into(), pt_in_item_shop),
-                Column::new("death_time".into(), pt_death_time),
-                Column::new("last_spawn_time".into(), pt_last_spawn_time),
-                Column::new("respawn_time".into(), pt_respawn_time),
-                Column::new("health".into(), pt_health),
-                Column::new("max_health".into(), pt_max_health),
-                Column::new("barrier".into(), pt_barrier),
-                Column::new("stat_modifier_health".into(), stat_modifier_health),
-                Column::new(
-                    "stat_modifier_spirit_power".into(),
-                    stat_modifier_spirit_power,
-                ),
-                Column::new("stat_modifier_fire_rate".into(), stat_modifier_fire_rate),
-                Column::new(
-                    "stat_modifier_weapon_damage".into(),
-                    stat_modifier_weapon_damage,
-                ),
-                Column::new(
-                    "stat_modifier_cooldown_reduction".into(),
-                    stat_modifier_cooldown_reduction,
-                ),
-                Column::new("stat_modifier_ammo".into(), stat_modifier_ammo),
-                Column::new(
-                    "stat_modifier_bullet_resist".into(),
-                    stat_modifier_bullet_resist,
-                ),
-                Column::new(
-                    "stat_modifier_spirit_resist".into(),
-                    stat_modifier_spirit_resist,
-                ),
-                Column::new(
-                    "stat_modifier_values_available".into(),
-                    pt_stat_modifier_values_available,
-                ),
-                Column::new(
-                    "unknown_stat_modifier_count".into(),
-                    pt_unknown_stat_modifier_count,
-                ),
-                Column::new("lifestate".into(), pt_lifestate),
-                Column::new("souls".into(), pt_souls),
-                Column::new("spent_souls".into(), pt_spent_souls),
-                Column::new("in_combat_end_time".into(), pt_combat_end),
-                Column::new("in_combat_last_damage_time".into(), pt_combat_last_dmg),
-                Column::new("in_combat_start_time".into(), pt_combat_start),
-                Column::new("player_damage_dealt_end_time".into(), pt_dmg_dealt_end),
-                Column::new(
-                    "player_damage_dealt_last_damage_time".into(),
-                    pt_dmg_dealt_last,
-                ),
-                Column::new("player_damage_dealt_start_time".into(), pt_dmg_dealt_start),
-                Column::new("player_damage_taken_end_time".into(), pt_dmg_taken_end),
-                Column::new(
-                    "player_damage_taken_last_damage_time".into(),
-                    pt_dmg_taken_last,
-                ),
-                Column::new("player_damage_taken_start_time".into(), pt_dmg_taken_start),
-                Column::new("time_revealed_by_npc".into(), pt_time_revealed),
-                Column::new("build_id".into(), pt_build_id),
-                Column::new("is_alive".into(), pt_is_alive),
-                Column::new("has_rebirth".into(), pt_has_rebirth),
-                Column::new("has_rejuvenator".into(), pt_has_rejuvenator),
-                Column::new("has_ultimate_trained".into(), pt_has_ultimate),
-                Column::new("health_regen".into(), pt_health_regen),
-                Column::new("ultimate_cooldown_start".into(), pt_ult_cd_start),
-                Column::new("ultimate_cooldown_end".into(), pt_ult_cd_end),
-                Column::new("ap_net_worth".into(), pt_ap_nw),
-                Column::new("gold_net_worth".into(), pt_gold_nw),
-                Column::new("denies".into(), pt_denies),
-                Column::new("hero_damage".into(), pt_hero_damage),
-                Column::new("hero_healing".into(), pt_hero_healing),
-                Column::new("objective_damage".into(), pt_obj_damage),
-                Column::new("self_healing".into(), pt_self_healing),
-                Column::new("kill_streak".into(), pt_kill_streak),
-                Column::new("last_hits".into(), pt_last_hits),
-                Column::new("level".into(), pt_level),
-                Column::new("kills".into(), pt_kills),
-                Column::new("deaths".into(), pt_deaths),
-                Column::new("assists".into(), pt_assists),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_player_ticks = Some(df);
-        }
-
-        if load_world_ticks {
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), wt_tick),
-                Column::new("is_paused".into(), wt_is_paused),
-                Column::new("next_midboss".into(), wt_next_midboss),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_world_ticks = Some(df);
-        }
 
         if load_kills {
             // Decode raw kill events and resolve entity indices to hero IDs
@@ -2749,7 +2221,7 @@ impl Demo {
         }
 
         if load_damage {
-            // Decode raw damage events and resolve entity indices to hero IDs
+            // Build damage rows with the hero identities captured at each event.
             let n = raw_damage_events.len();
             let mut dmg_tick: Vec<i32> = Vec::with_capacity(n);
             let mut dmg_damage: Vec<i32> = Vec::with_capacity(n);
@@ -2768,28 +2240,22 @@ impl Demo {
             let mut dmg_flags: Vec<u64> = Vec::with_capacity(n);
             let mut dmg_is_melee: Vec<bool> = Vec::with_capacity(n);
             let mut dmg_melee_type: Vec<Option<&'static str>> = Vec::with_capacity(n);
+            let mut dmg_absorbed: Vec<Option<f32>> = Vec::with_capacity(n);
+            let mut dmg_shield_new: Vec<Option<i32>> = Vec::with_capacity(n);
+            let mut dmg_shield_max: Vec<Option<i32>> = Vec::with_capacity(n);
+            let mut dmg_server_tick: Vec<Option<i32>> = Vec::with_capacity(n);
 
             for raw in &raw_damage_events {
-                let msg = raw.message.as_ref().map_err(|e| {
+                let msg = raw.event.message.as_ref().map_err(|e| {
                     DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
                 })?;
 
-                dmg_tick.push(raw.tick);
+                dmg_tick.push(raw.event.tick);
                 dmg_damage.push(msg.damage.unwrap_or(0));
                 dmg_pre_damage.push(msg.pre_damage.unwrap_or(0.0));
                 dmg_victim_entity_id.push(msg.entindex_victim.unwrap_or(-1));
-                dmg_victim_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_victim.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
-                dmg_attacker_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_attacker.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
+                dmg_victim_hero_id.push(raw.victim_hero_id);
+                dmg_attacker_hero_id.push(raw.attacker_hero_id);
                 dmg_victim_health_new.push(msg.victim_health_new.unwrap_or(0));
                 dmg_hitgroup_id.push(msg.hitgroup_id.unwrap_or(0));
                 dmg_crit_damage.push(msg.crit_damage.unwrap_or(0.0));
@@ -2805,6 +2271,13 @@ impl Demo {
                 dmg_flags.push(damage_flags);
                 dmg_is_melee.push(is_melee);
                 dmg_melee_type.push(melee_type);
+                dmg_absorbed.push(
+                    msg.damage_absorbed
+                        .or_else(|| msg.damage_absorbed_deprecated.map(|amount| amount as f32)),
+                );
+                dmg_shield_new.push(msg.victim_shield_new);
+                dmg_shield_max.push(msg.victim_shield_max);
+                dmg_server_tick.push(msg.server_tick);
             }
 
             let df = df_from_columns(vec![
@@ -2825,58 +2298,13 @@ impl Demo {
                 Column::new("damage_flags".into(), dmg_flags),
                 Column::new("is_melee".into(), dmg_is_melee),
                 Column::new("melee_type".into(), dmg_melee_type),
+                Column::new("damage_absorbed".into(), dmg_absorbed),
+                Column::new("victim_shield_new".into(), dmg_shield_new),
+                Column::new("victim_shield_max".into(), dmg_shield_max),
+                Column::new("server_tick".into(), dmg_server_tick),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_damage = Some(df);
-        }
-
-        if load_healing {
-            // A heal is a damage message with a negative health_lost; emit it as a
-            // positive amount. See the `healing` getter for the full contract.
-            let mut heal_tick: Vec<i32> = Vec::new();
-            let mut heal_target_hero_id: Vec<i64> = Vec::new();
-            let mut heal_source_hero_id: Vec<i64> = Vec::new();
-            let mut heal_amount: Vec<i32> = Vec::new();
-            let mut heal_ability_id: Vec<u32> = Vec::new();
-            let mut heal_citadel_type: Vec<i32> = Vec::new();
-
-            for raw in &raw_damage_events {
-                let msg = raw.message.as_ref().map_err(|e| {
-                    DemoMessageError::new_err(format!("Failed to decode Damage event: {e}"))
-                })?;
-
-                let health_lost = msg.health_lost.unwrap_or(0);
-                if health_lost >= 0 {
-                    continue;
-                }
-                heal_tick.push(raw.tick);
-                heal_target_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_victim.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
-                heal_source_hero_id.push(
-                    entity_to_hero
-                        .get(&msg.entindex_attacker.unwrap_or(-1))
-                        .copied()
-                        .unwrap_or(0),
-                );
-                heal_amount.push(-health_lost);
-                heal_ability_id.push(msg.ability_id.unwrap_or(0));
-                heal_citadel_type.push(msg.citadel_type.unwrap_or(0));
-            }
-
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), heal_tick),
-                Column::new("target_hero_id".into(), heal_target_hero_id),
-                Column::new("source_hero_id".into(), heal_source_hero_id),
-                Column::new("amount".into(), heal_amount),
-                Column::new("ability_id".into(), heal_ability_id),
-                Column::new("citadel_type".into(), heal_citadel_type),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_healing = Some(df);
         }
 
         if load_abilities {
@@ -2957,23 +2385,6 @@ impl Demo {
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_mid_boss = Some(df);
-        }
-
-        if load_troopers {
-            let df = df_from_columns(vec![
-                Column::new("tick".into(), tr_tick),
-                Column::new("trooper_type".into(), tr_type),
-                Column::new("team_num".into(), tr_team_num),
-                Column::new("lane".into(), tr_lane),
-                Column::new("health".into(), tr_health),
-                Column::new("max_health".into(), tr_max_health),
-                Column::new("x".into(), tr_x),
-                Column::new("y".into(), tr_y),
-                Column::new("z".into(), tr_z),
-                Column::new("entity_id".into(), tr_entity_id),
-            ])
-            .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_troopers = Some(df);
         }
 
         if load_neutrals {

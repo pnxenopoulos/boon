@@ -5,21 +5,21 @@ use colored::Colorize;
 use serde::Serialize;
 
 #[derive(Serialize)]
-struct SendTableFieldOutput {
-    var_name: String,
-    var_type: String,
+struct SendTableFieldOutput<'a> {
+    var_name: &'a str,
+    var_type: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
-    var_encoder: Option<String>,
+    var_encoder: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     bit_count: Option<i32>,
 }
 
 #[derive(Serialize)]
-struct SendTableOutput {
-    name: String,
+struct SendTableOutput<'a> {
+    name: &'a str,
     field_count: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
-    fields: Option<Vec<SendTableFieldOutput>>,
+    fields: Option<Vec<SendTableFieldOutput<'a>>>,
 }
 
 pub fn run(
@@ -47,7 +47,7 @@ pub fn run(
             .iter()
             .take(limit)
             .map(|ser| SendTableOutput {
-                name: ser.name.clone(),
+                name: &ser.name,
                 field_count: ser.fields.len(),
                 fields: if summary {
                     None
@@ -56,9 +56,9 @@ pub fn run(
                         ser.fields
                             .iter()
                             .map(|f| SendTableFieldOutput {
-                                var_name: f.var_name.clone(),
-                                var_type: f.var_type.clone(),
-                                var_encoder: f.var_encoder.clone(),
+                                var_name: &f.var_name,
+                                var_type: &f.var_type,
+                                var_encoder: f.var_encoder.as_deref(),
                                 bit_count: f.bit_count,
                             })
                             .collect(),

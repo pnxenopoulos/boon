@@ -3,7 +3,8 @@ use crate::*;
 #[pymethods]
 impl Demo {
     #[new]
-    pub(crate) fn new(path: &str) -> PyResult<Self> {
+    #[pyo3(signature = (path, *, preload = true))]
+    pub(crate) fn new(py: Python<'_>, path: &str, preload: bool) -> PyResult<Self> {
         let path = PathBuf::from(path);
 
         // Check if file exists first for a clear FileNotFoundError
@@ -71,7 +72,7 @@ impl Demo {
             0
         };
 
-        Ok(Demo {
+        let mut demo = Demo {
             parser,
             path,
             build,
@@ -86,7 +87,6 @@ impl Demo {
             cached_world_ticks: None,
             cached_kills: None,
             cached_damage: None,
-            cached_healing: None,
             cached_summary: None,
             game_over: None,
             game_over_match_clock: None,
@@ -112,7 +112,11 @@ impl Demo {
             cached_street_brawl_rounds: None,
             cached_urn: None,
             cached_rift: None,
-        })
+        };
+        if preload {
+            demo.load_datasets(py, &[Dataset::Kills, Dataset::Damage, Dataset::Abilities])?;
+        }
+        Ok(demo)
     }
 
     /// Verify that the file is a valid demo file.
@@ -192,81 +196,37 @@ impl Demo {
         self.tick_rate
     }
 
-    /// Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+    /// Read the recorded ``PostMatchDetails`` message.
     ///
-    /// Returns a dictionary with four top-level keys:
+    /// Return six cached Polars DataFrames:
     ///
-    /// - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
-    ///   Snapshots are taken at intervals through the match (not every minute);
-    ///   ``snapshot_time_s`` marks each one. Columns hold that player's running
-    ///   totals at that time: ``hero_id``, ``kills``, ``deaths``, ``assists``,
-    ///   ``net_worth``, ``denies``, ``level``, ``lane``, ``creep_kills``,
-    ///   ``neutral_kills``, ``player_damage``, and the per-source gold/orbs
-    ///   breakdown.
-    /// - ``last_hits``: a Polars DataFrame of ``hero_id`` and ``last_hits`` (the
-    ///   final scoreboard last-hit / souls-secured total, which is only recorded
-    ///   per match, not per snapshot).
-    /// - ``objectives``: a Polars DataFrame of post-match objective records
-    ///   (lane/team objectives, destruction time, and damage taken).
-    /// - ``damage``: a Polars DataFrame of the damage matrix — one row per
-    ///   (dealer, target, source, sample). Dealer/target are given as both
-    ///   ``*_player_slot`` and resolved ``*_hero_id`` (null for non-player slots
-    ///   like 0), so it joins to the other frames on ``hero_id``. ``damage`` is
-    ///   the per-interval (additive) amount for that ``stat_type`` (a string:
-    ///   ``damage``, ``healing``, ``mitigated``, …) dealt during the interval
-    ///   ending at ``sample_time_s``. Each hit is recorded under both a coarse
-    ///   category (``is_category`` true) and a specific source, so filter to
-    ///   ``is_category == False`` to avoid double-counting, then ``sum``.
+    /// - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
+    ///   Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+    ///   ``player_healing``, ``teammate_healing``, and ``self_healing``.
+    ///   Added counters are null when absent.
+    /// - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
+    ///   for each player, snapshot, and source. Includes ``source_id`` and the protobuf
+    ///   ``source_name``. Unknown IDs and absent counters remain available.
+    /// - ``last_hits``: final ``hero_id`` and ``last_hits`` totals.
+    /// - ``objectives``: recorded objective times and damage.
+    /// - ``damage``: the source-to-target matrix at each ``sample_time_s``.
+    ///   ``damage`` is the interval amount; ``total`` is the recorded cumulative value.
+    ///   The interval starts at ``interval_start_s``. Select ``stat_type`` for damage,
+    ///   healing, regeneration, or another recorded statistic. Category rows
+    ///   (``is_category=True``) duplicate specific sources; do not add them together.
+    /// - ``healing``: healing and regeneration rows without category duplicates.
+    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
+    ///   ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+    ///   ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
+    ///   ``total`` is the recorded cumulative amount. Zero changes remain in the table.
     ///
-    /// The decoded message and all four frames are cached after the first call;
-    /// repeated calls do not parse the demo or rebuild the frames.
+    /// Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
+    /// Do not sum cumulative totals across periods. Use player slots across hero changes;
+    /// hero IDs come from the match roster. These tables do not contain individual heals.
     ///
-    /// Raises ``DemoMessageError`` if the demo contains no post-match details
-    /// (for example, an incomplete recording).
+    /// Raises ``DemoMessageError`` if the post-match message is absent or invalid.
     pub(crate) fn summary(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
-
-        if self.cached_summary.is_none() {
-            let frames = py.detach(|| {
-                let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
-                let events = self
-                    .parser
-                    .events_filtered(None, &event_types)
-                    .map_err(to_py_err)?;
-                let event = events
-                    .iter()
-                    .find(|e| e.msg_type == Msg::KEUserMsgPostMatchDetails as u32)
-                    .ok_or_else(|| {
-                        DemoMessageError::new_err("no PostMatchDetails event found in demo")
-                    })?;
-
-                let outer = CCitadelUserMsgPostMatchDetails::decode(event.payload.as_slice())
-                    .map_err(|e| {
-                        DemoMessageError::new_err(format!("failed to decode PostMatchDetails: {e}"))
-                    })?;
-                let details_bytes = outer.match_details.as_ref().ok_or_else(|| {
-                    DemoMessageError::new_err("PostMatchDetails has no match_details bytes")
-                })?;
-                let contents = CMsgMatchMetaDataContents::decode(details_bytes.as_slice())
-                    .map_err(|e| {
-                        DemoMessageError::new_err(format!("failed to decode match metadata: {e}"))
-                    })?;
-                let match_info = contents
-                    .match_info
-                    .ok_or_else(|| DemoMessageError::new_err("match metadata has no match_info"))?;
-
-                let to_df_err = |e: PolarsError| {
-                    DemoMessageError::new_err(format!("failed to build summary: {e}"))
-                };
-                Ok::<SummaryFrames, PyErr>(SummaryFrames {
-                    snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
-                    last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
-                    objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
-                    damage: build_damage_frame(&match_info).map_err(to_df_err)?,
-                })
-            })?;
-            self.cached_summary = Some(frames);
-        }
+        self.ensure_summary(py)?;
 
         let frames = self
             .cached_summary
@@ -277,6 +237,8 @@ impl Demo {
         dict.set_item("last_hits", PyDataFrame(frames.last_hits.clone()))?;
         dict.set_item("objectives", PyDataFrame(frames.objectives.clone()))?;
         dict.set_item("damage", PyDataFrame(frames.damage.clone()))?;
+        dict.set_item("healing", PyDataFrame(frames.healing.clone()))?;
+        dict.set_item("gold_sources", PyDataFrame(frames.gold_sources.clone()))?;
         Ok(dict.into_any().unbind())
     }
 
@@ -421,22 +383,27 @@ impl Demo {
                 self.build_snapshots_parallel(wants, &pred)
             }
         })?;
-        let frame_for = |name: &str| -> Option<DataFrame> {
-            match name {
-                "player_ticks" => pt.clone(),
-                "world_ticks" => wt.clone(),
-                "troopers" => tr.clone(),
+        let frame_for = |name: &str| -> PyResult<DataFrame> {
+            let frame = match name {
+                "player_ticks" => pt.as_ref(),
+                "world_ticks" => wt.as_ref(),
+                "troopers" => tr.as_ref(),
                 _ => None,
-            }
+            };
+            frame.cloned().ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "snapshot dataset '{name}' was not built"
+                ))
+            })
         };
 
         if names.len() == 1 {
-            let df = frame_for(&names[0]).unwrap();
+            let df = frame_for(&names[0])?;
             PyDataFrame(df).into_py_any(py)
         } else {
             let dict = PyDict::new(py);
             for n in &names {
-                dict.set_item(n, PyDataFrame(frame_for(n).unwrap()))?;
+                dict.set_item(n, PyDataFrame(frame_for(n)?))?;
             }
             Ok(dict.into_any().unbind())
         }
@@ -603,7 +570,7 @@ impl Demo {
     /// Returns a DataFrame with columns:
     /// - hero_id: The banned hero's ID (joins to ``players.hero_id``)
     /// - hero_name: The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID
-    ///   that predates the bundled hero table
+    ///   absent from the selected boon-data catalog
     ///
     /// Read the ``BannedHeroes`` user message. The server can send this
     /// message once before the match starts. The message contains only hero
@@ -623,7 +590,18 @@ impl Demo {
             .iter()
             .map(|&id| id as i64)
             .collect();
-        let names: Vec<&'static str> = ids.iter().map(|&id| boon_parser::hero_name(id)).collect();
+        let lookup: HashMap<i64, String> = if ids.is_empty() {
+            HashMap::new()
+        } else {
+            py.import("boon")?
+                .getattr("hero_names")?
+                .call0()?
+                .extract()?
+        };
+        let names: Vec<&str> = ids
+            .iter()
+            .map(|id| lookup.get(id).map_or("HERO_NOT_FOUND", String::as_str))
+            .collect();
         let df = df_from_columns(vec![
             Column::new("hero_id".into(), ids),
             Column::new("hero_name".into(), names),
@@ -638,8 +616,6 @@ impl Demo {
     ///     A list of valid dataset name strings.
     #[staticmethod]
     pub(crate) fn available_datasets() -> Vec<&'static str> {
-        let mut all = VALID_DATASETS.to_vec();
-        all.extend_from_slice(VALID_STREET_BRAWL_DATASETS);
-        all
+        Dataset::ALL.into_iter().map(Dataset::as_str).collect()
     }
 }

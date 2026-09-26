@@ -6,8 +6,8 @@ use colored::Colorize;
 use serde::Serialize;
 
 #[derive(Serialize)]
-struct EventSummaryOutput {
-    name: String,
+struct EventSummaryOutput<'a> {
+    name: &'a str,
     count: usize,
 }
 
@@ -45,7 +45,7 @@ pub fn run(
                 .iter()
                 .take(limit)
                 .map(|(name, count)| EventSummaryOutput {
-                    name: name.to_string(),
+                    name,
                     count: *count,
                 })
                 .collect();

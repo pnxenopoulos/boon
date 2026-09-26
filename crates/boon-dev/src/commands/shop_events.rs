@@ -46,13 +46,12 @@ pub fn run(
 ) -> Result<()> {
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
+    let names = boon::CatalogNames::load(None)?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerController"].into_iter().collect();
 
     let mut keys_resolved = false;
     let mut ck_hero_id: Option<u64> = None;
-    let mut slot_to_hero: HashMap<i32, i64> = HashMap::new();
-    let mut slot_to_hero_built = false;
 
     let mut events_out: Vec<ShopEventOutput> = Vec::new();
 
@@ -66,28 +65,17 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            // Build slot_to_hero map once
-            if !slot_to_hero_built {
-                for (idx, entity) in ctx.entities().iter() {
-                    if entity.class_name.as_ref() == "CCitadelPlayerController" {
-                        let hid = entity.get_i64(ck_hero_id);
-                        if hid != 0 {
-                            // userid is 0-based, controller entity index is 1-based
-                            slot_to_hero.insert(idx - 1, hid);
-                        }
-                    }
-                }
-                slot_to_hero_built = true;
-            }
-
             for event in events {
                 if event.msg_type == Msg::KEUserMsgAbilitiesChanged as u32
                     && let Ok(msg) = boon_proto::proto::CCitadelUserMsgAbilitiesChanged::decode(
                         event.payload.as_slice(),
                     )
                 {
-                    let player_slot = msg.purchaser_player_slot.unwrap_or(-1);
-                    let hero_id = slot_to_hero.get(&player_slot).copied().unwrap_or(0);
+                    let hero_id = boon::hero_id_for_player_slot(
+                        ctx.entities(),
+                        msg.purchaser_player_slot,
+                        ck_hero_id,
+                    );
                     let ability_id = msg.ability_id.unwrap_or(0);
                     let change = msg.change.unwrap_or(-1);
 
@@ -95,7 +83,7 @@ pub fn run(
                         tick: event.tick,
                         hero_id,
                         ability_id,
-                        ability: boon::ability_name(ability_id).to_string(),
+                        ability: names.ability_name(ability_id).to_string(),
                         change: change_name(change).to_string(),
                     });
                 }

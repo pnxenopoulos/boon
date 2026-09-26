@@ -5,7 +5,8 @@ Thank you for your interest in Boon. This guide explains how to set up the proje
 ## Prerequisites
 
 - **Rust** (stable) &mdash; install with [rustup](https://rustup.rs)
-- **Python 3.11+** &mdash; for the Python bindings
+- **Python 3.11–3.14** &mdash; for the Python bindings
+- **cargo-nextest** &mdash; `cargo install cargo-nextest --locked`
 - **maturin** &mdash; `pip install maturin` (or `uv add maturin`)
 
 ## Repository Structure
@@ -19,8 +20,7 @@ boon/
 │   └── boon-python/    # Python bindings (PyO3 + pyo3-polars)
 ├── scripts/
 │   ├── sync-protos.sh                  # Fetch latest Deadlock .proto files
-│   ├── build-protos/                   # Regenerate Rust code from .proto files
-│   └── generate-name-tables/           # Regenerate ability and modifier name lookup tables
+│   └── build-protos/                   # Regenerate Rust code from .proto files
 └── .github/workflows/ci.yml    # CI pipeline
 ```
 
@@ -34,7 +34,7 @@ cd boon
 cargo build --workspace
 
 # Run tests
-cargo nextest run --workspace --all-features
+cargo nextest run --workspace --all-features --locked --exclude boon-python
 
 # Build the dev / debug CLI
 cargo build --release -p boon-dev
@@ -66,25 +66,71 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 # Tests
-cargo nextest run --workspace --all-features
+cargo nextest run --workspace --all-features --locked --exclude boon-python
 ```
+
+### Rust Conventions
+
+Shared dependency versions and lint settings are in the workspace `Cargo.toml`.
+Each crate inherits those settings. Enable specific Clippy lints when they fit
+this codebase. Do not enable all pedantic or nursery lints at once.
+
+- Parse public string inputs into typed values before internal dispatch.
+- Return errors for failed input or data operations. Reserve `expect` for
+  documented invariants that indicate a programming error.
+- Borrow data used only for inspection or serialization. Clone when independent ownership is necessary
+  for the caller.
+- Preserve absent fields when applying partial replay updates.
+- Document unsafe operations and keep their scope small.
+- Keep examples fallible with `?`, and test behavior that a refactor could change.
+
+### Python Checks
+
+From `crates/boon-python`, run:
+
+```bash
+uv sync --locked --no-install-project --group quality --group docs
+uv run --no-sync ruff check python/boon
+uv run --no-sync ty check python/boon
+uv run --no-sync sphinx-build -W -b html docs docs/_build/html
+```
+
+CI uses Ruff and ty for checks of the Python package. The quality dependency group
+pins their versions. Update these pins together after a review of new diagnostics.
+Use `uv run --no-sync pytest tests/` after building the extension or installing
+a wheel. This prevents uv from replacing the build under test.
 
 ## Writing Style
 
-Use ASD-STE100 English where practical. Apply this rule to maintained
-documentation, API text, command help, and code comments.
+Use [ASD-STE100](https://www.asd-ste100.org/) as the writing target for maintained documentation, API text,
+command help, and code comments. A plain-language review alone does not establish
+full compliance. Do a check of approved words, meanings, and technical terms before
+claiming compliance with the standard.
 
 - Use active voice.
-- Put one main idea in each sentence.
-- Keep sentences short. Use no more than 25 words when practical.
+- Put one idea in each sentence.
+- Limit descriptive sentences to 25 words. Limit procedural sentences to 20 words.
 - Use the same term for the same thing.
 - Do not use contractions.
 - Do not use a vague word such as "this" without a clear noun.
 - Put behavior and its reason in separate sentences.
 - Keep exact API names, game field names, and Source 2 terms.
 
-Do not edit generated files or upstream protobuf text to change the writing
-style. Edit the generator or source text when possible.
+Use these technical terms consistently:
+
+| Term | Meaning |
+| --- | --- |
+| demo | A recorded Deadlock match in a `.dem` file |
+| dataset | A named set of parsed records returned as a DataFrame |
+| tick | A numbered step in a demo |
+| snapshot | Recorded state at a selected tick or post-match sample |
+| catalog | A boon-data JSON file with names and game definitions |
+| client version | The Deadlock `ClientVersion`, separate from Boon's package version |
+| display name | A localized label, separate from an internal game name |
+
+Keep exact API identifiers and technical names. Do not replace them with
+ordinary words. Do not edit generated files or upstream protobuf text solely
+to change the writing style.
 
 ## Updating Protobuf Definitions
 
@@ -101,31 +147,17 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 The command updates the files in `crates/boon-proto/proto/`. It also regenerates
 `crates/boon-proto/src/proto.rs`.
 
-## Updating the Name Lookup Tables
+## Updating Name Data
 
-Ability, item, modifier, and breakable subclass IDs are MurmurHash2 hashes of
-internal names. The generator joins three Deadlock VData files to the English
-hero and item localization catalogs. The VData files are `abilities.vdata`,
-`modifiers.vdata`, and `misc.vdata`. The generator creates token lookups and
-display names. Boon does not generate or embed gameplay values from VData.
+Hero, ability/item, modifier, and breakable names are read from boon-data releases at runtime.
+Use `boon get` to install the latest catalogs. The lookup functions select the
+newest local client version or download latest when none is installed.
+Rust callers use `CatalogNames::load`; Python functions accept `version=`.
+Update the boon-data pipeline when the source catalog format changes.
 
-```bash
-# Fetch the latest vdata files from SteamDB and regenerate the tables
-./scripts/sync-name-tables.sh
-```
-
-This regenerates `abilities.rs`, `ability_display_names.rs`, `breakables.rs`,
-and `modifiers.rs` under `crates/boon/src/`.
-
-If you already have those VData and localization inputs locally (for example,
-after extracting the game's VPK data with
-[Source2Viewer](https://github.com/ValveResourceFormat/ValveResourceFormat)),
-place all five files in the repository root and run the generator directly:
-
-```bash
-# Run from the repo root with the three VData and two localization files present
-cargo run --manifest-path scripts/generate-name-tables/Cargo.toml
-```
+Breakable subclass names use `misc_id` and `misc_name` from `misc.json` records
+whose `definition._class` is `citadel_breakable_prop`. Boon has no VData name-table
+generator or embedded breakable table.
 
 ## Release Strategy
 
@@ -195,6 +227,10 @@ gh release download 70537442 \
 gh release download 103129247 \
   --repo pnxenopoulos/boon-fixtures \
   --dir crates/boon-python/tests/fixtures/
+
+gh release download 100655353 \
+  --repo pnxenopoulos/boon-fixtures \
+  --dir crates/boon-python/tests/fixtures/
 ```
 
 Tests that require a missing fixture are skipped automatically.
@@ -233,6 +269,7 @@ def demo() -> Demo:
 | 70555151 | 6v6 | Standard 6v6 match |
 | 70537442 | Street Brawl | Street brawl (game_mode=4) match |
 | 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
+| 100655353 | 6v6 | Silver-to-Victor hero swap and post-match summary totals |
 
 ## Submitting Changes
 
@@ -250,3 +287,11 @@ this information in a bug report:
 - Steps to reproduce the problem.
 - Expected behavior and actual behavior.
 - Demo match ID, if applicable.
+
+## Performance investigations
+
+See [the benchmark guide](crates/boon-python/benchmarks/README.md) for Python
+API workloads, Rust parser phases, before/after comparisons and profiling.
+Build optimized binaries, keep the benchmark harness identical across revisions,
+and compare output fingerprints as well as timing. CI smoke-tests the harness;
+use repeated measurements on an idle machine for performance decisions.

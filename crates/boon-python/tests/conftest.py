@@ -10,6 +10,7 @@ FIXTURES_DIR = Path(__file__).parent / "fixtures"
 ALL_DATASETS = [
     "abilities",
     "ability_upgrades",
+    "ability_ticks",
     "active_modifiers",
     "chat",
     "damage",
@@ -47,7 +48,7 @@ def get_demo(path: Path) -> Demo:
     """Get or create a fully-loaded Demo instance, cached for the session."""
     key = path.name
     if key not in _demo_cache:
-        d = Demo(str(path))
+        d = Demo(str(path), preload=False)
         datasets = list(ALL_DATASETS)
         if d.game_mode == 4:
             datasets.extend(STREET_BRAWL_DATASETS)
@@ -66,7 +67,7 @@ def demo_paths() -> list[Path]:
 def demo(request: pytest.FixtureRequest) -> Demo:
     """Yield a fully-loaded Demo instance for each fixture file.
 
-    All datasets are loaded eagerly in a single parse pass so that
+    All datasets are loaded together in compatible parser passes so that
     individual tests only check cached DataFrames.
     """
     return get_demo(request.param)
@@ -78,3 +79,34 @@ def _require_demo_fixture() -> Path:
     if not dems:
         pytest.skip("No demo fixtures available")
     return dems[0]
+
+
+@pytest.fixture(scope="session")
+def name_catalog_cache(tmp_path_factory):
+    """A verified catalog installation isolates replay tests from GitHub and user data."""
+    import json
+
+    from catalog_helpers import VERSION, release
+
+    root = tmp_path_factory.mktemp("boon-data")
+    records = json.loads(Path(__file__).with_name("name-catalogs.json").read_text())
+    index, files = release(records=records)
+    directory = root / VERSION
+    directory.mkdir()
+    entry = index["versions"][VERSION]
+    for name, artifact in entry["artifacts"].items():
+        (directory / name).write_bytes(files[artifact["url"]])
+    (directory / ".install.json").write_text(json.dumps({"version": entry}))
+    return root
+
+
+@pytest.fixture(autouse=True)
+def offline_catalogs(monkeypatch, name_catalog_cache):
+    from boon import data
+
+    monkeypatch.setattr(data, "BOON_DATA_DIR", name_catalog_cache)
+
+    def offline(url):
+        raise AssertionError(f"unexpected network request in test: {url}")
+
+    monkeypatch.setattr(data, "_request", offline)
