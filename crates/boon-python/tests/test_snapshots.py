@@ -23,7 +23,7 @@ def _fixture() -> str:
 
 @pytest.fixture(scope="module")
 def demo() -> Demo:
-    return Demo(_fixture())
+    return Demo(_fixture(), preload=False)
 
 
 def test_specific_ticks_match_full_frame(demo: Demo) -> None:
@@ -88,10 +88,10 @@ def test_message_only_event_ticks_match_loaded_datasets() -> None:
         "item_purchases",
         "chat",
     ]
-    direct_demo = Demo(_fixture())
+    direct_demo = Demo(_fixture(), preload=False)
     direct = direct_demo.snapshots(events=events)
 
-    loaded_demo = Demo(_fixture())
+    loaded_demo = Demo(_fixture(), preload=False)
     loaded_demo.load(*events)
     loaded = loaded_demo.snapshots(events=events)
 
@@ -126,7 +126,7 @@ def test_validation(demo: Demo) -> None:
 def test_event_selection_rejects_unknown_names_consistently(
     cached: bool, dataset: str
 ) -> None:
-    parsed = Demo(_fixture())
+    parsed = Demo(_fixture(), preload=False)
     if cached:
         parsed.load("kills")
     with pytest.raises(ValueError, match="Unknown dataset"):
@@ -142,7 +142,7 @@ def test_duplicate_snapshot_names_preserve_return_shape(demo: Demo) -> None:
 
 
 def test_snapshots_release_gil() -> None:
-    parsed = Demo(_fixture())
+    parsed = Demo(_fixture(), preload=False)
     ready = threading.Event()
     stop = threading.Event()
     progress = [0]

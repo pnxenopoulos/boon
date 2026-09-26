@@ -88,9 +88,9 @@ The default cache is `~/.boon/<client-version>/`:
 ```
 
 Published JSON files are stored unchanged. Releases contain all five JSON files.
-The local `.install.json` receipt records the requested client version, source
-build date and time, publication timestamp, snapshot, and expected checksums so
-offline listings can verify the installation.
+The local `.install.json` receipt records the requested client version and
+source build date and time. It also stores the publication timestamp, snapshot,
+and expected checksums. Offline listings use this receipt to verify the files.
 
 Set `BOON_DATA_DIR` before importing Boon or invoking the CLI to choose a
 different cache root. For example:
@@ -99,9 +99,9 @@ different cache root. For example:
 BOON_DATA_DIR=/path/to/data boon get 6698
 ```
 
-Downloads are staged under the cache root. All files listed by the release must match the sizes
-and SHA-256 checksums in the version index, and the manifest must agree with
-that index, before the installation is made available. A failed `--force`
+Downloads are staged under the cache root. Each file must match its size and SHA-256 checksum in the version index.
+The manifest must also agree with the index. Boon makes the installation
+available only after these checks pass. A failed `--force`
 download preserves the existing installation. Ordinary downloads never replace
 an invalid installation automatically; use `--force` to repair it.
 
@@ -144,11 +144,13 @@ Set `data.BOON_DATA_DIR` to a `Path` to redirect an existing process.
 
 ## Relationship to replays
 
-A Deadlock `ClientVersion` is independent of Boon's package version and has not
-been mapped to `demo.build`. Opening a `Demo` does not select or download these
-catalogs. Downloading them does not change the parser's bundled name tables or
-recorded datasets, or add calculated resistance/lifesteal percentages. The
-catalogs are available for callers to inspect and use independently.
+A Deadlock `ClientVersion` is independent of Boon's package version.
+Boon does not map it to `demo.build`. Opening a `Demo` does not select a
+catalog version. Name lookups use the selection policy described above.
+Select `version=` explicitly when you need names from a particular client.
+
+Catalogs provide names and definitions. They do not add calculated hero stats
+or change the raw IDs and values recorded in a demo.
 
 If the published index has no designated `latest` (for example, after only
 historical backfills), automatic downloads use the highest published client

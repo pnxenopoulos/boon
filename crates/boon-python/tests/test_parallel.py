@@ -32,10 +32,10 @@ def test_parallel_matches_serial(
     demo_path = _fixture()
 
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")
-    serial = getattr(Demo(demo_path), dataset)
+    serial = getattr(Demo(demo_path, preload=False), dataset)
 
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "4")
-    parallel = getattr(Demo(demo_path), dataset)
+    parallel = getattr(Demo(demo_path, preload=False), dataset)
 
     assert serial.shape == parallel.shape
     assert serial.columns == parallel.columns
@@ -49,13 +49,13 @@ def test_mixed_load_keeps_snapshots_parallel_and_exact(
 
     # Serial reference for both planner groups.
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")
-    serial = Demo(demo_path)
+    serial = Demo(demo_path, preload=False)
     serial.load(*SNAPSHOT_DATASETS, "kills")
 
     # A mixed request must keep the snapshots on their parallel segmented path
     # while kills uses the filtered event/entity pass.
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "4")
-    mixed = Demo(demo_path)
+    mixed = Demo(demo_path, preload=False)
     mixed.load(*SNAPSHOT_DATASETS, "kills")
 
     for ds in SNAPSHOT_DATASETS:

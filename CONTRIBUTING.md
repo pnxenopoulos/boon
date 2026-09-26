@@ -83,22 +83,53 @@ this codebase. Do not enable all pedantic or nursery lints at once.
 - Document unsafe operations and keep their scope small.
 - Keep examples fallible with `?`, and test behavior that a refactor could change.
 
+### Python Checks
+
+From `crates/boon-python`, run:
+
+```bash
+uv sync --locked --no-install-project --group quality --group docs
+uv run --no-sync ruff check python/boon
+uv run --no-sync ty check python/boon
+uv run --no-sync sphinx-build -W -b html docs docs/_build/html
+```
+
+CI checks the Python package with Ruff and ty. The quality dependency group
+pins their versions. Update these pins together after checking new diagnostics.
+Use `uv run --no-sync pytest tests/` after building the extension or installing
+a wheel. This prevents uv from replacing the build under test.
+
 ## Writing Style
 
-Use ASD-STE100 English where practical. Apply this rule to maintained
-documentation, API text, command help, and code comments.
+Use [ASD-STE100](https://www.asd-ste100.org/) as the writing target for maintained documentation, API text,
+command help, and code comments. A plain-language review alone does not establish
+full compliance. Check approved words, meanings, and technical terms before
+claiming compliance with the standard.
 
 - Use active voice.
 - Put one main idea in each sentence.
-- Keep sentences short. Use no more than 25 words when practical.
+- Limit descriptive sentences to 25 words. Limit procedural sentences to 20 words.
 - Use the same term for the same thing.
 - Do not use contractions.
 - Do not use a vague word such as "this" without a clear noun.
 - Put behavior and its reason in separate sentences.
 - Keep exact API names, game field names, and Source 2 terms.
 
-Do not edit generated files or upstream protobuf text to change the writing
-style. Edit the generator or source text when possible.
+Use these technical terms consistently:
+
+| Term | Meaning |
+| --- | --- |
+| demo | A recorded Deadlock match in a `.dem` file |
+| dataset | A named set of parsed records returned as a DataFrame |
+| tick | A numbered step in a demo |
+| snapshot | Recorded state at a selected tick or post-match sample |
+| catalog | A boon-data JSON file with names and game definitions |
+| client version | The Deadlock `ClientVersion`, separate from Boon's package version |
+| display name | A localized label, separate from an internal game name |
+
+Keep exact API identifiers and technical names. Do not replace them with
+ordinary words. Do not edit generated files or upstream protobuf text solely
+to change the writing style.
 
 ## Updating Protobuf Definitions
 
@@ -250,3 +281,11 @@ this information in a bug report:
 - Steps to reproduce the problem.
 - Expected behavior and actual behavior.
 - Demo match ID, if applicable.
+
+## Performance investigations
+
+See [the benchmark guide](crates/boon-python/benchmarks/README.md) for Python
+API workloads, Rust parser phases, before/after comparisons and profiling.
+Build optimized binaries, keep the benchmark harness identical across revisions,
+and compare output fingerprints as well as timing. CI smoke-tests the harness;
+performance decisions should use repeated measurements on an idle machine.

@@ -10,14 +10,16 @@
 //! sample $! 15 -file /tmp/sample.txt   # 15s call-tree sample
 //! ```
 //!
-//! Defaults to the largest fixture (longest per-iteration window).
+//! Requires an explicit demo path; set BOON_PROFILE_ITERS to bound the run.
 
 use std::path::PathBuf;
 
 fn main() {
-    let path = std::env::var("BOON_BENCH_DEMO")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("crates/boon-python/tests/fixtures/84133142.dem"));
+    let Some(path) = std::env::var_os("BOON_BENCH_DEMO") else {
+        eprintln!("set BOON_BENCH_DEMO=/path/to.dem");
+        std::process::exit(1);
+    };
+    let path = PathBuf::from(path);
 
     if !path.exists() {
         eprintln!("profile_decode: demo not found at {}", path.display());

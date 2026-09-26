@@ -34,8 +34,8 @@ Add analysis functions that return calculated statistics:
 
 - A `match_summary` function that returns KDA, GPM, XPM, last hits, hero damage,
   and objective damage for each player.
-- **Combat encounter detection** — Group kills and damage into fights. Add the
-  participants, location, and result.
+- **Teamfight analysis** — Extend the existing `teamfights()` function with
+  participant summaries and fight results.
 - **Win probability over time** — Add an interface for a model. Put its
   `win_prob` values in `world_ticks`.
 

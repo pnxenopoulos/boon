@@ -47,7 +47,7 @@ Deadlock demos contain player positions, kills, damage, item builds, objective s
 
 - ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
 - 📊 **Structured output.** Each dataset is a Polars DataFrame. You can filter, group, join, and display the data.
-- 🎯 **Parse only what you need.** Boon loads each dataset on demand. Use `load()` to parse multiple datasets in one pass.
+- 🎯 **Parse only what you need.** Boon preloads kills, damage, and abilities. Set `preload=False` to load datasets only when requested. Compatible datasets share a parser pass.
 - 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
 - 💻 **CLI included.** `pip install boon-deadlock` ships a `boon` command for quick inspection without writing any code.
 
@@ -97,12 +97,12 @@ print(demo.map_name)         # "start"
 print(demo.total_clock_time) # "37:38"
 print(demo.winning_team_num) # 3
 
-# Datasets are Polars DataFrames, lazy-loaded on first access
+# Combat datasets are preloaded; other Polars DataFrames load on first access
 kills = demo.kills
 damage = demo.damage
 player_ticks = demo.player_ticks
 
-# Batch-load multiple datasets in a single parse pass
+# Load datasets together; compatible datasets share a parser pass
 demo.load("kills", "damage", "player_ticks", "objectives")
 
 # See what datasets are available
@@ -137,7 +137,7 @@ The `boon-dev` tool adds low-level commands such as `entities`, `events`, and `s
 
 ## Available Datasets
 
-Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataFrame. Boon loads a dataset when you first access it. Use `load()` to parse multiple datasets in one pass. Call `Demo.available_datasets()` to get the full list.
+Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataFrame. `Demo(path)` preloads kills, damage, and abilities together. Other datasets load on first access. Use `Demo(path, preload=False)` for lightweight construction, then `load()` to request several datasets together. Call `Demo.available_datasets()` to get the full list.
 
 | Dataset | Description |
 |---------|-------------|

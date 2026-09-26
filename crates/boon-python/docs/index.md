@@ -8,7 +8,7 @@ Deadlock demos contain player positions, kills, damage, item builds, objective s
 
 - ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
 - 📊 **Structured output.** Each dataset is a Polars DataFrame. You can filter, group, join, and display the data.
-- 🎯 **Parse only what you need.** Boon loads each dataset on demand. Use `load()` to parse multiple datasets in one pass.
+- 🎯 **Parse only what you need.** Boon preloads kills, damage, and abilities. Set `preload=False` to load datasets only when requested. Compatible datasets share a parser pass.
 - 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
 - 💻 **CLI included.** The Python package installs a `boon` command for quick inspection without writing code.
 
@@ -33,6 +33,7 @@ api
 cli
 data
 demo-checklist
+benchmarks
 faq
 known-issues
 reference/index

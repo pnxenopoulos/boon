@@ -198,9 +198,9 @@ python scripts/check-demo.py 106996573.dem \
 ```
 
 Choose an available client version from `boon versions`. This option requires
-network access. It uses a temporary cache, verifies the installed catalogs
-through the Python data API, exercises a cached get and CLI removal, and leaves
-your real `~/.boon` installation untouched.
+network access. It uses a temporary cache and verifies the catalogs through
+the Python data API. It tests a cached download and CLI removal.
+Your existing `~/.boon` installation is unchanged.
 
 Output:
 
@@ -321,7 +321,7 @@ event. Mark missing events **not observed**, and find another replay if needed.
 
 - [ ] Fresh property access, bulk `load()`, repeated access, and duplicate load
   requests produce consistent data. The script exercises the bulk/cache paths;
-  use a fresh `Demo` to spot-check independent lazy loads below.
+  use `Demo(path, preload=False)` to spot-check independent lazy loads below.
 - [ ] Snapshot selection works for single/list ticks, windows, `every`, `seconds`,
   and event unions. Single-dataset results are frames; multiple datasets return
   a dictionary. The script compares sampled rows against full frames and checks
@@ -374,15 +374,15 @@ A fresh lazy load can be checked against the exported bulk-loaded evidence:
 from boon import Demo
 from polars.testing import assert_frame_equal
 
-fresh = Demo("106996573.dem")
+fresh = Demo("106996573.dem", preload=False)
 assert_frame_equal(fresh.damage, pl.read_parquet(folder / "damage.parquet"))
 ```
 
 ## Turn independent observations into repeatable assertions
 
-Transcribe a value from the replay UI, not from Boon's output. For example, if
-Victor is visibly at 123 health at demo tick 50707, save this JSON in
-`observations.json` (**123 is an illustration; replace it with your observation**):
+Transcribe a value from the replay UI, not from Boon's output. Suppose Victor has
+123 health at demo tick 50707. Save the following JSON in `observations.json`.
+**123 is an example. Replace it with the value you observe.**
 
 ```json
 [

@@ -319,36 +319,39 @@ impl Demo {
 
         let ranges = segment_ranges(&offsets, count);
         let parser = &self.parser;
-        let parts: std::result::Result<Vec<PlayerPositionCols>, String> =
-            std::thread::scope(|scope| {
-                let handles: Vec<_> = ranges
-                    .iter()
-                    .map(|&(start, end_tick)| {
-                        let filter = &filter;
-                        let keys = &keys;
-                        let selected = &selected;
-                        scope.spawn(move || -> std::result::Result<PlayerPositionCols, String> {
-                            let mut columns = PlayerPositionCols::default();
-                            parser
-                                .decode_segment(start, end_tick, filter, |ctx| {
-                                    if selected.contains(&ctx.tick()) {
-                                        columns.collect_tick(ctx, keys);
-                                    }
-                                })
-                                .map_err(|error| error.to_string())?;
-                            Ok(columns)
-                        })
+        let parts: PyResult<Vec<DataFrame>> = std::thread::scope(|scope| {
+            let handles: Vec<_> = ranges
+                .iter()
+                .map(|&(start, end_tick)| {
+                    let filter = &filter;
+                    let keys = &keys;
+                    let selected = &selected;
+                    scope.spawn(move || -> PyResult<DataFrame> {
+                        let mut columns = PlayerPositionCols::default();
+                        parser
+                            .decode_segment(start, end_tick, filter, |ctx| {
+                                if selected.contains(&ctx.tick()) {
+                                    columns.collect_tick(ctx, keys);
+                                }
+                            })
+                            .map_err(to_py_err)?;
+                        columns.into_dataframe()
                     })
-                    .collect();
-                handles
-                    .into_iter()
-                    .map(|handle| handle.join().expect("position segment thread panicked"))
-                    .collect()
-            });
-        for part in parts.map_err(InvalidDemoError::new_err)? {
-            merged.append(part);
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("position segment thread panicked"))
+                .collect()
+        });
+        let mut frames = parts?.into_iter();
+        let mut merged = frames.next().expect("position segments are nonempty");
+        for frame in frames {
+            merged.vstack_mut(&frame).map_err(|error| {
+                InvalidDemoError::new_err(format!("Failed to combine position frames: {error}"))
+            })?;
         }
-        merged.into_dataframe()
+        Ok(merged)
     }
 
     /// Decode requested snapshot datasets in one parallel pass.
@@ -362,7 +365,7 @@ impl Demo {
         &self,
         wants: SnapWants,
         pred: &TickPredicate,
-    ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
+    ) -> PyResult<SnapshotFrames> {
         let mut classes: Vec<&str> = Vec::new();
         if wants.player_ticks {
             classes.push("CCitadelPlayerPawn");
@@ -388,7 +391,7 @@ impl Demo {
 
         let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
         let n = parallel_segments().min(offsets.len().max(1));
-        let merged = if n <= 1 {
+        if n <= 1 {
             let mut cols = SegSnap::default();
             self.parser
                 .decode_segment(None, i32::MAX, &filter, |ctx| {
@@ -398,17 +401,17 @@ impl Demo {
                     }
                 })
                 .map_err(to_py_err)?;
-            cols
+            cols.into_frames(wants)
         } else {
             let segments = segment_ranges(&offsets, n);
             let parser = &self.parser;
             let filter = &filter;
             let keys = &keys;
-            let parts: std::result::Result<Vec<SegSnap>, String> = std::thread::scope(|s| {
+            let parts: PyResult<Vec<SnapshotFrames>> = std::thread::scope(|s| {
                 let handles: Vec<_> = segments
                     .iter()
                     .map(|&(start, end_tick)| {
-                        s.spawn(move || -> std::result::Result<SegSnap, String> {
+                        s.spawn(move || -> PyResult<SnapshotFrames> {
                             let mut cols = SegSnap::default();
                             parser
                                 .decode_segment(start, end_tick, filter, |ctx| {
@@ -417,8 +420,8 @@ impl Demo {
                                         cols.collect_tick(ctx, keys, wants);
                                     }
                                 })
-                                .map_err(|error| error.to_string())?;
-                            Ok(cols)
+                                .map_err(to_py_err)?;
+                            cols.into_frames(wants)
                         })
                     })
                     .collect();
@@ -427,31 +430,14 @@ impl Demo {
                     .map(|h| h.join().expect("snapshot segment thread panicked"))
                     .collect()
             });
-            let mut merged = SegSnap::default();
-            for part in parts.map_err(InvalidDemoError::new_err)? {
-                merged.append(part);
+            let mut merged = (None, None, None);
+            for (pt, wt, tr) in parts? {
+                append_snapshot_frame(&mut merged.0, pt)?;
+                append_snapshot_frame(&mut merged.1, wt)?;
+                append_snapshot_frame(&mut merged.2, tr)?;
             }
-            merged
-        };
-
-        let SegSnap { pt, wt, tr, .. } = merged;
-        Ok((
-            if wants.player_ticks {
-                Some(pt.into_dataframe()?)
-            } else {
-                None
-            },
-            if wants.world_ticks {
-                Some(wt.into_dataframe()?)
-            } else {
-                None
-            },
-            if wants.troopers {
-                Some(tr.into_dataframe()?)
-            } else {
-                None
-            },
-        ))
+            Ok(merged)
+        }
     }
 
     /// Get requested datasets at one tick with `parse_to_tick`.
@@ -459,11 +445,7 @@ impl Demo {
     /// Return empty frames when the demo does not emit `tick`. Each full packet
     /// contains a new keyframe for these entities. Therefore, a direct seek
     /// produces the same state as a full decode at `tick`.
-    pub(super) fn snapshot_at_tick(
-        &self,
-        tick: i32,
-        wants: SnapWants,
-    ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
+    pub(super) fn snapshot_at_tick(&self, tick: i32, wants: SnapWants) -> PyResult<SnapshotFrames> {
         let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
         let mut cols = SegSnap::default();
         if ctx.tick() == tick {
@@ -477,24 +459,7 @@ impl Demo {
             }
             cols.collect_tick(&ctx, &keys, wants);
         }
-        let SegSnap { pt, wt, tr, .. } = cols;
-        Ok((
-            if wants.player_ticks {
-                Some(pt.into_dataframe()?)
-            } else {
-                None
-            },
-            if wants.world_ticks {
-                Some(wt.into_dataframe()?)
-            } else {
-                None
-            },
-            if wants.troopers {
-                Some(tr.into_dataframe()?)
-            } else {
-                None
-            },
-        ))
+        cols.into_frames(wants)
     }
 
     /// Get requested datasets at a small set of ticks with direct seeks.
@@ -506,7 +471,7 @@ impl Demo {
         &self,
         mut ticks: Vec<i32>,
         wants: SnapWants,
-    ) -> PyResult<(Option<DataFrame>, Option<DataFrame>, Option<DataFrame>)> {
+    ) -> PyResult<SnapshotFrames> {
         ticks.sort_unstable();
         ticks.dedup();
 

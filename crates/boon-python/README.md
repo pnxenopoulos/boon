@@ -40,7 +40,8 @@ Requires Python 3.11–3.14.
 ```python
 from boon import Demo
 
-demo = Demo("match.dem")
+demo = Demo("match.dem")  # preloads kills, damage, and abilities
+# Use Demo("match.dem", preload=False) for lightweight construction.
 
 # Match metadata
 print(demo.match_id)         # 28309863
@@ -69,7 +70,7 @@ print(demo.players)
 # │ player_name ┆ steam_id     ┆ hero_id ┆ team_num ┆ start_lane ┆ rank │
 # ...
 
-# Datasets (Polars DataFrames — all lazy-loaded on first access)
+# Datasets (combat is preloaded; other frames load on first access)
 player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
 kills            = demo.kills             # kill events

@@ -52,6 +52,8 @@ use snapshots::*;
 ///
 /// Args:
 ///     path: Path to the demo file.
+///     preload: Load kills, damage, and abilities together (default True).
+///         Set False for lightweight construction and loading on first access.
 ///
 /// Raises:
 ///     FileNotFoundError: If the file does not exist.

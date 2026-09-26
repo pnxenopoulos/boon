@@ -47,6 +47,30 @@ jobs:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --workspace --no-deps --all-features --exclude boon-dev --exclude boon-python
 
+  lint-python:
+    name: Python Quality
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: crates/boon-python
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.11"
+
+      - name: Install quality tools and runtime dependencies
+        run: uv sync --locked --no-install-project --no-default-groups --group quality
+
+      - name: Ruff
+        run: uv run --no-sync ruff check python/boon
+
+      - name: ty
+        run: uv run --no-sync ty check python/boon
+
   deny:
     name: Dependency Check
     runs-on: ubuntu-latest
@@ -167,14 +191,33 @@ jobs:
       - name: Install wheel and test dependencies
         working-directory: crates/boon-python
         run: |
-          uv sync --no-install-project
+          uv sync --locked --no-install-project
           CPVER="cp$(echo ${{ matrix.python-version }} | tr -d .)"
           WHEEL=$(ls ../../dist/boon_deadlock-*-${CPVER}-*.whl)
           uv pip install "$WHEEL"
 
       - name: Run pytest
         working-directory: crates/boon-python
-        run: uv run pytest tests/ -v
+        run: uv run --no-sync pytest tests/ -v
+
+      - name: Benchmark harness checks
+        if: matrix.python-version == '3.13'
+        working-directory: crates/boon-python
+        run: |
+          uv run --no-sync pytest benchmarks/test_benchmarks.py -q
+          uv run --no-sync python benchmarks/bench_parse.py \
+            --demo tests/fixtures/103129247.dem \
+            --case construct --case snapshot/single --case load/combat \
+            --repeat 1 --warmup 0 --build-profile debug \
+            --output ../../target/benchmarks/ci-smoke.json
+
+      - name: Upload benchmark smoke report
+        if: always() && matrix.python-version == '3.13'
+        uses: actions/upload-artifact@v6
+        with:
+          name: benchmark-smoke
+          path: target/benchmarks/ci-smoke.json
+          if-no-files-found: warn
 
   dry-run-publish-parser:
     name: Dry Run (crates.io)
@@ -196,11 +239,24 @@ jobs:
       - name: cargo publish --dry-run (boon-proto)
         run: cargo publish --dry-run -p boon-proto
 
-      # boon-deadlock depends on boon-proto which isn't on crates.io yet.
-      # Both cargo publish --dry-run and cargo package resolve registry deps,
-      # so neither works until boon-proto is published. Uncomment after first release.
-      # - name: cargo publish --dry-run (boon-deadlock)
-      #   run: cargo publish --dry-run -p boon-deadlock
+      - name: Check parser publish prerequisite
+        id: proto
+        shell: bash
+        run: |
+          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "boon-proto") | .version')
+          STATUS=$(curl --silent --show-error --retry 3 --output /dev/null --write-out '%{http_code}' "https://crates.io/api/v1/crates/boon-proto/$VERSION")
+          case "$STATUS" in
+            200) echo "published=true" >> "$GITHUB_OUTPUT" ;;
+            404)
+              echo "published=false" >> "$GITHUB_OUTPUT"
+              echo "::warning::Publish boon-proto $VERSION before releasing boon-deadlock. Parser packaging cannot resolve it yet."
+              ;;
+            *) echo "::error::Could not check boon-proto publication (HTTP $STATUS)"; exit 1 ;;
+          esac
+
+      - name: cargo publish --dry-run (boon-deadlock)
+        if: steps.proto.outputs.published == 'true'
+        run: cargo publish --dry-run --locked -p boon-deadlock
 
   dry-run-publish-python:
     name: Dry Run (PyPI)
@@ -245,12 +301,13 @@ jobs:
   check:
     name: CI Check
     if: always()
-    needs: [lint, deny, test-rust, build-python-wheels, test-python, docs, dry-run-publish-parser, dry-run-publish-python]
+    needs: [lint, lint-python, deny, test-rust, build-python-wheels, test-python, docs, dry-run-publish-parser, dry-run-publish-python]
     runs-on: ubuntu-latest
     steps:
       - name: Verify all jobs passed
         run: |
           if [[ "${{ needs.lint.result }}" != "success" ||
+                "${{ needs.lint-python.result }}" != "success" ||
                 "${{ needs.deny.result }}" != "success" ||
                 "${{ needs.test-rust.result }}" != "success" ||
                 "${{ needs.build-python-wheels.result }}" != "success" ||

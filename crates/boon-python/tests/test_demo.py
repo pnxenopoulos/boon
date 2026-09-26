@@ -912,10 +912,10 @@ class TestBannedHeroesScanPaths:
         expected = EXPECTED_BANS[path.name]
 
         # Bare property access -> events-only scan.
-        assert Demo(str(path)).banned_heroes["hero_id"].to_list() == expected
+        assert Demo(str(path), preload=False).banned_heroes["hero_id"].to_list() == expected
 
         # After a load() that needs events -> the entity pass collects them.
-        loaded = Demo(str(path))
+        loaded = Demo(str(path), preload=False)
         loaded.load("kills")
         assert loaded.banned_heroes["hero_id"].to_list() == expected
 
@@ -924,7 +924,7 @@ class TestBannedHeroesScanPaths:
         # bans. The property must fall back to its own scan instead of caching
         # an empty result from that pass.
         path = self._fixture_with_bans()
-        demo = Demo(str(path))
+        demo = Demo(str(path), preload=False)
         demo.load("world_ticks")
         assert demo.banned_heroes["hero_id"].to_list() == EXPECTED_BANS[path.name]
 

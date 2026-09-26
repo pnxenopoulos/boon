@@ -26,13 +26,16 @@
 //! Parse phases run from an in-memory copy of the demo (`from_bytes`) so disk
 //! I/O is excluded from everything except the dedicated `from_file` benchmark;
 //! the per-iteration clone happens in `iter_batched` setup and is not timed.
+//! Batches hold one large input at a time. `seek` uses warm memory-mapped files,
+//! comparing fresh preparation with a reused signon/index; result teardown is
+//! outside the seek timer. Benchmark IDs include the demo filename.
 
 use std::collections::HashSet;
 use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 
 use boon_proto::proto::CitadelUserMessageIds as Msg;
 
@@ -44,7 +47,12 @@ use boon_proto::proto::CitadelUserMessageIds as Msg;
 fn demo_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("BOON_BENCH_DEMO") {
         let p = PathBuf::from(p);
-        return p.exists().then_some(p);
+        assert!(
+            p.is_file(),
+            "BOON_BENCH_DEMO is not a file: {}",
+            p.display()
+        );
+        return Some(p);
     }
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../boon-python/tests/fixtures");
     let mut demos: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -68,7 +76,10 @@ fn bench_init(c: &mut Criterion) {
     // `from_file` just memory-maps it, faulting pages in lazily during parse),
     // so a bytes/sec figure normalized by file size would be meaningless. Raw
     // time is the metric that matters for one-time init cost.
-    let mut g = c.benchmark_group("init");
+    let mut g = c.benchmark_group(format!(
+        "{}/init",
+        path.file_name().unwrap().to_string_lossy()
+    ));
     g.sample_size(20);
     g.warm_up_time(Duration::from_secs(2));
     g.measurement_time(Duration::from_secs(8));
@@ -88,7 +99,7 @@ fn bench_init(c: &mut Criterion) {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.parse_send_tables().unwrap());
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -100,7 +111,7 @@ fn bench_init(c: &mut Criterion) {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.parse_class_info().unwrap());
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -112,7 +123,7 @@ fn bench_init(c: &mut Criterion) {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.parse_init().unwrap());
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -140,9 +151,13 @@ fn bench_decode(c: &mut Criterion) {
                 .map(str::to_owned)
                 .collect()
         })
-        .unwrap_or_default();
+        .expect("parse ability class names");
+    assert!(!ability_classes.is_empty(), "demo has no ability classes");
 
-    let mut g = c.benchmark_group("decode");
+    let mut g = c.benchmark_group(format!(
+        "{}/decode",
+        path.file_name().unwrap().to_string_lossy()
+    ));
     g.sample_size(10);
     g.warm_up_time(Duration::from_secs(3));
     g.measurement_time(Duration::from_secs(30));
@@ -156,7 +171,7 @@ fn bench_decode(c: &mut Criterion) {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.messages().unwrap().len());
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -168,7 +183,7 @@ fn bench_decode(c: &mut Criterion) {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.events(None).unwrap().len());
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -184,7 +199,7 @@ fn bench_decode(c: &mut Criterion) {
                 let p = boon::Parser::from_bytes(bytes);
                 black_box(p.events_filtered(None, &selected_events).unwrap().len());
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -198,7 +213,7 @@ fn bench_decode(c: &mut Criterion) {
                 p.run_to_end(|_| ticks += 1).unwrap();
                 black_box(ticks);
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -213,7 +228,7 @@ fn bench_decode(c: &mut Criterion) {
                 p.run_to_end_filtered(&pawn, |_| ticks += 1).unwrap();
                 black_box(ticks);
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
@@ -228,12 +243,52 @@ fn bench_decode(c: &mut Criterion) {
                 p.run_to_end_filtered(&abilities, |_| ticks += 1).unwrap();
                 black_box(ticks);
             },
-            BatchSize::LargeInput,
+            BatchSize::PerIteration,
         );
     });
 
     g.finish();
 }
 
-criterion_group!(benches, bench_init, bench_decode);
+/// Fresh seeks include preparation; prepared seeks reuse the signon and index.
+fn bench_seek(c: &mut Criterion) {
+    let Some(path) = demo_path() else {
+        eprintln!("boon parse bench: set BOON_BENCH_DEMO; skipping `seek`");
+        return;
+    };
+    let parser = boon::Parser::from_file(&path).unwrap();
+    let ticks = parser.distinct_ticks().unwrap();
+    assert!(!ticks.is_empty(), "demo has no ticks");
+    let targets = [
+        ticks[ticks.len() / 4],
+        ticks[ticks.len() / 2],
+        ticks[3 * ticks.len() / 4],
+    ];
+    let mut group = c.benchmark_group(format!(
+        "{}/seek",
+        path.file_name().unwrap().to_string_lossy()
+    ));
+    group.sample_size(10);
+    group.warm_up_time(Duration::from_secs(1));
+    group.measurement_time(Duration::from_secs(5));
+    for tick in targets {
+        group.bench_with_input(BenchmarkId::new("fresh", tick), &tick, |b, tick| {
+            b.iter_batched_ref(
+                || boon::Parser::from_file(&path).unwrap(),
+                |parser| black_box(parser.parse_to_tick(*tick).unwrap()),
+                BatchSize::PerIteration,
+            );
+        });
+        group.bench_with_input(BenchmarkId::new("prepared", tick), &tick, |b, tick| {
+            b.iter_batched(
+                || (),
+                |()| black_box(parser.parse_to_tick(*tick).unwrap()),
+                BatchSize::PerIteration,
+            );
+        });
+    }
+    group.finish();
+}
+
+criterion_group!(benches, bench_init, bench_decode, bench_seek);
 criterion_main!(benches);

@@ -4,8 +4,8 @@ use crate::*;
 impl Demo {
     /// Per-tick, per-player state as a Polars DataFrame.
     ///
-    /// Returns a DataFrame with 60 columns covering position, health, barrier, observed stat
-    /// modifiers, combat timers, kills, deaths, net worth, and more for every player at every tick.
+    /// Records position, health, barrier, observed stat modifiers, combat timers,
+    /// kills, deaths, and net worth for each recorded player and tick.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
@@ -29,7 +29,8 @@ impl Demo {
     /// - attacker_hero_id: The hero ID of the attacker
     /// - assister_hero_ids: List of hero IDs of players who assisted
     ///
-    /// Boon loads this dataset on first access.
+    /// Boon preloads this dataset unless ``preload=False``.
+    /// With preloading disabled, the first access loads and caches the data.
     #[getter]
     pub(crate) fn kills(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.dataset_frame(py, Dataset::Kills)
@@ -66,7 +67,8 @@ impl Demo {
     /// - melee_type: ``"light"`` or ``"heavy"`` for basic melee, ``"other"``
     ///   for another melee-typed source, otherwise null
     ///
-    /// Boon loads this dataset on first access.
+    /// Boon preloads this dataset unless ``preload=False``.
+    /// With preloading disabled, the first access loads and caches the data.
     #[getter]
     pub(crate) fn damage(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.dataset_frame(py, Dataset::Damage)
@@ -84,7 +86,8 @@ impl Demo {
     /// Ability usage events as a Polars DataFrame.
     ///
     /// Columns: ``tick``, ``hero_id``, ``ability``.
-    /// Boon loads this dataset on first access.
+    /// Boon preloads this dataset unless ``preload=False``.
+    /// With preloading disabled, the first access loads and caches the data.
     #[getter]
     pub(crate) fn abilities(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.dataset_frame(py, Dataset::Abilities)
@@ -336,7 +339,7 @@ impl Demo {
 
     /// The team number of the winning team.
     ///
-    /// Scans for the ``k_EUserMsg_GameOver`` event on first access.
+    /// Uses the cached ``k_EUserMsg_GameOver`` event, or scans for it if needed.
     /// Returns ``None`` if no game over event was found.
     #[getter]
     pub(crate) fn winning_team_num(&mut self) -> PyResult<Option<i32>> {
@@ -346,7 +349,7 @@ impl Demo {
 
     /// The tick when the game ended.
     ///
-    /// Scans for the ``k_EUserMsg_GameOver`` event on first access.
+    /// Uses the cached ``k_EUserMsg_GameOver`` event, or scans for it if needed.
     /// Returns ``None`` if no game over event was found.
     #[getter]
     pub(crate) fn game_over_tick(&mut self) -> PyResult<Option<i32>> {

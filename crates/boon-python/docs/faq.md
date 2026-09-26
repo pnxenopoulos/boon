@@ -12,7 +12,7 @@ Polars also uses memory efficiently. Use `df.to_pandas()` when you need a pandas
 
 ## Why do DataFrames use integer IDs instead of names?
 
-Raw IDs keep the data compact. They also make filters, groups, and joins fast. IDs do not change when Valve renames a hero or ability.
+Raw IDs keep the data compact. They also make filters, groups, and joins fast. A change to a display name does not change its ID. Changes to internal ability or modifier names can change their hashed IDs.
 Use `hero_names()`, `team_names()`, `ability_names()`, and `modifier_names()` to resolve IDs. See {doc}`examples` for examples.
 
 ## How do I see what datasets are available?
@@ -21,8 +21,12 @@ Call `Demo.available_datasets()` to get all dataset names. You can pass these na
 
 ## What is the difference between a property and `load()`?
 
-Accessing a property parses that dataset on first access. For example, `demo.kills` parses the kills dataset.
-`load("kills", "damage", "player_ticks")` parses multiple datasets in one pass. Boon caches the result after either operation.
+`Demo(path)` preloads kills, damage, and abilities. Other properties load their data when first accessed.
+Use `Demo(path, preload=False)` to disable preloading.
+
+`load("kills", "damage", "player_ticks")` requests several datasets together.
+Kills and damage share an event pass. Player snapshots use a separate parallel pass.
+Both property access and `load()` cache their results.
 
 ## Why is `player_ticks` missing some heroes?
 

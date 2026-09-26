@@ -24,6 +24,11 @@ effective player stats.
 contain this vector. `unknown_stat_modifier_count` is the number of vector
 entries with a nonzero `EModifierValue` that this Boon version does not know.
 
+Valve can renumber these values between client versions. The decoder contains
+aliases observed in tested demos; it does not select a layout by client version.
+An unknown-count value of zero does not prove that all aliases are correct for
+a new client. The boon-data catalogs do not currently supply this numeric enum.
+
 ## Banned heroes are frequently absent
 
 `demo.banned_heroes` reads the `k_EUserMsg_BannedHeroes` user message. Its

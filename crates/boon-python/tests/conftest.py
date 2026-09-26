@@ -47,7 +47,7 @@ def get_demo(path: Path) -> Demo:
     """Get or create a fully-loaded Demo instance, cached for the session."""
     key = path.name
     if key not in _demo_cache:
-        d = Demo(str(path))
+        d = Demo(str(path), preload=False)
         datasets = list(ALL_DATASETS)
         if d.game_mode == 4:
             datasets.extend(STREET_BRAWL_DATASETS)
@@ -66,7 +66,7 @@ def demo_paths() -> list[Path]:
 def demo(request: pytest.FixtureRequest) -> Demo:
     """Yield a fully-loaded Demo instance for each fixture file.
 
-    All datasets are loaded eagerly in a single parse pass so that
+    All datasets are loaded together in compatible parser passes so that
     individual tests only check cached DataFrames.
     """
     return get_demo(request.param)

@@ -3,7 +3,8 @@ use crate::*;
 #[pymethods]
 impl Demo {
     #[new]
-    pub(crate) fn new(path: &str) -> PyResult<Self> {
+    #[pyo3(signature = (path, *, preload = true))]
+    pub(crate) fn new(py: Python<'_>, path: &str, preload: bool) -> PyResult<Self> {
         let path = PathBuf::from(path);
 
         // Check if file exists first for a clear FileNotFoundError
@@ -71,7 +72,7 @@ impl Demo {
             0
         };
 
-        Ok(Demo {
+        let mut demo = Demo {
             parser,
             path,
             build,
@@ -111,7 +112,11 @@ impl Demo {
             cached_street_brawl_rounds: None,
             cached_urn: None,
             cached_rift: None,
-        })
+        };
+        if preload {
+            demo.load_datasets(py, &[Dataset::Kills, Dataset::Damage, Dataset::Abilities])?;
+        }
+        Ok(demo)
     }
 
     /// Verify that the file is a valid demo file.

@@ -60,7 +60,7 @@ _LIMIT_OPT = typer.Option(
 def _open(path: Path) -> Demo:
     """Open a demo file, turning any parse failure into a clean CLI error."""
     try:
-        return Demo(str(path))
+        return Demo(str(path), preload=False)
     except Exception as exc:  # surface any parse error cleanly
         typer.secho(
             f"error: could not open {path}: {exc}", fg=typer.colors.RED, err=True
@@ -279,7 +279,7 @@ def stats(
 def verify(file: Path = _FILE_ARG) -> None:
     """Check that a file is a valid Deadlock demo."""
     try:
-        Demo(str(file))
+        Demo(str(file), preload=False)
     except Exception as exc:  # report invalid demos as a clean failure
         typer.secho(f"invalid: {file}: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc

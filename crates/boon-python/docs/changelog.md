@@ -2,6 +2,36 @@
 
 ## 0.10.0
 
+- Removed the unreachable serial snapshot collector. Player, world, and trooper
+  snapshots use the existing parallel collector for all load requests.
+- Shared Rift lane identification between the Rust CLI and Python bindings.
+  Kept the observed site coordinates and unknown-location behavior unchanged.
+- Added Ruff and ty checks to CI. Python tests now keep the installed wheel
+  instead of allowing uv to replace it. Removed unused Sphinx themes.
+- Corrected preload, name lookup, and catalog examples. Reviewed maintained
+  documentation for short sentences and consistent technical terms. Documented
+  the client-version limits of the recorded stat-modifier aliases.
+
+- `Demo(path)` now preloads kills, damage, and abilities together. Use the
+  keyword-only `preload=False` option for lightweight construction and lazy
+  dataset access. Combat parsing errors can now surface during construction.
+  CLI commands opt out and load only their requested datasets.
+- Snapshot numeric columns transfer their buffers into Polars, and parallel
+  segments are combined as ordered chunks without merging all column vectors.
+  Schemas and row order are preserved.
+- Benchmarks explicitly disable default preloading for fresh-load cases and
+  measure combat preloading separately. Order fingerprints now index row hashes
+  instead of wide frames, avoiding large temporary allocations during checks.
+
+- Added a Python benchmark runner with isolated workload processes, explicit
+  fresh/cached cases, repeated wall/CPU timings, frame sizes, process peak RSS,
+  and output fingerprints. Reports record build, input and thread settings;
+  comparisons reject changed outputs or incompatible measurement conditions.
+  Covers datasets, grouped loads, snapshots, derived metrics and local catalog
+  lookups. Added benchmark smoke checks to Python 3.13 CI.
+- Added Rust fresh/prepared seek benchmarks, demo-specific Criterion IDs and
+  bounded input batches. Explicit missing benchmark demos now fail clearly.
+
 - Added a `demo.players` regression for match `100655353`: the player who
   switches from Silver to Victor appears as Victor in the final roster, with
   no Silver entry. CI downloads this fixture in the Python 3.13 job, also

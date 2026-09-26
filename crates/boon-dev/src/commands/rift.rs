@@ -2,38 +2,9 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use boon::rift::{RIFT_COORD_SANITY, rift_lane_for};
 use colored::Colorize;
 use serde::Serialize;
-
-/// Known Rift ("Koth") cash-in sites, as `([x, y], lane)`.
-///
-/// The Rift entities carry no `m_iLane` field, so the lane comes from the
-/// cash-in location. Each site was cross-checked against the lane of the buffed
-/// trooper cohort that spawns for the winning team after a capture.
-const RIFT_LANE_SITES: &[([f32; 2], i64)] = &[([-7560.0, 0.0], 1), ([7612.0, 0.0], 6)];
-
-/// Match radius, in Hammer units, for associating a location with a known site.
-const RIFT_LANE_TOLERANCE: f32 = 1024.0;
-
-/// Upper bound, in Hammer units, on a plausible map coordinate.
-///
-/// The game clears `m_vKothCashInCurrentLocation` to `FLT_MAX` rather than to
-/// zero once a Rift resolves, and `FLT_MAX` is finite — so an `is_finite` check
-/// does not reject it, but this bound does.
-const RIFT_COORD_SANITY: f32 = 1.0e6;
-
-/// The lane for a Rift cash-in location, or `0` when it is not a known site.
-fn rift_lane_for(x: f32, y: f32) -> i64 {
-    if !x.is_finite() || !y.is_finite() {
-        return 0;
-    }
-    for ([sx, sy], lane) in RIFT_LANE_SITES {
-        if (x - sx).abs() <= RIFT_LANE_TOLERANCE && (y - sy).abs() <= RIFT_LANE_TOLERANCE {
-            return *lane;
-        }
-    }
-    0
-}
 
 /// One completed Rift.
 #[derive(Serialize)]

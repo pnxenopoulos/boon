@@ -95,6 +95,8 @@ class Demo:
 
     Args:
         path: Path to the demo file.
+        preload: Load kills, damage, and abilities together during construction.
+            Defaults to True. Set False to load datasets on first access.
 
     Raises:
         FileNotFoundError: If the file does not exist.
@@ -107,11 +109,10 @@ class Demo:
         >>> demo.total_ticks
         54000
         >>> demo.players
-        shape: (12, 5)
         ...
     """
 
-    def __init__(self, path: str) -> None: ...
+    def __init__(self, path: str, *, preload: bool = True) -> None: ...
     def verify(self) -> bool:
         """Verify that the file is a valid demo file.
 
@@ -601,7 +602,8 @@ class Demo:
     def kills(self) -> pl.DataFrame:
         """Hero kill events as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon preloads this dataset unless ``preload=False``.
+        With preloading disabled, the first access loads and caches the data.
 
         Columns:
             - **tick** (*int*) -- The game tick when the kill occurred.
@@ -615,7 +617,8 @@ class Demo:
     def damage(self) -> pl.DataFrame:
         """Damage events as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon preloads this dataset unless ``preload=False``.
+        With preloading disabled, the first access loads and caches the data.
 
         Columns:
             - **tick** (*int*) -- The game tick when the damage occurred.
@@ -658,7 +661,8 @@ class Demo:
     def abilities(self) -> pl.DataFrame:
         """Important ability usage events as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon preloads this dataset unless ``preload=False``.
+        With preloading disabled, the first access loads and caches the data.
 
         Columns:
             - **tick** (*int*) -- The game tick when the ability was used.

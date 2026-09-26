@@ -387,7 +387,7 @@ def teamfights(
     active: list[list[float]] = []  # [last_tick, cx, cy, count, label]
     labels: list[int] = []
     next_label = 0
-    for t, x, y in zip(ticks, xs, ys):
+    for t, x, y in zip(ticks, xs, ys, strict=True):
         active = [f for f in active if t - f[0] <= time_eps]
         best = None
         best_d = r2

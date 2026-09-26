@@ -1,6 +1,6 @@
 //! End-to-end CLI command benchmarks.
 //!
-//! Each benchmark runs one `boon` subcommand against a demo, capturing the full
+//! Each benchmark runs one `boon-dev` subcommand against a demo, capturing the full
 //! cost a user pays at the terminal: parse + the command's (class-filtered)
 //! entity/event walk + formatting. This complements `boon`'s `parse` bench,
 //! which isolates the parser phases; here the question is "how long does each
@@ -28,7 +28,12 @@ use criterion::{Criterion, criterion_group, criterion_main};
 fn demo_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("BOON_BENCH_DEMO") {
         let p = PathBuf::from(p);
-        return p.exists().then_some(p);
+        assert!(
+            p.is_file(),
+            "BOON_BENCH_DEMO is not a file: {}",
+            p.display()
+        );
+        return Some(p);
     }
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../boon-python/tests/fixtures");
     let mut demos: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -47,7 +52,14 @@ fn bench_commands(c: &mut Criterion) {
         return;
     };
 
-    let mut g = c.benchmark_group("commands");
+    // Acquire/verify catalogs before timing so first-use downloads are excluded.
+    // Commands still pay their normal local lookup and verification costs.
+    let names = boon::CatalogNames::load(None).expect("load boon-data for named commands");
+    std::hint::black_box(&names);
+    let mut g = c.benchmark_group(format!(
+        "{}/commands",
+        path.file_name().unwrap().to_string_lossy()
+    ));
     g.sample_size(10);
     g.warm_up_time(Duration::from_secs(2));
     g.measurement_time(Duration::from_secs(20));

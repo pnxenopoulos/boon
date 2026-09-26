@@ -24,9 +24,10 @@ Boon is a Rust library. Its Python bindings use [PyO3](https://pyo3.rs) and [mat
 ## Quick Start
 
 The `Demo` class is the entry point for parsing. Give it the path to a `.dem`
-file. Then, access the required datasets as properties. Boon parses a property
-on first access. Use `load()` to parse multiple datasets in one pass. Call
-`Demo.available_datasets()` to get all dataset names.
+file. Construction loads kills, damage, and abilities together. Other datasets
+load when you first access their properties. Use `Demo(path, preload=False)` to
+keep construction lightweight, then `load()` to request several datasets
+together. Call `Demo.available_datasets()` to get all dataset names.
 
 Most properties return [Polars](https://pola.rs) DataFrames. Use the Polars API
 to filter, group, and analyze the data.
@@ -55,7 +56,7 @@ print(players)
 # │ ...         ┆ ...           ┆ ...     ┆ ...      ┆ ...        ┆ ...  │
 # └─────────────┴───────────────┴─────────┴──────────┴────────────┴──────┘
 
-# Load multiple datasets in one pass.
+# Load additional datasets together; existing frames are cached.
 demo.load("kills", "damage", "item_purchases", "ability_upgrades")
 
 # Boon uses the cached data.
@@ -72,7 +73,7 @@ print(world.columns)  # ['tick', 'is_paused', 'next_midboss']
 
 # Player state per tick (one row per player per tick)
 player_ticks = demo.player_ticks
-print(player_ticks.shape)    # (648000, 50) — 12 players × 54000 ticks
+print(player_ticks.shape)    # Row counts depend on the recorded pawns and ticks.
 print(player_ticks.columns)  # ['tick', 'hero_id', 'x', 'y', 'z', ...]
 ```
 
