@@ -9,9 +9,8 @@ import json
 from pathlib import Path
 
 import pytest
-from typer.testing import CliRunner
-
 from boon.cli import app
+from typer.testing import CliRunner
 
 runner = CliRunner()
 
@@ -86,3 +85,22 @@ def test_verify() -> None:
 def test_missing_file() -> None:
     result = runner.invoke(app, ["info", "does_not_exist.dem"])
     assert result.exit_code != 0
+
+
+@pytest.mark.parametrize("part", ["healing", "all"])
+def test_summary_healing_json(part: str) -> None:
+    result = runner.invoke(app, ["summary", str(_fixture()), "--part", part, "--json"])
+    assert result.exit_code == 0, result.output
+    frames = json.loads(result.stdout)
+    assert "healing" in frames
+    assert all(row["stat_type"] in {"healing", "regen"} for row in frames["healing"])
+    assert all(row["amount"] >= 0 for row in frames["healing"])
+    assert all("total" in row for row in frames["healing"])
+
+
+def test_summary_gold_sources_json() -> None:
+    result = runner.invoke(app, ["summary", str(_fixture()), "--part", "gold_sources", "--json"])
+    assert result.exit_code == 0, result.output
+    sources = json.loads(result.stdout)["gold_sources"]
+    assert sources
+    assert {"snapshot_time_s", "player_slot", "source_id", "gold", "gold_orbs"} <= sources[0].keys()

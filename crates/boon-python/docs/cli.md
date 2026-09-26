@@ -87,7 +87,7 @@ boon summary match.dem --part objectives
 
 | Flag | Description |
 |------|-------------|
-| `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, or `all` (default: `last_hits`) |
+| `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, `healing`, `gold_sources`, or `all` (default: `last_hits`) |
 | `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
 | `--json` | Emit JSON |
 

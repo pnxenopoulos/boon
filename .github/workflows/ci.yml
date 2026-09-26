@@ -239,25 +239,6 @@ jobs:
       - name: cargo publish --dry-run (boon-proto)
         run: cargo publish --dry-run -p boon-proto
 
-      - name: Check parser publish prerequisite
-        id: proto
-        shell: bash
-        run: |
-          VERSION=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "boon-proto") | .version')
-          STATUS=$(curl --silent --show-error --retry 3 --output /dev/null --write-out '%{http_code}' "https://crates.io/api/v1/crates/boon-proto/$VERSION")
-          case "$STATUS" in
-            200) echo "published=true" >> "$GITHUB_OUTPUT" ;;
-            404)
-              echo "published=false" >> "$GITHUB_OUTPUT"
-              echo "::warning::Publish boon-proto $VERSION before releasing boon-deadlock. Parser packaging cannot resolve it yet."
-              ;;
-            *) echo "::error::Could not check boon-proto publication (HTTP $STATUS)"; exit 1 ;;
-          esac
-
-      - name: cargo publish --dry-run (boon-deadlock)
-        if: steps.proto.outputs.published == 'true'
-        run: cargo publish --dry-run --locked -p boon-deadlock
-
   dry-run-publish-python:
     name: Dry Run (PyPI)
     runs-on: ubuntu-latest

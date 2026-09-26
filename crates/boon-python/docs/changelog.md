@@ -3,9 +3,11 @@
 ## 0.10.0
 
 - **API change:** Boon no longer provides `demo.healing`, `load("healing")`,
-  `summary()["healing"]`, `demo.barriers()`, or `boon.barriers`.
+  `demo.barriers()`, or `boon.barriers`.
   Recorded healing counters, barrier snapshots, and damage data remain available.
-  `summary()` returns `snapshots`, `last_hits`, `objectives`, and `damage`.
+- `summary()` retains healing and regeneration totals at each recorded reporting period.
+  It includes soul sources, player healing counters, and cumulative values in the damage matrix.
+  Periods with no increase remain available.
 - **Rust API change:** `CatalogNames::load(version)` and its methods replace the
   static name functions. Use `CatalogNames::breakable_name` and
   `CatalogNames::breakables` in place of `breakable_name` and `all_breakables`.

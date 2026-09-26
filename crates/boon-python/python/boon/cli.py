@@ -201,13 +201,18 @@ def summary(
     part: str = typer.Option(
         "last_hits",
         "--part",
-        help="Which part to show: snapshots, last_hits, objectives, damage, or all.",
+        help=(
+            "Which part to show: snapshots, last_hits, objectives, damage, "
+            "healing, gold_sources, or all."
+        ),
     ),
     limit: int = _LIMIT_OPT,
     as_json: bool = _JSON_OPT,
 ) -> None:
     """Show the post-match summary (souls, objectives, damage matrix)."""
-    valid = ["snapshots", "last_hits", "objectives", "damage", "all"]
+    valid = [
+        "snapshots", "last_hits", "objectives", "damage", "healing", "gold_sources", "all"
+    ]
     if part not in valid:
         typer.secho(f"error: unknown part '{part}'", fg=typer.colors.RED, err=True)
         typer.echo("valid: " + ", ".join(valid), err=True)

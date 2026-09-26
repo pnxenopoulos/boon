@@ -90,8 +90,8 @@ with isolated actions; use a busy fight as an additional check.
 ### 5. Compare the ending and calculated results
 
 - [ ] Winner and game-over timing agree with the viewer.
-- [ ] The four `demo.summary()` tables agree with the corresponding available
-  post-match screens: snapshots, last hits, objectives and damage. Compare like
+- [ ] The six `demo.summary()` tables agree with the corresponding available
+  post-match screens: snapshots, soul sources, last hits, objectives, damage, and healing. Compare like
   categories; do not add category totals to their component rows.
 - [ ] Manually calculate one player's kill participation and death duration,
   then compare `kill_participation()` and `time_dead()`. Death duration excludes
@@ -298,13 +298,20 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
 
 ### Summary and derived metrics
 
-- [ ] `summary()` has exactly `snapshots`, `last_hits`, `objectives`, `damage`.
+- [ ] `summary()` has exactly `snapshots`, `last_hits`, `objectives`, `damage`, `healing`, and `gold_sources`.
   Compare final kills/deaths/assists, net worth, last hits, objectives and damage
   totals with the scoreboard and post-match screens.
 - [ ] In `summary_damage`, filter `stat_type` to the quantity for comparison and
   exclude category duplicates (`is_category=False`). Values are interval
   amounts; summing categories and individual sources double-counts them.
   Raw healing/regen categories remain part of this original matrix.
+- [ ] `summary_healing` contains healing and regeneration amounts and cumulative totals.
+  Compare totals by `stat_type` with the corresponding rows in `summary_damage`.
+  Use `amount` for intervals and `total` at one reporting period. Category duplicates
+  are already excluded. Periods with zero change remain available.
+- [ ] Compare `summary_gold_sources` with the soul source breakdown. Compare
+  `summary_snapshots` healing counters and damage by target type with the game.
+  Use the recorded times; snapshot and matrix schedules can differ.
 - [ ] `kill_participation()`: manually count kills, assists and team kills for
   one hero; test a bounded interval too. If the team has no kills, the ratio is null.
 - [ ] `in_combat()`: inspect entry/exit around one hero hit and one NPC hit;

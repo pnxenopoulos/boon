@@ -182,58 +182,122 @@ without a selector raises `ValueError`.
 
 ```python
 summary = demo.summary()
-summary.keys()                 # dict_keys(['snapshots', 'last_hits', 'objectives', 'damage'])
-summary["snapshots"]           # pl.DataFrame -- one row per (snapshot, player)
-summary["last_hits"]           # pl.DataFrame -- hero_id, last_hits
-summary["objectives"]          # pl.DataFrame -- post-match objective records
-summary["damage"]              # pl.DataFrame -- damage matrix (long form)
+summary["snapshots"]     # Player totals and state at each recorded snapshot
+summary["gold_sources"]  # Souls, kills, and damage by source at each snapshot
+summary["last_hits"]     # Final last-hit totals
+summary["objectives"]    # Recorded objective results
+summary["damage"]        # Source-to-target matrix: interval amounts and totals
+summary["healing"]       # Healing and regeneration from that matrix
 ```
 
-Parse the post-match summary from the demo's `PostMatchDetails` event. Returns a
-dict with four top-level keys:
+Boon decodes the demo's `PostMatchDetails` message. These tables contain recorded
+post-match statistics. They do not estimate healing from changes in health.
+The first call builds and caches all six tables.
 
-- **`snapshots`** -- a Polars DataFrame with one row per (snapshot, player).
-  Snapshots are taken at intervals through the match (not every minute);
-  `snapshot_time_s` marks each one. Columns include `hero_id`, `kills`, `deaths`,
-  `assists`, `net_worth`, `denies`, `level`, and `lane`. Creep and damage columns
-  are `creep_kills`, `neutral_kills`, and `player_damage`.
-  Per-source gold and orb totals use these column prefixes:
-  `player_*`, `lane_creep_*`, `neutral_creep*`, `boss_*`, `treasure_*`, `denies_*`,
+- **`snapshots`** has one row per player and `snapshot_time_s`. It includes
+  `player_slot`, `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
+  `level`, `lane`, `creep_kills`, and `neutral_kills`.
+  Recorded damage totals are `player_damage`, `creep_damage`, `neutral_damage`,
+  `boss_damage`, `self_damage`, and `player_damage_taken`.
+  Healing totals are `player_healing`, `teammate_healing`, and `self_healing`.
+  Other recorded counters are `damage_mitigated`, `damage_absorbed`,
+  `absorption_provided`, `heal_prevented`, and `heal_lost`.
+  The added counters are null when the message omits them.
+  Existing gold and orb columns remain available. Their prefixes are `player_*`,
+  `lane_creep_*`, `neutral_creep*`, `boss_*`, `treasure_*`, `denies_*`,
   `team_bonus_*`, `breakable_*`, `assassinate_*`, `trophy_collector_*`,
   `cultist_sacrifice_*`, `assists_*`, and `unknown_*`.
-- **`last_hits`** -- a Polars DataFrame of `hero_id` and `last_hits`: the final
-  scoreboard last-hit (souls secured) total. The demo records this value once per match.
-  It is separate from the snapshot columns.
-- **`objectives`** -- a Polars DataFrame of post-match objective records:
-  `team_objective_id`, `team`, `destroyed_time_s`, `first_damage_time_s`,
-  `creep_damage`, `player_damage`, `player_spirit_damage`. `destroyed_time_s` and
-  `first_damage_time_s` are null when the objective was never destroyed/damaged.
-- **`damage`** -- a Polars DataFrame of the damage matrix in long form: one row
-  per (`dealer_player_slot`, `target_player_slot`, `source_name`,
-  `sample_time_s`). Dealer/target are also resolved to `dealer_hero_id` and
-  `target_hero_id` (null for non-player slots like `0`), so the frame joins to
-  `snapshots`/`last_hits` on `hero_id`. The `damage` value is the interval amount
-  for the given `stat_type`. The interval ends at the sample time.
-  Use `sum` for totals. Use `cumsum` over `sample_time_s` for running totals.
-  `stat_type` is one of `damage`, `healing`, `heal_prevented`, `mitigated`,
-  `lethal`, or `regen`. The Boolean `is_category` identifies Valve's damage
-  categories: `Bullet`, `Ability`, `Melee`, `Misc`, and `UnknownAbility`.
-  These rows duplicate the specific-source damage rows.
-  Filter to `is_category == False` to exclude these duplicates.
+  The `unknown_*` columns refer to the Goose Egg source.
+- **`gold_sources`** has one row per recorded player, snapshot, and soul source.
+  Columns are `snapshot_time_s`, `player_slot`, `hero_id`, `source_id`,
+  `source_name`, `gold`, `gold_orbs`, `kills`, and `damage`.
+  The counters are cumulative at that snapshot. `gold` and `gold_orbs` preserve
+  the separate counters from the message. Use `snapshots.net_worth` for net worth.
+  Source names are protobuf names, such as `k_ePlayers`, `k_eLaneCreeps`, and
+  `k_eAssists`. Unknown IDs remain available as `unknown_<id>`.
+  Absent source IDs, names, or counters are null. This table preserves sources
+  that have no column in `snapshots`.
+- **`last_hits`** contains `hero_id` and the final scoreboard `last_hits` total.
+- **`objectives`** contains `team_objective_id`, `team`, `destroyed_time_s`,
+  `first_damage_time_s`, `creep_damage`, `player_damage`, and
+  `player_spirit_damage`. Absent times are null.
+- **`damage`** contains the full recorded matrix. Each row identifies a
+  `dealer_player_slot`, `target_player_slot`, `source_name`, `stat_type`, and
+  `sample_time_s`. `dealer_hero_id` and `target_hero_id` identify roster heroes;
+  non-player slots have null hero IDs.
+  `damage` is the amount for the interval from `interval_start_s` to
+  `sample_time_s`. **`total` is the recorded cumulative amount at `sample_time_s`.**
+  `stat_type` is `damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`, or
+  `regen`. Unknown values use `unknown_<id>`.
+  `is_category=True` marks broad source categories such as `Bullet`, `Ability`,
+  `Melee`, `Misc`, and `UnknownAbility`. These rows duplicate specific sources.
+  Select categories or specific sources before aggregation. Do not add them together.
+- **`healing`** selects `healing` and `regen` rows from the matrix and excludes
+  category duplicates. Columns are `interval_start_s`, `interval_end_s`,
+  `healer_player_slot`, `healer_hero_id`, `target_player_slot`, `target_hero_id`,
+  `source_name`, `stat_type`, `amount`, and `total`.
+  `amount` is the interval amount. **`total` is the recorded cumulative amount
+  at `interval_end_s`.** Periods with no increase remain in the table.
+  `stat_type` separates healing from regeneration. `source_name` preserves the
+  recorded item, ability, modifier, or other source label.
 
-  ```python
-  import polars as pl
-  dmg = demo.summary()["damage"]
-  # player-vs-player damage matrix (totals) -- the obvious query just works:
-  (dmg.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
-      .group_by("dealer_player_slot", "target_player_slot")
-      .agg(pl.col("damage").sum()))
-  ```
+Times use match-clock seconds. Player snapshots and matrix samples can use
+**different reporting periods**. Use their recorded times; do not assume a fixed
+interval or join them by row number. Sparse matrix histories start at later
+samples. Boon does not add rows for unrecorded periods.
+Hero IDs come from the match roster. Use player slots to identify players across
+hero changes.
 
-**Returns:** `dict` -- The post-match summary (Polars DataFrames keyed by name).
+To get a total at one reporting period, select that time and sum `total` across
+sources. **Do not sum `total` across reporting periods.** To combine periods,
+sum the interval column (`damage` or `amount`).
 
-**Raises:** `DemoMessageError` -- If the demo contains no post-match details
-(for example, an incomplete recording).
+```python
+import polars as pl
+
+summary = demo.summary()
+healing = summary["healing"]
+matrix = summary["damage"]
+period = matrix["sample_time_s"].max()  # Select a recorded reporting period
+
+# Healing and regeneration totals by player and type at each period.
+healing_totals = healing.group_by(
+    "interval_end_s", "healer_player_slot", "stat_type"
+).agg(pl.col("total").sum())
+
+# Healing or regeneration by source for one player at one period.
+healing_sources = healing.filter(
+    (pl.col("interval_end_s") == period) & (pl.col("healer_player_slot") == 2)
+).group_by("stat_type", "source_name").agg(pl.col("total").sum())
+
+# Souls by source. This table uses the player snapshot schedule.
+souls = summary["gold_sources"].filter(pl.col("player_slot") == 2)
+
+# Damage dealt by type at one period: use only broad categories.
+damage_types = matrix.filter(
+    (pl.col("sample_time_s") == period)
+    & (pl.col("stat_type") == "damage")
+    & pl.col("is_category")
+).group_by("dealer_player_slot", "source_name").agg(pl.col("total").sum())
+
+# Damage to/from players: use only specific sources to prevent duplicates.
+player_damage = matrix.filter(
+    (pl.col("sample_time_s") == period)
+    & (pl.col("stat_type") == "damage")
+    & ~pl.col("is_category")
+    & pl.col("dealer_hero_id").is_not_null()
+    & pl.col("target_hero_id").is_not_null()
+).group_by("dealer_player_slot", "target_player_slot").agg(pl.col("total").sum())
+
+# Optional square matrix: rows deal damage, columns receive damage.
+damage_matrix = player_damage.pivot(
+    on="target_player_slot", index="dealer_player_slot", values="total"
+)
+```
+
+**Returns:** `dict[str, polars.DataFrame]` with the six tables above.
+
+**Raises:** `DemoMessageError` if the post-match message is absent or invalid.
 
 (kill-participation)=
 #### `kill_participation()`

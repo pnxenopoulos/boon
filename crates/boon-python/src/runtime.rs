@@ -38,11 +38,14 @@ impl Demo {
                     DemoMessageError::new_err(format!("failed to build summary: {e}"))
                 };
                 let damage = build_damage_frame(&match_info).map_err(to_df_err)?;
+                let healing = build_healing_frame(&damage).map_err(to_df_err)?;
                 Ok::<SummaryFrames, PyErr>(SummaryFrames {
                     snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
                     last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
                     objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
                     damage,
+                    healing,
+                    gold_sources: build_gold_sources_frame(&match_info).map_err(to_df_err)?,
                 })
             })?;
             self.cached_summary = Some(frames);

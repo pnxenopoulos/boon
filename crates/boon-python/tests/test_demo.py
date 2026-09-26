@@ -1031,6 +1031,6 @@ def test_summary_repeated_access_is_stable() -> None:
         pytest.skip("demo has no post-match summary")
 
     second = demo.summary()
-    assert set(first) == {"snapshots", "last_hits", "objectives", "damage"}
+    assert set(first) == {"snapshots", "last_hits", "objectives", "damage", "healing", "gold_sources"}
     for name in first:
         assert first[name].equals(second[name]), name

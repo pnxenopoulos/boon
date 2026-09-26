@@ -196,37 +196,35 @@ impl Demo {
         self.tick_rate
     }
 
-    /// Parse the post-match summary from the demo's ``PostMatchDetails`` event.
+    /// Read the recorded ``PostMatchDetails`` message.
     ///
-    /// Returns a dictionary with four top-level keys:
+    /// Return six cached Polars DataFrames:
     ///
-    /// - ``snapshots``: a Polars DataFrame with one row per (snapshot, player).
-    ///   Snapshots are taken at intervals through the match (not every minute);
-    ///   ``snapshot_time_s`` marks each one. Columns hold that player's running
-    ///   totals at that time: ``hero_id``, ``kills``, ``deaths``, ``assists``,
-    ///   ``net_worth``, ``denies``, ``level``, ``lane``, ``creep_kills``,
-    ///   ``neutral_kills``, ``player_damage``, and the per-source gold/orbs
-    ///   breakdown.
-    /// - ``last_hits``: a Polars DataFrame of ``hero_id`` and ``last_hits`` (the
-    ///   final scoreboard last-hit / souls-secured total, which is only recorded
-    ///   per match, not per snapshot).
-    /// - ``objectives``: a Polars DataFrame of post-match objective records
-    ///   (lane/team objectives, destruction time, and damage taken).
-    /// - ``damage``: a Polars DataFrame of the damage matrix — one row per
-    ///   (dealer, target, source, sample). Dealer/target are given as both
-    ///   ``*_player_slot`` and resolved ``*_hero_id`` (null for non-player slots
-    ///   like 0), so it joins to the other frames on ``hero_id``. ``damage`` is
-    ///   the per-interval (additive) amount for that ``stat_type`` (a string:
-    ///   ``damage``, ``healing``, ``mitigated``, …) dealt during the interval
-    ///   ending at ``sample_time_s``. Each hit is recorded under both a coarse
-    ///   category (``is_category`` true) and a specific source, so filter to
-    ///   ``is_category == False`` to avoid double-counting, then ``sum``.
+    /// - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
+    ///   Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+    ///   ``player_healing``, ``teammate_healing``, and ``self_healing``.
+    ///   Added counters are null when absent.
+    /// - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
+    ///   for each player, snapshot, and source. Includes ``source_id`` and the protobuf
+    ///   ``source_name``. Unknown IDs and absent counters remain available.
+    /// - ``last_hits``: final ``hero_id`` and ``last_hits`` totals.
+    /// - ``objectives``: recorded objective times and damage.
+    /// - ``damage``: the source-to-target matrix at each ``sample_time_s``.
+    ///   ``damage`` is the interval amount; ``total`` is the recorded cumulative value.
+    ///   The interval starts at ``interval_start_s``. Select ``stat_type`` for damage,
+    ///   healing, regeneration, or another recorded statistic. Category rows
+    ///   (``is_category=True``) duplicate specific sources; do not add them together.
+    /// - ``healing``: healing and regeneration rows without category duplicates.
+    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
+    ///   ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+    ///   ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
+    ///   ``total`` is the recorded cumulative amount. Zero changes remain in the table.
     ///
-    /// The decoded message and all four frames are cached after the first call;
-    /// repeated calls do not parse the demo or rebuild the frames.
+    /// Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
+    /// Do not sum cumulative totals across periods. Use player slots across hero changes;
+    /// hero IDs come from the match roster. These tables do not contain individual heals.
     ///
-    /// Raises ``DemoMessageError`` if the demo contains no post-match details
-    /// (for example, an incomplete recording).
+    /// Raises ``DemoMessageError`` if the post-match message is absent or invalid.
     pub(crate) fn summary(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         self.ensure_summary(py)?;
 
@@ -239,6 +237,8 @@ impl Demo {
         dict.set_item("last_hits", PyDataFrame(frames.last_hits.clone()))?;
         dict.set_item("objectives", PyDataFrame(frames.objectives.clone()))?;
         dict.set_item("damage", PyDataFrame(frames.damage.clone()))?;
+        dict.set_item("healing", PyDataFrame(frames.healing.clone()))?;
+        dict.set_item("gold_sources", PyDataFrame(frames.gold_sources.clone()))?;
         Ok(dict.into_any().unbind())
     }
 

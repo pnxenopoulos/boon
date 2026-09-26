@@ -53,8 +53,63 @@ def test_overkill_remains_damage(demo: Demo) -> None:
 
 
 def test_summary_healing_uses_recorded_statistics(demo: Demo) -> None:
-    healing = demo.summary()["damage"].filter(
-        (pl.col("stat_type") == "healing") & ~pl.col("is_category")
+    summary = demo.summary()
+    healing = summary["healing"]
+    assert set(healing.columns) == {
+        "interval_start_s", "interval_end_s", "healer_player_slot", "healer_hero_id",
+        "target_player_slot", "target_hero_id", "source_name", "stat_type", "amount", "total",
+    }
+    assert (healing["interval_start_s"] < healing["interval_end_s"]).all()
+    assert healing["amount"].ge(0).all()
+    assert healing["amount"].eq(0).any()
+    assert set(healing["stat_type"]) == {"healing", "regen"}
+    for stat_type in ("healing", "regen"):
+        recorded = summary["damage"].filter(
+            (pl.col("stat_type") == stat_type) & ~pl.col("is_category")
+        )
+        assert healing.filter(pl.col("stat_type") == stat_type)["amount"].sum() == recorded["damage"].sum()
+    heals = healing.filter(pl.col("stat_type") == "healing")
+    assert heals.filter(pl.col("amount") > 0).height == 394
+    assert heals.height == 607
+    assert heals["amount"].sum() == 226267
+
+
+def test_summary_snapshot_healing_and_soul_sources(demo: Demo) -> None:
+    summary = demo.summary()
+    player = summary["snapshots"].filter(
+        (pl.col("player_slot") == 2) & (pl.col("snapshot_time_s") == 2338)
+    ).row(0, named=True)
+    assert player["hero_id"] == 3
+    assert player["player_healing"] == player["self_healing"] == 4192
+    assert player["teammate_healing"] == 0
+    assert player["player_damage_taken"] == 20302
+    assert player["creep_damage"] == 36345
+    assert player["neutral_damage"] == 5481
+    assert player["self_damage"] == 6730
+    sources = summary["gold_sources"].filter(
+        (pl.col("player_slot") == 2) & (pl.col("snapshot_time_s") == 2338)
     )
-    assert healing.filter(pl.col("damage") > 0).height == 394
-    assert healing["damage"].sum() == 226267
+    players = sources.filter(pl.col("source_id") == 1).row(0, named=True)
+    assert players["source_name"] == "k_ePlayers"
+    assert (players["gold"], players["gold_orbs"], players["damage"]) == (8842, 0, 53473)
+    assists = sources.filter(pl.col("source_id") == 6).row(0, named=True)
+    assert assists["source_name"] == "k_eAssists"
+    assert assists["gold"] == 908
+    assert assists["gold_orbs"] is None
+
+
+def test_summary_cumulative_healing_matches_player_counters(demo: Demo) -> None:
+    summary = demo.summary()
+    healing = summary["healing"]
+    for snapshot in summary["snapshots"].iter_rows(named=True):
+        time = snapshot["snapshot_time_s"]
+        if time not in healing["interval_end_s"]:
+            continue
+        rows = healing.filter(
+            (pl.col("interval_end_s") == time)
+            & (pl.col("healer_player_slot") == snapshot["player_slot"])
+            & (pl.col("stat_type") == "healing")
+        )
+        assert rows["total"].sum() == snapshot["player_healing"]
+        self_healing = rows.filter(pl.col("target_player_slot") == snapshot["player_slot"])
+        assert self_healing["total"].sum() == snapshot["self_healing"]
