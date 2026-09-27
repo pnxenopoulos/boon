@@ -79,7 +79,7 @@ Requires Python 3.11–3.14.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.10"
+boon-deadlock = "0.11"
 ```
 
 ## Quick Start

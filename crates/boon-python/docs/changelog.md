@@ -1,5 +1,9 @@
 # 📝 Changelog
 
+## 0.11.0
+
+Unreleased.
+
 ## 0.10.0
 
 - **API change:** Boon no longer provides `demo.healing`, `load("healing")`,

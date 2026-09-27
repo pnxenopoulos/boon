@@ -8,8 +8,10 @@ use std::{
     fs,
     io::Read,
     path::{Path, PathBuf},
-    time::Duration,
 };
+
+#[cfg(not(target_family = "wasm"))]
+use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -207,30 +209,39 @@ pub fn cache_dir() -> Result<PathBuf> {
 /// installations require `boon get VERSION --force` to repair them.
 pub fn catalog_dir(version: Option<&str>) -> Result<PathBuf> {
     let root = cache_dir()?;
+    #[cfg(not(target_family = "wasm"))]
     let mut client = None;
     resolve(&root, version, &mut |url, limit| {
-        if client.is_none() {
-            client = Some(
-                reqwest::blocking::Client::builder()
-                    .user_agent("boon")
-                    .timeout(Duration::from_secs(60))
-                    .build()?,
-            );
+        #[cfg(not(target_family = "wasm"))]
+        {
+            if client.is_none() {
+                client = Some(
+                    reqwest::blocking::Client::builder()
+                        .user_agent("boon")
+                        .timeout(Duration::from_secs(60))
+                        .build()?,
+                );
+            }
+            let client = client
+                .as_ref()
+                .ok_or_else(|| invalid("HTTP client is unavailable"))?;
+            let mut bytes = Vec::new();
+            client
+                .get(url)
+                .send()?
+                .error_for_status()?
+                .take(limit + 1)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() as u64 > limit {
+                return Err(invalid("boon-data download exceeds size limit"));
+            }
+            Ok(bytes)
         }
-        let client = client
-            .as_ref()
-            .ok_or_else(|| invalid("HTTP client is unavailable"))?;
-        let mut bytes = Vec::new();
-        client
-            .get(url)
-            .send()?
-            .error_for_status()?
-            .take(limit + 1)
-            .read_to_end(&mut bytes)?;
-        if bytes.len() as u64 > limit {
-            return Err(invalid("boon-data download exceeds size limit"));
+        #[cfg(target_family = "wasm")]
+        {
+            let _ = (url, limit);
+            Err(invalid("boon-data downloads are unavailable on WebAssembly"))
         }
-        Ok(bytes)
     })
 }
 
