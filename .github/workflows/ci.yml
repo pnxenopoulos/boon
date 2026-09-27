@@ -121,8 +121,16 @@ jobs:
         run: cargo nextest run --workspace --all-features --locked --exclude boon-python --failure-output immediate-final
 
   build-python-wheels:
-    name: Build Python Wheels
-    runs-on: ubuntu-latest
+    name: Build Python Wheels (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64
+            runner: ubuntu-latest
+          - target: aarch64
+            runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -130,13 +138,16 @@ jobs:
       - name: Build wheels for all Python versions
         uses: PyO3/maturin-action@v1
         with:
-          args: --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
+          target: ${{ matrix.target }}
+          manylinux: "2014"
+          args: --locked --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
 
       - name: Upload wheels
         uses: actions/upload-artifact@v6
         with:
-          name: python-wheels
+          name: python-wheels-${{ matrix.target }}
           path: dist/*.whl
+          if-no-files-found: error
 
   test-python:
     name: Python Tests (${{ matrix.python-version }})
@@ -166,7 +177,7 @@ jobs:
       - name: Download wheels
         uses: actions/download-artifact@v7
         with:
-          name: python-wheels
+          name: python-wheels-x86_64
           path: dist
 
       - name: Download demo fixtures
