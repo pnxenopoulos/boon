@@ -100,6 +100,10 @@ pins their versions. Update these pins together after a review of new diagnostic
 Use `uv run --no-sync pytest tests/` after building the extension or installing
 a wheel. This prevents uv from replacing the build under test.
 
+CI builds Linux wheels for x86-64 and ARM64 with Python 3.11–3.14.
+ARM64 builds use `ubuntu-24.04-arm`. CI and releases use native manylinux2014
+containers for these builds. The Python test jobs use the x86-64 wheels.
+
 ## Writing Style
 
 Use [ASD-STE100](https://www.asd-ste100.org/) as the writing target for maintained documentation, API text,
