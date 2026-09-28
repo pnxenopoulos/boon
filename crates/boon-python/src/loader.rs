@@ -218,7 +218,7 @@ impl Demo {
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
-        if load_street_brawl_ticks || load_rift {
+        if load_street_brawl_ticks || load_rift || load_active_modifiers {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
@@ -570,7 +570,7 @@ impl Demo {
 
         // Pawn keys for hero resolution and urn positions
         let mut pk_hero_id: Option<u64> = None;
-        let mut pk_simulation_time: Option<u64> = None;
+        let mut modifier_clock = boon_parser::ModifierClock::default();
         let mut pk_vec_x: Option<u64> = None;
         let mut pk_vec_y: Option<u64> = None;
         let mut pk_vec_z: Option<u64> = None;
@@ -718,7 +718,6 @@ impl Demo {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
-                            pk_simulation_time = s.resolve_field_key("m_flSimulationTime");
                             if load_urn {
                                 pk_vec_x = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
@@ -939,6 +938,9 @@ impl Demo {
                             rk_location =
                                 s.resolve_field_key("m_pGameRules.m_vKothCashInCurrentLocation");
                         }
+                    }
+                    if load_active_modifiers {
+                        modifier_clock = boon_parser::ModifierClock::resolve($ctx);
                     }
                     keys_resolved = true;
                 }
@@ -1220,7 +1222,7 @@ impl Demo {
 
                 // ── Collect active_modifiers (effective, duration-aware state) ──
                 if load_active_modifiers {
-                    let game_time = current_simulation_time($ctx, pk_simulation_time);
+                    let game_time = modifier_clock.game_time($ctx);
                     let changes = am_state.update($ctx, game_time);
 
                     // Flag a re-stamp tick: many heroes get a modifier they already have
@@ -1325,7 +1327,9 @@ impl Demo {
                                 } else {
                                     caster_hero_id
                                 };
-                                let changed = modifier_id != cached.modifier_id
+                                let hero_changed = hero_id != cached.hero_id;
+                                let changed = hero_changed
+                                    || modifier_id != cached.modifier_id
                                     || ability_id != cached.ability_id
                                     || stacks != cached.stacks
                                     || caster_hero_id != cached.caster_hero_id
@@ -1333,9 +1337,23 @@ impl Demo {
                                     || last_applied_time.to_bits()
                                         != cached.last_applied_time.to_bits();
                                 if changed {
+                                    // A retained serial can follow a hero swap. Close the
+                                    // old hero's lifetime before opening the new one.
+                                    if hero_changed {
+                                        am_tick.push($ctx.tick());
+                                        am_hero_id.push(cached.hero_id);
+                                        am_event.push("removed".to_string());
+                                        am_serial.push(serial);
+                                        am_modifier_id.push(cached.modifier_id);
+                                        am_ability_id.push(cached.ability_id);
+                                        am_duration.push(cached.duration);
+                                        am_caster_hero_id.push(cached.caster_hero_id);
+                                        am_stacks.push(cached.stacks);
+                                        am_logical_seen.insert((hero_id, modifier_id));
+                                    }
                                     am_tick.push($ctx.tick());
                                     am_hero_id.push(hero_id);
-                                    am_event.push("changed".to_string());
+                                    am_event.push(if hero_changed { "applied" } else { "changed" }.to_string());
                                     am_serial.push(serial);
                                     am_modifier_id.push(modifier_id);
                                     am_ability_id.push(ability_id);

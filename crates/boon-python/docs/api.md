@@ -33,6 +33,14 @@ only the datasets they request.
 
 ### Methods
 
+#### `calculate_hero_stats(...)`
+
+Calculate hero stats at selected ticks with an explicit boon-data version.
+Stats include ammo, weapon-damage bonus, fire rate, movement, lifesteal, and
+resistance. See {doc}`hero-stats` for the full list, parameters, equations,
+input traces, and limits.
+
+
 #### `verify()`
 
 ```python
@@ -1122,9 +1130,11 @@ Not loaded by default. Access this property or call `load("stat_modifier_events"
 demo.active_modifiers  # polars.DataFrame
 ```
 
-Raw active buff and debuff modifiers on players. Boon tracks `applied`,
+Effective buff and debuff modifiers on players. Boon tracks `applied`,
 `changed`, and `removed` events for each Source 2 modifier serial. A
 `changed` event records a change to stacks, duration, or application time.
+Finite durations exclude paused time. Boon ends these effects when their timers
+end, even if the replay retains their rows in the modifier table.
 
 One ability can create multiple modifier instances. The number of rows is not
 the stack count. Use `stacks`. A `serial` identifies an active entry. The
@@ -1243,6 +1253,14 @@ Boon loads this dataset on first access.
 | `scoring_team` | `int` | The team that scored |
 | `amber_score` | `int` | The Hidden King (old name: Amber Hand) cumulative score |
 | `sapphire_score` | `int` | The Archmother (old name: Sapphire Flame) cumulative score |
+
+## Ability stats and imbues
+
+`demo.imbues(ticks=..., data_version=...)` returns recorded item selections and
+catalog effects. `demo.calculate_ability_stats(ticks=..., data_version=...)`
+returns per-ability cooldown reduction, duration, range, and radius bonuses.
+See {doc}`ability-stats` for selection, scope, equations, and known limits.
+
 
 ## Name Lookup Functions
 

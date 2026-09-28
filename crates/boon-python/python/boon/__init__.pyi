@@ -1,8 +1,16 @@
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import polars as pl
 
 from . import data as data
+from .ability_stats import AbilityStat as AbilityStat
+from .ability_stats import AbilityStatResult as AbilityStatResult
+from .ability_stats import ImbueResult as ImbueResult
+from .hero_stats import CalculationError as CalculationError
+from .hero_stats import HeroStat as HeroStat
+from .hero_stats import StatResult as StatResult
+from .rulesets import Rule
 
 __version__: str
 
@@ -288,6 +296,65 @@ class Demo:
         """
         ...
 
+    def imbues(
+        self,
+        *,
+        ticks: int | Sequence[int],
+        data_version: str,
+        players: Sequence[int] | None = None,
+    ) -> ImbueResult: ...
+    def calculate_ability_stats(
+        self,
+        *,
+        ticks: int | Sequence[int],
+        data_version: str,
+        stats: Sequence[AbilityStat | str] = ...,
+        players: Sequence[int] | None = None,
+        abilities: Sequence[int] | None = None,
+        include_items: bool = False,
+        rulesets: Mapping[AbilityStat | str, Rule] | None = None,
+        explain: bool = False,
+        strict: bool = True,
+    ) -> AbilityStatResult: ...
+    def _imbues(
+        self, directory: Path, ticks: list[int], *, players: Sequence[int] | None = None
+    ) -> str: ...
+    def _calculate_ability_stats(
+        self,
+        directory: Path,
+        ticks: list[int],
+        *,
+        stats: list[str],
+        players: Sequence[int] | None = None,
+        abilities: Sequence[int] | None = None,
+        include_items: bool = False,
+        explain: bool = False,
+        strict: bool = True,
+    ) -> str: ...
+    def calculate_hero_stats(
+        self,
+        /,
+        *,
+        ticks: int | Sequence[int],
+        data_version: str,
+        stats: Sequence[HeroStat | str] = ...,
+        players: Sequence[int] | None = ...,
+        heroes: Sequence[int] | None = ...,
+        rulesets: Mapping[HeroStat | str, Rule] | None = ...,
+        explain: bool = ...,
+        strict: bool = ...,
+    ) -> StatResult: ...
+    def _calculate_hero_stats(
+        self,
+        directory: Path,
+        ticks: list[int],
+        *,
+        stats: list[str],
+        players: list[int] | None = ...,
+        heroes: list[int] | None = ...,
+        explain: bool = ...,
+        strict: bool = ...,
+    ) -> str: ...
     def _player_positions(self, ticks: list[int]) -> pl.DataFrame: ...
     def in_combat(self, /) -> pl.DataFrame:
         """Whether each player is in combat, per tick.

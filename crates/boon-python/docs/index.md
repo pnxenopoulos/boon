@@ -32,6 +32,8 @@ examples
 api
 cli
 data
+hero-stats
+ability-stats
 demo-checklist
 benchmarks
 faq

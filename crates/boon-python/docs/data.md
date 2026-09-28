@@ -148,8 +148,9 @@ Boon does not map it to `demo.build`. Opening a `Demo` does not select a
 catalog version. Name lookups use the selection policy described above.
 Select `version=` explicitly to get names from a particular client.
 
-Catalogs provide names and definitions. They do not add calculated hero stats
-or change the raw IDs and values recorded in a demo.
+Catalogs provide names and definitions. {doc}`hero-stats` explains how to use
+them to calculate ammo capacity, bullet velocity, and melee distance bonus.
+Calculations do not change raw demo datasets.
 
 If the published index has no designated `latest` (for example, after only
 historical backfills), automatic downloads use the highest published client

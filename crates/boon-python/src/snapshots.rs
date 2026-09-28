@@ -261,27 +261,6 @@ impl PlayerPositionCols {
     }
 }
 
-/// Read the Source 2 simulation clock used by modifier timestamps.
-///
-/// Modifier entries store last_applied_time as GameTime_t. Player pawns expose
-/// the same clock through m_flSimulationTime. In observed Deadlock demos, all
-/// current pawns report the same value for a tick. Use the maximum finite value
-/// so a dormant or newly created pawn with a stale zero cannot move time
-/// backwards.
-///
-/// Return None when the serializer does not contain this field. This is an
-/// intentional compatibility path for old demos: callers keep explicit
-/// modifier removals but do not guess an expiry from an unrelated clock.
-pub(super) fn current_simulation_time(ctx: &boon_parser::Context, key: Option<u64>) -> Option<f32> {
-    let key = key?;
-    ctx.entities()
-        .iter()
-        .filter(|(_, entity)| entity.class_name.as_ref() == "CCitadelPlayerPawn")
-        .map(|(_, entity)| entity.get_f32(Some(key)))
-        .filter(|value| value.is_finite())
-        .max_by(f32::total_cmp)
-}
-
 /// Live barrier remaining, decoded from each pawn's persistent
 /// `modifier_barrier_tracker` entry in the `ActiveModifiers` string table.
 /// Deadlock stores barrier capacity in `float1` and the current amount in

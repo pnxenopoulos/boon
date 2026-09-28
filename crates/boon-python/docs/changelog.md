@@ -4,6 +4,66 @@
 
 Unreleased.
 
+- Add item imbue selections and per-ability bonus percentages for cooldown,
+  duration, range, and radius. Include recorded stat totals and active effects.
+  Keep item cooldown separate. Report unknown conditions and missing inputs.
+
+- Use weapon-damage inputs for light and heavy melee damage at half strength.
+  Include recorded ability counters. Report missing bonuses as partial values.
+  Keep base damage, boon growth, and spirit scaling in the catalog.
+
+- Add weapon-damage bonus in percent. Add catalog item bonuses, active effects,
+  and recorded stat totals. Report missing bindings and unsupported effects.
+  Exclude critical hits, falloff, and target-specific damage.
+  Read owned ability counters from catalog bindings, including Bloodscent's
+  earned kills and assists. Keep owner rewards off other players' target markers.
+
+- Add bullet, spirit, and melee resistance in percent. Read base values, boon
+  growth, spirit scaling, and active effects from boon-data. Calculate resistance
+  and reduction separately. Keep negative results and report unsupported effects.
+
+- Add bullet, spirit, and melee lifesteal in percent. Multiply source factors.
+  Read values and upgrades from boon-data. Exclude healing adjustments and item
+  healing procs. Report missing bindings and unsupported effects.
+
+- Add debuff resistance in percent. Read innate values and active effects from
+  boon-data. Multiply the remaining duration factors. Keep negative values.
+
+- Add `calculate_hero_stats()` for ammo capacity, bullet velocity, melee distance
+  bonus, reload time, fire-rate change, falloff start and end, and light and heavy
+  melee damage at selected ticks.
+  Select a boon-data version and a rule for each stat. Show input sources on request.
+  Skip modifiers that cannot be found in the catalog or have no unique match.
+  Mark affected values as partial and list the skipped IDs.
+  Exclude player and entity ping markers from stat calculations.
+  Use a unique temporary modifier to infer its owning ability's conditional effects.
+  Mark these values as partial and show the assumed link.
+  Keep other unknown conditions unresolved.
+  Return falloff distances in metres. Leave multiple range bonuses unresolved.
+  Use catalog base damage, boon growth, item bonuses, and hero spirit scaling
+  for melee damage. Report unsupported effects.
+- Add slide-distance bonus, bullet evasion, and recorded gravity scale to hero stats.
+  Multiply slide bonus factors. Read evasion bindings and upgrades from the catalog.
+  Use the exact `EvasionPercent` property with its owner's unique effect modifier.
+  Mark this assumed link as partial. Exclude cast-delay and intrinsic modifiers.
+  Return the pawn gravity scale without modifier adjustments.
+  Report missing activation bindings and unsupported evasion combinations.
+- Add stamina capacity, recovery time, and ground and air dash speed and duration.
+  Read base values and effect amounts from the selected catalog.
+  Report unknown effect combinations, paused recovery, and missing intrinsic effects.
+- Add nominal move speed and additional sprint speed in metres per second.
+  Use catalog base values, spirit scaling, bound effects, and item upgrades.
+  Reduce the combined move bonus. Add sprint bonuses without this reduction.
+  Read catalog counter bindings for stacked bonuses, including Trophy Collector.
+  Ignore unused passive properties that have no modifier registration.
+  Report missing bindings and unsupported effect combinations.
+- Keep active modifiers when table slots are reused. Read intervening modifier
+  changes for stat queries. This restores missing item bonuses such as Swift Striker.
+- Document Battle Vest's unsupported health condition in
+  [Known Issues](known-issues.md#battle-vest-health-condition).
+- Subtract pause time when checking modifier duration. Pauses no longer cause
+  modifiers to end too soon. Keep unchanged modifiers through table refreshes.
+
 ## 0.10.0
 
 - **API change:** Boon no longer provides `demo.healing`, `load("healing")`,

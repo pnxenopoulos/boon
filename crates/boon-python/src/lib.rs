@@ -39,6 +39,7 @@ fn to_py_err(e: boon_parser::Error) -> PyErr {
 mod api;
 mod datasets;
 mod getters;
+mod hero_stats;
 mod loader;
 mod names;
 mod runtime;

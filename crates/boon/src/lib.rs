@@ -71,6 +71,8 @@ pub mod demo;
 pub mod entity;
 pub mod error;
 pub mod game_modes;
+pub mod hero_stats;
+pub use hero_stats::ability_stats;
 pub mod heroes;
 pub mod hitgroups;
 pub mod io;
@@ -79,6 +81,7 @@ pub mod modifier_state;
 pub mod patron_phases;
 pub mod position;
 pub mod rift;
+pub mod rulesets;
 pub mod stat_modifiers;
 pub mod teams;
 
@@ -98,7 +101,7 @@ pub use heroes::hero_id_for_player_slot;
 pub use hitgroups::{all_hitgroups, hitgroup_name};
 pub use lifestates::{all_lifestates, lifestate_name};
 pub use modifier_state::{
-    EffectiveModifierState, ModifierChange, ModifierChangeKind, ModifierState,
+    EffectiveModifierState, ModifierChange, ModifierChangeKind, ModifierClock, ModifierState,
     modifier_is_effective_at,
 };
 pub use patron_phases::{all_patron_phases, patron_phase_name};
