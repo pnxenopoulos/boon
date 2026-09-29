@@ -2,6 +2,7 @@
 
 import io
 import json
+from typing import cast
 
 import polars as pl
 import pytest
@@ -11,6 +12,8 @@ from catalog_helpers import VERSION, release
 
 
 class RecordedResult:
+    """Native-method double; cast to Demo only at the public API boundary."""
+
     def __init__(self):
         self.calls = []
 
@@ -21,6 +24,7 @@ class RecordedResult:
                 "values": [
                     {
                         "tick": ticks[0],
+                        "steam_id": 76561197999389679,
                         "player_slot": 0,
                         "hero_id": 999,
                         "stat": "clip_size",
@@ -51,8 +55,14 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
     monkeypatch.setattr(data, "_request", request)
     demo = RecordedResult()
     result = calculate_hero_stats(
-        demo, ticks=50, players=[0], data_version=VERSION, explain=True
+        cast(Demo, demo),
+        ticks=50,
+        steam_ids=[76561197999389679],
+        data_version=VERSION,
+        explain=True,
     )
+    assert result.values["steam_id"].item() == 76561197999389679
+    assert result.values.schema["steam_id"] == pl.UInt64
     assert result.values["value"].item() == 36
     assert result.values.schema["value"] == pl.Float64
     assert result.metadata["data_version"] == VERSION
@@ -62,14 +72,14 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
         [50],
         {
             "stats": ["clip_size"],
-            "players": [0],
+            "steam_ids": [76561197999389679],
             "heroes": None,
             "explain": True,
             "strict": True,
         },
     )
     downloads = len(requests)
-    calculate_hero_stats(demo, ticks=[50, 60], data_version=VERSION)
+    calculate_hero_stats(cast(Demo, demo), ticks=[50, 60], data_version=VERSION)
     assert len(requests) == downloads
 
 
@@ -81,7 +91,10 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
         {"ticks": [True]},
         {"ticks": 1, "stats": []},
         {"ticks": 1, "stats": ["unimplemented_stat"]},
-        {"ticks": 1, "players": [-1]},
+        {"ticks": 1, "steam_ids": [-1]},
+        {"ticks": 1, "steam_ids": [0]},
+        {"ticks": 1, "steam_ids": [True]},
+        {"ticks": 1, "steam_ids": [76561197999389679.0]},
         {"ticks": 1, "rulesets": {}},
         {
             "ticks": 1,
@@ -99,12 +112,16 @@ def test_invalid_queries_fail_before_download(monkeypatch, options):
 
     monkeypatch.setattr(data, "update", fail)
     with pytest.raises(ValueError):
-        calculate_hero_stats(RecordedResult(), data_version=VERSION, **options)
+        calculate_hero_stats(
+            cast(Demo, RecordedResult()), data_version=VERSION, **options
+        )
 
 
 def test_unknown_version_does_not_fall_back():
     with pytest.raises(data.DataError):
-        calculate_hero_stats(RecordedResult(), ticks=50, data_version="latest")
+        calculate_hero_stats(
+            cast(Demo, RecordedResult()), ticks=50, data_version="latest"
+        )
 
 
 def test_ammo_alias():
@@ -118,7 +135,7 @@ def test_native_error_is_exposed_as_calculation_error(monkeypatch, tmp_path):
 
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     with pytest.raises(CalculationError, match="unsupported property scaling"):
-        calculate_hero_stats(Unresolved(), ticks=50, data_version=VERSION)
+        calculate_hero_stats(cast(Demo, Unresolved()), ticks=50, data_version=VERSION)
 
 
 def test_old_catalog_has_actionable_native_error(demo_paths):
@@ -223,7 +240,11 @@ def test_data_version_cannot_silently_select_latest(monkeypatch):
 
     monkeypatch.setattr(data, "update", fail)
     with pytest.raises(ValueError, match="explicit client version"):
-        calculate_hero_stats(RecordedResult(), ticks=50, data_version=None)
+        calculate_hero_stats(
+            cast(Demo, RecordedResult()),
+            ticks=50,
+            data_version=None,  # ty: ignore[invalid-argument-type] -- Test runtime validation.
+        )
 
 
 @pytest.mark.parametrize(
@@ -248,7 +269,9 @@ def test_data_version_cannot_silently_select_latest(monkeypatch):
 def test_selected_stats_reach_native_query_once(monkeypatch, tmp_path, stats):
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     demo = RecordedResult()
-    calculate_hero_stats(demo, ticks=[50, 60], data_version=VERSION, stats=stats)
+    calculate_hero_stats(
+        cast(Demo, demo), ticks=[50, 60], data_version=VERSION, stats=stats
+    )
     assert len(demo.calls) == 1
     assert demo.calls[0][2]["stats"] == list(
         dict.fromkeys(stat.value for stat in stats)
@@ -277,7 +300,7 @@ def test_velocity_rule_validation_precedes_download(monkeypatch, chosen):
     monkeypatch.setattr(data, "update", fail)
     with pytest.raises(ValueError):
         calculate_hero_stats(
-            RecordedResult(),
+            cast(Demo, RecordedResult()),
             ticks=50,
             data_version=VERSION,
             stats=[HeroStat.BULLET_VELOCITY],
@@ -318,7 +341,7 @@ def test_stat_rejects_wrong_rule_before_download(monkeypatch, stat, wrong_versio
     monkeypatch.setattr(data, "update", fail)
     with pytest.raises(ValueError, match=f"{stat}.v1"):
         calculate_hero_stats(
-            RecordedResult(),
+            cast(Demo, RecordedResult()),
             ticks=50,
             data_version=VERSION,
             stats=[stat],
@@ -339,7 +362,9 @@ def test_partial_values_and_diagnostics_are_retained(monkeypatch, tmp_path, stri
 
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     demo = PartialResult()
-    result = calculate_hero_stats(demo, ticks=50, data_version=VERSION, strict=strict)
+    result = calculate_hero_stats(
+        cast(Demo, demo), ticks=50, data_version=VERSION, strict=strict
+    )
     assert result.values["value"].item() == 36
     assert result.values["status"].item() == "partial"
     assert "123" in result.values["diagnostic"].item()
@@ -361,7 +386,7 @@ def test_falloff_result_retains_metres_and_fractional_values(
 
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     result = calculate_hero_stats(
-        FalloffResult(), ticks=50, data_version=VERSION, stats=[stat]
+        cast(Demo, FalloffResult()), ticks=50, data_version=VERSION, stats=[stat]
     )
     assert result.values["value"].item() == 24.125
     assert result.values["unit"].item() == "m"
@@ -384,7 +409,7 @@ def test_melee_result_retains_damage_units_and_fractional_values(
 
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     result = calculate_hero_stats(
-        MeleeResult(), ticks=50, data_version=VERSION, stats=[stat]
+        cast(Demo, MeleeResult()), ticks=50, data_version=VERSION, stats=[stat]
     )
     assert result.values["value"].item() == 152.012
     assert result.values["unit"].item() == "damage"
@@ -423,9 +448,26 @@ def test_recorded_gravity_does_not_require_hero_or_modifier_definitions(
     assert set(trace["source"]) == {"replay/player_pawn"}
     assert set(trace["definition_path"]) == {"m_flGravityScale"}
     assert trace["modifier_serial"].null_count() == trace.height
-    assert result.values.sort("player_slot")["value"].equals(
-        trace.sort("player_slot")["value"]
+    assert result.values.sort("steam_id")["value"].equals(
+        trace.sort("steam_id")["value"]
     )
+
+    steam_id = result.values["steam_id"][0]
+    assert steam_id in demo.players["steam_id"]
+    selected = demo.calculate_hero_stats(
+        ticks=10000,
+        stats=[HeroStat.GRAVITY_SCALE],
+        data_version=VERSION,
+        steam_ids=[steam_id],
+        explain=True,
+    )
+    assert selected.values.equals(result.values.filter(pl.col("steam_id") == steam_id))
+    assert selected.contributions.equals(trace.filter(pl.col("steam_id") == steam_id))
+    assert demo.calculate_hero_stats(
+        ticks=10000, data_version=VERSION, steam_ids=[]
+    ).values.is_empty()
+    with pytest.raises(CalculationError, match="Steam ID 1 has no selected hero"):
+        demo.calculate_hero_stats(ticks=10000, data_version=VERSION, steam_ids=[1])
 
 
 @pytest.mark.parametrize(
@@ -446,13 +488,17 @@ def test_movement_rule_selection(monkeypatch, tmp_path, stat):
     demo = RecordedResult()
     rule = getattr(rulesets, stat.value).v1
     calculate_hero_stats(
-        demo, ticks=50707, data_version=VERSION, stats=[stat], rulesets={stat: rule}
+        cast(Demo, demo),
+        ticks=50707,
+        data_version=VERSION,
+        stats=[stat],
+        rulesets={stat: rule},
     )
     assert demo.calls[0][2]["stats"] == [stat.value]
     assert rule.documented_on == "2026-09-28"
     with pytest.raises(ValueError, match="select boon.rulesets"):
         calculate_hero_stats(
-            demo,
+            cast(Demo, demo),
             ticks=50707,
             data_version=VERSION,
             stats=[stat],
@@ -474,7 +520,7 @@ def test_debuff_resist_rule_and_percentage_output(monkeypatch, tmp_path):
 
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     result = calculate_hero_stats(
-        Result(),
+        cast(Demo, Result()),
         ticks=50707,
         data_version=VERSION,
         stats=[HeroStat.DEBUFF_RESIST],
@@ -504,14 +550,18 @@ def test_lifesteal_rule_and_percentage_output(monkeypatch, tmp_path, stat):
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     rule = getattr(rulesets, stat.value).v1
     result = calculate_hero_stats(
-        Result(), ticks=50707, data_version=VERSION, stats=[stat], rulesets={stat: rule}
+        cast(Demo, Result()),
+        ticks=50707,
+        data_version=VERSION,
+        stats=[stat],
+        rulesets={stat: rule},
     )
     assert result.values["value"].item() == 45.4
     assert result.values["unit"].item() == "%"
     assert rule.documented_on == "2026-09-28"
     with pytest.raises(ValueError, match="select boon.rulesets"):
         calculate_hero_stats(
-            Result(),
+            cast(Demo, Result()),
             ticks=50707,
             data_version=VERSION,
             stats=[stat],
@@ -543,16 +593,45 @@ def test_rule_retains_negative_percentages(monkeypatch, tmp_path, stat):
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     rule = getattr(rulesets, stat.value).v1
     result = calculate_hero_stats(
-        Result(), ticks=50707, data_version=VERSION, stats=[stat], rulesets={stat: rule}
+        cast(Demo, Result()),
+        ticks=50707,
+        data_version=VERSION,
+        stats=[stat],
+        rulesets={stat: rule},
     )
     assert result.values["value"].item() == -30.0
     assert result.values["unit"].item() == "%"
     assert rule.documented_on == "2026-09-28"
     with pytest.raises(ValueError, match="select boon.rulesets"):
         calculate_hero_stats(
-            Result(),
+            cast(Demo, Result()),
             ticks=50707,
             data_version=VERSION,
             stats=[stat],
             rulesets={stat: rulesets.clip_size.v1},
+        )
+
+
+def test_missing_steam_id_keeps_slot(monkeypatch, tmp_path):
+    class Unidentified(RecordedResult):
+        def _calculate_hero_stats(self, *args, **kwargs):
+            payload = json.loads(super()._calculate_hero_stats(*args, **kwargs))
+            payload["values"][0]["steam_id"] = None
+            return json.dumps(payload)
+
+    monkeypatch.setattr(data, "update", lambda _: tmp_path)
+    result = calculate_hero_stats(
+        cast(Demo, Unidentified()), ticks=50, data_version=VERSION
+    )
+    assert result.values["steam_id"].item() is None
+    assert result.values["player_slot"].item() == 0
+
+
+def test_old_slot_keyword_is_not_silently_reinterpreted():
+    with pytest.raises(TypeError, match="players"):
+        calculate_hero_stats(
+            cast(Demo, RecordedResult()),
+            ticks=50,
+            data_version=VERSION,
+            players=[0],  # ty: ignore[unknown-argument] -- Reject the old slot keyword.
         )

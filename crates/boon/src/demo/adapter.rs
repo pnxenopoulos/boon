@@ -47,6 +47,7 @@ pub(super) struct CitadelAdapter {
     descriptors: HashMap<i32, EventDescriptor>,
     tick_events: Vec<GameEvent>,
     collect_events: bool,
+    skip_modifier_snapshots: bool,
     event_types: Option<HashSet<u32>>,
 }
 
@@ -82,14 +83,23 @@ impl DemoAdapter for CitadelAdapter {
             demo_command::FULL_PACKET => {
                 let command = CDemoFullPacket::decode(body)?;
                 if let Some(tables) = command.string_table {
-                    context.apply_full_string_tables(tables.tables.into_iter().map(|table| {
-                        let entries = table
-                            .items
+                    context.apply_full_string_tables(
+                        tables
+                            .tables
                             .into_iter()
-                            .map(|item| StringTableEntry::new(item.str, item.data))
-                            .collect();
-                        (table.table_name.unwrap_or_default(), entries)
-                    }))?;
+                            .filter(|table| {
+                                !self.skip_modifier_snapshots
+                                    || table.table_name.as_deref() != Some("ActiveModifiers")
+                            })
+                            .map(|table| {
+                                let entries = table
+                                    .items
+                                    .into_iter()
+                                    .map(|item| StringTableEntry::new(item.str, item.data))
+                                    .collect();
+                                (table.table_name.unwrap_or_default(), entries)
+                            }),
+                    )?;
                 }
                 if let Some(packet) = command.packet {
                     self.handle_packet(packet.data.as_deref().unwrap_or_default(), tick, context)?;
@@ -117,6 +127,10 @@ impl CheckpointAdapter for CitadelAdapter {
 }
 
 impl CitadelAdapter {
+    pub(super) fn skip_modifier_snapshots(&mut self) {
+        self.skip_modifier_snapshots = true;
+    }
+
     pub(super) fn enable_events(&mut self) {
         self.collect_events = true;
         self.event_types = None;

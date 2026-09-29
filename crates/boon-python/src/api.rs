@@ -201,7 +201,7 @@ impl Demo {
     /// Return six cached Polars DataFrames:
     ///
     /// - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
-    ///   Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+    ///   Includes ``steam_id``, ``player_slot``, ``hero_id``, damage by target type, damage taken,
     ///   ``player_healing``, ``teammate_healing``, and ``self_healing``.
     ///   Added counters are null when absent.
     /// - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
@@ -215,8 +215,8 @@ impl Demo {
     ///   healing, regeneration, or another recorded statistic. Category rows
     ///   (``is_category=True``) duplicate specific sources; do not add them together.
     /// - ``healing``: healing and regeneration rows without category duplicates.
-    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-    ///   ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_player_slot``,
+    ///   ``healer_hero_id``, ``target_steam_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
     ///   ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
     ///   ``total`` is the recorded cumulative amount. Zero changes remain in the table.
     ///

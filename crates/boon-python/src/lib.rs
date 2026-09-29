@@ -42,6 +42,7 @@ mod getters;
 mod hero_stats;
 mod loader;
 mod names;
+mod player_states;
 mod runtime;
 mod snapshots;
 

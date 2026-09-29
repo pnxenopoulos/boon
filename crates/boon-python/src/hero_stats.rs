@@ -1,18 +1,18 @@
 use crate::*;
-use boon_parser::hero_stats::{HeroStat, HeroStatQuery, PlayerSlot, Ruleset, StatCatalog};
+use boon_parser::hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog};
 
 #[pymethods]
 impl Demo {
     // Keyword arguments mirror the public Python query.
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (directory, ticks, *, stats, players=None, heroes=None, explain=false, strict=true))]
+    #[pyo3(signature = (directory, ticks, *, stats, steam_ids=None, heroes=None, explain=false, strict=true))]
     fn _calculate_hero_stats(
         &self,
         py: Python<'_>,
         directory: PathBuf,
         ticks: Vec<i32>,
         stats: Vec<String>,
-        players: Option<Vec<u32>>,
+        steam_ids: Option<Vec<u64>>,
         heroes: Option<Vec<i64>>,
         explain: bool,
         strict: bool,
@@ -29,8 +29,8 @@ impl Demo {
             let mut query = HeroStatQuery::new(ticks, stats)
                 .explain(explain)
                 .strict(strict);
-            if let Some(players) = players {
-                query = query.players(players.into_iter().map(PlayerSlot));
+            if let Some(steam_ids) = steam_ids {
+                query = query.steam_ids(steam_ids);
             }
             if let Some(heroes) = heroes {
                 query = query.heroes(heroes);
@@ -45,19 +45,19 @@ impl Demo {
 
 #[pymethods]
 impl Demo {
-    #[pyo3(signature = (directory, ticks, *, players=None))]
+    #[pyo3(signature = (directory, ticks, *, steam_ids=None))]
     fn _imbues(
         &self,
         py: Python<'_>,
         directory: PathBuf,
         ticks: Vec<i32>,
-        players: Option<Vec<u32>>,
+        steam_ids: Option<Vec<u64>>,
     ) -> PyResult<String> {
         py.detach(|| {
             let catalog = StatCatalog::from_directory(&directory)?;
             let mut query = boon_parser::ability_stats::ImbueQuery::new(ticks);
-            if let Some(players) = players {
-                query = query.players(players.into_iter().map(PlayerSlot));
+            if let Some(steam_ids) = steam_ids {
+                query = query.steam_ids(steam_ids);
             }
             let result = self.parser.imbues(&query, &catalog)?;
             serde_json::to_string(&result)
@@ -66,14 +66,14 @@ impl Demo {
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (directory, ticks, *, stats, players=None, abilities=None, include_items=false, explain=false, strict=true))]
+    #[pyo3(signature = (directory, ticks, *, stats, steam_ids=None, abilities=None, include_items=false, explain=false, strict=true))]
     fn _calculate_ability_stats(
         &self,
         py: Python<'_>,
         directory: PathBuf,
         ticks: Vec<i32>,
         stats: Vec<String>,
-        players: Option<Vec<u32>>,
+        steam_ids: Option<Vec<u64>>,
         abilities: Option<Vec<u32>>,
         include_items: bool,
         explain: bool,
@@ -91,8 +91,8 @@ impl Demo {
                 .include_items(include_items)
                 .explain(explain)
                 .strict(strict);
-            if let Some(players) = players {
-                query = query.players(players.into_iter().map(PlayerSlot));
+            if let Some(steam_ids) = steam_ids {
+                query = query.steam_ids(steam_ids);
             }
             if let Some(abilities) = abilities {
                 query = query.abilities(abilities);

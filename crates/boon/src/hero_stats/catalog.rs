@@ -13,6 +13,8 @@ pub(super) struct CatalogFile {
     records: Vec<Record>,
     #[serde(default)]
     modifier_value_types: HashMap<u32, String>,
+    #[serde(default)]
+    generic_data: Value,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +82,7 @@ pub struct StatCatalog {
     modifier_ids: HashMap<u32, Vec<usize>>,
     conditional_modifiers: HashMap<u32, Option<usize>>,
     pub(super) misc: HashMap<u32, Record>,
+    pub(super) generic_data: Value,
 }
 
 impl StatCatalog {
@@ -172,6 +175,7 @@ impl StatCatalog {
             modifier_ids,
             conditional_modifiers,
             misc: indexed(misc.records, |r| r.misc_id)?,
+            generic_data: misc.generic_data,
         })
     }
 

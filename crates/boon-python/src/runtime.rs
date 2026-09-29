@@ -6,6 +6,17 @@ impl Demo {
         use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
 
         if self.cached_summary.is_none() {
+            // Metadata has 32-bit account IDs. Match the low 32 bits of recorded
+            // Steam IDs; summary slots need not equal controller entity slots.
+            let roster = self.players(py)?.0;
+            let steam_ids: HashMap<u32, u64> = roster
+                .column("steam_id")
+                .and_then(|column| column.u64())
+                .map_err(|error| DemoMessageError::new_err(error.to_string()))?
+                .into_no_null_iter()
+                .filter(|id| *id as u32 != 0)
+                .map(|id| (id as u32, id))
+                .collect();
             let frames = py.detach(|| {
                 let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
                 let events = self
@@ -37,15 +48,16 @@ impl Demo {
                 let to_df_err = |e: PolarsError| {
                     DemoMessageError::new_err(format!("failed to build summary: {e}"))
                 };
-                let damage = build_damage_frame(&match_info).map_err(to_df_err)?;
+                let damage = build_damage_frame(&match_info, &steam_ids).map_err(to_df_err)?;
                 let healing = build_healing_frame(&damage).map_err(to_df_err)?;
                 Ok::<SummaryFrames, PyErr>(SummaryFrames {
-                    snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
-                    last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
+                    snapshots: build_snapshots_frame(&match_info, &steam_ids).map_err(to_df_err)?,
+                    last_hits: build_last_hits_frame(&match_info, &steam_ids).map_err(to_df_err)?,
                     objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
                     damage,
                     healing,
-                    gold_sources: build_gold_sources_frame(&match_info).map_err(to_df_err)?,
+                    gold_sources: build_gold_sources_frame(&match_info, &steam_ids)
+                        .map_err(to_df_err)?,
                 })
             })?;
             self.cached_summary = Some(frames);

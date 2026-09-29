@@ -29,6 +29,15 @@ boon-data version. Supported stats are:
 Ammo capacity does not return rounds left in the gun. It stays finite during a
 slide or another unlimited-ammo effect.
 
+Use the tick passed to `demo_gototick` for `ticks`. The pause message can show a
+server tick instead. In `106996573.dem`, command tick 49000 corresponds to server
+tick 50706. Do not use the pause message's number as the query tick.
+
+Modifier calculations replay packet changes from the start. Relay keyframes can
+contain future modifier state. A multi-tick query shares this replay pass.
+Intrinsic effects end when the owning ability entity is removed. Other effects
+can continue after their source ability is removed.
+
 ## Select the game data
 
 ```bash
@@ -36,89 +45,98 @@ boon versions
 boon get GAME_VERSION
 ```
 
-Use a Deadlock client version from that list, not the Boon package version.
-Pass it as `data_version`. Boon reuses a verified local installation. If it is
-missing, Boon downloads that exact version. It never substitutes the latest.
-Boon cannot yet select a matching client version from a demo's build number.
+Set `data_version` to a Deadlock client version from this list.
+Boon verifies the local files or downloads that exact version.
+Boon does not select a client version from the demo header.
 
-The catalog must include `record_key`, `definition_path`, and `stat_changes`.
-Older local catalogs can still supply names but cannot supply stat inputs.
-Use `boon get VERSION --force` to refresh an old local copy when a newer artifact
-exists for that version. Otherwise select a release with stat definitions.
+The catalogs must contain `record_key`, `definition_path`, and `stat_changes`.
+Old catalogs can supply names but lack stat inputs.
+Use `boon get VERSION --force` after new files are published for that version.
 
 ## Python
 
-```python
-from boon import Demo, HeroStat, rulesets
+Use `HeroStat` enum members to select hero stats. An enum gives each stat a named
+constant, such as `HeroStat.CLIP_SIZE`. Python also accepts the matching string
+values and rejects unknown names. The `stat` column contains strings.
+Use `AbilityStat` with [ability stat queries](ability-stats.md).
 
-demo = Demo("match.dem", preload=False)
+```python
+from boon import Demo, HeroStat
+
+version = "6694"  # Select the client version for your demo.
+demo = Demo("106996573.dem", preload=False)
 result = demo.calculate_hero_stats(
     ticks=[50707, 50800],
-    data_version="6701",  # Example only: select the version for your replay.
-    stats=[
-        HeroStat.AMMO, HeroStat.BULLET_VELOCITY,
-        HeroStat.MELEE_DISTANCE, HeroStat.RELOAD_TIME, HeroStat.FIRE_RATE,
-        HeroStat.FALLOFF_START, HeroStat.FALLOFF_END,
-        HeroStat.LIGHT_MELEE_DAMAGE, HeroStat.HEAVY_MELEE_DAMAGE,
-        HeroStat.SLIDE_DISTANCE, HeroStat.BULLET_EVASION, HeroStat.GRAVITY_SCALE,
-    ],
-    rulesets={
-        HeroStat.CLIP_SIZE: rulesets.clip_size.v1,
-        HeroStat.BULLET_VELOCITY: rulesets.bullet_velocity.v1,
-        HeroStat.MELEE_DISTANCE: rulesets.melee_distance.v1,
-        HeroStat.RELOAD_TIME: rulesets.reload_time.v1,
-        HeroStat.FIRE_RATE: rulesets.fire_rate.v1,
-        HeroStat.FALLOFF_START: rulesets.falloff_start.v1,
-        HeroStat.FALLOFF_END: rulesets.falloff_end.v1,
-        HeroStat.LIGHT_MELEE_DAMAGE: rulesets.light_melee_damage.v1,
-        HeroStat.HEAVY_MELEE_DAMAGE: rulesets.heavy_melee_damage.v1,
-        HeroStat.SLIDE_DISTANCE: rulesets.slide_distance.v1,
-        HeroStat.BULLET_EVASION: rulesets.bullet_evasion.v1,
-        HeroStat.GRAVITY_SCALE: rulesets.gravity_scale.v1,
-    },
+    steam_ids=[76561197999389679],  # Venator in this demo.
+    data_version=version,
+    stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
     explain=True,
+    strict=False,
 )
 print(result.values)
 print(result.contributions)
 print(result.metadata)
 ```
 
-`HeroStat.AMMO` aliases `HeroStat.CLIP_SIZE`. Omitting `stats` selects ammo only.
-Omitting `rulesets` selects the supported `v1` rule for each requested stat.
-The selected stats share one replay pass and the same player inputs at each tick.
+`HeroStat.AMMO` and `HeroStat.CLIP_SIZE` select the same stat.
+If you omit `stats`, Boon selects ammo capacity. Use `stats=list(HeroStat)` to
+select all supported hero stats.
 
-Use `players=[1, 3]` to select player slots (controller entity index minus one).
-Use `heroes=[13]` to filter by the hero played at the sampled tick. Omit both
-filters to include every player with a selected hero. A player's slot stays
-constant when they change heroes.
+If you omit `rulesets`, Boon selects the supported `v1` rule for each stat.
+To select rules, supply one rule per requested stat:
 
-One tick can be an integer. Multiple ticks can be a list. Boon sorts and removes
-duplicate ticks, then reads their state in one parser pass. Values describe the
-state after each exact requested demo tick. Missing ticks are errors.
+```python
+from boon import rulesets
+
+selected_rules = {
+    HeroStat.CLIP_SIZE: rulesets.clip_size.v1,
+    HeroStat.FIRE_RATE: rulesets.fire_rate.v1,
+}
+# Pass rulesets=selected_rules with these two stats.
+```
+
+## Select ticks and players
+
+`ticks` accepts one integer or a list. Boon removes duplicate ticks and reads
+state after each tick. Missing ticks cause an error.
+The selected stats use the same player inputs in one parser pass.
+
+Use `steam_ids` to select Steam accounts. Get IDs from `demo.players`.
+Use `heroes` to select the hero played at each tick. Both filters apply when set.
+Omit both filters to include all players with a hero.
+An empty filter selects no players. A requested Steam ID without a selected hero
+causes an error at that tick. The old `players` slot filter is not supported.
+
+## Results
 
 `result.values` has these columns:
 
-| Column | Meaning |
+| Column | Contents |
 | --- | --- |
-| `tick` | Requested demo tick |
-| `player_slot` | Player slot |
-| `hero_id` | Hero at this tick |
-| `stat` | Stat name from the supported stats table |
-| `value` | Calculated value, stored as Float64 |
-| `unit` | `rounds`, `m/s`, `%`, `s`, `m`, `damage`, or `multiplier` |
-| `ruleset` | Equation ID, such as `bullet_velocity.v1` |
+| `tick` | Requested demo tick (Int32) |
+| `steam_id` | Steam account ID (UInt64), or null if missing |
+| `player_slot` | Raw controller slot within the demo (UInt32) |
+| `hero_id` | Hero at this tick (Int64) |
+| `stat` | Stat name, such as `clip_size` (String) |
+| `value` | Calculated value (Float64), or null |
+| `unit` | `rounds`, `m/s`, `%`, `s`, `m`, `points`, `damage`, or `multiplier` |
+| `ruleset` | Equation ID, such as `clip_size.v1` |
 | `status` | `calculated`, `partial`, or `unresolved` |
-| `diagnostic` | Skipped modifier IDs, unmapped inputs, inferred activation links, or the reason for an unresolved value; otherwise null |
+| `diagnostic` | Missing inputs or assumed links; null when none are reported |
 
-`explain=True` returns input rows in `result.contributions`. Each row identifies
-its input stat, base/flat/percent role, value, catalog record, property path,
-and runtime modifier serial when available. `input="spirit_power"` rows are
-intermediate inputs; do not add these rows directly to ammo. Network pickup
-totals use a replay field path and the catalog record of their source modifier.
+`explain=True` adds input rows to `result.contributions`.
+Each row gives the input, value, source, property path, and modifier serial when present.
+Intermediate rows, such as `input="spirit_power"`, explain other inputs.
+Do not add intermediate rows to the final stat.
 
-Metadata records the requested client version, catalog snapshot version,
-source commit, and a `rulesets` list. Each rule has its stat, ID, version, and
-documentation date. That date is not a game patch date.
+Use `steam_id` to join results to `demo.players`. Use `tick` and `steam_id` to
+join state rows to stat rows. A Steam ID stays constant through hero changes.
+Rows without a Steam ID keep their raw slot. Do not join null Steam IDs.
+Summary slots can differ from controller slots.
+
+`metadata` records the client version, catalog snapshot, source commit, and rules.
+Each rule has a name, version, and documentation date. The date is not a game
+patch date. Catalog updates change inputs; rule versions identify equations.
 
 ## Weapon damage
 
@@ -131,9 +149,14 @@ weapon_damage = sum(weapon damage percentage bonuses)
 ```
 
 Boon reads `MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE` from effective modifiers and
-recorded permanent stat totals. It adds purchase bonuses from the hero's catalog
-by item slot and tier, plus catalog-defined weapon-percentage boon growth when
-present. Item amounts, tiers, upgrades, and pickup amounts are not fixed in code.
+recorded permanent stat totals. Shop bonuses use each category's total item cost
+and the highest reached threshold in `m_MapModCostBonuses`. Item prices come from
+`misc.json` → `generic_data.m_nItemPricePerTier`. Boon uses the old tier table only
+when the hero has no cost-based table. Missing prices produce an unresolved value.
+Catalog-defined weapon-percentage boon growth also applies. No balance amounts
+are fixed in code.
+Contribution rows with `kind="purchase_cost"` show item prices in souls. Do not
+add these prices to percentage bonuses.
 Bound properties count through their modifier once. Recorded totals are already
 accumulated; Boon does not multiply them by a pickup value.
 
@@ -202,7 +225,7 @@ modifier IDs identify the stat through boon-data. Boon does not multiply these
 totals by a catalog pickup amount or use numeric modifier-enum guesses.
 
 Hero ammo scaling comes from `m_mapScalingStats.EClipSize`. The supported spirit
-input includes catalog base values, standard level upgrades, tier purchase
+input includes catalog base values, standard level upgrades, shop
 bonuses, recorded permanent bonuses, and resolved item/modifier contributions.
 No hero IDs, base ammo values, pickup amounts, or scaling coefficients are
 embedded in the calculator.
@@ -265,7 +288,7 @@ VData does not supply the engine equation. V1 accepts no bonus or one nonzero bo
 Multiple nonzero bonuses remain unresolved until their stacking rule is verified.
 
 Missing, negative, or reversed base distances remain unresolved. Boon does not
-interpret a `-1` sentinel as a distance. These stats describe the nominal primary
+use a `-1` sentinel as a distance. These stats describe the nominal primary
 weapon. Beam weapons can use engine-specific range behavior; their catalog
 endpoints still need in-game verification. These stats do not calculate alternate
 weapon modes, damage along the falloff curve, or changes to the curve's bias and
@@ -301,7 +324,8 @@ The inputs come from these catalog fields:
 - `m_mapStandardLevelUpUpgrades.MODIFIER_VALUE_BASE_MELEE_DAMAGE_FROM_LEVEL`:
   light-melee damage per boon.
 - `m_mapScalingStats.ELightMeleeDamage` or `EHeavyMeleeDamage`: spirit coefficient.
-- `m_mapPurchaseBonuses`: weapon bonus for each item's slot and tier.
+- `m_MapModCostBonuses`: shop bonus at each cost threshold.
+- `misc.json` → `generic_data.m_nItemPricePerTier`: item prices.
 - `MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE` and `MODIFIER_VALUE_MELEE_DAMAGE_INCREASE`:
   resolved item, ability, modifier, and permanent pickup bonuses.
 
@@ -327,7 +351,7 @@ require a target's distance or type. Melee Charge's next-heavy-attack proc is
 separate from its ordinary melee bonus. A target's Metal Skin immunity is also
 outside this offensive stat. Boon does not add an item-name exception for it.
 
-Missing global weapon contributions propagate as partial melee values. Examples
+Missing global weapon inputs cause partial melee values. Examples
 are Battle Vest's health condition and Intensifying Magazine's firing ramp.
 Nonzero registered melee-damage or all-damage multipliers remain unresolved;
 the rule does not guess their interaction. Unsupported scaling also remains
@@ -399,6 +423,10 @@ modifier_percent = max(-50, sum(bonus_percent) - 100 * (1 - remaining))
 `-10` means -10%, and no effects give `0`. It does not return shots per second.
 Values are not rounded to the UI's whole-number display.
 
+An unbound ability property needs an intrinsic usage flag or a supported
+activation link. Ownership alone does not apply a temporary bonus. Boon reports
+unsupported nonzero properties in the diagnostic.
+
 Positive `MODIFIER_VALUE_FIRE_RATE` values add together. Each
 `MODIFIER_VALUE_FIRE_RATE_SLOW` value is a positive slow percentage and retains
 its own factor. Negative `MODIFIER_VALUE_FIRE_RATE` values also count as slows
@@ -422,8 +450,8 @@ has no binding, Boon looks for one non-intrinsic modifier nested in its owning
 ability. It assumes that this modifier activates the owner's conditional bonuses.
 The modifier must have a finite positive duration when active. Multiple candidate
 modifiers remain unresolved. The earlier stat resolvers use this rule. Slide
-distance, stamina, recovery, and dash effects require explicit bindings. Bullet evasion also has the exact-property
-fallback described below. Gravity scale reads the pawn field directly.
+distance, stamina, recovery, and dash effects require explicit bindings.
+Bullet evasion also uses the exact-property rule below. Gravity scale reads the pawn field directly.
 
 This ownership rule is an assumption, not a confirmed engine rule. Affected
 values have `status="partial"`, and `diagnostic` names the property, owning ability,
@@ -628,7 +656,7 @@ The Python rules are `rulesets.move_speed.v1` and `rulesets.sprint_speed.v1`.
 Rust uses `HeroStat::MoveSpeed`, `HeroStat::SprintSpeed`, and the corresponding
 `rulesets::move_speed::V1` and `rulesets::sprint_speed::V1` constants.
 
-Both values are nominal stats in m/s. `move_speed` is the movement component.
+Both values are nominal stats in m/s. Nominal values do not include the current movement state. `move_speed` is the movement component.
 `sprint_speed` is the additional sprint component, including base sprint speed.
 Their sum gives full sprint speed. It is not the player's measured velocity.
 Firing, crouching, slows, speed limits, sprint eligibility, acceleration and
@@ -648,9 +676,10 @@ versioned rule. It is not a hero or item balance amount. Flat movement bonuses
 remain separate inputs; Boon does not sum them before this equation. For example,
 +2 and +3 m/s give +4.5 m/s. Sprint bonuses add without this reduction.
 
-A hero with 6.4 m/s base movement, 1.6 m/s base sprint, +2 and +3 movement bonuses,
-and +2 and +1.5 sprint bonuses has 10.9 m/s movement and 5.1 m/s additional sprint.
-Their sum is 16 m/s. Values are not rounded.
+For example, a hero has base movement of 6.4 m/s and base sprint of 1.6 m/s.
+Movement bonuses of +2 and +3 give 10.9 m/s movement speed.
+Sprint bonuses of +2 and +1.5 give 5.1 m/s additional sprint speed.
+The full sprint speed is 16 m/s. Values are not rounded.
 
 V1 accepts at most one nonzero movement percentage. It applies to the movement
 component, including flat bonuses, and does not multiply the sprint component.
@@ -738,7 +767,7 @@ hero-specific bindings are added for this stat.
 result = demo.calculate_hero_stats(
     ticks=50707,
     data_version="6694",  # Select an installed version from boon versions.
-    stats=["debuff_resist"],
+    stats=[HeroStat.DEBUFF_RESIST],
     explain=True,
 )
 print(result.values)
@@ -783,9 +812,8 @@ catalog sign. Unsupported positive reduction values produce an error.
 
 `melee_resist` is the separate melee component. It excludes bullet resistance
 and shared weapon shred, which are reported by `bullet_resist`. It is not total
-protection against a melee hit. Do not infer damage taken by combining these
-final values: engine exceptions and the order of shared reductions need a
-separate damage calculation. Boon contains no hero-specific exception for this.
+protection against a melee hit. Do not combine these final values to calculate damage taken.
+Engine exceptions and the order of shared reductions require a separate calculation. Boon contains no hero-specific exception for this.
 
 NPC-only resistance, immunity, critical-hit protection, and general incoming
 damage multipliers are outside these stats. Unbound properties produce partial
@@ -797,7 +825,7 @@ scaling, or caster state remains unresolved.
 result = demo.calculate_hero_stats(
     ticks=50707,
     data_version="6694",  # Select the version for the replay.
-    stats=["bullet_resist", "spirit_resist", "melee_resist"],
+    stats=[HeroStat.BULLET_RESIST, HeroStat.SPIRIT_RESIST, HeroStat.MELEE_RESIST],
     strict=False,
     explain=True,
 )
@@ -853,7 +881,11 @@ melee lifesteal, even when the item name includes that term.
 result = demo.calculate_hero_stats(
     ticks=50707,
     data_version="6694",  # Select the version for the replay.
-    stats=["bullet_lifesteal", "spirit_lifesteal", "melee_lifesteal"],
+    stats=[
+        HeroStat.BULLET_LIFESTEAL,
+        HeroStat.SPIRIT_LIFESTEAL,
+        HeroStat.MELEE_LIFESTEAL,
+    ],
     explain=True,
     strict=False,  # Keep null values and diagnostics for unsupported inputs.
 )
@@ -863,59 +895,60 @@ print(result.contributions)
 
 ## Unresolved inputs
 
+| Status | Meaning |
+| --- | --- |
+| `calculated` | The rule calculated a value from the supported inputs. |
+| `partial` | The value uses known inputs but has missing effects or an assumed link. |
+| `unresolved` | Boon cannot calculate the value; `value` is null. |
+
+Boon reports unknown modifiers and unclear catalog matches as `partial`.
+The diagnostic lists the skipped IDs. Assumed activation links also produce
+partial values. These rules apply with either `strict` setting.
+A calculated value can still lack effects that the catalog does not describe.
+
+For other unsupported inputs, `strict=True` raises `CalculationError`.
+Use `strict=False` to keep those rows with null values and diagnostics.
+Invalid queries, missing ticks, and failed catalog downloads still cause errors.
+
 Boon excludes `modifier_player_pinged` and `modifier_entity_pinged` from stat
-calculations. These two engine ping markers do not make a result partial.
-This is an explicit ID exception for all heroes. The modifiers remain in the
-modifier datasets. Other unknown modifiers follow the rules below.
+calculations. These two ID exceptions apply to all heroes.
+The ping markers remain in the modifier datasets.
 
-Boon skips modifiers that cannot be found or resolved to one catalog record.
-This also applies to permanent pickup source modifiers. Affected rows return
-the value from known inputs with `status="partial"`. Their `diagnostic` lists
-skipped IDs and lookup errors. This occurs in both strict modes and does not
-require `explain=True`. Partial values can omit effects from skipped modifiers.
-
-The default `strict=True` raises `CalculationError` for other unresolved inputs.
-For a review table, use `strict=False`. Those rows then contain null values and
-diagnostics. Invalid queries, missing ticks, and catalog acquisition failures
-still raise.
-
-The first version does not resolve every engine behavior. Unsupported property
-scaling, ambiguous bindings, multi-stack effects, percentage spirit bonuses,
-and missing hero or ability definitions produce errors. Further rules require separate checks
-against a replay. Other weapon modes and engine-only stat effects are outside
-the current primary-weapon calculation.
+Catalog counter bindings support some effects with stacks, such as Trophy
+Collector and Bloodscent. Other stack rules and property scaling can remain
+unsupported. See [Known Issues](known-issues.md) before you interpret a result.
 
 ## Rust
 
-```rust
-use boon::{Parser, hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog}, rulesets};
+Rust queries use `HeroStat` enum members and `u64` Steam IDs.
 
-let parser = Parser::from_file(std::path::Path::new("match.dem"))?;
-let catalog = StatCatalog::load("6701")?; // Select the replay's client version.
-let query = HeroStatQuery::new(
-    [50707, 50800],
-    [HeroStat::ClipSize, HeroStat::BulletVelocity, HeroStat::MeleeDistance, HeroStat::ReloadTime, HeroStat::FireRate, HeroStat::FalloffStart, HeroStat::FalloffEnd, HeroStat::LightMeleeDamage, HeroStat::HeavyMeleeDamage, HeroStat::SlideDistance, HeroStat::BulletEvasion, HeroStat::GravityScale],
-).explain(true);
-let rules = Ruleset::new()
-    .with(rulesets::clip_size::V1)
-    .with(rulesets::bullet_velocity::V1)
-    .with(rulesets::melee_distance::V1)
-    .with(rulesets::reload_time::V1)
-    .with(rulesets::fire_rate::V1)
-    .with(rulesets::falloff_range::START_V1)
-    .with(rulesets::falloff_range::END_V1)
-    .with(rulesets::melee_damage::LIGHT_V1)
-    .with(rulesets::melee_damage::HEAVY_V1)
-    .with(rulesets::slide_distance::V1)
-    .with(rulesets::bullet_evasion::V1)
-    .with(rulesets::gravity_scale::V1);
-let result = parser.calculate_hero_stats(&query, &catalog, &rules)?;
+```rust
+use boon::{
+    Parser,
+    hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog},
+    rulesets,
+};
+use std::path::Path;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let parser = Parser::from_file(Path::new("106996573.dem"))?;
+    let catalog = StatCatalog::load("6694")?;
+    let query = HeroStatQuery::new(
+        [50707, 50800],
+        [HeroStat::ClipSize, HeroStat::FireRate],
+    )
+    .steam_ids([76561197999389679])
+    .explain(true)
+    .strict(false);
+    let rules = Ruleset::new()
+        .with(rulesets::clip_size::V1)
+        .with(rulesets::fire_rate::V1);
+    let result = parser.calculate_hero_stats(&query, &catalog, &rules)?;
+    println!("{:?}", result.values);
+    Ok(())
+}
 ```
 
-Reuse `StatCatalog` across queries. `StatCatalog::from_directory` reads locally
-built files without downloads or checksum checks. `StatCatalog::load` uses the
-same verified cache as `boon get`.
-
-New stats can add a resolver and a module under `boon.rulesets`. A change to
-an equation gets a new rule version. A change to a catalog balance value does
-not require a new equation when the calculation method stays the same.
+Reuse `StatCatalog` across queries. `StatCatalog::load` uses the verified cache
+from `boon get`. `StatCatalog::from_directory` reads local files without downloads
+or checksum checks.

@@ -96,22 +96,22 @@ impl AbilityRuleset {
     }
 }
 
-/// Select replay state after each requested tick. Player IDs are controller slots.
+/// Select replay state after each requested tick. Select players by Steam ID.
 #[derive(Clone, Debug)]
 pub struct ImbueQuery {
     ticks: Vec<i32>,
-    players: Option<Vec<PlayerSlot>>,
+    steam_ids: Option<Vec<u64>>,
 }
 impl ImbueQuery {
     pub fn new(ticks: impl IntoIterator<Item = i32>) -> Self {
         Self {
             ticks: ticks.into_iter().collect(),
-            players: None,
+            steam_ids: None,
         }
     }
     #[must_use]
-    pub fn players(mut self, players: impl IntoIterator<Item = PlayerSlot>) -> Self {
-        self.players = Some(players.into_iter().collect());
+    pub fn steam_ids(mut self, ids: impl IntoIterator<Item = u64>) -> Self {
+        self.steam_ids = Some(ids.into_iter().collect());
         self
     }
 }
@@ -143,8 +143,8 @@ impl AbilityStatQuery {
         }
     }
     #[must_use]
-    pub fn players(mut self, players: impl IntoIterator<Item = PlayerSlot>) -> Self {
-        self.selection = self.selection.players(players);
+    pub fn steam_ids(mut self, ids: impl IntoIterator<Item = u64>) -> Self {
+        self.selection = self.selection.steam_ids(ids);
         self
     }
     #[must_use]
@@ -189,6 +189,9 @@ impl AbilityMetadata {
 #[derive(Clone, Debug, Serialize)]
 pub struct ImbueBinding {
     pub tick: i32,
+    /// Recorded Steam account ID; absent for players without an account.
+    pub steam_id: Option<u64>,
+    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
     pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub item_id: u32,
@@ -237,6 +240,9 @@ pub enum EffectState {
 #[derive(Clone, Debug, Serialize)]
 pub struct AbilityContribution {
     pub tick: i32,
+    /// Recorded Steam account ID; absent for players without an account.
+    pub steam_id: Option<u64>,
+    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
     pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub ability_id: u32,
@@ -255,6 +261,9 @@ pub struct AbilityContribution {
 #[derive(Clone, Debug, Serialize)]
 pub struct AbilityStatRow {
     pub tick: i32,
+    /// Recorded Steam account ID; absent for players without an account.
+    pub steam_id: Option<u64>,
+    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
     pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub ability_id: u32,
@@ -281,7 +290,7 @@ fn display(record: &Record) -> Option<String> {
 }
 fn players<'a>(
     ctx: &'a Context,
-    selected: Option<&[PlayerSlot]>,
+    selected: Option<&[u64]>,
 ) -> Result<Vec<(PlayerSlot, i64, &'a Entity)>> {
     let mut result = Vec::new();
     for (index, controller) in ctx
@@ -297,7 +306,8 @@ fn players<'a>(
             )
             .map_err(|_| invalid("invalid controller slot"))?,
         );
-        if selected.is_some_and(|ids| !ids.contains(&slot)) {
+        if selected.is_some_and(|ids| steam_id(ctx, controller).is_none_or(|id| !ids.contains(&id)))
+        {
             continue;
         }
         let hero = required(ctx, controller, "m_PlayerDataGlobal.m_nHeroID")? as i64;
@@ -306,17 +316,19 @@ fn players<'a>(
         }
     }
     if let Some(ids) = selected {
-        for slot in ids {
-            if !result.iter().any(|(found, _, _)| found == slot) {
+        for id in ids {
+            if !result
+                .iter()
+                .any(|(_, _, controller)| steam_id(ctx, controller) == Some(*id))
+            {
                 return Err(invalid(format!(
-                    "player {} has no hero at tick {}",
-                    slot.0,
+                    "Steam ID {id} has no hero at tick {}",
                     ctx.tick()
                 )));
             }
         }
     }
-    result.sort_by_key(|(slot, _, _)| slot.0);
+    result.sort_by_key(|(slot, _, controller)| (steam_id(ctx, controller), slot.0));
     Ok(result)
 }
 fn bindings(ctx: &Context, controller: &Entity) -> Result<BTreeSet<(u32, u32)>> {
@@ -371,7 +383,7 @@ impl Parser {
             metadata: AbilityMetadata::new(catalog, &[]),
         };
         self.visit_stat_ticks(&query.ticks, |ctx, _| {
-            for (slot, hero, controller) in players(ctx, query.players.as_deref())? {
+            for (slot, hero, controller) in players(ctx, query.steam_ids.as_deref())? {
                 let mut scratch = Vec::new();
                 let resolver = resolver(ctx, catalog, controller, slot, hero, &mut scratch);
                 for (item_id, ability_id) in bindings(ctx, controller)? {
@@ -380,6 +392,7 @@ impl Parser {
                     let missing = item.is_none() || ability.is_none();
                     let binding = ImbueBinding {
                         tick: ctx.tick(),
+                        steam_id: resolver.steam_id,
                         player_slot: slot,
                         hero_id: hero,
                         item_id,
@@ -452,7 +465,7 @@ impl Parser {
             metadata: AbilityMetadata::new(catalog, &query.stats),
         };
         self.visit_stat_ticks(&query.selection.ticks, |ctx, modifiers| {
-            for (slot, hero, controller) in players(ctx, query.selection.players.as_deref())? {
+            for (slot, hero, controller) in players(ctx, query.selection.steam_ids.as_deref())? {
                 calculate_player(
                     ctx,
                     catalog,
@@ -490,6 +503,7 @@ fn resolver<'a, 'b>(
         ctx,
         catalog,
         controller,
+        steam_id: steam_id(ctx, controller),
         slot,
         hero_id,
         game_time: ModifierClock::resolve(ctx).game_time(ctx).map(f64::from),
@@ -1085,6 +1099,7 @@ fn calculate_player(
                 for &stat in &query.stats {
                     result.values.push(AbilityStatRow {
                         tick: ctx.tick(),
+                        steam_id: resolver.steam_id,
                         player_slot: slot,
                         hero_id: hero,
                         ability_id,
@@ -1148,6 +1163,7 @@ fn calculate_player(
                             if query.explain {
                                 result.contributions.push(AbilityContribution {
                                     tick: ctx.tick(),
+                                    steam_id: resolver.steam_id,
                                     player_slot: slot,
                                     hero_id: hero,
                                     ability_id,
@@ -1198,7 +1214,9 @@ fn calculate_player(
                 let message = format!(
                     "tick {} player {} ability {ability_id} {}: {error}",
                     ctx.tick(),
-                    slot.0,
+                    resolver
+                        .steam_id
+                        .map_or_else(|| format!("slot {}", slot.0), |id| id.to_string()),
                     stat.as_str()
                 );
                 if query.strict {
@@ -1208,6 +1226,7 @@ fn calculate_player(
             }
             result.values.push(AbilityStatRow {
                 tick: ctx.tick(),
+                steam_id: resolver.steam_id,
                 player_slot: slot,
                 hero_id: hero,
                 ability_id,

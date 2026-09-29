@@ -1,8 +1,16 @@
 # ⚠️ Known Issues
 
-Valve changes Deadlock and its demo format frequently. This page lists known limitations of Boon.
+Deadlock updates can change the demo format and game rules.
 
-Report other problems on [GitHub Issues](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
+## Stat calculations
+
+Some stat calculations can give incorrect values. This can occur even when
+`status` is `calculated`. Compare the results with the demo viewer.
+
+Report incorrect values on [GitHub](https://github.com/pnxenopoulos/boon/issues)
+or [Discord](https://discord.gg/WmjZHxWrCD). Include the demo, tick, hero, stat
+name, and boon-data version. Give the calculated value and the value in the demo
+viewer.
 
 ## Battle Vest health condition
 
@@ -45,8 +53,9 @@ marker does not grant or diagnose the source ability's unbound owner rewards.
 Opening Rounds' enemy-health bonus is outside the global stat; its ordinary
 weapon bonus still applies. Melee uses these same inputs and exclusions.
 
-Shop bonuses use the selected hero catalog's item-slot and tier purchase table.
-Engine effects absent from that catalog can still be missing. Legacy weapon
+Shop bonuses need the catalog's cost thresholds and item prices in `misc.json`.
+Older releases must be rebuilt with `generic_data.vdata`. Then run
+`boon get VERSION --force`. Engine effects absent from the catalog can still be missing. Legacy weapon
 power has no verified conversion to a percentage and is reported when nonzero.
 Unsupported bound scaling or modifier stacks remain unresolved. For example,
 Plot Armor's weapon bonus uses `scale_function_tech_damage`, which this rule does
@@ -112,7 +121,8 @@ See [the rules and inputs](hero-stats.md#stamina-and-ordinary-dashes).
 
 Move speed and sprint speed are nominal stats. Their sum is full sprint speed.
 They do not simulate firing, crouching, slows, speed limits, sprint eligibility,
-acceleration, or sprint ramp-up.
+acceleration, or sprint ramp-up. `player_states()` reports recorded state flags
+separately. Those flags do not adjust the calculated speeds.
 
 V1 does not combine multiple movement percentages or flat movement penalties
 with other flat adjustments. It does not extrapolate the diminishing-return rule
@@ -121,8 +131,8 @@ for a single flat bonus above 12 m/s. These cases remain unresolved.
 Older catalogs omit Trophy Collector's per-stack sprint binding. These catalogs
 produce partial rows. New catalogs declare the link to the ability entity's
 `m_iTrophyCount`. Boon uses the recorded count and the catalog bonus while the
-linked modifier is active. This is an explicit curated binding, not an inferred
-link from a display token.
+linked modifier is active. The catalog contains this manually supplied binding.
+VData does not declare the link.
 
 Other missing bindings and missing intrinsic modifiers produce partial rows.
 Other multi-stack effects and unsupported property scaling remain unresolved.
@@ -208,7 +218,8 @@ entries with a nonzero `EModifierValue` that this Boon version does not know.
 Valve can renumber these values between client versions. The decoder contains
 aliases observed in tested demos; it does not select a layout by client version.
 An unknown-count value of zero does not prove that all aliases are correct for
-a new client. The boon-data catalogs do not currently supply this numeric enum.
+a new client. New boon-data catalogs include `modifier_value_types` for ability stat queries.
+The fixed `player_ticks.stat_modifier_*` decoder does not use that map.
 
 ## Banned heroes are frequently absent
 

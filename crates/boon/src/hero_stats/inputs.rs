@@ -115,10 +115,25 @@ fn checked_runtime_count(value: f64, path: &str) -> Result<f64> {
     Ok(value)
 }
 
+// Steam IDs exceed f64's exact integer range. Read the wire integer directly.
+fn steam_id(ctx: &Context, controller: &Entity) -> Option<u64> {
+    let serializer = ctx.serializers().get(&controller.class_name)?;
+    let key = serializer.resolve_field_key("m_steamID")?;
+    match controller.fields.get(&key)? {
+        FieldValue::U64(id) if *id != 0 => Some(*id),
+        _ => None,
+    }
+}
+
 fn handle<'a>(ctx: &'a Context, entity: &Entity, path: &str) -> Option<&'a Entity> {
     let s = ctx.serializers().get(&entity.class_name)?;
     ctx.entities()
         .get_by_handle(entity.get_handle(s.resolve_field_key(path))?)
+}
+
+fn hero_pawn<'a>(ctx: &'a Context, controller: &Entity) -> Option<&'a Entity> {
+    // m_hPawn can refer to the spectator pawn while the hero is dead.
+    handle(ctx, controller, "m_hHeroPawn").or_else(|| handle(ctx, controller, "m_hPawn"))
 }
 
 pub(super) fn collect(
@@ -140,12 +155,19 @@ pub(super) fn collect(
         .iter()
         .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
     {
-        let slot =
-            PlayerSlot(u32::try_from(index - 1).map_err(|_| invalid("invalid controller slot"))?);
+        let slot = PlayerSlot(
+            u32::try_from(
+                index
+                    .checked_sub(1)
+                    .ok_or_else(|| invalid("invalid controller slot"))?,
+            )
+            .map_err(|_| invalid("invalid controller slot"))?,
+        );
+        let steam_id = steam_id(ctx, controller);
         if query
-            .players
+            .steam_ids
             .as_ref()
-            .is_some_and(|players| !players.contains(&slot))
+            .is_some_and(|ids| steam_id.is_none_or(|id| !ids.contains(&id)))
         {
             continue;
         }
@@ -158,12 +180,13 @@ pub(super) fn collect(
         {
             continue;
         }
-        selected.insert(slot);
+        selected.extend(steam_id);
         let mut resolver = Resolver {
             ctx,
             catalog,
             controller,
             hero_id,
+            steam_id,
             slot,
             game_time,
             game_start,
@@ -229,7 +252,7 @@ pub(super) fn collect(
                     let message = format!(
                         "tick {} player {} hero {hero_id} {}: {error}",
                         ctx.tick(),
-                        slot.0,
+                        steam_id.map_or_else(|| format!("slot {}", slot.0), |id| id.to_string()),
                         stat.as_str()
                     );
                     if query.strict {
@@ -285,6 +308,7 @@ pub(super) fn collect(
             }
             result.values.push(StatRow {
                 tick: ctx.tick(),
+                steam_id,
                 player_slot: slot,
                 hero_id,
                 stat,
@@ -302,18 +326,34 @@ pub(super) fn collect(
             });
         }
     }
-    if let Some(players) = &query.players {
-        for slot in players {
-            if !selected.contains(slot) {
+    if let Some(ids) = &query.steam_ids {
+        for id in ids {
+            if !selected.contains(id) {
                 return Err(invalid(format!(
-                    "player {} has no selected hero at tick {}",
-                    slot.0,
+                    "Steam ID {id} has no selected hero at tick {}",
                     ctx.tick()
                 )));
             }
         }
     }
     Ok(())
+}
+
+fn purchase_threshold_bonus(table: &Value, invested: f64) -> Result<f64> {
+    let rows = table
+        .as_array()
+        .ok_or_else(|| invalid("invalid purchase-bonus table"))?;
+    let mut selected = None;
+    for row in rows {
+        let threshold = number(&row["nGoldThreshold"])
+            .filter(|v| *v >= 0.0)
+            .ok_or_else(|| invalid("invalid purchase-bonus threshold"))?;
+        let bonus = number(&row["flBonus"]).ok_or_else(|| invalid("invalid purchase bonus"))?;
+        if threshold <= invested && selected.is_none_or(|(previous, _)| threshold > previous) {
+            selected = Some((threshold, bonus));
+        }
+    }
+    Ok(selected.map_or(0.0, |(_, bonus)| bonus))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -324,6 +364,32 @@ enum ValuePolicy {
     Registered,
     // Debuffs affect the recipient of a live modifier, not the ability owner.
     Recipient,
+}
+
+// Item removal can destroy its ability without a modifier-table removal row.
+// Only intrinsic modifiers depend on that entity's lifetime; cast effects can
+// outlive their source ability. Missing handles do not prove removal.
+fn intrinsic_ability_present(
+    ctx: &Context,
+    catalog: &StatCatalog,
+    entry: &CModifierTableEntry,
+) -> bool {
+    let Some(handle) = entry.ability.filter(|h| *h != crate::INVALID_ENTITY_HANDLE) else {
+        return true;
+    };
+    if ctx.entities().get_by_handle(handle).is_some() {
+        return true;
+    }
+    let Some(owner) = entry
+        .ability_subclass
+        .and_then(|id| catalog.abilities.get(&id))
+    else {
+        return true;
+    };
+    entry
+        .modifier_subclass
+        .and_then(|id| catalog.modifier(id, entry.ability_subclass).ok())
+        .is_none_or(|modifier| !modifier.is_intrinsic_modifier_of(owner))
 }
 
 struct PlayerInputs<'a> {
@@ -349,11 +415,12 @@ impl<'a> PlayerInputs<'a> {
             .get(&hero_id)
             .ok_or_else(|| invalid(format!("missing hero {hero_id}")))?;
         let weapon = catalog.weapon(hero)?;
-        let pawn = handle(ctx, controller, "m_hPawn")
-            .ok_or_else(|| invalid("player has no current pawn"))?;
+        let pawn =
+            hero_pawn(ctx, controller).ok_or_else(|| invalid("player has no current pawn"))?;
         let mut active: Vec<_> = state
             .entries()
             .values()
+            .filter(|m| intrinsic_ability_present(ctx, catalog, m))
             .filter(|m| {
                 m.parent
                     .and_then(|h| ctx.entities().get_by_handle(h))
@@ -417,6 +484,7 @@ struct Resolver<'a, 'b> {
     catalog: &'a StatCatalog,
     controller: &'a Entity,
     hero_id: i64,
+    steam_id: Option<u64>,
     slot: PlayerSlot,
     game_time: Option<f64>,
     game_start: Option<f64>,
@@ -465,6 +533,7 @@ impl<'a> Resolver<'a, '_> {
         if self.explain {
             self.contributions.push(Contribution {
                 tick: self.ctx.tick(),
+                steam_id: self.steam_id,
                 player_slot: self.slot,
                 hero_id: self.hero_id,
                 input: input.into(),
@@ -1118,12 +1187,13 @@ impl<'a> Resolver<'a, '_> {
     }
 
     fn gravity_scale(&mut self) -> Result<f64> {
-        let pawn = handle(self.ctx, self.controller, "m_hPawn")
+        let pawn = hero_pawn(self.ctx, self.controller)
             .ok_or_else(|| invalid("player has no current pawn"))?;
         let base = required(self.ctx, pawn, "m_flGravityScale")?;
         if self.explain {
             self.contributions.push(Contribution {
                 tick: self.ctx.tick(),
+                steam_id: self.steam_id,
                 player_slot: self.slot,
                 hero_id: self.hero_id,
                 input: "gravity_scale".into(),
@@ -1264,6 +1334,56 @@ impl<'a> Resolver<'a, '_> {
         kind: &'static str,
     ) -> Result<f64> {
         let hero = inputs.hero;
+        if let Some(tables) = hero.definition["m_MapModCostBonuses"].as_object() {
+            let mut total = 0.0;
+            for (slot, table) in tables {
+                // The legacy table still supplies the category's stat symbol.
+                if !hero.definition["m_mapPurchaseBonuses"][slot]
+                    .as_array()
+                    .is_some_and(|bonuses| bonuses.iter().any(|b| b["m_ValueType"] == stat))
+                {
+                    continue;
+                }
+                let mut invested = 0.0;
+                for item in &inputs.inventory {
+                    if item.definition["m_eItemSlotType"] != *slot {
+                        continue;
+                    }
+                    let tier = item.definition["m_iItemTier"]
+                        .as_str()
+                        .and_then(|s| s.strip_prefix("EModTier_"))
+                        .and_then(|s| s.parse::<usize>().ok())
+                        .ok_or_else(|| {
+                            invalid(format!("missing item tier for {}", item.record_key))
+                        })?;
+                    let price = self.catalog.generic_data["m_nItemPricePerTier"]
+                        .get(tier)
+                        .and_then(number)
+                        .filter(|price| *price >= 0.0)
+                        .ok_or_else(|| invalid("missing catalog item prices in misc.json; rebuild boon-data with generic_data.vdata, then run `boon get VERSION --force`"))?;
+                    invested += price;
+                    self.record(
+                        input,
+                        "purchase_cost",
+                        price,
+                        item,
+                        &format!("generic_data.vdata#/m_nItemPricePerTier/{tier}"),
+                        None,
+                    );
+                }
+                let value = purchase_threshold_bonus(table, invested)?;
+                total += value;
+                self.record(
+                    input,
+                    kind,
+                    value,
+                    hero,
+                    &format!("{}/m_MapModCostBonuses/{slot}", hero.definition_path),
+                    None,
+                );
+            }
+            return Ok(total);
+        }
         let mut total = 0.0;
         for item in &inputs.inventory {
             let Some(slot) = item.definition["m_eItemSlotType"].as_str() else {
@@ -1389,7 +1509,7 @@ impl<'a> Resolver<'a, '_> {
         let ability_id = owner
             .ability_id
             .ok_or_else(|| invalid("counter has no owning ability"))?;
-        let pawn = handle(self.ctx, self.controller, "m_hPawn")
+        let pawn = hero_pawn(self.ctx, self.controller)
             .ok_or_else(|| invalid("counter has no owning pawn"))?;
         let vector = "m_CCitadelAbilityComponent.m_vecAbilities";
         for i in 0..count(self.ctx, pawn, vector)? {
@@ -1764,12 +1884,17 @@ impl<'a> Resolver<'a, '_> {
                 // Unregistered passive declarations can outlive an old effect in
                 // VData. Only explicit intrinsic or conditional flags give them
                 // meaning without a registered modifier property.
-                if explicit_only
-                    && effect["usage_flags"].as_str().is_none_or(|flags| {
-                        !flags.contains("IntrinsicallyProvidedInAbility")
-                            && !flags.contains("ConditionallyApplied")
-                    })
-                {
+                if effect["usage_flags"].as_str().is_none_or(|flags| {
+                    !flags.contains("IntrinsicallyProvidedInAbility")
+                        && !flags.contains("ConditionallyApplied")
+                }) {
+                    if !explicit_only && !self.effect(effect, item, None).is_ok_and(|v| v == 0.0) {
+                        self.unmapped_inputs.insert(format!(
+                            "{} in {} has no modifier binding or intrinsic usage flag",
+                            effect["property_name"].as_str().unwrap_or(stat),
+                            item.record_key
+                        ));
+                    }
                     continue;
                 }
                 let value = self.effect(effect, item, None)?;
@@ -2129,7 +2254,7 @@ impl<'a> Resolver<'a, '_> {
                 .iter()
                 .find(|(_, e)| {
                     e.class_name.as_ref() == "CCitadelPlayerController"
-                        && handle(self.ctx, e, "m_hPawn").is_some_and(|p| std::ptr::eq(p, caster))
+                        && hero_pawn(self.ctx, e).is_some_and(|p| std::ptr::eq(p, caster))
                 })
                 .map(|(_, e)| e)
                 .ok_or_else(|| invalid("cannot resolve modifier caster upgrades"))?
@@ -2204,6 +2329,7 @@ mod tests {
             catalog,
             controller: &controller,
             hero_id: 999,
+            steam_id: None,
             slot: PlayerSlot(0),
             game_time: Some(12.0),
             game_start: Some(0.0),
@@ -3563,7 +3689,7 @@ mod tests {
         let bound = json!({"stat":melee,"value":20,"definition_path":"/test_gun/buff"});
         abilities["records"][0]["stat_changes"] = json!([
             {"stat":"MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE","value":12,"definition_path":"/weapon","modifier_keys":["abilities#/second"]},
-            {"stat":"MODIFIER_VALUE_TECH_POWER","value":4},
+            {"stat":"MODIFIER_VALUE_TECH_POWER","value":4,"usage_flags":"IntrinsicallyProvidedInAbility"},
             {"stat":melee,"value":10,"definition_path":"/melee","modifier_keys":["abilities#/second"]},
             {"stat":melee,"value":20,"definition_path":"/test_gun/buff","modifier_keys":["abilities#/second"]},
             {"stat":"MODIFIER_VALUE_WEAPON_DAMAGE_TO_NPC_INCREASE","value":200}
@@ -3789,7 +3915,7 @@ mod tests {
         abilities["records"][0]["stat_changes"]
             .as_array_mut()
             .unwrap()
-            .push(json!({"stat":stat,"value":8}));
+            .push(json!({"stat":stat,"value":8,"usage_flags":"IntrinsicallyProvidedInAbility"}));
         std::fs::write(&ability_path, serde_json::to_vec(&abilities).unwrap()).unwrap();
         let catalog = StatCatalog::from_directory(folder.path()).unwrap();
         for endpoint in endpoints {
@@ -3828,7 +3954,7 @@ mod tests {
             serde_json::from_slice(&std::fs::read(&modifier_path).unwrap()).unwrap();
         let stat = "MODIFIER_VALUE_BONUS_BULLET_SPEED_PERCENT";
         abilities["records"][0]["stat_changes"] = json!([
-            {"stat":stat, "value":10, "definition_path":"/test_gun/passive"},
+            {"stat":stat, "value":10, "definition_path":"/test_gun/passive", "usage_flags":"IntrinsicallyProvidedInAbility"},
             {"stat":stat, "value":30, "definition_path":"/test_gun/buff", "modifier_keys":["abilities#/second"], "usage_flags":"ConditionallyApplied"}
         ]);
         modifiers["records"][2]["stat_changes"] = json!([
@@ -4069,6 +4195,138 @@ mod tests {
         assert!(ignored.is_empty() && inferred.is_empty());
         assert_eq!(trace.len(), 1);
         assert_eq!(trace[0].modifier_serial, Some(42));
+    }
+
+    #[test]
+    fn a_removed_ability_ends_only_its_intrinsic_modifiers() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        catalog.modifiers[2].ability_id = Some(123);
+        catalog.modifiers[2].definition_path = "/test_gun/m_AutoIntrinsicModifiers/0".into();
+        let ctx = Context::new(1.0 / 64.0).unwrap();
+        let mut entry = CModifierTableEntry {
+            modifier_subclass: Some(12),
+            ability_subclass: Some(123),
+            ability: Some(1234),
+            ..Default::default()
+        };
+        assert!(!intrinsic_ability_present(&ctx, &catalog, &entry));
+        // A timed cast buff may survive destruction of the source ability.
+        catalog.modifiers[2].definition_path = "/test_gun/m_BuffModifier".into();
+        assert!(intrinsic_ability_present(&ctx, &catalog, &entry));
+        catalog.modifiers[2].definition_path = "/test_gun/m_AutoIntrinsicModifiers/0".into();
+        entry.ability = None;
+        assert!(intrinsic_ability_present(&ctx, &catalog, &entry));
+    }
+
+    #[test]
+    fn purchases_use_catalog_prices_and_one_threshold_per_category() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        catalog.heroes.get_mut(&999).unwrap().definition["m_mapPurchaseBonuses"] = json!({
+            "test_slot":[{"m_ValueType":WEAPON_DAMAGE,"m_nTier":2,"m_strValue":"99"}]
+        });
+        catalog.heroes.get_mut(&999).unwrap().definition["m_MapModCostBonuses"] = json!({
+            "test_slot":[
+                {"nGoldThreshold":3100,"flBonus":41},
+                {"nGoldThreshold":700,"flBonus":8},
+                {"nGoldThreshold":1400,"flBonus":13}
+            ]
+        });
+        let item = catalog.abilities.get_mut(&123).unwrap();
+        item.definition["m_eItemSlotType"] = json!("test_slot");
+        item.definition["m_iItemTier"] = json!("EModTier_2");
+        catalog.generic_data = json!({"m_nItemPricePerTier":[0,700,1400]});
+        let (value, trace, _) = stat_result(&catalog, false, HeroStat::WeaponDamage);
+        assert_eq!(value.unwrap(), 13.0); // Neither the legacy 99 nor 8 + 13.
+        assert_eq!(
+            trace
+                .iter()
+                .find(|c| c.kind == "purchase_cost")
+                .unwrap()
+                .value,
+            1400.0
+        );
+        assert_eq!(
+            trace
+                .iter()
+                .filter(|c| c.kind == "purchase_percent")
+                .count(),
+            1
+        );
+        catalog.generic_data["m_nItemPricePerTier"][2] = json!(3100);
+        assert_eq!(
+            stat_result(&catalog, false, HeroStat::WeaponDamage)
+                .0
+                .unwrap(),
+            41.0
+        );
+        catalog.generic_data = Value::Null;
+        assert!(
+            stat_result(&catalog, false, HeroStat::WeaponDamage)
+                .0
+                .unwrap_err()
+                .to_string()
+                .contains("missing catalog item prices")
+        );
+    }
+
+    #[test]
+    fn purchase_thresholds_do_not_depend_on_catalog_order() {
+        let table = json!([
+            {"nGoldThreshold":2300,"flBonus":31},
+            {"nGoldThreshold":500,"flBonus":7},
+            {"nGoldThreshold":1200,"flBonus":19}
+        ]);
+        for (invested, bonus) in [
+            (0.0, 0.0),
+            (499.0, 0.0),
+            (500.0, 7.0),
+            (1200.0, 19.0),
+            (1800.0, 19.0),
+            (2500.0, 31.0),
+        ] {
+            assert_eq!(purchase_threshold_bonus(&table, invested).unwrap(), bonus);
+        }
+        assert!(
+            purchase_threshold_bonus(&json!([{"nGoldThreshold":-1,"flBonus":5}]), 10.0).is_err()
+        );
+    }
+
+    #[test]
+    fn fire_rate_does_not_apply_unbound_ability_values_from_ownership() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        let effect = json!({"stat":"MODIFIER_VALUE_FIRE_RATE","value":17,
+            "property_name":"ArbitraryBuff","modifier_keys":[]});
+        catalog.abilities.get_mut(&123).unwrap().stat_changes = vec![effect.clone()];
+        let mut diagnostics = BTreeSet::new();
+        let (value, trace, _) = stat_result_with_modifier(
+            &catalog,
+            HeroStat::FireRate,
+            vec![],
+            None,
+            true,
+            &mut diagnostics,
+        );
+        assert_eq!(value.unwrap(), 0.0);
+        assert!(trace.is_empty());
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.contains("ArbitraryBuff") && d.contains("no modifier binding"))
+        );
+        catalog.abilities.get_mut(&123).unwrap().stat_changes[0]["modifier_keys"] =
+            json!(["abilities#/second"]);
+        catalog.modifiers[2].stat_changes = vec![effect];
+        assert_eq!(
+            stat_result(&catalog, false, HeroStat::FireRate).0.unwrap(),
+            0.0
+        );
+        assert_eq!(
+            stat_result(&catalog, true, HeroStat::FireRate).0.unwrap(),
+            17.0
+        );
     }
 
     #[test]
@@ -4421,7 +4679,7 @@ mod tests {
         let bonus = "MODIFIER_VALUE_FIRE_RATE";
         let slow = "MODIFIER_VALUE_FIRE_RATE_SLOW";
         abilities["records"][0]["stat_changes"] = json!([
-            {"stat":bonus, "value":20, "definition_path":"/passive"},
+            {"stat":bonus, "value":20, "definition_path":"/passive", "usage_flags":"IntrinsicallyProvidedInAbility"},
             {"stat":bonus, "value":10, "definition_path":"/bound", "modifier_keys":["abilities#/second"]}
         ]);
         let bound = json!({"stat":bonus, "value":10, "definition_path":"/bound"});
@@ -4597,7 +4855,7 @@ mod tests {
         for bonus in [27.5, 83.0] {
             let effect = json!({"stat":stat, "value":bonus, "definition_path":"/test_gun/buff"});
             abilities["records"][0]["stat_changes"] = json!([
-                {"stat":stat, "value":12.5, "definition_path":"/test_gun/passive"},
+                {"stat":stat, "value":12.5, "definition_path":"/test_gun/passive", "usage_flags":"IntrinsicallyProvidedInAbility"},
                 {"stat":stat, "value":bonus, "definition_path":"/test_gun/buff", "modifier_keys":["abilities#/second"]},
                 {"stat":"MODIFIER_VALUE_BONUS_BULLET_SPEED_PERCENT", "value":99}
             ]);
@@ -4706,6 +4964,7 @@ mod tests {
             catalog: &catalog,
             controller: &controller,
             hero_id: 999,
+            steam_id: None,
             slot: PlayerSlot(0),
             game_time: Some(800.0),
             game_start: Some(100.0),

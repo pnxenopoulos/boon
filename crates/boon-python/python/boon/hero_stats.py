@@ -12,6 +12,7 @@ import polars as pl
 
 from boon import data
 from boon import rulesets as builtin_rulesets
+from boon._selection import validate_steam_ids
 from boon.rulesets import Rule
 
 if TYPE_CHECKING:
@@ -72,69 +73,36 @@ def calculate_hero_stats(
     ticks: int | Sequence[int],
     data_version: str,
     stats: Sequence[HeroStat | str] = (HeroStat.CLIP_SIZE,),
-    players: Sequence[int] | None = None,
+    steam_ids: Sequence[int] | None = None,
     heroes: Sequence[int] | None = None,
     rulesets: Mapping[HeroStat | str, Rule] | None = None,
     explain: bool = False,
     strict: bool = True,
 ) -> StatResult:
-    """Calculate hero stats at exact demo ticks, after tick updates.
+    """Calculate hero stats after each selected tick.
 
-    Select player slots with ``players`` or current hero IDs with ``heroes``.
-    Omit both to include all players. ``data_version`` is a client version from
-    ``boon versions``. A missing installation is downloaded and verified.
+    Use ``HeroStat`` enum members for ``stats``. Matching strings also work.
+    The result's ``stat`` column contains strings. ``HeroStat.AMMO`` selects
+    the same stat as ``HeroStat.CLIP_SIZE``. Omit stats to select ammo capacity.
 
-    ``HeroStat.AMMO`` is an alias for ``HeroStat.CLIP_SIZE``. Capacity remains
-    finite during unlimited-ammo effects. It is not the number of rounds left.
-    ``HeroStat.BULLET_VELOCITY`` returns nominal weapon bullet speed in m/s.
-    ``HeroStat.MELEE_DISTANCE`` returns the heavy-melee travel bonus in percent.
-    ``HeroStat.RELOAD_TIME`` returns nominal reload seconds, per round for
-    single-round reload weapons. It excludes their initial delay.
-    ``HeroStat.FIRE_RATE`` returns the UI modifier in percentage points,
-    with additive bonuses, multiplicative slows, and a -50% minimum.
-    ``HeroStat.FALLOFF_START`` and ``HeroStat.FALLOFF_END`` return nominal weapon
-    damage falloff endpoints in metres, not maximum bullet travel distance.
-    V1 supports at most one nonzero range bonus; stacking is not yet verified.
+    Select Steam accounts with ``steam_ids`` or current hero IDs with ``heroes``.
+    Both filters apply when set. Get Steam IDs from ``demo.players``.
+    Omit both filters to include all players. An empty filter selects no players.
+    Results contain ``steam_id`` (UInt64), or null when the ID is missing.
+    The raw ``player_slot`` remains available.
 
-    ``HeroStat.LIGHT_MELEE_DAMAGE`` and ``HeroStat.HEAVY_MELEE_DAMAGE`` return
-    nominal damage before target resistance and on-hit effects, without rounding.
+    Set ``data_version`` to a client version from ``boon versions``.
+    Boon downloads and verifies a missing version. Omit ``rulesets`` to use V1.
+    Otherwise, supply one supported rule for each selected stat.
 
-    ``HeroStat.SLIDE_DISTANCE`` multiplies bonus factors and returns percent.
-    ``HeroStat.BULLET_EVASION`` returns a chance from stat bindings. For an
-    undeclared ``EvasionPercent``, its owner's unique effect modifier supplies
-    an inferred binding, marked partial. Other undeclared effects can be omitted;
-    zero does not prove no evasion.
-    ``HeroStat.DEBUFF_RESIST`` returns duration resistance in percentage points.
-    Remaining-duration factors multiply; negative resistance extends duration.
-    It includes catalog innate values and effective bound modifiers, not immunity
-    or cleansing. An absent innate value contributes zero.
-    ``HeroStat.GRAVITY_SCALE`` returns the recorded pawn multiplier unchanged.
+    Set ``explain=True`` to include input sources and catalog paths.
+    Unknown modifiers and assumed links produce partial values with diagnostics.
+    Other missing inputs raise ``CalculationError``. With ``strict=False``, those
+    rows have null values and status ``unresolved``. Invalid queries still fail.
 
-    ``HeroStat.STAMINA`` returns maximum capacity in points. Free dashes do
-    not change this value. ``HeroStat.STAMINA_COOLDOWN`` returns seconds to
-    recover one point, not the time remaining on the current refill.
-    ``DASH_SPEED`` and ``AIR_DASH_SPEED`` return nominal average speed in m/s.
-    ``DASH_DURATION`` and ``AIR_DASH_DURATION`` return catalog duration in seconds.
-    Distance bonuses change speed, not duration. These are ordinary dash stats;
-    flight, attack movement, interruptions, and acceleration are outside V1.
-    Multiple nonzero recovery or dash-distance percentages remain unresolved.
-    Paused recovery and mixed flat/percentage recovery also remain unresolved.
-
-    ``HeroStat.MOVE_SPEED`` returns nominal movement speed in m/s with
-    diminishing flat bonuses. ``HeroStat.SPRINT_SPEED`` returns the additional
-    sprint component in m/s with additive bonuses. Their sum is full sprint
-    speed. Both use catalog hero spirit scaling when present. They exclude
-    firing, crouching, slows, speed limits, sprint eligibility and ramp-up.
-    Unbound effects are partial; unsupported stacking remains unresolved.
-
-    With ``explain=True``, include each resolved contribution and its source.
-    Failed modifier lookups are skipped. Affected rows have status ``partial``
-    and a diagnostic with the skipped IDs, even when ``strict=True``.
-    Conditional bonuses inferred from a unique temporary modifier also produce
-    partial rows, with a diagnostic that identifies the assumed activation link.
-    Other unresolved inputs raise CalculationError. With ``strict=False``,
-    affected values are null and the diagnostic column gives the reason.
-    Invalid queries and missing ticks always raise an error.
+    Ammo is capacity, not remaining rounds. Fire rate is the bonus percentage.
+    Move speed and sprint speed are nominal values, without current movement states.
+    See the hero stats guide for units, equations, and limits for each stat.
     """
     if not isinstance(data_version, str):
         raise ValueError(
@@ -146,11 +114,11 @@ def calculate_hero_stats(
         raise ValueError("provide ticks and at least one stat")
     if any(type(tick) is not int or tick < 0 for tick in requested_ticks):
         raise ValueError("ticks must be nonnegative integers")
-    for name, ids in (("players", players), ("heroes", heroes)):
-        if ids is not None and any(
-            type(value) is not int or value < 0 for value in ids
-        ):
-            raise ValueError(f"{name} must contain nonnegative integers")
+    validate_steam_ids(steam_ids)
+    if heroes is not None and any(
+        type(value) is not int or value < 0 for value in heroes
+    ):
+        raise ValueError("heroes must contain nonnegative integers")
     defaults = {
         HeroStat.CLIP_SIZE: builtin_rulesets.clip_size.v1,
         HeroStat.BULLET_VELOCITY: builtin_rulesets.bullet_velocity.v1,
@@ -199,7 +167,7 @@ def calculate_hero_stats(
                 directory,
                 requested_ticks,
                 stats=[stat.value for stat in selected],
-                players=None if players is None else list(players),
+                steam_ids=None if steam_ids is None else list(steam_ids),
                 heroes=None if heroes is None else list(heroes),
                 explain=explain,
                 strict=strict,
@@ -212,6 +180,7 @@ def calculate_hero_stats(
         payload["values"],
         schema={
             "tick": pl.Int32,
+            "steam_id": pl.UInt64,
             "player_slot": pl.UInt32,
             "hero_id": pl.Int64,
             "stat": pl.String,
@@ -226,6 +195,7 @@ def calculate_hero_stats(
         payload["contributions"],
         schema={
             "tick": pl.Int32,
+            "steam_id": pl.UInt64,
             "player_slot": pl.UInt32,
             "hero_id": pl.Int64,
             "input": pl.String,

@@ -224,7 +224,7 @@ impl Ruleset {
 pub struct HeroStatQuery {
     ticks: Vec<i32>,
     stats: Vec<HeroStat>,
-    players: Option<Vec<PlayerSlot>>,
+    steam_ids: Option<Vec<u64>>,
     heroes: Option<Vec<i64>>,
     explain: bool,
     strict: bool,
@@ -240,15 +240,15 @@ impl HeroStatQuery {
         Self {
             ticks: ticks.into_iter().collect(),
             stats,
-            players: None,
+            steam_ids: None,
             heroes: None,
             explain: false,
             strict: true,
         }
     }
     #[must_use]
-    pub fn players(mut self, players: impl IntoIterator<Item = PlayerSlot>) -> Self {
-        self.players = Some(players.into_iter().collect());
+    pub fn steam_ids(mut self, ids: impl IntoIterator<Item = u64>) -> Self {
+        self.steam_ids = Some(ids.into_iter().collect());
         self
     }
     #[must_use]
@@ -274,6 +274,9 @@ impl HeroStatQuery {
 #[derive(Clone, Debug, Serialize)]
 pub struct StatRow {
     pub tick: i32,
+    /// Recorded Steam account ID; absent for players without an account.
+    pub steam_id: Option<u64>,
+    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
     pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub stat: HeroStat,
@@ -289,6 +292,9 @@ pub struct StatRow {
 #[derive(Clone, Debug, Serialize)]
 pub struct Contribution {
     pub tick: i32,
+    /// Recorded Steam account ID; absent for players without an account.
+    pub steam_id: Option<u64>,
+    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
     pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub input: String,
@@ -357,7 +363,7 @@ impl Parser {
         })?;
         result
             .values
-            .sort_by_key(|r| (r.tick, r.player_slot.0, r.stat));
+            .sort_by_key(|r| (r.tick, r.steam_id, r.player_slot.0, r.stat));
         Ok(result)
     }
     pub(crate) fn visit_stat_ticks(
@@ -386,12 +392,6 @@ impl Parser {
         }
         let initial = self.parse_init()?;
         let classes = initial.serializers().iter().map(|(name, _)| name).collect();
-        let full_packets = self.full_packet_offsets()?;
-        let start = full_packets
-            .iter()
-            .copied()
-            .rfind(|(_, t)| *t < ticks[0])
-            .map(|(offset, _)| offset);
         let mut failure = None;
         let mut seen = std::collections::HashSet::new();
         let end = ticks
@@ -401,17 +401,8 @@ impl Parser {
         let mut modifiers = crate::EffectiveModifierState::default();
         let clock = crate::ModifierClock::resolve(&initial);
         modifiers.rebuild(&initial, clock.game_time(&initial));
-        let keyframes: std::collections::HashSet<_> =
-            full_packets.iter().map(|(_, tick)| *tick).collect();
-        self.decode_segment(start, end, &classes, |ctx| {
-            // Track every intervening delta. A table at the requested tick can
-            // have recycled the application slot of a still-active modifier.
-            let game_time = clock.game_time(ctx);
-            if keyframes.contains(&ctx.tick()) {
-                modifiers.rebuild(ctx, game_time);
-            } else {
-                modifiers.update(ctx, game_time);
-            }
+        self.decode_stat_ticks(end, &classes, |ctx| {
+            modifiers.update(ctx, clock.game_time(ctx));
             if failure.is_some()
                 || ticks.binary_search(&ctx.tick()).is_err()
                 || !seen.insert(ctx.tick())

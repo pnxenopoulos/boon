@@ -112,6 +112,12 @@ Demo.available_datasets()
 demo.kill_participation()    # (kills + assists) / team kills, per player
 ```
 
+Use [hero stats](crates/boon-python/docs/hero-stats.md) for calculated hero values.
+Use [ability stats](crates/boon-python/docs/ability-stats.md) for ability bonuses and imbues.
+Use [player states](crates/boon-python/docs/player-states.md) for recorded state flags.
+Select stats with `HeroStat` or `AbilityStat`, and select players with `steam_ids`.
+These methods require a boon-data client version from `boon versions`.
+
 ### CLI
 
 Bundled with the Python package (`pip install boon-deadlock`):

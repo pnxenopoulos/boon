@@ -33,13 +33,29 @@ only the datasets they request.
 
 ### Methods
 
+#### `player_states(...)`
+
+Read player state names at selected ticks or every recorded tick.
+Set `data_version` to a boon-data client version. Use `steam_ids` to select players.
+See {doc}`player-states` for columns, mask sources, and missing values.
+
 #### `calculate_hero_stats(...)`
 
-Calculate hero stats at selected ticks with an explicit boon-data version.
-Stats include ammo, weapon-damage bonus, fire rate, movement, lifesteal, and
-resistance. See {doc}`hero-stats` for the full list, parameters, equations,
-input traces, and limits.
+Calculate hero stats at selected ticks. Select stats with `HeroStat` enum members.
+Set `data_version` and use `steam_ids` to select players.
+See {doc}`hero-stats` for supported stats, equations, input sources, and limits.
 
+#### `calculate_ability_stats(...)`
+
+Calculate bonus percentages for each ability. Select stats with `AbilityStat` enum members.
+Set `ticks`, `data_version`, and optional `steam_ids`.
+See {doc}`ability-stats` for targeting filters, equations, and limits.
+
+#### `imbues(...)`
+
+Read item imbue selections and their catalog effects.
+Set `ticks`, `data_version`, and optional `steam_ids`.
+See {doc}`ability-stats` for result tables and missing inputs.
 
 #### `verify()`
 
@@ -204,7 +220,7 @@ post-match statistics. They do not estimate healing from changes in health.
 The first call builds and caches all six tables.
 
 - **`snapshots`** has one row per player and `snapshot_time_s`. It includes
-  `player_slot`, `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
+  `steam_id`, `player_slot`, `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
   `level`, `lane`, `creep_kills`, and `neutral_kills`.
   Recorded damage totals are `player_damage`, `creep_damage`, `neutral_damage`,
   `boss_damage`, `self_damage`, and `player_damage_taken`.
@@ -218,7 +234,7 @@ The first call builds and caches all six tables.
   `cultist_sacrifice_*`, `assists_*`, and `unknown_*`.
   The `unknown_*` columns refer to the Goose Egg source.
 - **`gold_sources`** has one row per recorded player, snapshot, and soul source.
-  Columns are `snapshot_time_s`, `player_slot`, `hero_id`, `source_id`,
+  Columns are `snapshot_time_s`, `steam_id`, `player_slot`, `hero_id`, `source_id`,
   `source_name`, `gold`, `gold_orbs`, `kills`, and `damage`.
   The counters are cumulative at that snapshot. `gold` and `gold_orbs` preserve
   the separate counters from the message. Use `snapshots.net_worth` for net worth.
@@ -226,14 +242,15 @@ The first call builds and caches all six tables.
   `k_eAssists`. Unknown IDs remain available as `unknown_<id>`.
   Absent source IDs, names, or counters are null. This table preserves sources
   that have no column in `snapshots`.
-- **`last_hits`** contains `hero_id` and the final scoreboard `last_hits` total.
+- **`last_hits`** contains `steam_id`, `player_slot`, `hero_id`, and the final scoreboard `last_hits` total.
 - **`objectives`** contains `team_objective_id`, `team`, `destroyed_time_s`,
   `first_damage_time_s`, `creep_damage`, `player_damage`, and
   `player_spirit_damage`. Absent times are null.
 - **`damage`** contains the full recorded matrix. Each row identifies a
-  `dealer_player_slot`, `target_player_slot`, `source_name`, `stat_type`, and
-  `sample_time_s`. `dealer_hero_id` and `target_hero_id` identify roster heroes;
-  non-player slots have null hero IDs.
+  `dealer_steam_id`, `target_steam_id`, `source_name`, `stat_type`, and
+  `sample_time_s`. `dealer_hero_id` and `target_hero_id` identify roster heroes.
+  Non-player slots have null hero IDs. Raw slots remain in `dealer_player_slot`
+  and `target_player_slot`.
   `damage` is the amount for the interval from `interval_start_s` to
   `sample_time_s`. **`total` is the recorded cumulative amount at `sample_time_s`.**
   `stat_type` is `damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`, or
@@ -243,7 +260,8 @@ The first call builds and caches all six tables.
   Select categories or specific sources before aggregation. Do not add them together.
 - **`healing`** selects `healing` and `regen` rows from the matrix and excludes
   category duplicates. Columns are `interval_start_s`, `interval_end_s`,
-  `healer_player_slot`, `healer_hero_id`, `target_player_slot`, `target_hero_id`,
+  `healer_steam_id`, `healer_player_slot`, `healer_hero_id`,
+  `target_steam_id`, `target_player_slot`, `target_hero_id`,
   `source_name`, `stat_type`, `amount`, and `total`.
   `amount` is the interval amount. **`total` is the recorded cumulative amount
   at `interval_end_s`.** Periods with no increase remain in the table.
@@ -254,8 +272,12 @@ Times use match-clock seconds. Player snapshots and matrix samples can use
 **different reporting periods**. Use their recorded times; do not assume a fixed
 interval or join them by row number. Sparse matrix histories start at later
 samples. Boon does not add rows for unrecorded periods.
-Hero IDs come from the match roster. Use player slots to identify players across
-hero changes.
+Hero IDs come from the match roster. Steam IDs identify players across hero changes.
+Use Steam IDs to join these tables to `demo.players`.
+Boon matches summary account IDs to recorded Steam IDs.
+IDs use UInt64. Unmatched accounts and non-player sources have null Steam IDs. Raw `*_player_slot` columns remain
+available. Do not group or join null Steam IDs as if they were one player.
+Summary slots can differ from controller slots in stat and state tables.
 
 To get a total at one reporting period, select that time and sum `total` across
 sources. **Do not sum `total` across reporting periods.** To combine periods,
@@ -269,38 +291,41 @@ healing = summary["healing"]
 matrix = summary["damage"]
 period = matrix["sample_time_s"].max()  # Select a recorded reporting period
 
+steam_id = demo.players["steam_id"][0]  # Select a player
+
 # Healing and regeneration totals by player and type at each period.
-healing_totals = healing.group_by(
-    "interval_end_s", "healer_player_slot", "stat_type"
+healing_totals = healing.filter(pl.col("healer_steam_id").is_not_null()).group_by(
+    "interval_end_s", "healer_steam_id", "stat_type"
 ).agg(pl.col("total").sum())
 
 # Healing or regeneration by source for one player at one period.
 healing_sources = healing.filter(
-    (pl.col("interval_end_s") == period) & (pl.col("healer_player_slot") == 2)
+    (pl.col("interval_end_s") == period) & (pl.col("healer_steam_id") == steam_id)
 ).group_by("stat_type", "source_name").agg(pl.col("total").sum())
 
 # Souls by source. This table uses the player snapshot schedule.
-souls = summary["gold_sources"].filter(pl.col("player_slot") == 2)
+souls = summary["gold_sources"].filter(pl.col("steam_id") == steam_id)
 
 # Damage dealt by type at one period: use only broad categories.
 damage_types = matrix.filter(
     (pl.col("sample_time_s") == period)
     & (pl.col("stat_type") == "damage")
     & pl.col("is_category")
-).group_by("dealer_player_slot", "source_name").agg(pl.col("total").sum())
+    & pl.col("dealer_steam_id").is_not_null()
+).group_by("dealer_steam_id", "source_name").agg(pl.col("total").sum())
 
 # Damage to/from players: use only specific sources to prevent duplicates.
 player_damage = matrix.filter(
     (pl.col("sample_time_s") == period)
     & (pl.col("stat_type") == "damage")
     & ~pl.col("is_category")
-    & pl.col("dealer_hero_id").is_not_null()
-    & pl.col("target_hero_id").is_not_null()
-).group_by("dealer_player_slot", "target_player_slot").agg(pl.col("total").sum())
+    & pl.col("dealer_steam_id").is_not_null()
+    & pl.col("target_steam_id").is_not_null()
+).group_by("dealer_steam_id", "target_steam_id").agg(pl.col("total").sum())
 
 # Optional square matrix: rows deal damage, columns receive damage.
 damage_matrix = player_damage.pivot(
-    on="target_player_slot", index="dealer_player_slot", values="total"
+    on="target_steam_id", index="dealer_steam_id", values="total"
 )
 ```
 
@@ -1253,14 +1278,6 @@ Boon loads this dataset on first access.
 | `scoring_team` | `int` | The team that scored |
 | `amber_score` | `int` | The Hidden King (old name: Amber Hand) cumulative score |
 | `sapphire_score` | `int` | The Archmother (old name: Sapphire Flame) cumulative score |
-
-## Ability stats and imbues
-
-`demo.imbues(ticks=..., data_version=...)` returns recorded item selections and
-catalog effects. `demo.calculate_ability_stats(ticks=..., data_version=...)`
-returns per-ability cooldown reduction, duration, range, and radius bonuses.
-See {doc}`ability-stats` for selection, scope, equations, and known limits.
-
 
 ## Name Lookup Functions
 

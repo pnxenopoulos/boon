@@ -226,7 +226,7 @@ class Demo:
         Return six cached Polars DataFrames:
 
         - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
-          Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+          Includes ``steam_id``, ``player_slot``, ``hero_id``, damage by target type, damage taken,
           ``player_healing``, ``teammate_healing``, and ``self_healing``.
           Added counters are null when absent.
         - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
@@ -240,8 +240,8 @@ class Demo:
           healing, regeneration, or another recorded statistic. Category rows
           (``is_category=True``) duplicate specific sources; do not add them together.
         - ``healing``: healing and regeneration rows without category duplicates.
-          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-          ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_player_slot``,
+          ``healer_hero_id``, ``target_steam_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
           ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
           ``total`` is the recorded cumulative amount. Zero changes remain in the table.
 
@@ -298,18 +298,20 @@ class Demo:
 
     def imbues(
         self,
+        /,
         *,
         ticks: int | Sequence[int],
         data_version: str,
-        players: Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
     ) -> ImbueResult: ...
     def calculate_ability_stats(
         self,
+        /,
         *,
         ticks: int | Sequence[int],
         data_version: str,
         stats: Sequence[AbilityStat | str] = ...,
-        players: Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
         abilities: Sequence[int] | None = None,
         include_items: bool = False,
         rulesets: Mapping[AbilityStat | str, Rule] | None = None,
@@ -317,7 +319,11 @@ class Demo:
         strict: bool = True,
     ) -> AbilityStatResult: ...
     def _imbues(
-        self, directory: Path, ticks: list[int], *, players: Sequence[int] | None = None
+        self,
+        directory: Path,
+        ticks: list[int],
+        *,
+        steam_ids: Sequence[int] | None = None,
     ) -> str: ...
     def _calculate_ability_stats(
         self,
@@ -325,12 +331,29 @@ class Demo:
         ticks: list[int],
         *,
         stats: list[str],
-        players: Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
         abilities: Sequence[int] | None = None,
         include_items: bool = False,
         explain: bool = False,
         strict: bool = True,
     ) -> str: ...
+    def player_states(
+        self,
+        /,
+        *,
+        data_version: str,
+        ticks: int | Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
+    ) -> pl.DataFrame:
+        """Recorded state names per player and tick; see boon.player_states."""
+        ...
+    def _player_states(
+        self,
+        directory: Path,
+        *,
+        ticks: Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
+    ) -> pl.DataFrame: ...
     def calculate_hero_stats(
         self,
         /,
@@ -338,7 +361,7 @@ class Demo:
         ticks: int | Sequence[int],
         data_version: str,
         stats: Sequence[HeroStat | str] = ...,
-        players: Sequence[int] | None = ...,
+        steam_ids: Sequence[int] | None = ...,
         heroes: Sequence[int] | None = ...,
         rulesets: Mapping[HeroStat | str, Rule] | None = ...,
         explain: bool = ...,
@@ -350,7 +373,7 @@ class Demo:
         ticks: list[int],
         *,
         stats: list[str],
-        players: list[int] | None = ...,
+        steam_ids: list[int] | None = ...,
         heroes: list[int] | None = ...,
         explain: bool = ...,
         strict: bool = ...,

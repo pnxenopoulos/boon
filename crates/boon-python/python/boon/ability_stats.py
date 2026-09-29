@@ -12,6 +12,7 @@ import polars as pl
 
 from boon import data
 from boon import rulesets as builtin_rulesets
+from boon._selection import validate_steam_ids
 from boon.hero_stats import CalculationError
 from boon.rulesets import Rule
 
@@ -49,6 +50,7 @@ class AbilityStatResult:
 
 _IDENTITY = {
     "tick": pl.Int32,
+    "steam_id": pl.UInt64,
     "player_slot": pl.UInt32,
     "hero_id": pl.Int64,
 }
@@ -63,7 +65,7 @@ _BINDING = {
 }
 
 
-def _query(ticks, data_version, players):
+def _query(ticks, data_version, steam_ids):
     if not isinstance(data_version, str):
         raise ValueError(
             "data_version must be an explicit version from `boon versions`"
@@ -71,7 +73,7 @@ def _query(ticks, data_version, players):
     ticks = [ticks] if isinstance(ticks, int) else list(ticks)
     if not ticks or any(type(tick) is not int or tick < 0 for tick in ticks):
         raise ValueError("provide nonnegative integer ticks")
-    _ids("players", players)
+    validate_steam_ids(steam_ids)
     return ticks
 
 
@@ -88,19 +90,21 @@ def imbues(
     *,
     ticks: int | Sequence[int],
     data_version: str,
-    players: Sequence[int] | None = None,
+    steam_ids: Sequence[int] | None = None,
 ) -> ImbueResult:
     """Read item imbues after each exact tick using an explicit catalog version.
 
+    Select Steam accounts with ``steam_ids``; omit it to include all players.
+    All tables include ``steam_id`` (UInt64), or null when it is unavailable.
     A missing installation is downloaded and verified. Missing catalog records
     do not discard recorded bindings. Each effect retains its targeting filter.
     Effects contain catalog values, not combined bonuses or final cast values.
     Temporary next-cast effects are reported by calculate_ability_stats instead.
     """
-    ticks = _query(ticks, data_version, players)
+    ticks = _query(ticks, data_version, steam_ids)
     directory = data.update(data_version)
     try:
-        payload = json.loads(demo._imbues(directory, ticks, players=players))
+        payload = json.loads(demo._imbues(directory, ticks, steam_ids=steam_ids))
     except ValueError as error:
         raise CalculationError(str(error)) from error
     payload["metadata"]["data_version"] = data_version
@@ -135,7 +139,7 @@ def calculate_ability_stats(
         AbilityStat.RANGE_BONUS,
         AbilityStat.RADIUS_BONUS,
     ),
-    players: Sequence[int] | None = None,
+    steam_ids: Sequence[int] | None = None,
     abilities: Sequence[int] | None = None,
     include_items: bool = False,
     rulesets: Mapping[AbilityStat | str, Rule] | None = None,
@@ -144,8 +148,13 @@ def calculate_ability_stats(
 ) -> AbilityStatResult:
     """Calculate applicable bonus percentages for each selected ability.
 
-    Defaults to the current hero's signature abilities. Select owned ability or
-    item IDs with abilities, or include all owned items with include_items=True.
+    Select stats with ``AbilityStat`` enum members. Matching strings also work.
+    The result's ``stat`` column contains strings.
+    Select Steam accounts with ``steam_ids``; get IDs from ``demo.players``.
+    All tables include ``steam_id`` (UInt64), or null when it is unavailable.
+    The default selection contains the hero's signature abilities.
+    Select owned ability or item IDs with ``abilities``.
+    Use ``include_items=True`` to include all owned items.
     Ability and item cooldown reductions remain separate. Range and radius are
     separate stats. These values are not seconds, metres, or remaining cooldowns.
 
@@ -157,7 +166,7 @@ def calculate_ability_stats(
     Unsupported activation is partial with a diagnostic. Missing inputs raise
     CalculationError; strict=False returns unresolved rows with null values.
     """
-    ticks = _query(ticks, data_version, players)
+    ticks = _query(ticks, data_version, steam_ids)
     _ids("abilities", abilities)
     selected = list(dict.fromkeys(AbilityStat(stat) for stat in stats))
     if not selected:
@@ -179,7 +188,7 @@ def calculate_ability_stats(
                 directory,
                 ticks,
                 stats=[stat.value for stat in selected],
-                players=players,
+                steam_ids=steam_ids,
                 abilities=abilities,
                 include_items=include_items,
                 explain=explain,

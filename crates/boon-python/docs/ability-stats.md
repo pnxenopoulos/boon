@@ -1,33 +1,27 @@
 # Ability stats and imbues
 
-Use `demo.imbues()` to read item selections. Use `demo.calculate_ability_stats()`
-to calculate the bonus percentages for each ability at selected ticks.
-The methods use the same replay state and an explicit boon-data version.
+Use `demo.imbues()` to read which items imbue each ability.
+Use `demo.calculate_ability_stats()` to calculate each ability's bonus percentages.
+Both methods read replay state and a selected boon-data version.
 
-```bash
-boon versions
-boon get GAME_VERSION
-```
+## Python
 
 ```python
 from boon import AbilityStat, Demo
 
-version = "6694"  # Select the catalog version for your analysis.
+version = "6694"  # Select the client version for your demo.
+steam_id = 76561197999389679  # Venator in this demo.
 demo = Demo("106996573.dem", preload=False)
 
-imbues = demo.imbues(ticks=50707, data_version=version)
+imbues = demo.imbues(ticks=50707, steam_ids=[steam_id], data_version=version)
 print(imbues.bindings)
 print(imbues.effects)
 
 result = demo.calculate_ability_stats(
     ticks=[50707, 60000],
+    steam_ids=[steam_id],
     data_version=version,
-    stats=[
-        AbilityStat.COOLDOWN_REDUCTION,
-        AbilityStat.DURATION_BONUS,
-        AbilityStat.RANGE_BONUS,
-        AbilityStat.RADIUS_BONUS,
-    ],
+    stats=[AbilityStat.COOLDOWN_REDUCTION, AbilityStat.RANGE_BONUS],
     explain=True,
     strict=False,
 )
@@ -35,127 +29,137 @@ print(result.values)
 print(result.contributions)
 ```
 
-A missing installation is downloaded and verified. The selected version is never
-replaced with the latest version. Dynamic values need a catalog with
-`modifier_value_types`, built from the matching tracking revision. Older catalogs
-without that mapping report an error when a dynamic value needs it. Use
-`boon get VERSION --force` after a release with that field is available.
+Use `AbilityStat` enum members in Python code. Matching strings are also accepted;
+unknown names cause an error. The result's `stat` column contains strings.
+Use `HeroStat` with [hero stat queries](hero-stats.md).
 
-## Selection and results
+List versions with `boon versions`. Install a version with `boon get VERSION`.
+A query downloads and verifies a missing version. It does not select another version.
+Recorded dynamic values require the catalog's `modifier_value_types` map.
+Use `boon get VERSION --force` after a release adds that map.
 
-`ticks` accepts one integer or a sequence of exact demo ticks. Results describe
-state after the tick updates. `players` selects player slots, as in hero stat
-queries. Omit it to include all players. Multiple ticks share one parser pass.
+## Select ticks, players, and abilities
 
-By default, stat queries select the current hero's signature abilities. Use
-`abilities=[ability_id, ...]` to select owned abilities or items. These are catalog
-IDs, not slot numbers. Use `include_items=True` to add all owned items.
-An explicit ability ID must belong to a selected player during the query.
+`ticks` accepts one integer or a list. Results describe state after each tick.
+Multiple ticks use one parser pass. Missing ticks cause an error.
 
-`imbues.bindings` has one row per tick, player, source item, and selected ability.
-It contains both IDs and names. Missing catalog records do not remove a recorded
-selection. `imbues.effects` has one row for each catalog effect restricted to that
-selection. It includes the property, value, stat symbol, and `apply_filter`.
-These are individual inputs; no stacking rule is applied to this table.
-A binding can have no effect rows if its catalog has no mapped stat changes.
+Use `steam_ids` to select Steam accounts. Get IDs from `demo.players`.
+Omit the filter to include all players. An empty filter selects no players.
+A requested Steam ID without a hero at a selected tick causes an error.
 
-Stat `values` contain the tick, player slot, hero ID, ability ID and name, stat,
-value, unit, rule, status, and diagnostic. `contributions` also identify the source,
-property, scope, activation state, and whether the input was included. Set
-`explain=True` to create this table. `metadata` identifies the catalog version,
-source revision, and equation versions.
+Stat queries select the hero's signature abilities by default.
+Use `abilities=[ability_id, ...]` to select owned abilities or items by catalog ID.
+Use `include_items=True` to add all owned items.
+Each requested ability ID must belong to a selected player during the query.
+
+## Results
+
+| Table | Contents |
+| --- | --- |
+| `imbues.bindings` | One row per tick, player, source item, and imbued ability; includes IDs and names. |
+| `imbues.effects` | Catalog properties, values, stat symbols, and targeting filters for each binding. No stacking rule is applied. |
+| `result.values` | One row per tick, player, ability, and stat; includes the value, unit, rule, status, and diagnostic. |
+| `result.contributions` | Input sources, properties, scope, activation state, and whether each input was included. Requires `explain=True`. |
+
+Each table includes `tick`, `steam_id`, `player_slot`, and `hero_id`.
+Steam IDs use UInt64. Join to `demo.players` with `steam_id`.
+A missing Steam ID is null; its row keeps the raw player slot.
+Do not join null Steam IDs. Summary slots can differ from controller slots.
+
+Missing catalog records do not remove recorded imbue bindings.
+A binding can have no effect rows when the catalog has no mapped stat changes.
+`metadata` gives the selected version, source commit, and rule versions.
 
 ## Percentage rules
 
-All values use percentage points. `0.75` means 0.75%, not 75%.
-These are bonus percentages, not final seconds, metres, or current cooldown timers.
+| Enum member | Rule |
+| --- | --- |
+| `AbilityStat.COOLDOWN_REDUCTION` | `boon.rulesets.cooldown_reduction.v1` |
+| `AbilityStat.ITEM_COOLDOWN_REDUCTION` | `boon.rulesets.item_cooldown_reduction.v1` |
+| `AbilityStat.DURATION_BONUS` | `boon.rulesets.duration_bonus.v1` |
+| `AbilityStat.RANGE_BONUS` | `boon.rulesets.range_bonus.v1` |
+| `AbilityStat.RADIUS_BONUS` | `boon.rulesets.radius_bonus.v1` |
 
-| Stat | Rule |
-|---|---|
-| `cooldown_reduction` | `boon.rulesets.cooldown_reduction.v1` |
-| `item_cooldown_reduction` | `boon.rulesets.item_cooldown_reduction.v1` |
-| `duration_bonus` | `boon.rulesets.duration_bonus.v1` |
-| `range_bonus` | `boon.rulesets.range_bonus.v1` |
-| `radius_bonus` | `boon.rulesets.radius_bonus.v1` |
+Omit `stats` to select all except item cooldown reduction.
+Use `stats=list(AbilityStat)` to include all five stats.
+Omit `rulesets` to use the supported `v1` rules.
+A `rulesets` mapping must supply one rule for each requested stat.
 
-V1 follows the supplied wiki equation for each percentage:
+V1 applies this equation to each stat:
 
 ```text
 combined = 100 * (1 - product(1 - source_percent / 100))
 ```
 
-For example, 10% and 20% combine to 28%. Do not round the inputs or intermediate
-values. Values above 100%, nonfinite values, and arithmetic overflow are errors.
-Negative sources are retained. Each rule has its own name, version, and documented
-date. Pass a `rulesets` mapping to select a supported rule for every requested stat.
+For example, 10% and 20% give 28%. Values use percentage points and are not rounded.
+Negative inputs are permitted. Inputs above 100%, nonfinite values, and overflow cause errors.
+These results are bonuses, not seconds, metres, or remaining cooldown times.
 
-Ability cooldown reduction does not apply to items. Item cooldown reduction does
-not apply to hero abilities. An item whose catalog disables cooldown scaling also
-has no applicable item cooldown bonus. Such rows have status `not_applicable`
-and a null value. Range and duration bonuses can apply to items.
+Ability cooldown reduction applies to hero abilities. Item cooldown reduction applies to items.
+An item that disables cooldown scaling has status `not_applicable` and a null value.
+Range and duration bonuses can apply to items. Range and radius remain separate stats.
 
-The charged-ability filter uses the recorded maximum charges when present, or the
-catalog charge count with purchased upgrades. Ultimate-only reduction applies to
-the hero's fourth signature slot. Charge recharge time and the delay between uses
-remain separate properties. Direct timer changes, such as Witchmail's proc, do
-not become persistent cooldown-reduction percentages.
+For charged abilities, filters use recorded maximum charges or catalog charges with upgrades.
+Ultimate-only filters select the fourth signature slot.
+Charge recovery time and the delay between casts are separate properties.
+An event that reduces a running cooldown does not become a permanent stat bonus.
 
-## Sources and scope
+## Sources and limits
 
-The resolver combines only inputs that apply to the selected ability:
+Boon includes recorded stat totals, active modifiers, catalog effects, and ability upgrades.
+It applies imbue and charge filters only to their targets.
+It does not add a pickup modifier again when the recorded total includes that pickup.
+A recorded dynamic value replaces its matching catalog contribution, including when the value is zero.
+A bonus for one ability does not replace a bonus on another ability.
 
-- Recorded permanent stat totals. A live pickup modifier is not added again.
-- Active bound effects, including temporary powerups and supported counters.
-- Catalog effects restricted to an imbued or charged ability.
-- Recorded dynamic ability values, decoded with the catalog's enum names.
-- Supported ability upgrades and conditional effects.
+Contributions can have state `ready`, `active`, `inactive`, or `unresolved`.
+A ready next-cast bonus requires a recorded target before Boon applies it to an ability.
+The resolver assumes next-cast roles from catalog surge-window and ability-watcher fields.
+A diagnostic identifies this assumption.
 
-A recorded dynamic value replaces its matching catalog contribution, including
-when the value is zero. A value restricted to one ability does not replace a
-global bonus on other abilities. Unknown targeting filters are not treated as
-global effects. Balance values and numeric enum IDs are not embedded in Boon.
+In `106996573.dem` at tick 50707, Paradox has an Arcane Surge watcher without a recorded bonus target.
+Boon omits that bonus and marks the known range, radius, and duration values as `partial`.
+It does not apply the bonus to all abilities.
 
-## Conditional casts and limits
+Unknown modifiers and unsupported activation produce `partial` values with diagnostics.
+Other missing inputs raise `CalculationError` with `strict=True`.
+With `strict=False`, those rows have null values and status `unresolved`.
+Invalid queries and failed catalog downloads still cause errors.
 
-A bonus for the next eligible cast is different from an item imbue.
-The explanation can show `ready`, `active`, `inactive`, or `unresolved` effects.
-Ready bonuses do not increase every ability's value. A recorded target is needed
-to apply a dynamic bonus to a particular ability.
-
-For definitions with both a surge-window and an ability-watcher modifier, Boon
-infers their next-cast role from those structural fields. This is an assumption,
-not engine code. Results affected by this inference have a diagnostic. In
-`106996573.dem` at tick 50707, Paradox has an Arcane Surge watcher but no recorded
-bonus target. The known range and duration values are partial; the extra bonus
-is not assigned to all four abilities.
-
-Unknown modifiers and unresolved activation produce `partial` known subtotals.
-Missing required inputs raise `CalculationError` with `strict=True`. With
-`strict=False`, affected values are null and have status `unresolved`.
-Invalid selections and missing ticks always raise errors.
-
-This API does not calculate the individual cast range, radius, debuff duration,
-summon lifetime, or cooldown in seconds. Those properties can have different base
-values, upgrades, and scaling rules. Nor does a query at the current tick recreate
-the stat values used by a cast that started earlier.
+These methods do not calculate each ability property's final duration or distance.
+A query also does not recover the inputs for an earlier cast.
+See [Known Issues](known-issues.md#ability-bonuses-and-arcane-surge).
 
 ## Rust
 
 ```rust
-use boon::{Parser, ability_stats::{AbilityStat, AbilityStatQuery, AbilityRuleset, ImbueQuery}, hero_stats::StatCatalog};
+use boon::{
+    Parser,
+    ability_stats::{AbilityRuleset, AbilityStat, AbilityStatQuery, ImbueQuery},
+    hero_stats::StatCatalog,
+};
+use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-let parser = Parser::from_file(std::path::Path::new("106996573.dem"))?;
-let catalog = StatCatalog::load("6694")?;
-let imbues = parser.imbues(&ImbueQuery::new([50707]), &catalog)?;
-let stats = [AbilityStat::CooldownReduction, AbilityStat::DurationBonus,
-    AbilityStat::RangeBonus, AbilityStat::RadiusBonus];
-let rules = stats.iter().fold(AbilityRuleset::new(), |r, s| r.with(s.rule()));
-let query = AbilityStatQuery::new([50707], stats).explain(true).strict(false);
-let result = parser.calculate_ability_stats(&query, &catalog, &rules)?;
+    let parser = Parser::from_file(Path::new("106996573.dem"))?;
+    let catalog = StatCatalog::load("6694")?;
+    let steam_id = 76561197999389679_u64;
+    let imbues = parser.imbues(
+        &ImbueQuery::new([50707]).steam_ids([steam_id]),
+        &catalog,
+    )?;
+    let stats = [AbilityStat::CooldownReduction, AbilityStat::RangeBonus];
+    let rules = stats.iter().fold(AbilityRuleset::new(), |r, s| r.with(s.rule()));
+    let query = AbilityStatQuery::new([50707], stats)
+        .steam_ids([steam_id])
+        .explain(true)
+        .strict(false);
+    let result = parser.calculate_ability_stats(&query, &catalog, &rules)?;
+    println!("{:?}", imbues.bindings);
+    println!("{:?}", result.values);
     Ok(())
 }
 ```
 
-Use `StatCatalog::from_directory()` for a local catalog under development. It does
-not download files or verify release checksums. Reuse a loaded catalog for queries.
+Reuse the loaded catalog for later queries.
+`StatCatalog::from_directory()` reads local files without downloads or checksum checks.

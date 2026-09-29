@@ -323,6 +323,25 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
   Review participants, time bounds, damage and kills. This is a heuristic:
   test `gap_seconds`, `radius`, and `min_players` against your intended definition.
 
+### Calculated stats, imbues, and state flags
+
+- [ ] Use the demo's client version for `data_version`.
+  Record the selected source commit from the result metadata.
+- [ ] Select stats with `HeroStat` or `AbilityStat` enum members.
+  Compare the reported units with the viewer. Check `partial` and `unresolved` rows.
+- [ ] Select a player with `steam_ids`, using an ID from `demo.players`.
+  Check that the selection follows the player through a hero change.
+- [ ] Use `explain=True` to inspect base values, active effects, upgrades, and recorded counters.
+  Do not add intermediate input rows to the final value.
+- [ ] Compare `imbues().bindings` with the viewer's item and ability selections.
+  Check that ability bonuses apply only to their recorded targets.
+- [ ] Inspect `player_states()` before, during, and after a slide or sprint.
+  Keep the three masks separate. Check unknown bit indices and null values.
+
+Calculated movement speeds exclude current firing, crouching, and slow states.
+State flags do not adjust those speeds. See {doc}`hero-stats`, {doc}`ability-stats`,
+and {doc}`player-states` for the full rules and limits.
+
 ### API paths, CLI and downloads
 
 - [ ] Fresh property access, bulk `load()`, repeated access, and duplicate load
@@ -371,7 +390,8 @@ print(hits.filter(
 # Inspect a recorded summary statistic without double-counting categories.
 matrix = pl.read_parquet(folder / "summary_damage.parquet")
 print(matrix.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
-      .group_by("dealer_player_slot").agg(pl.col("damage").sum()))
+      .filter(pl.col("dealer_steam_id").is_not_null())
+      .group_by("dealer_steam_id").agg(pl.col("damage").sum()))
 ```
 
 Compare a fresh lazy load with the exported evidence from the bulk load:

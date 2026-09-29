@@ -56,8 +56,18 @@ def test_summary_healing_uses_recorded_statistics(demo: Demo) -> None:
     summary = demo.summary()
     healing = summary["healing"]
     assert set(healing.columns) == {
-        "interval_start_s", "interval_end_s", "healer_player_slot", "healer_hero_id",
-        "target_player_slot", "target_hero_id", "source_name", "stat_type", "amount", "total",
+        "interval_start_s",
+        "interval_end_s",
+        "healer_steam_id",
+        "target_steam_id",
+        "healer_player_slot",
+        "healer_hero_id",
+        "target_player_slot",
+        "target_hero_id",
+        "source_name",
+        "stat_type",
+        "amount",
+        "total",
     }
     assert (healing["interval_start_s"] < healing["interval_end_s"]).all()
     assert healing["amount"].ge(0).all()
@@ -67,7 +77,10 @@ def test_summary_healing_uses_recorded_statistics(demo: Demo) -> None:
         recorded = summary["damage"].filter(
             (pl.col("stat_type") == stat_type) & ~pl.col("is_category")
         )
-        assert healing.filter(pl.col("stat_type") == stat_type)["amount"].sum() == recorded["damage"].sum()
+        assert (
+            healing.filter(pl.col("stat_type") == stat_type)["amount"].sum()
+            == recorded["damage"].sum()
+        )
     heals = healing.filter(pl.col("stat_type") == "healing")
     assert heals.filter(pl.col("amount") > 0).height == 394
     assert heals.height == 607
@@ -76,9 +89,12 @@ def test_summary_healing_uses_recorded_statistics(demo: Demo) -> None:
 
 def test_summary_snapshot_healing_and_soul_sources(demo: Demo) -> None:
     summary = demo.summary()
-    player = summary["snapshots"].filter(
-        (pl.col("player_slot") == 2) & (pl.col("snapshot_time_s") == 2338)
-    ).row(0, named=True)
+    steam_id = demo.players.filter(pl.col("hero_id") == 3)["steam_id"].item()
+    player = (
+        summary["snapshots"]
+        .filter((pl.col("steam_id") == steam_id) & (pl.col("snapshot_time_s") == 2338))
+        .row(0, named=True)
+    )
     assert player["hero_id"] == 3
     assert player["player_healing"] == player["self_healing"] == 4192
     assert player["teammate_healing"] == 0
@@ -87,11 +103,15 @@ def test_summary_snapshot_healing_and_soul_sources(demo: Demo) -> None:
     assert player["neutral_damage"] == 5481
     assert player["self_damage"] == 6730
     sources = summary["gold_sources"].filter(
-        (pl.col("player_slot") == 2) & (pl.col("snapshot_time_s") == 2338)
+        (pl.col("steam_id") == steam_id) & (pl.col("snapshot_time_s") == 2338)
     )
     players = sources.filter(pl.col("source_id") == 1).row(0, named=True)
     assert players["source_name"] == "k_ePlayers"
-    assert (players["gold"], players["gold_orbs"], players["damage"]) == (8842, 0, 53473)
+    assert (players["gold"], players["gold_orbs"], players["damage"]) == (
+        8842,
+        0,
+        53473,
+    )
     assists = sources.filter(pl.col("source_id") == 6).row(0, named=True)
     assert assists["source_name"] == "k_eAssists"
     assert assists["gold"] == 908
@@ -107,9 +127,33 @@ def test_summary_cumulative_healing_matches_player_counters(demo: Demo) -> None:
             continue
         rows = healing.filter(
             (pl.col("interval_end_s") == time)
-            & (pl.col("healer_player_slot") == snapshot["player_slot"])
+            & (pl.col("healer_steam_id") == snapshot["steam_id"])
             & (pl.col("stat_type") == "healing")
         )
         assert rows["total"].sum() == snapshot["player_healing"]
-        self_healing = rows.filter(pl.col("target_player_slot") == snapshot["player_slot"])
+        self_healing = rows.filter(pl.col("target_steam_id") == snapshot["steam_id"])
         assert self_healing["total"].sum() == snapshot["self_healing"]
+
+
+def test_summary_steam_ids_join_the_roster_after_a_hero_swap(demo: Demo) -> None:
+    summary = demo.summary()
+    roster = demo.players.select("steam_id", "hero_id")
+    for name in ("snapshots", "last_hits", "gold_sources"):
+        identities = summary[name].select("steam_id", "hero_id").unique()
+        assert identities.schema["steam_id"] == pl.UInt64
+        assert identities["steam_id"].null_count() == 0
+        assert identities.join(
+            roster, on=["steam_id", "hero_id"], how="anti"
+        ).is_empty()
+        assert (
+            identities.filter(pl.col("steam_id") == 76561198853347303)["hero_id"].item()
+            == 66
+        )
+    for name, roles in (
+        ("damage", ("dealer", "target")),
+        ("healing", ("healer", "target")),
+    ):
+        for role in roles:
+            rows = summary[name].filter(pl.col(f"{role}_hero_id").is_not_null())
+            assert rows[f"{role}_steam_id"].null_count() == 0
+            assert set(rows[f"{role}_steam_id"]) <= set(roster["steam_id"])

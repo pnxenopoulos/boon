@@ -79,6 +79,7 @@ pub mod io;
 pub mod lifestates;
 pub mod modifier_state;
 pub mod patron_phases;
+pub mod player_states;
 pub mod position;
 pub mod rift;
 pub mod rulesets;

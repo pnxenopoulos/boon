@@ -1,14 +1,17 @@
 """Ability query validation and stable table schemas."""
 
 import json
+from typing import cast
 
 import polars as pl
 import pytest
-from boon import AbilityStat, CalculationError, data, rulesets
+from boon import AbilityStat, CalculationError, Demo, data, rulesets
 from boon.ability_stats import calculate_ability_stats, imbues
 
 
 class RecordedResult:
+    """Native-method double; cast to Demo only at the public API boundary."""
+
     def __init__(self):
         self.calls = []
 
@@ -28,8 +31,11 @@ class RecordedResult:
         {"ticks": []},
         {"ticks": -1},
         {"ticks": [True]},
-        {"ticks": 1, "players": [-1]},
-        {"ticks": 1, "players": [2**32]},
+        {"ticks": 1, "steam_ids": [-1]},
+        {"ticks": 1, "steam_ids": [0]},
+        {"ticks": 1, "steam_ids": [True]},
+        {"ticks": 1, "steam_ids": [76561197999389679.0]},
+        {"ticks": 1, "steam_ids": [2**64]},
         {"ticks": 1, "data_version": None},
     ],
 )
@@ -53,7 +59,7 @@ def test_invalid_stat_query_does_not_download(monkeypatch, options):
     monkeypatch.setattr(data, "update", lambda _: pytest.fail("unexpected download"))
     with pytest.raises(ValueError):
         calculate_ability_stats(
-            RecordedResult(), ticks=50, data_version="1234", **options
+            cast(Demo, RecordedResult()), ticks=50, data_version="1234", **options
         )
 
 
@@ -63,19 +69,25 @@ def test_empty_tables_keep_types_and_selected_version(monkeypatch, tmp_path):
         data, "update", lambda version: versions.append(version) or tmp_path
     )
     demo = RecordedResult()
-    result = imbues(demo, ticks=50, players=[2], data_version="1234")
+    result = imbues(
+        cast(Demo, demo), ticks=50, steam_ids=[76561197999389679], data_version="1234"
+    )
+    assert result.bindings.schema["steam_id"] == pl.UInt64
+    assert result.effects.schema["steam_id"] == pl.UInt64
     assert result.bindings.schema["ability_id"] == pl.UInt32
     assert result.effects.schema["value"] == pl.Float64
     assert result.metadata == {"data_version": "1234"}
-    assert demo.calls[0] == (tmp_path, [50], {"players": [2]})
+    assert demo.calls[0] == (tmp_path, [50], {"steam_ids": [76561197999389679]})
     stats = calculate_ability_stats(
-        demo,
+        cast(Demo, demo),
         ticks=[50, 60],
         data_version="1234",
         include_items=True,
         explain=True,
         strict=False,
     )
+    assert stats.values.schema["steam_id"] == pl.UInt64
+    assert stats.contributions.schema["steam_id"] == pl.UInt64
     assert stats.values.schema["value"] == pl.Float64
     assert stats.contributions.schema["included"] == pl.Boolean
     assert stats.contributions.schema["source_ability_id"] == pl.UInt32
@@ -96,3 +108,41 @@ def test_native_errors_keep_their_message(monkeypatch, tmp_path, function):
 
     with pytest.raises(CalculationError, match="missing replay selection"):
         function(Failure(), ticks=50, data_version="1234")
+
+
+def test_native_steam_selection_and_imbue_identity(demo_paths, tmp_path, monkeypatch):
+    if not demo_paths:
+        pytest.skip("no demo fixtures")
+    demo = Demo(str(demo_paths[0]), preload=False)
+    for name in ("heroes", "abilities", "modifiers", "misc"):
+        (tmp_path / f"{name}.json").write_text(
+            json.dumps(
+                {
+                    "catalog": name,
+                    "client_version": "1234",
+                    "source_commit": "a" * 40,
+                    "records": [],
+                }
+            )
+        )
+    monkeypatch.setattr(data, "update", lambda _: tmp_path)
+    all_imbues = demo.imbues(ticks=50000, data_version="1234")
+    assert all_imbues.bindings.height > 0
+    steam_id = all_imbues.bindings["steam_id"][0]
+    assert steam_id in demo.players["steam_id"]
+    selected = demo.imbues(ticks=50000, steam_ids=[steam_id], data_version="1234")
+    assert selected.bindings.equals(
+        all_imbues.bindings.filter(pl.col("steam_id") == steam_id)
+    )
+    assert selected.effects.equals(
+        all_imbues.effects.filter(pl.col("steam_id") == steam_id)
+    )
+    for function in (demo.imbues, demo.calculate_ability_stats):
+        with pytest.raises(CalculationError, match="Steam ID 1 has no hero"):
+            function(ticks=50000, steam_ids=[1], data_version="1234")
+    assert demo.imbues(
+        ticks=50000, steam_ids=[], data_version="1234"
+    ).bindings.is_empty()
+    assert demo.calculate_ability_stats(
+        ticks=50000, steam_ids=[], data_version="1234"
+    ).values.is_empty()

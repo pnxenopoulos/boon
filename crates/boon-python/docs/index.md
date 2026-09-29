@@ -17,6 +17,10 @@ Deadlock demos contain player positions, kills, damage, item builds, objective s
 Install Boon with `uv add boon-deadlock` or `pip install boon-deadlock`. Then read {doc}`getting-started`.
 If you have a problem, read {doc}`known-issues`. Report other problems on [GitHub](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
 
+Use {doc}`hero-stats` for hero values and {doc}`ability-stats` for ability bonuses
+and imbues. Use {doc}`player-states` for recorded combat and movement flags.
+These methods require a selected boon-data version; see {doc}`data`.
+
 ## Useful links
 
 - [Deadlock](https://www.playdeadlock.com/) — official home page
@@ -34,6 +38,7 @@ cli
 data
 hero-stats
 ability-stats
+player-states
 demo-checklist
 benchmarks
 faq

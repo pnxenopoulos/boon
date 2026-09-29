@@ -118,6 +118,24 @@ impl Parser {
         Ok(())
     }
 
+    /// Read modifier changes from the packet stream, without keyframe snapshots.
+    pub(crate) fn decode_stat_ticks<F>(
+        &self,
+        end_tick: i32,
+        classes: &std::collections::HashSet<&str>,
+        on_tick: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Context),
+    {
+        let mut session = self.prepared()?.session(self.demo_parser()?)?;
+        // Relay keyframes can contain server-side modifier state ahead of the
+        // recorded entities. Replay deltas from signon to keep both at one time.
+        session.adapter_mut().skip_modifier_snapshots();
+        session.decode_segment(None, end_tick, classes, on_tick)?;
+        Ok(())
+    }
+
     /// Parse entities and only selected final event message types in one pass.
     pub fn run_to_end_with_event_types_filtered<F>(
         &self,
@@ -155,5 +173,33 @@ impl Parser {
             adapter.clear_tick_events();
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore = "requires local 106996573.dem"]
+    fn relay_keyframes_do_not_apply_future_modifiers() {
+        let parser = Parser::from_file(std::path::Path::new("../../106996573.dem")).unwrap();
+        let initial = parser.parse_init().unwrap();
+        let classes = initial.serializers().iter().map(|(name, _)| name).collect();
+        let clock = crate::ModifierClock::resolve(&initial);
+        let mut state = crate::EffectiveModifierState::default();
+        let mut checked = Vec::new();
+        parser
+            .decode_stat_ticks(51842, &classes, |ctx| {
+                state.update(ctx, clock.game_time(ctx));
+                if [49921, 50707, 51841].contains(&ctx.tick()) {
+                    // Serial 7713 appears in the 49921 keyframe, but its purchase
+                    // occurs at 51841. The earlier two queries must not use it.
+                    assert_eq!(state.entries().contains_key(&7713), ctx.tick() == 51841);
+                    checked.push(ctx.tick());
+                }
+            })
+            .unwrap();
+        assert_eq!(checked, [49921, 50707, 51841]);
     }
 }

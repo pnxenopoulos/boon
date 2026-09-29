@@ -85,8 +85,9 @@ impl ModifierState {
 
     /// Build live state from a complete string-table snapshot.
     ///
-    /// Use a full-packet keyframe, not an arbitrary tick: reused event slots
-    /// can omit earlier applications until the next complete snapshot.
+    /// Reused event slots can omit earlier applications at arbitrary ticks.
+    /// A relay keyframe can also contain modifier state ahead of its entities.
+    /// Use packet deltas from signon for calculations at an exact replay tick.
     pub fn rebuild(&mut self, ctx: &Context) {
         self.clear();
         let Some(table) = ctx.string_tables().find_table("ActiveModifiers") else {
@@ -254,9 +255,9 @@ impl EffectiveModifierState {
 
     /// Rebuild effective state from a complete string-table snapshot.
     ///
-    /// A keyframe can contain an already-expired raw row. Filter it during the
-    /// rebuild so a segmented parse or a seek gives the same result as a parse
-    /// from the start.
+    /// Expired rows are filtered. This does not correct a relay snapshot whose
+    /// capture time differs from the entity tick; exact stat queries replay
+    /// packet deltas instead.
     pub fn rebuild(&mut self, ctx: &Context, game_time: Option<f32>) {
         self.raw.rebuild(ctx);
         self.effective_by_serial = self
