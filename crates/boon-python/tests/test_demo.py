@@ -20,7 +20,6 @@ from boon import (
     patron_phase_names,
     team_names,
 )
-
 from conftest import FIXTURES_DIR, _require_demo_fixture
 
 # ---------------------------------------------------------------------------
@@ -394,13 +393,9 @@ class TestHealthInvariants:
 class TestNameLookups:
     """Tests for module-level name lookup functions."""
 
-    def test_hero_names_is_dict(self) -> None:
+    def test_hero_names(self) -> None:
         names = hero_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_hero_names_contains_infernus(self) -> None:
-        names = hero_names()
         assert names[1] == "Infernus"
 
     def test_team_names_is_dict(self) -> None:
@@ -408,14 +403,9 @@ class TestNameLookups:
         assert isinstance(names, dict)
         assert names == {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
 
-    def test_ability_names_is_dict(self) -> None:
+    def test_ability_names(self) -> None:
         names = ability_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_ability_names_contains_known(self) -> None:
-        names = ability_names()
-        assert 46922526 in names
         assert names[46922526] == "inherent_base"
 
     def test_ability_display_names_are_exact_localized_names(self) -> None:
@@ -432,23 +422,14 @@ class TestNameLookups:
             display_names["ability_unicorn_luminousstrike"] == "Radiant Daggers"
         )
 
-    def test_modifier_names_is_dict(self) -> None:
+    def test_modifier_names(self) -> None:
         names = modifier_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_modifier_names_contains_known(self) -> None:
-        names = modifier_names()
-        assert 2059539911 in names
         assert names[2059539911] == "timer"
 
-    def test_game_mode_names_is_dict(self) -> None:
+    def test_game_mode_names(self) -> None:
         names = game_mode_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_game_mode_names_contains_known(self) -> None:
-        names = game_mode_names()
         assert names[1] == "6v6"
         assert names[4] == "street_brawl"
 
@@ -457,13 +438,9 @@ class TestNameLookups:
         assert isinstance(names, dict)
         assert names == {0: "normal", 1: "final", 2: "transforming"}
 
-    def test_hitgroup_names_is_dict(self) -> None:
+    def test_hitgroup_names(self) -> None:
         names = hitgroup_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_hitgroup_names_contains_known(self) -> None:
-        names = hitgroup_names()
         assert names[0] == "generic"
         assert names[1] == "head"
         assert names[-1] == "invalid"
@@ -490,26 +467,18 @@ class TestNameLookups:
 class TestDatasets:
     """Parameterized tests for all dataset properties."""
 
-    @pytest.mark.parametrize("dataset", ALL_DATASETS)
-    def test_loads_as_dataframe(self, demo: Demo, dataset: str) -> None:
-        df = getattr(demo, dataset)
-        assert isinstance(df, pl.DataFrame)
-
     # Datasets that may be empty depending on game mode
     # "rift" is empty on demos from builds predating the Rift objective.
     POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
 
-    @pytest.mark.parametrize("dataset", ALL_DATASETS)
+    @pytest.mark.parametrize("dataset", sorted(set(ALL_DATASETS) - POSSIBLY_EMPTY))
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
-        df = getattr(demo, dataset)
-        if dataset in self.POSSIBLY_EMPTY:
-            assert len(df) >= 0
-        else:
-            assert len(df) > 0
+        assert len(getattr(demo, dataset)) > 0
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_columns(self, demo: Demo, dataset: str) -> None:
         df = getattr(demo, dataset)
+        assert isinstance(df, pl.DataFrame)
         assert set(df.columns) == DATASET_COLUMNS[dataset]
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
@@ -1017,7 +986,12 @@ class TestErrors:
                 Demo(f.name)
 
     def test_all_error_types_importable(self) -> None:
-        from boon import DemoHeaderError, DemoInfoError, DemoMessageError, InvalidDemoError  # noqa: F401
+        from boon import (  # noqa: F401
+            DemoHeaderError,
+            DemoInfoError,
+            DemoMessageError,
+            InvalidDemoError,
+        )
 
     def test_not_street_brawl_error_importable(self) -> None:
         from boon import NotStreetBrawlError  # noqa: F401

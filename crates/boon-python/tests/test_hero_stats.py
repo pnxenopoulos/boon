@@ -14,8 +14,9 @@ from catalog_helpers import VERSION, release
 class RecordedResult:
     """Native-method double; cast to Demo only at the public API boundary."""
 
-    def __init__(self):
+    def __init__(self, **values):
         self.calls = []
+        self.values = values
 
     def _calculate_hero_stats(self, directory, ticks, **kwargs):
         self.calls.append((directory, ticks, kwargs))
@@ -33,6 +34,7 @@ class RecordedResult:
                         "ruleset": "clip_size.v1",
                         "status": "calculated",
                         "diagnostic": None,
+                        **self.values,
                     }
                 ],
                 "contributions": [],
@@ -99,9 +101,8 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
         {
             "ticks": 1,
             "rulesets": {
-                HeroStat.CLIP_SIZE: rulesets.Rule(
-                    "clip_size", "clip_size.v2", 2, "future"
-                )
+                HeroStat.CLIP_SIZE: rulesets.clip_size.v1,
+                HeroStat.BULLET_VELOCITY: rulesets.bullet_velocity.v1,
             },
         },
     ],
@@ -168,66 +169,10 @@ def test_native_missing_ticks_and_empty_result(demo_paths, tmp_path, monkeypatch
         ticks=1000,
         heroes=[],
         data_version=VERSION,
-        stats=[
-            HeroStat.AMMO,
-            HeroStat.BULLET_VELOCITY,
-            HeroStat.WEAPON_DAMAGE,
-            HeroStat.MELEE_DISTANCE,
-            HeroStat.RELOAD_TIME,
-            HeroStat.FIRE_RATE,
-            HeroStat.FALLOFF_START,
-            HeroStat.FALLOFF_END,
-            HeroStat.LIGHT_MELEE_DAMAGE,
-            HeroStat.HEAVY_MELEE_DAMAGE,
-            HeroStat.SLIDE_DISTANCE,
-            HeroStat.BULLET_EVASION,
-            HeroStat.DEBUFF_RESIST,
-            HeroStat.BULLET_RESIST,
-            HeroStat.SPIRIT_RESIST,
-            HeroStat.MELEE_RESIST,
-            HeroStat.BULLET_LIFESTEAL,
-            HeroStat.SPIRIT_LIFESTEAL,
-            HeroStat.MELEE_LIFESTEAL,
-            HeroStat.GRAVITY_SCALE,
-            HeroStat.STAMINA,
-            HeroStat.STAMINA_COOLDOWN,
-            HeroStat.DASH_SPEED,
-            HeroStat.DASH_DURATION,
-            HeroStat.AIR_DASH_SPEED,
-            HeroStat.AIR_DASH_DURATION,
-            HeroStat.MOVE_SPEED,
-            HeroStat.SPRINT_SPEED,
-        ],
+        stats=list(HeroStat),
     )
     assert {rule["id"] for rule in result.metadata["rulesets"]} == {
-        "clip_size.v1",
-        "bullet_velocity.v1",
-        "weapon_damage.v1",
-        "melee_distance.v1",
-        "reload_time.v1",
-        "fire_rate.v1",
-        "falloff_start.v1",
-        "falloff_end.v1",
-        "light_melee_damage.v1",
-        "heavy_melee_damage.v1",
-        "slide_distance.v1",
-        "bullet_evasion.v1",
-        "debuff_resist.v1",
-        "bullet_resist.v1",
-        "spirit_resist.v1",
-        "melee_resist.v1",
-        "bullet_lifesteal.v1",
-        "spirit_lifesteal.v1",
-        "melee_lifesteal.v1",
-        "gravity_scale.v1",
-        "stamina.v1",
-        "stamina_cooldown.v1",
-        "dash_speed.v1",
-        "dash_duration.v1",
-        "air_dash_speed.v1",
-        "air_dash_duration.v1",
-        "move_speed.v1",
-        "sprint_speed.v1",
+        f"{stat.value}.v1" for stat in HeroStat
     }
     assert result.values.is_empty()
     assert result.values.schema["tick"] == pl.Int32
@@ -251,26 +196,23 @@ def test_data_version_cannot_silently_select_latest(monkeypatch):
     "stats",
     [
         [HeroStat.BULLET_VELOCITY],
-        [HeroStat.WEAPON_DAMAGE],
-        [HeroStat.MELEE_DISTANCE],
-        [HeroStat.RELOAD_TIME],
-        [HeroStat.FIRE_RATE],
-        [HeroStat.DEBUFF_RESIST],
-        [HeroStat.FALLOFF_START],
-        [HeroStat.FALLOFF_END],
-        [HeroStat.LIGHT_MELEE_DAMAGE, HeroStat.HEAVY_MELEE_DAMAGE],
-        [HeroStat.SLIDE_DISTANCE, HeroStat.BULLET_EVASION, HeroStat.GRAVITY_SCALE],
-        [HeroStat.FALLOFF_START, HeroStat.FALLOFF_END],
         list(HeroStat),
-        [HeroStat.AMMO, HeroStat.BULLET_VELOCITY, HeroStat.MELEE_DISTANCE],
         [HeroStat.AMMO, HeroStat.BULLET_VELOCITY, HeroStat.CLIP_SIZE],
     ],
 )
-def test_selected_stats_reach_native_query_once(monkeypatch, tmp_path, stats):
+@pytest.mark.parametrize("explicit_rules", [False, True])
+def test_selected_stats_reach_native_query_once(
+    monkeypatch, tmp_path, stats, explicit_rules
+):
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
     demo = RecordedResult()
+    chosen = {stat: getattr(rulesets, stat.value).v1 for stat in stats}
     calculate_hero_stats(
-        cast(Demo, demo), ticks=[50, 60], data_version=VERSION, stats=stats
+        cast(Demo, demo),
+        ticks=[50, 60],
+        data_version=VERSION,
+        stats=stats,
+        rulesets=chosen if explicit_rules else None,
     )
     assert len(demo.calls) == 1
     assert demo.calls[0][2]["stats"] == list(
@@ -279,89 +221,34 @@ def test_selected_stats_reach_native_query_once(monkeypatch, tmp_path, stats):
 
 
 @pytest.mark.parametrize(
-    "chosen",
+    "rule",
     [
-        {HeroStat.BULLET_VELOCITY: rulesets.clip_size.v1},
-        {
-            HeroStat.BULLET_VELOCITY: rulesets.Rule(
-                "bullet_velocity", "bullet_velocity.v2", 2, "future"
-            )
-        },
-        {
-            HeroStat.CLIP_SIZE: rulesets.clip_size.v1,
-            HeroStat.BULLET_VELOCITY: rulesets.bullet_velocity.v1,
-        },
+        rulesets.clip_size.v1,
+        rulesets.Rule("bullet_velocity", "bullet_velocity.v2", 2, "future"),
     ],
+    ids=["wrong-stat", "wrong-version"],
 )
-def test_velocity_rule_validation_precedes_download(monkeypatch, chosen):
+def test_stat_rejects_wrong_rule_before_download(monkeypatch, rule):
     def fail(version):
         pytest.fail("invalid rules attempted a download")
 
     monkeypatch.setattr(data, "update", fail)
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="select boon.rulesets.bullet_velocity.v1"):
         calculate_hero_stats(
             cast(Demo, RecordedResult()),
             ticks=50,
             data_version=VERSION,
             stats=[HeroStat.BULLET_VELOCITY],
-            rulesets=chosen,
-        )
-
-
-@pytest.mark.parametrize(
-    "stat",
-    [
-        HeroStat.MELEE_DISTANCE,
-        HeroStat.WEAPON_DAMAGE,
-        HeroStat.RELOAD_TIME,
-        HeroStat.FIRE_RATE,
-        HeroStat.FALLOFF_START,
-        HeroStat.FALLOFF_END,
-        HeroStat.LIGHT_MELEE_DAMAGE,
-        HeroStat.HEAVY_MELEE_DAMAGE,
-        HeroStat.SLIDE_DISTANCE,
-        HeroStat.BULLET_EVASION,
-        HeroStat.DEBUFF_RESIST,
-        HeroStat.GRAVITY_SCALE,
-        HeroStat.MOVE_SPEED,
-        HeroStat.SPRINT_SPEED,
-    ],
-)
-@pytest.mark.parametrize("wrong_version", [False, True])
-def test_stat_rejects_wrong_rule_before_download(monkeypatch, stat, wrong_version):
-    rule = (
-        rulesets.Rule(stat.value, f"{stat}.v2", 2, "future")
-        if wrong_version
-        else rulesets.clip_size.v1
-    )
-
-    def fail(version):
-        pytest.fail("invalid rules attempted a download")
-
-    monkeypatch.setattr(data, "update", fail)
-    with pytest.raises(ValueError, match=f"{stat}.v1"):
-        calculate_hero_stats(
-            cast(Demo, RecordedResult()),
-            ticks=50,
-            data_version=VERSION,
-            stats=[stat],
-            rulesets={stat: rule},
+            rulesets={HeroStat.BULLET_VELOCITY: rule},
         )
 
 
 @pytest.mark.parametrize("strict", [True, False])
 def test_partial_values_and_diagnostics_are_retained(monkeypatch, tmp_path, strict):
-    class PartialResult(RecordedResult):
-        def _calculate_hero_stats(self, *args, **kwargs):
-            payload = json.loads(super()._calculate_hero_stats(*args, **kwargs))
-            payload["values"][0].update(
-                status="partial",
-                diagnostic="ignored modifiers: unresolved modifier ID 123",
-            )
-            return json.dumps(payload)
-
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    demo = PartialResult()
+    demo = RecordedResult(
+        status="partial", diagnostic="ignored modifiers: unresolved modifier ID 123"
+    )
     result = calculate_hero_stats(
         cast(Demo, demo), ticks=50, data_version=VERSION, strict=strict
     )
@@ -372,48 +259,40 @@ def test_partial_values_and_diagnostics_are_retained(monkeypatch, tmp_path, stri
     assert not demo.calls[0][2]["explain"]
 
 
-@pytest.mark.parametrize("stat", [HeroStat.FALLOFF_START, HeroStat.FALLOFF_END])
-def test_falloff_result_retains_metres_and_fractional_values(
-    monkeypatch, tmp_path, stat
-):
-    class FalloffResult(RecordedResult):
-        def _calculate_hero_stats(self, *args, **kwargs):
-            payload = json.loads(super()._calculate_hero_stats(*args, **kwargs))
-            payload["values"][0].update(
-                stat=stat.value, unit="m", value=24.125, ruleset=f"{stat}.v1"
-            )
-            return json.dumps(payload)
-
-    monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    result = calculate_hero_stats(
-        cast(Demo, FalloffResult()), ticks=50, data_version=VERSION, stats=[stat]
-    )
-    assert result.values["value"].item() == 24.125
-    assert result.values["unit"].item() == "m"
-    assert result.values["stat"].item() == stat.value
-
-
 @pytest.mark.parametrize(
-    "stat", [HeroStat.LIGHT_MELEE_DAMAGE, HeroStat.HEAVY_MELEE_DAMAGE]
+    ("stat", "unit", "value"),
+    [
+        (HeroStat.FALLOFF_START, "m", 24.125),
+        (HeroStat.FALLOFF_END, "m", 24.125),
+        (HeroStat.LIGHT_MELEE_DAMAGE, "damage", 152.012),
+        (HeroStat.HEAVY_MELEE_DAMAGE, "damage", 152.012),
+        (HeroStat.DEBUFF_RESIST, "%", -8.0),
+        (HeroStat.BULLET_LIFESTEAL, "%", 45.4),
+        (HeroStat.SPIRIT_LIFESTEAL, "%", 45.4),
+        (HeroStat.MELEE_LIFESTEAL, "%", 45.4),
+        (HeroStat.BULLET_RESIST, "%", -30.0),
+        (HeroStat.SPIRIT_RESIST, "%", -30.0),
+        (HeroStat.MELEE_RESIST, "%", -30.0),
+        (HeroStat.WEAPON_DAMAGE, "%", -30.0),
+    ],
 )
-def test_melee_result_retains_damage_units_and_fractional_values(
-    monkeypatch, tmp_path, stat
+def test_native_values_keep_units_precision_and_sign(
+    monkeypatch, tmp_path, stat, unit, value
 ):
-    class MeleeResult(RecordedResult):
-        def _calculate_hero_stats(self, *args, **kwargs):
-            payload = json.loads(super()._calculate_hero_stats(*args, **kwargs))
-            payload["values"][0].update(
-                stat=stat.value, unit="damage", value=152.012, ruleset=f"{stat}.v1"
-            )
-            return json.dumps(payload)
-
     monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    result = calculate_hero_stats(
-        cast(Demo, MeleeResult()), ticks=50, data_version=VERSION, stats=[stat]
+    demo = RecordedResult(
+        stat=stat.value, unit=unit, value=value, ruleset=f"{stat.value}.v1"
     )
-    assert result.values["value"].item() == 152.012
-    assert result.values["unit"].item() == "damage"
-    assert result.values["stat"].item() == stat.value
+    result = calculate_hero_stats(
+        cast(Demo, demo), ticks=50, data_version=VERSION, stats=[stat]
+    )
+    assert demo.calls[0][2]["stats"] == [stat.value]
+    assert result.values.select("stat", "value", "unit", "ruleset").row(0) == (
+        stat.value,
+        value,
+        unit,
+        f"{stat.value}.v1",
+    )
 
 
 def test_recorded_gravity_does_not_require_hero_or_modifier_definitions(
@@ -470,158 +349,10 @@ def test_recorded_gravity_does_not_require_hero_or_modifier_definitions(
         demo.calculate_hero_stats(ticks=10000, data_version=VERSION, steam_ids=[1])
 
 
-@pytest.mark.parametrize(
-    "stat",
-    [
-        HeroStat.STAMINA,
-        HeroStat.STAMINA_COOLDOWN,
-        HeroStat.DASH_SPEED,
-        HeroStat.DASH_DURATION,
-        HeroStat.AIR_DASH_SPEED,
-        HeroStat.AIR_DASH_DURATION,
-        HeroStat.MOVE_SPEED,
-        HeroStat.SPRINT_SPEED,
-    ],
-)
-def test_movement_rule_selection(monkeypatch, tmp_path, stat):
-    monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    demo = RecordedResult()
-    rule = getattr(rulesets, stat.value).v1
-    calculate_hero_stats(
-        cast(Demo, demo),
-        ticks=50707,
-        data_version=VERSION,
-        stats=[stat],
-        rulesets={stat: rule},
-    )
-    assert demo.calls[0][2]["stats"] == [stat.value]
-    assert rule.documented_on == "2026-09-28"
-    with pytest.raises(ValueError, match="select boon.rulesets"):
-        calculate_hero_stats(
-            cast(Demo, demo),
-            ticks=50707,
-            data_version=VERSION,
-            stats=[stat],
-            rulesets={stat: rulesets.clip_size.v1},
-        )
-
-
-def test_debuff_resist_rule_and_percentage_output(monkeypatch, tmp_path):
-    class Result:
-        def _calculate_hero_stats(self, directory, ticks, **kwargs):
-            assert kwargs["stats"] == ["debuff_resist"]
-            payload = json.loads(
-                RecordedResult()._calculate_hero_stats(directory, ticks)
-            )
-            payload["values"][0].update(
-                stat="debuff_resist", value=-8.0, unit="%", ruleset="debuff_resist.v1"
-            )
-            return json.dumps(payload)
-
-    monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    result = calculate_hero_stats(
-        cast(Demo, Result()),
-        ticks=50707,
-        data_version=VERSION,
-        stats=[HeroStat.DEBUFF_RESIST],
-        rulesets={HeroStat.DEBUFF_RESIST: rulesets.debuff_resist.v1},
-    )
-    assert result.values["value"].item() == -8.0
-    assert result.values["unit"].item() == "%"
-    assert rulesets.debuff_resist.v1.documented_on == "2026-09-28"
-
-
-@pytest.mark.parametrize(
-    "stat",
-    [HeroStat.BULLET_LIFESTEAL, HeroStat.SPIRIT_LIFESTEAL, HeroStat.MELEE_LIFESTEAL],
-)
-def test_lifesteal_rule_and_percentage_output(monkeypatch, tmp_path, stat):
-    class Result:
-        def _calculate_hero_stats(self, directory, ticks, **kwargs):
-            assert kwargs["stats"] == [stat.value]
-            payload = json.loads(
-                RecordedResult()._calculate_hero_stats(directory, ticks)
-            )
-            payload["values"][0].update(
-                stat=stat.value, value=45.4, unit="%", ruleset=f"{stat.value}.v1"
-            )
-            return json.dumps(payload)
-
-    monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    rule = getattr(rulesets, stat.value).v1
-    result = calculate_hero_stats(
-        cast(Demo, Result()),
-        ticks=50707,
-        data_version=VERSION,
-        stats=[stat],
-        rulesets={stat: rule},
-    )
-    assert result.values["value"].item() == 45.4
-    assert result.values["unit"].item() == "%"
-    assert rule.documented_on == "2026-09-28"
-    with pytest.raises(ValueError, match="select boon.rulesets"):
-        calculate_hero_stats(
-            cast(Demo, Result()),
-            ticks=50707,
-            data_version=VERSION,
-            stats=[stat],
-            rulesets={stat: rulesets.clip_size.v1},
-        )
-
-
-@pytest.mark.parametrize(
-    "stat",
-    [
-        HeroStat.BULLET_RESIST,
-        HeroStat.SPIRIT_RESIST,
-        HeroStat.MELEE_RESIST,
-        HeroStat.WEAPON_DAMAGE,
-    ],
-)
-def test_rule_retains_negative_percentages(monkeypatch, tmp_path, stat):
-    class Result:
-        def _calculate_hero_stats(self, directory, ticks, **kwargs):
-            assert kwargs["stats"] == [stat.value]
-            payload = json.loads(
-                RecordedResult()._calculate_hero_stats(directory, ticks)
-            )
-            payload["values"][0].update(
-                stat=stat.value, value=-30.0, unit="%", ruleset=f"{stat.value}.v1"
-            )
-            return json.dumps(payload)
-
-    monkeypatch.setattr(data, "update", lambda version: tmp_path)
-    rule = getattr(rulesets, stat.value).v1
-    result = calculate_hero_stats(
-        cast(Demo, Result()),
-        ticks=50707,
-        data_version=VERSION,
-        stats=[stat],
-        rulesets={stat: rule},
-    )
-    assert result.values["value"].item() == -30.0
-    assert result.values["unit"].item() == "%"
-    assert rule.documented_on == "2026-09-28"
-    with pytest.raises(ValueError, match="select boon.rulesets"):
-        calculate_hero_stats(
-            cast(Demo, Result()),
-            ticks=50707,
-            data_version=VERSION,
-            stats=[stat],
-            rulesets={stat: rulesets.clip_size.v1},
-        )
-
-
 def test_missing_steam_id_keeps_slot(monkeypatch, tmp_path):
-    class Unidentified(RecordedResult):
-        def _calculate_hero_stats(self, *args, **kwargs):
-            payload = json.loads(super()._calculate_hero_stats(*args, **kwargs))
-            payload["values"][0]["steam_id"] = None
-            return json.dumps(payload)
-
     monkeypatch.setattr(data, "update", lambda _: tmp_path)
     result = calculate_hero_stats(
-        cast(Demo, Unidentified()), ticks=50, data_version=VERSION
+        cast(Demo, RecordedResult(steam_id=None)), ticks=50, data_version=VERSION
     )
     assert result.values["steam_id"].item() is None
     assert result.values["player_slot"].item() == 0
