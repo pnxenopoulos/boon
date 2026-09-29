@@ -110,10 +110,10 @@ def test_native_errors_keep_their_message(monkeypatch, tmp_path, function):
         function(Failure(), ticks=50, data_version="1234")
 
 
-def test_native_steam_selection_and_imbue_identity(demo_paths, tmp_path, monkeypatch):
-    if not demo_paths:
-        pytest.skip("no demo fixtures")
-    demo = Demo(str(demo_paths[0]), preload=False)
+def test_native_steam_selection_and_imbue_identity(demo: Demo, tmp_path, monkeypatch):
+    # Sample a recorded tick; fixture lengths differ across CI jobs.
+    ticks = demo.ability_ticks["tick"].unique().sort()
+    tick = ticks[len(ticks) // 2]
     for name in ("heroes", "abilities", "modifiers", "misc"):
         (tmp_path / f"{name}.json").write_text(
             json.dumps(
@@ -126,11 +126,11 @@ def test_native_steam_selection_and_imbue_identity(demo_paths, tmp_path, monkeyp
             )
         )
     monkeypatch.setattr(data, "update", lambda _: tmp_path)
-    all_imbues = demo.imbues(ticks=50000, data_version="1234")
+    all_imbues = demo.imbues(ticks=tick, data_version="1234")
     assert all_imbues.bindings.height > 0
     steam_id = all_imbues.bindings["steam_id"][0]
     assert steam_id in demo.players["steam_id"]
-    selected = demo.imbues(ticks=50000, steam_ids=[steam_id], data_version="1234")
+    selected = demo.imbues(ticks=tick, steam_ids=[steam_id], data_version="1234")
     assert selected.bindings.equals(
         all_imbues.bindings.filter(pl.col("steam_id") == steam_id)
     )
@@ -139,10 +139,10 @@ def test_native_steam_selection_and_imbue_identity(demo_paths, tmp_path, monkeyp
     )
     for function in (demo.imbues, demo.calculate_ability_stats):
         with pytest.raises(CalculationError, match="Steam ID 1 has no hero"):
-            function(ticks=50000, steam_ids=[1], data_version="1234")
+            function(ticks=tick, steam_ids=[1], data_version="1234")
     assert demo.imbues(
-        ticks=50000, steam_ids=[], data_version="1234"
+        ticks=tick, steam_ids=[], data_version="1234"
     ).bindings.is_empty()
     assert demo.calculate_ability_stats(
-        ticks=50000, steam_ids=[], data_version="1234"
+        ticks=tick, steam_ids=[], data_version="1234"
     ).values.is_empty()

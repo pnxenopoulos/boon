@@ -38,12 +38,30 @@ Use the scripts in the [Boon repository](https://github.com/pnxenopoulos/boon)
 when an upstream `.proto` file changes:
 
 ```bash
-# Fetch latest protos from SteamDatabase
+# Fetch latest protos from SteamTracking
 ./scripts/sync-protos.sh
 
 # Regenerate src/proto.rs
 cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-protos
 ```
+
+## Check for upstream changes
+
+From the repository root, run:
+
+```bash
+./scripts/sync-protos.sh --check
+```
+
+This command compares the files in `proto/allowlist.txt` with
+[SteamTracking/GameTracking-Deadlock](https://github.com/SteamTracking/GameTracking-Deadlock/tree/master/Protobufs).
+It reports changed or missing files and returns a nonzero exit code on a mismatch
+or download error. It does not change local files or package versions.
+Line endings and changes to `steam.inf` alone do not cause a mismatch.
+Set `DEADLOCK_REF` to check a specific upstream commit, branch, or tag.
+
+CI runs this check on pull requests and pushes to `main`. The job summary shows
+the result. A failed check adds a warning but does not block `CI Check` or releases.
 
 ## Version tracking
 
