@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use boon_proto::proto::CModifierTableEntry;
 use prost::Message;
 
-use crate::{Context, FieldValue};
+use crate::{Context, EntityContainer, FieldValue};
 
 /// The lifecycle transition produced by a modifier-table delta.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -160,12 +160,19 @@ impl ModifierState {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ModifierClock {
     simulation_time: Option<u64>,
+    tick_base: Option<u64>,
+    hero_pawn: Option<u64>,
+    pawn: Option<u64>,
     total_paused_ticks: Option<u64>,
 }
 
 impl ModifierClock {
     pub fn resolve(ctx: &Context) -> Self {
+        let controller = ctx.serializers().get("CCitadelPlayerController");
         Self {
+            tick_base: controller.and_then(|s| s.resolve_field_key("m_nTickBase")),
+            hero_pawn: controller.and_then(|s| s.resolve_field_key("m_hHeroPawn")),
+            pawn: controller.and_then(|s| s.resolve_field_key("m_hPawn")),
             simulation_time: ctx
                 .serializers()
                 .get("CCitadelPlayerPawn")
@@ -178,32 +185,50 @@ impl ModifierClock {
     }
 
     /// Read simulation time minus accumulated pauses, in seconds.
-    /// Both pawn and game-rules entities must be decoded. Missing fields return
-    /// `None`; a missing pause counter must not be treated as zero.
+    /// Uses pawn simulation time when present, or controller tick bases otherwise.
+    /// Missing clock fields or a missing pause counter return `None`.
     pub fn game_time(&self, ctx: &Context) -> Option<f32> {
-        let simulation_key = self.simulation_time?;
-        let pause_key = self.total_paused_ticks?;
-        let simulation_time = ctx
-            .entities()
-            .iter()
-            .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerPawn")
-            .filter_map(|(_, e)| match e.fields.get(&simulation_key)? {
-                FieldValue::F32(value) if value.is_finite() => Some(*value),
-                _ => None,
+        self.time_from_entities(ctx.entities(), ctx.tick_interval())
+    }
+
+    fn time_from_entities(&self, entities: &EntityContainer, interval: f32) -> Option<f32> {
+        let simulation_time = self
+            .simulation_time
+            .and_then(|key| {
+                entities
+                    .iter()
+                    .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerPawn")
+                    .filter_map(|(_, e)| match e.fields.get(&key)? {
+                        FieldValue::F32(value) if value.is_finite() => Some(*value),
+                        _ => None,
+                    })
+                    .max_by(f32::total_cmp)
             })
-            .max_by(f32::total_cmp)?;
-        let (_, rules) = ctx
-            .entities()
+            .or_else(|| {
+                // New demos omit pawn simulation time. Player controller tick bases
+                // share the modifier clock's origin after accumulated pauses are removed.
+                // Spectator controllers can be ahead: only use controllers with a hero pawn.
+                entities
+                    .iter()
+                    .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
+                    .filter(|(_, e)| {
+                        [self.hero_pawn, self.pawn].into_iter().any(|key| {
+                            e.get_handle(key)
+                                .and_then(|handle| entities.get_by_handle(handle))
+                                .is_some_and(|pawn| {
+                                    pawn.class_name.as_ref() == "CCitadelPlayerPawn"
+                                })
+                        })
+                    })
+                    .filter_map(|(_, e)| u32::try_from(e.get_u64(self.tick_base)?).ok())
+                    .max()
+                    .map(|tick| tick as f32 * interval)
+            })?;
+        let (_, rules) = entities
             .iter()
             .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")?;
-        let paused_ticks = match rules.fields.get(&pause_key)? {
-            FieldValue::U32(value) => *value,
-            FieldValue::I32(value) => u32::try_from(*value).ok()?,
-            FieldValue::U64(value) => u32::try_from(*value).ok()?,
-            FieldValue::I64(value) => u32::try_from(*value).ok()?,
-            _ => return None,
-        };
-        pause_adjusted_time(simulation_time, paused_ticks, ctx.tick_interval())
+        let paused_ticks = u32::try_from(rules.get_u64(self.total_paused_ticks)?).ok()?;
+        pause_adjusted_time(simulation_time, paused_ticks, interval)
     }
 }
 
@@ -417,6 +442,8 @@ fn merge_entry(current: &mut CModifierTableEntry, delta: CModifierTableEntry) ->
         aura_provider_ehandle,
         ability_subclass,
         in_aura_range,
+        creation_time,
+        attributes,
         bool1,
         bool2,
         bool3,
@@ -502,6 +529,8 @@ mod tests {
         let mut state = ModifierState::default();
         let original = CModifierTableEntry {
             string1: Some("retained payload".into()),
+            creation_time: Some(10.0),
+            attributes: Some(32),
             int1: Some(12),
             ..active(7)
         };
@@ -523,6 +552,8 @@ mod tests {
             CModifierTableEntry {
                 serial_number: Some(7),
                 string1: Some(String::new()),
+                creation_time: Some(0.0),
+                attributes: Some(0),
                 int1: Some(0),
                 ..Default::default()
             },
@@ -531,6 +562,8 @@ mod tests {
         assert_eq!(changes[0].kind, ModifierChangeKind::Changed);
         assert_eq!(changes[0].entry.string1.as_deref(), Some(""));
         assert_eq!(changes[0].entry.int1, Some(0));
+        assert_eq!(changes[0].entry.creation_time, Some(0.0));
+        assert_eq!(changes[0].entry.attributes, Some(0));
         assert_eq!(changes[0].entry.float1, original.float1);
         assert_eq!(
             changes[0].entry.modifier_subclass,
@@ -570,6 +603,75 @@ mod tests {
         assert_eq!(removed.len(), 1);
         assert_eq!(removed[0].serial, 8);
         assert!(state.get(9).is_some());
+    }
+
+    #[test]
+    fn controller_clock_excludes_spectators_and_preserves_legacy_simulation_time() {
+        let clock = ModifierClock {
+            simulation_time: Some(0),
+            tick_base: Some(1),
+            total_paused_ticks: Some(2),
+            hero_pawn: Some(3),
+            pawn: Some(4),
+        };
+        let mut entities = EntityContainer::new();
+        let entity = |id, class, fields: Vec<(u64, FieldValue)>| {
+            crate::Entity::from_fields(id, 0, 0, class, true, fields.into_iter().collect()).unwrap()
+        };
+        entities
+            .insert(entity(10, "CCitadelPlayerPawn", vec![]))
+            .unwrap();
+        entities
+            .insert(entity(
+                1,
+                "CCitadelPlayerController",
+                vec![(1, FieldValue::U32(1600)), (3, FieldValue::U32(10))],
+            ))
+            .unwrap();
+        entities
+            .insert(entity(
+                2,
+                "CCitadelPlayerController",
+                vec![
+                    (1, FieldValue::U32(9000)), // No hero pawn: spectator clock must not win.
+                ],
+            ))
+            .unwrap();
+        assert_eq!(clock.time_from_entities(&entities, 1.0 / 64.0), None);
+        entities
+            .insert(entity(
+                20,
+                "CCitadelGameRulesProxy",
+                vec![(2, FieldValue::U32(640))],
+            ))
+            .unwrap();
+        assert_eq!(clock.time_from_entities(&entities, 1.0 / 64.0), Some(15.0));
+        // More paused ticks and simulation ticks leave game time unchanged.
+        entities
+            .insert(entity(
+                1,
+                "CCitadelPlayerController",
+                vec![(1, FieldValue::I64(1664)), (4, FieldValue::U32(10))],
+            ))
+            .unwrap();
+        entities
+            .insert(entity(
+                20,
+                "CCitadelGameRulesProxy",
+                vec![(2, FieldValue::I64(704))],
+            ))
+            .unwrap();
+        assert_eq!(clock.time_from_entities(&entities, 1.0 / 64.0), Some(15.0));
+        // Older demos retain their existing clock, even if a controller disagrees.
+        entities
+            .insert(entity(
+                10,
+                "CCitadelPlayerPawn",
+                vec![(0, FieldValue::F32(25.0))],
+            ))
+            .unwrap();
+        assert_eq!(clock.time_from_entities(&entities, 1.0 / 64.0), Some(14.0));
+        assert_eq!(clock.time_from_entities(&entities, f32::NAN), None);
     }
 
     #[test]

@@ -14,6 +14,8 @@ pub(super) struct CatalogFile {
     #[serde(default)]
     modifier_value_types: HashMap<u32, String>,
     #[serde(default)]
+    modifier_states: HashMap<u32, String>,
+    #[serde(default)]
     generic_data: Value,
 }
 
@@ -33,6 +35,15 @@ pub(super) struct Record {
 }
 
 impl Record {
+    /// Borrow the primary weapon block and retain its path for explanations.
+    pub(super) fn weapon_info(&self) -> (&Value, &'static str) {
+        if let Some(infos) = self.definition.get("m_mapWeaponInfos") {
+            (&infos["primary"], "m_mapWeaponInfos/primary")
+        } else {
+            (&self.definition["m_WeaponInfo"], "m_WeaponInfo")
+        }
+    }
+
     pub(super) fn upgrades_property(&self, property: &str) -> bool {
         self.definition["m_vecAbilityUpgrades"]
             .as_array()
@@ -78,6 +89,7 @@ pub struct StatCatalog {
     pub(super) abilities: HashMap<u32, Record>,
     pub(super) ability_names: HashMap<String, u32>,
     pub(super) modifier_value_types: HashMap<u32, String>,
+    pub(super) modifier_states: HashMap<String, u32>,
     pub(super) modifiers: Vec<Record>,
     modifier_ids: HashMap<u32, Vec<usize>>,
     conditional_modifiers: HashMap<u32, Option<usize>>,
@@ -171,6 +183,11 @@ impl StatCatalog {
             abilities,
             ability_names,
             modifier_value_types,
+            modifier_states: modifiers
+                .modifier_states
+                .into_iter()
+                .map(|(id, name)| (name, id))
+                .collect(),
             modifiers: modifiers.records,
             modifier_ids,
             conditional_modifiers,

@@ -151,6 +151,12 @@ impl Demo {
             })?;
         }
 
+        let game_directory = if load_item_purchases {
+            self.parser.file_header().map_err(to_py_err)?.game_directory
+        } else {
+            None
+        };
+
         let need_events = load_abilities
             || load_kills
             || load_damage
@@ -231,7 +237,12 @@ impl Demo {
         {
             class_names.push("CCitadelPlayerPawn");
         }
-        if load_ability_upgrades || load_item_purchases || load_chat || load_stat_modifier_events {
+        if load_ability_upgrades
+            || load_item_purchases
+            || load_chat
+            || load_stat_modifier_events
+            || load_active_modifiers
+        {
             class_names.push("CCitadelPlayerController");
         }
         if load_objectives {
@@ -2043,14 +2054,10 @@ impl Demo {
                                     ck_hero_id,
                                 );
                                 let ability_id = msg.ability_id.unwrap_or(0);
-                                let change = match msg.change.unwrap_or(-1) {
-                                    0 => "purchased",
-                                    1 => "upgraded",
-                                    2 => "sold",
-                                    3 => "swapped",
-                                    4 => "failure",
-                                    _ => "unknown",
-                                };
+                                let change = boon_parser::demo::ability_change_name(
+                                    msg.change,
+                                    game_directory.as_deref(),
+                                );
                                 ip_ticks.push(event.tick);
                                 ip_hero_ids.push(hero_id);
                                 ip_ability_ids.push(ability_id);

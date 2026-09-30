@@ -183,6 +183,7 @@ demo.snapshots(ticks=[29000, 30000])              # specific ticks
 demo.snapshots(start_tick=29000, end_tick=30000)  # a contiguous window
 demo.snapshots("troopers", events="kills")        # troopers at kill ticks
 demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)  # -> dict
+demo.snapshots(ticks=187554, data_version="6712")  # add calculated ammo
 ```
 
 Sample per-tick state at *selected* ticks in one parallel pass. Boon decodes
@@ -201,6 +202,28 @@ in Python.
 Return one DataFrame for one dataset. Return a dictionary for multiple datasets.
 A window without another selector returns each tick in the window. A request
 without a selector raises `ValueError`.
+
+Player rows always include `ammo_fraction` from the primary weapon's
+`m_flAmmoFrac`. Missing, invalid, or ambiguous values are null. This field needs
+no catalog. Alternate weapons and selected spells do not replace the primary gun.
+
+Set `data_version` to add these columns to `player_ticks`. Use a client version
+from `boon versions`. Boon downloads a missing version. This option runs extra
+stat and state queries at the selected ticks; it requires `player_ticks`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `ammo` | `UInt32`, nullable | `ammo_fraction * max_ammo`, rounded to the nearest integer; halves round up |
+| `max_ammo` | `UInt32`, nullable | Finite capacity from the `clip_size` rule |
+| `unlimited_ammo` | `bool`, nullable | `INFINITE_CLIP` is present in the recorded predicted-state mask |
+| `ammo_status` | `str` | `calculated`, `partial`, or `unresolved` |
+| `ammo_diagnostic` | `str`, nullable | Missing inputs or calculation limits |
+
+Partial capacity produces partial ammo. Missing capacity makes both counts null.
+A missing fraction makes `ammo` null, but can leave `max_ammo` available.
+Unknown state bits make `unlimited_ammo` null unless `INFINITE_CLIP` is present.
+Unlimited ammo does not change the counts to infinity. Neither `demo.player_ticks`
+nor `demo.load("player_ticks")` calculates these added fields.
 
 
 #### `summary()`
@@ -673,7 +696,10 @@ hero stats or all temporary effects. Do not use them as final or effective stats
 | Column | Type | Description |
 |--------|------|-------------|
 | `tick` | `int` | The game tick |
+| `steam_id` | `UInt64`, nullable | Steam account ID |
+| `player_slot` | `UInt32` | Recorded slot for this tick |
 | `hero_id` | `int` | Hero ID |
+| `ammo_fraction` | `Float32`, nullable | Recorded primary-gun ammo fraction |
 | `x` | `float` | Player X position in world (Hammer) units |
 | `y` | `float` | Player Y position in world (Hammer) units |
 | `z` | `float` | Player Z position in world (Hammer) units |
@@ -885,7 +911,7 @@ player upgrades one of their abilities. Boon loads this dataset on first access.
 demo.item_purchases  # polars.DataFrame
 ```
 
-Item shop transactions. Includes purchases, upgrades, sells, swaps, and failures.
+Item and ability changes.
 Boon loads this dataset on first access.
 
 | Column | Type | Description |
@@ -893,7 +919,10 @@ Boon loads this dataset on first access.
 | `tick` | `int` | The game tick when the transaction occurred |
 | `hero_id` | `int` | The hero ID of the player |
 | `ability_id` | `int` | The raw MurmurHash2 item/ability ID (use `ability_names()` to resolve) |
-| `change` | `str` | Transaction type: `"purchased"`, `"upgraded"`, `"sold"`, `"swapped"`, `"failure"` |
+| `change` | `str` | Transaction type: `"purchased"`, `"upgraded"`, `"sold"`, `"swapped"`, `"leveled_up"`, `"failure"`, `"unknown"` |
+
+Boon uses the client version in the demo header to distinguish an old failure
+from a new level-up event. If that version is absent, this event is `"unknown"`.
 
 ---
 

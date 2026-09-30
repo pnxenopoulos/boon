@@ -255,6 +255,7 @@ class Demo:
 
     def snapshots(
         self,
+        /,
         datasets: str | list[str] | None = ...,
         *,
         ticks: int | list[int] | None = ...,
@@ -263,8 +264,9 @@ class Demo:
         events: str | list[str] | None = ...,
         start_tick: int | None = ...,
         end_tick: int | None = ...,
+        data_version: str | None = ...,
     ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-        """Snapshot per-tick state at selected ticks in a single parallel pass.
+        """Snapshot per-tick state at selected ticks.
 
         Decodes the demo once (across full-packet keyframe segments, in parallel)
         and collects rows only at the ticks you select — far cheaper than
@@ -281,6 +283,17 @@ class Demo:
                 or ``["kills", "damage"]``).
             start_tick: Restrict to ticks at or after this tick.
             end_tick: Restrict to ticks at or before this tick.
+            data_version: Optional boon-data version for ammo calculation in
+                player_ticks. Adds stat and state queries after the snapshot pass.
+                A missing version is downloaded. Without this option, snapshots
+                require no catalog.
+
+        Player rows include steam_id, player_slot, and recorded ammo_fraction.
+        With data_version, ammo and max_ammo are nullable UInt32 columns.
+        ammo is fraction times capacity, rounded nearest, with halves rounded up.
+        max_ammo stays finite when unlimited_ammo is True. That nullable flag
+        reads INFINITE_CLIP from the predicted-state mask. ammo_status and
+        ammo_diagnostic retain missing or partial calculation details.
 
         Returns:
             A single DataFrame when one dataset is requested, otherwise a dict
@@ -295,6 +308,19 @@ class Demo:
             >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
         """
         ...
+
+    def _snapshots(
+        self,
+        /,
+        datasets: str | list[str] | None = ...,
+        *,
+        ticks: int | list[int] | None = ...,
+        every: int | None = ...,
+        seconds: float | None = ...,
+        events: str | list[str] | None = ...,
+        start_tick: int | None = ...,
+        end_tick: int | None = ...,
+    ) -> pl.DataFrame | dict[str, pl.DataFrame]: ...
 
     def imbues(
         self,
@@ -598,7 +624,11 @@ class Demo:
 
         Columns:
             - **tick** (*int*) -- The game tick.
+            - **steam_id** (*int, nullable*) -- Steam account ID (UInt64).
+            - **player_slot** (*int*) -- Recorded slot for this tick.
             - **hero_id** (*int*) -- The player's hero ID.
+            - **ammo_fraction** (*float, nullable*) -- Recorded primary-gun ammo fraction.
+              Use snapshots(data_version=...) to calculate ammo and max_ammo.
             - **x** (*float*) -- Player X position.
             - **y** (*float*) -- Player Y position.
             - **z** (*float*) -- Player Z position.
@@ -771,7 +801,7 @@ class Demo:
             - **tick** (*int*) -- The game tick when the transaction occurred.
             - **hero_id** (*int*) -- The hero ID of the player.
             - **ability_id** (*int*) -- The raw MurmurHash2 item/ability ID.
-            - **change** (*str*) -- Transaction type: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"failure"``.
+            - **change** (*str*) -- Transaction type: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"leveled_up"``, ``"failure"``, ``"unknown"``.
         """
         ...
 

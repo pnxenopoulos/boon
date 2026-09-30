@@ -9,5 +9,5 @@ pub mod decode;
 mod parser;
 
 pub use command::{CmdHeader, EDemoCommands, SvcMessages, command_name};
-pub use decode::decode_event_payload;
+pub use decode::{ability_change_name, decode_event_payload};
 pub use parser::{Context, GameEvent, MessageInfo, Parser};

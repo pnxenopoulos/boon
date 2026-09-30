@@ -12,6 +12,37 @@ or [Discord](https://discord.gg/WmjZHxWrCD). Include the demo, tick, hero, stat
 name, and boon-data version. Give the calculated value and the value in the demo
 viewer.
 
+Some untimed modifier rows remain after their effects end. Stat queries exclude
+rows when all states declared by the catalog are absent from the pawn's recorded
+masks. Rows without these state declarations can still cause incorrect values.
+
+## Client 6712 stat inputs
+
+Boon reads the new primary weapon block and uses controller ticks when pawn
+simulation time is absent. Stat queries use recorded stat types for corruption
+penalties and permanent range/radius pickups. Shop bonuses use the new cost
+tables even when the old category table is absent.
+
+Corruption bonuses can vary per match. Catalog values are not the exact rolled
+values. The replay records some results, such as penalties and effect durations,
+but Boon does not yet apply corrupted property upgrades. Affected properties
+keep their known subtotal and report a partial result. The controller's stat
+table can also name the wrong source item for a penalty. Active modifier records
+can identify the source item. Do not count both records as separate penalties.
+
+The legacy `stat_modifier_*` snapshot columns use enum IDs from older clients.
+Their totals can be incorrect for this client. Keep the raw recorded entries
+when you check these values. An unresolved result does not mean zero.
+
+## Ammo and barrier snapshots
+
+Ammo counts use calculated capacity. If the capacity is partial, the count is
+also partial. Haze and Yamato can have null counts when spirit scaling cannot
+be resolved. The recorded ammo fraction and unlimited-ammo state remain separate.
+
+In some recent demos, the existing `barrier` snapshot value differs between a
+direct tick query and a full pass. Check this value against the demo viewer.
+
 ## Battle Vest health condition
 
 Boon does not yet support Battle Vest's stat bonuses that depend on the wearer's

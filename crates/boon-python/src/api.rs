@@ -270,7 +270,7 @@ impl Demo {
     ///     >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
     #[pyo3(signature = (datasets=None, *, ticks=None, every=None, seconds=None, events=None, start_tick=None, end_tick=None))]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn snapshots(
+    pub(crate) fn _snapshots(
         &mut self,
         py: Python<'_>,
         datasets: Option<StrOrList>,

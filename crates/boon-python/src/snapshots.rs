@@ -83,11 +83,90 @@ pub(super) fn segment_ranges(offsets: &[(usize, i32)], n: usize) -> Vec<(Option<
         .collect()
 }
 
+/// Primary-gun fields, discovered from the replay schema without a class-name list.
+#[derive(Default)]
+pub(super) struct AmmoKeys(HashMap<String, WeaponAmmoKeys>);
+
+struct WeaponAmmoKeys {
+    owner: u64,
+    slot: u64,
+    fraction: u64,
+}
+
+// EAbilitySlots_t::ESlot_Weapon_Primary, a protocol slot rather than a hero ID.
+const PRIMARY_WEAPON_SLOT: i64 = 21;
+
+fn is_primary_weapon(value: Option<&boon_parser::FieldValue>) -> bool {
+    use boon_parser::FieldValue;
+    let slot = match value {
+        // pbdems2's fallback decoder retains the unsigned wire varint for this
+        // enum. EAbilitySlots_t uses signed (zigzag) encoding, including -1.
+        Some(FieldValue::U64(value)) => (value >> 1) as i64 ^ -((value & 1) as i64),
+        Some(FieldValue::U32(value)) => i64::from(value >> 1) ^ -i64::from(value & 1),
+        Some(FieldValue::I64(value)) => *value,
+        Some(FieldValue::I32(value)) => i64::from(*value),
+        _ => return false,
+    };
+    slot == PRIMARY_WEAPON_SLOT
+}
+
+impl AmmoKeys {
+    pub(super) fn resolve(ctx: &boon_parser::Context) -> Self {
+        Self(
+            ctx.serializers()
+                .iter()
+                .filter_map(|(name, serializer)| {
+                    Some((
+                        name.to_string(),
+                        WeaponAmmoKeys {
+                            owner: serializer.resolve_field_key("m_hOwnerEntity")?,
+                            slot: serializer.resolve_field_key("m_eAbilitySlot")?,
+                            fraction: serializer.resolve_field_key("m_flAmmoFrac")?,
+                        },
+                    ))
+                })
+                .collect(),
+        )
+    }
+
+    pub(super) fn classes(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+
+    fn collect(&self, ctx: &boon_parser::Context, by_owner: &mut HashMap<u32, Option<f32>>) {
+        by_owner.clear();
+        for (_, entity) in ctx.entities().iter() {
+            let Some(keys) = self.0.get(entity.class_name.as_ref()) else {
+                continue;
+            };
+            if !is_primary_weapon(entity.fields.get(&keys.slot)) {
+                continue;
+            }
+            let Some(owner) = entity.get_handle(Some(keys.owner)) else {
+                continue;
+            };
+            let fraction = match entity.fields.get(&keys.fraction) {
+                Some(boon_parser::FieldValue::F32(value)) if value.is_finite() && *value >= 0.0 => {
+                    Some(*value)
+                }
+                _ => None,
+            };
+            // Preserve the full owner handle (including its serial). Ambiguous
+            // primary weapons must not silently select an arbitrary fraction.
+            by_owner
+                .entry(owner)
+                .and_modify(|value| *value = None)
+                .or_insert(fraction);
+        }
+    }
+}
+
 /// Field keys for the `player_ticks` snapshot, resolved once from the send-table
 /// serializers. `p_*` fields live on `CCitadelPlayerPawn`, `c_*` on
 /// `CCitadelPlayerController`.
 #[derive(Clone, Copy, Default)]
 pub(super) struct PtKeys {
+    pub(super) steam_id: Option<u64>,
     pub(super) hero_id: Option<u64>,
     pub(super) vec_x: Option<u64>,
     pub(super) vec_y: Option<u64>,
@@ -151,6 +230,7 @@ impl PtKeys {
         let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
         let stat_viewer = resolve_stat_viewer_keys(ctrl);
         Self {
+            steam_id: c("m_steamID"),
             hero_id: p("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"),
             vec_x: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
             vec_y: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
@@ -358,6 +438,9 @@ impl BarrierState {
 /// serial builder in `load()`.
 #[derive(Default)]
 pub(super) struct PtCols {
+    pub(super) steam_id: Vec<Option<u64>>,
+    pub(super) player_slot: Vec<u32>,
+    pub(super) ammo_fraction: Vec<Option<f32>>,
     pub(super) tick: Vec<i32>,
     pub(super) hero_id: Vec<i64>,
     pub(super) x: Vec<f32>,
@@ -421,12 +504,16 @@ impl PtCols {
         ctx: &boon_parser::Context,
         k: &PtKeys,
         barriers: &BarrierState,
+        ammo: &HashMap<u32, Option<f32>>,
     ) {
-        for (_, ctrl) in ctx
+        for (index, ctrl) in ctx
             .entities()
             .iter()
             .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
         {
+            let Some(slot) = index.checked_sub(1).and_then(|i| u32::try_from(i).ok()) else {
+                continue;
+            };
             let Some(pawn_handle) = ctrl.get_handle(k.pawn_handle) else {
                 continue;
             };
@@ -438,6 +525,13 @@ impl PtCols {
             if hid == 0 {
                 continue;
             }
+            self.steam_id.push(match ctrl.field_value(k.steam_id) {
+                Some(boon_parser::FieldValue::U64(id)) if *id != 0 => Some(*id),
+                _ => None,
+            });
+            self.player_slot.push(slot);
+            self.ammo_fraction
+                .push(ammo.get(&pawn_handle).copied().flatten());
             self.tick.push(ctx.tick());
             self.hero_id.push(hid);
             let [x, y, z] =
@@ -533,6 +627,9 @@ impl PtCols {
         ] = self.stat_modifiers;
         df_from_columns(vec![
             numeric_column("tick", self.tick),
+            Column::new("steam_id".into(), self.steam_id),
+            numeric_column("player_slot", self.player_slot),
+            Column::new("ammo_fraction".into(), self.ammo_fraction),
             numeric_column("hero_id", self.hero_id),
             numeric_column("x", self.x),
             numeric_column("y", self.y),
@@ -775,6 +872,7 @@ impl SnapWants {
 
 /// All snapshot field keys, resolved once from the send tables.
 pub(super) struct SnapKeys {
+    pub(super) ammo: AmmoKeys,
     pub(super) pt: PtKeys,
     pub(super) wk: WkKeys,
     pub(super) tk: TkKeys,
@@ -785,6 +883,7 @@ pub(super) type SnapshotFrames = (Option<DataFrame>, Option<DataFrame>, Option<D
 /// One segment's accumulated snapshot columns.
 #[derive(Default)]
 pub(super) struct SegSnap {
+    ammo_by_owner: HashMap<u32, Option<f32>>,
     pub(super) pt: PtCols,
     pub(super) wt: WtCols,
     pub(super) tr: TrCols,
@@ -822,7 +921,9 @@ impl SegSnap {
         wants: SnapWants,
     ) {
         if wants.player_ticks {
-            self.pt.collect_tick(ctx, &keys.pt, &self.barriers);
+            keys.ammo.collect(ctx, &mut self.ammo_by_owner);
+            self.pt
+                .collect_tick(ctx, &keys.pt, &self.barriers, &self.ammo_by_owner);
         }
         if wants.world_ticks {
             self.wt.collect_tick(ctx, &keys.wk);

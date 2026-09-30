@@ -19,7 +19,7 @@ Pre-generated Rust types for the Deadlock protobuf definitions. The [Boon](https
 
 ```toml
 [dependencies]
-boon-proto = "0.3"
+boon-proto = "0.4"
 ```
 
 ## Usage

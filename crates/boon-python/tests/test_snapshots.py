@@ -63,7 +63,8 @@ def test_stride_downsamples_to_subset(demo: Demo) -> None:
     snap = demo.snapshots(every=640)
     assert 0 < snap.height < full.height
     # Every sampled row is a real row from the full frame.
-    assert snap.join(full, on=full.columns, how="semi").height == snap.height
+    expected = full.filter(pl.col("tick").is_in(snap["tick"].unique().to_list()))
+    assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
 
 
 def test_events_align_to_event_ticks(demo: Demo) -> None:

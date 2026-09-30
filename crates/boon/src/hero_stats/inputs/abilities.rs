@@ -558,7 +558,13 @@ impl Effect {
             .iter()
             .filter_map(|(item, target)| (Some(*item) == source.ability_id).then_some(*target))
             .collect();
-        let diagnostic = value.as_ref().err().map(ToString::to_string);
+        let corruption = resolver.corruption_diagnostic(definition, source, entry);
+        let fatal = value.is_err() || corruption.is_err();
+        let diagnostic = value
+            .as_ref()
+            .err()
+            .map(ToString::to_string)
+            .or_else(|| corruption.unwrap_or_else(|error| Some(error.to_string())));
         Some(Self {
             stat,
             source: source.record_key.clone(),
@@ -573,12 +579,12 @@ impl Effect {
             scope,
             targets,
             excluded_targets: BTreeSet::new(),
-            state: if diagnostic.is_some() {
+            state: if fatal {
                 EffectState::Unresolved
             } else {
                 EffectState::Active
             },
-            fatal: diagnostic.is_some(),
+            fatal,
             diagnostic,
         })
     }
@@ -799,35 +805,22 @@ fn effects(
     let dynamic_len = result.len();
     // Accumulated values already include repeated permanent pickups. Never
     // exponentiate a pickup count or add the pickup's live modifier again.
-    for (source_id, value) in &inputs.permanent {
-        let Some(source) = resolver.modifier(*source_id, None) else {
-            continue;
-        };
-        let stats: BTreeSet<_> = source
-            .stat_changes
-            .iter()
-            .filter_map(|e| e["stat"].as_str())
-            .collect();
-        if stats.len() != 1 {
-            return Err(invalid(format!(
-                "ambiguous permanent stat source {source_id}"
-            )));
-        }
-        let Some(stat) = stats
-            .iter()
-            .next()
-            .and_then(|s| AbilityStat::from_symbol(s))
+    for recorded in &inputs.permanent {
+        let Some(stat) = resolver
+            .recorded_stat(recorded)?
+            .and_then(AbilityStat::from_symbol)
         else {
             continue;
         };
+        let source = resolver.recorded_source(recorded.source_id);
         result.push(Effect {
             stat,
-            source: source.record_key.clone(),
+            source,
             source_ability_id: None,
             property_name: None,
             path: "m_PlayerDataGlobal.m_vecStatViewerModifierValues".into(),
             serial: None,
-            value: Some(*value),
+            value: Some(recorded.value),
             scope: EffectScope::Global,
             targets: BTreeSet::new(),
             excluded_targets: BTreeSet::new(),

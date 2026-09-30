@@ -393,16 +393,21 @@ impl Demo {
             classes.push("CNPC_Trooper");
             classes.push("CNPC_TrooperBoss");
         }
-        let filter: std::collections::HashSet<&str> = classes.into_iter().collect();
-
         // Resolve all field keys once from the send-table serializers.
         let init = self.parser.parse_init().map_err(to_py_err)?;
         let keys = SnapKeys {
+            ammo: if wants.player_ticks {
+                AmmoKeys::resolve(&init)
+            } else {
+                AmmoKeys::default()
+            },
             pt: PtKeys::resolve(&init),
             wk: WkKeys::resolve(&init),
             tk: TkKeys::resolve(&init),
         };
         drop(init);
+        classes.extend(keys.ammo.classes());
+        let filter: HashSet<&str> = classes.into_iter().collect();
 
         let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
         let n = parallel_segments().min(offsets.len().max(1));
@@ -465,6 +470,11 @@ impl Demo {
         let mut cols = SegSnap::default();
         if ctx.tick() == tick {
             let keys = SnapKeys {
+                ammo: if wants.player_ticks {
+                    AmmoKeys::resolve(&ctx)
+                } else {
+                    AmmoKeys::default()
+                },
                 pt: PtKeys::resolve(&ctx),
                 wk: WkKeys::resolve(&ctx),
                 tk: TkKeys::resolve(&ctx),

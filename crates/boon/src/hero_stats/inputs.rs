@@ -392,6 +392,12 @@ fn intrinsic_ability_present(
         .is_none_or(|modifier| !modifier.is_intrinsic_modifier_of(owner))
 }
 
+struct RecordedStat {
+    source_id: u32,
+    value_type: Option<u32>,
+    value: f64,
+}
+
 struct PlayerInputs<'a> {
     hero: &'a Record,
     level: Option<f64>,
@@ -399,7 +405,31 @@ struct PlayerInputs<'a> {
     inventory: Vec<&'a Record>,
     owned: Vec<&'a Record>,
     active: Vec<&'a CModifierTableEntry>,
-    permanent: Vec<(u32, f64)>,
+    permanent: Vec<RecordedStat>,
+}
+
+fn modifier_states_absent(source: &Record, catalog: &StatCatalog, evidence: &[u32]) -> bool {
+    let Some(mask) = source.definition["m_nEnabledStateMask"].as_str() else {
+        return false;
+    };
+    let mut declared = false;
+    for name in mask
+        .split('|')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
+        let Some(&index) = catalog.modifier_states.get(name) else {
+            return false;
+        };
+        let Some(word) = evidence.get(index as usize / u32::BITS as usize) else {
+            return false;
+        };
+        if word & (1 << (index % u32::BITS)) != 0 {
+            return false;
+        }
+        declared = true;
+    }
+    declared
 }
 
 impl<'a> PlayerInputs<'a> {
@@ -417,6 +447,7 @@ impl<'a> PlayerInputs<'a> {
         let weapon = catalog.weapon(hero)?;
         let pawn =
             hero_pawn(ctx, controller).ok_or_else(|| invalid("player has no current pawn"))?;
+        let states = crate::player_states::modifier_state_evidence(ctx, pawn);
         let mut active: Vec<_> = state
             .entries()
             .values()
@@ -425,6 +456,17 @@ impl<'a> PlayerInputs<'a> {
                 m.parent
                     .and_then(|h| ctx.entities().get_by_handle(h))
                     .is_some_and(|e| std::ptr::eq(e, pawn))
+            })
+            .filter(|m| {
+                // Untimed rows can remain after their effects end. A catalog
+                // modifier that enables states cannot still apply when all of
+                // those states are absent. Missing masks or names prove nothing;
+                // a present bit alone does not prove that an old row is active.
+                !states.as_ref().is_some_and(|evidence| {
+                    m.modifier_subclass
+                        .and_then(|id| catalog.modifier(id, m.ability_subclass).ok())
+                        .is_some_and(|source| modifier_states_absent(source, catalog, evidence))
+                })
             })
             .collect();
         active.sort_by_key(|m| m.serial_number);
@@ -462,10 +504,13 @@ impl<'a> PlayerInputs<'a> {
         let mut permanent = Vec::new();
         for i in 0..count(ctx, controller, vector)? {
             let prefix = format!("{vector}.{i}");
-            permanent.push((
-                id(ctx, controller, &format!("{prefix}.m_SourceModifierID"))?,
-                required(ctx, controller, &format!("{prefix}.m_flValue"))?,
-            ));
+            permanent.push(RecordedStat {
+                source_id: id(ctx, controller, &format!("{prefix}.m_SourceModifierID"))?,
+                value_type: field(ctx, controller, &format!("{prefix}.m_eValType"))
+                    .map(|_| id(ctx, controller, &format!("{prefix}.m_eValType")))
+                    .transpose()?,
+                value: required(ctx, controller, &format!("{prefix}.m_flValue"))?,
+            });
         }
         Ok(Self {
             hero,
@@ -510,6 +555,44 @@ impl<'a> Resolver<'a, '_> {
         }
     }
 
+    fn recorded_stat(&mut self, recorded: &RecordedStat) -> Result<Option<&'a str>> {
+        // One source can supply several stats (range/radius pickups or corruption).
+        // The replay records the type; enum numbers come from the selected catalog.
+        if let Some(value_type) = recorded.value_type
+            && !self.catalog.modifier_value_types.is_empty()
+        {
+            return self.catalog.modifier_value_types.get(&value_type)
+                .map(|stat| Some(stat.as_str()))
+                .ok_or_else(|| invalid(format!(
+                    "catalog has no modifier value type {value_type}; refresh the matching boon-data version"
+                )));
+        }
+        // Older recordings or catalogs can omit enum data. Require a unique binding.
+        let Some(source) = self.modifier(recorded.source_id, None) else {
+            return Ok(None);
+        };
+        let stats: HashSet<_> = source
+            .stat_changes
+            .iter()
+            .filter_map(|effect| effect["stat"].as_str())
+            .collect();
+        if stats.len() != 1 {
+            return Err(invalid(format!(
+                "ambiguous permanent stat source {}",
+                recorded.source_id
+            )));
+        }
+        Ok(stats.into_iter().next())
+    }
+
+    fn recorded_source(&self, source_id: u32) -> String {
+        // A missing label does not invalidate a recorded type and value.
+        self.catalog.modifier(source_id, None).map_or_else(
+            |_| format!("modifier:{source_id}"),
+            |source| source.record_key.clone(),
+        )
+    }
+
     fn infer_binding(&mut self, effect: &Value, ability: &Record, modifier: &Record) {
         self.inferred_bindings.insert(format!(
             "{} in {} -> {}",
@@ -547,17 +630,15 @@ impl<'a> Resolver<'a, '_> {
     }
     fn ammo(&mut self, inputs: &PlayerInputs<'_>) -> Result<u32> {
         let weapon = inputs.weapon;
-        let base = weapon
-            .definition
-            .pointer("/m_WeaponInfo/m_iClipSize")
-            .and_then(number)
-            .ok_or_else(|| invalid("weapon has no base clip size"))?;
+        let (info, path) = weapon.weapon_info();
+        let base =
+            number(&info["m_iClipSize"]).ok_or_else(|| invalid("weapon has no base clip size"))?;
         self.record(
             "clip_size",
             "base",
             base,
             weapon,
-            &format!("{}/m_WeaponInfo/m_iClipSize", weapon.definition_path),
+            &format!("{}/{path}/m_iClipSize", weapon.definition_path),
             None,
         );
         let spirit = self.spirit_scaled_bonus(inputs, "EClipSize", "clip_size", "flat")?;
@@ -568,17 +649,15 @@ impl<'a> Resolver<'a, '_> {
 
     fn bullet_velocity(&mut self, inputs: &PlayerInputs<'_>) -> Result<f64> {
         let weapon = inputs.weapon;
-        let base = weapon
-            .definition
-            .pointer("/m_WeaponInfo/m_flBulletSpeed")
-            .and_then(number)
+        let (info, path) = weapon.weapon_info();
+        let base = number(&info["m_flBulletSpeed"])
             .ok_or_else(|| invalid("weapon has no base bullet speed"))?;
         self.record(
             "bullet_velocity",
             "base",
             base * rulesets::bullet_velocity::METERS_PER_SOURCE_UNIT,
             weapon,
-            &format!("{}/m_WeaponInfo/m_flBulletSpeed", weapon.definition_path),
+            &format!("{}/{path}/m_flBulletSpeed", weapon.definition_path),
             None,
         );
         if self.total(
@@ -603,7 +682,7 @@ impl<'a> Resolver<'a, '_> {
 
     fn falloff_range(&mut self, inputs: &PlayerInputs<'_>, stat: HeroStat) -> Result<f64> {
         let weapon = inputs.weapon;
-        let info = &weapon.definition["m_WeaponInfo"];
+        let (info, path) = weapon.weapon_info();
         let start = number(&info["m_flDamageFalloffStartRange"])
             .ok_or_else(|| invalid("weapon has no base falloff start"))?;
         let end = number(&info["m_flDamageFalloffEndRange"])
@@ -618,7 +697,7 @@ impl<'a> Resolver<'a, '_> {
             "base",
             base * rulesets::METERS_PER_SOURCE_UNIT,
             weapon,
-            &format!("{}/m_WeaponInfo/{field}", weapon.definition_path),
+            &format!("{}/{path}/{field}", weapon.definition_path),
             None,
         );
         let (percent, count) = self.total_and_count(
@@ -1219,7 +1298,7 @@ impl<'a> Resolver<'a, '_> {
 
     fn reload_time(&mut self, inputs: &PlayerInputs<'_>) -> Result<f64> {
         let weapon = inputs.weapon;
-        let info = &weapon.definition["m_WeaponInfo"];
+        let (info, path) = weapon.weapon_info();
         if info["m_bReloadUseActiveWeaponInfoDuration"] == true {
             return Err(invalid(
                 "dynamic weapon reload duration is not supported by reload_time.v1",
@@ -1242,7 +1321,7 @@ impl<'a> Resolver<'a, '_> {
             "base",
             base,
             weapon,
-            &format!("{}/m_WeaponInfo/m_reloadDuration", weapon.definition_path),
+            &format!("{}/{path}/m_reloadDuration", weapon.definition_path),
             None,
         );
         let (percent, count) = self.total_and_count(
@@ -1337,11 +1416,20 @@ impl<'a> Resolver<'a, '_> {
         if let Some(tables) = hero.definition["m_MapModCostBonuses"].as_object() {
             let mut total = 0.0;
             for (slot, table) in tables {
-                // The legacy table still supplies the category's stat symbol.
-                if !hero.definition["m_mapPurchaseBonuses"][slot]
-                    .as_array()
-                    .is_some_and(|bonuses| bonuses.iter().any(|b| b["m_ValueType"] == stat))
+                let matches_stat = if let Some(bonuses) =
+                    hero.definition["m_mapPurchaseBonuses"][slot].as_array()
                 {
+                    bonuses.iter().any(|b| b["m_ValueType"] == stat)
+                } else {
+                    // Engine category semantics, not item or hero balance values.
+                    // New VData retains cost tables but omits the legacy stat binding.
+                    // Prices, thresholds and amounts still come from the catalog.
+                    matches!(
+                        (slot.as_str(), stat),
+                        ("EItemSlotType_WeaponMod", WEAPON_DAMAGE) | ("EItemSlotType_Tech", SPIRIT)
+                    )
+                };
+                if !matches_stat {
                     continue;
                 }
                 let mut invested = 0.0;
@@ -1830,37 +1918,27 @@ impl<'a> Resolver<'a, '_> {
             &inputs.owned
         };
         // The stat viewer contains cumulative recorded values, not pickup counts.
-        // Resolve its source ID through boon-data, never through unstable enum ordinals.
         let vector = "m_PlayerDataGlobal.m_vecStatViewerModifierValues";
-        for (i, &(source_id, value)) in permanent.iter().enumerate() {
-            let prefix = format!("{vector}.{i}");
-            if value == 0.0 {
+        for (i, recorded) in permanent.iter().enumerate() {
+            if recorded.value == 0.0 || self.recorded_stat(recorded)? != Some(stat) {
                 continue;
             }
-            let Some(source) = self.modifier(source_id, None) else {
-                continue;
-            };
-            let stats: HashSet<_> = source
-                .stat_changes
-                .iter()
-                .filter_map(|s| s["stat"].as_str())
-                .collect();
-            if stats.len() != 1 {
-                return Err(invalid(format!(
-                    "ambiguous permanent stat source {source_id}"
-                )));
-            }
-            if stats.contains(stat) {
-                let value = modifier_units(stat, value);
-                add(value)?;
-                self.record(
-                    input,
+            let value = modifier_units(stat, recorded.value);
+            add(value)?;
+            if self.explain {
+                let source = self.recorded_source(recorded.source_id);
+                self.contributions.push(Contribution {
+                    tick: self.ctx.tick(),
+                    steam_id: self.steam_id,
+                    player_slot: self.slot,
+                    hero_id: self.hero_id,
+                    input: input.into(),
                     kind,
                     value,
                     source,
-                    &format!("{prefix}.m_flValue"),
-                    None,
-                );
+                    definition_path: format!("{vector}.{i}.m_flValue"),
+                    modifier_serial: None,
+                });
             }
         }
         // Unbound conditional properties use an explicit or inferred activation link.
@@ -1938,6 +2016,9 @@ impl<'a> Resolver<'a, '_> {
                         }
                     }
                     continue;
+                }
+                if let Some(message) = self.corruption_diagnostic(effect, item, None)? {
+                    self.unmapped_inputs.insert(message);
                 }
                 add(value)?;
                 self.record(
@@ -2115,6 +2196,9 @@ impl<'a> Resolver<'a, '_> {
                 {
                     self.infer_binding(effect, ability, source);
                 }
+                if let Some(message) = self.corruption_diagnostic(effect, source, Some(entry))? {
+                    self.unmapped_inputs.insert(message);
+                }
                 add(value)?;
                 self.record(input, kind, value, source, path, entry.serial_number);
             }
@@ -2139,6 +2223,39 @@ impl<'a> Resolver<'a, '_> {
             return Err(invalid("counter ability does not match the catalog owner"));
         }
         checked_runtime_count(required(self.ctx, ability, path)?, path)
+    }
+
+    fn corruption_diagnostic(
+        &self,
+        effect: &Value,
+        source: &Record,
+        entry: Option<&CModifierTableEntry>,
+    ) -> Result<Option<String>> {
+        let Some(owner) = source
+            .ability_id
+            .or_else(|| entry.and_then(|e| e.ability_subclass))
+            .and_then(|id| self.catalog.abilities.get(&id))
+        else {
+            return Ok(None);
+        };
+        let Some(changes) =
+            owner.definition["m_CorruptedItemInfo"]["m_Upgrade"]["m_vecPropertyUpgrades"]
+                .as_array()
+        else {
+            return Ok(None);
+        };
+        if !changes.iter().any(|change| change["m_strPropertyName"] == effect["property_name"])
+            // AbilityUpgradeBits_t::ABILITY_UPGRADE_BIT_CORRUPTED is a wire flag,
+            // not an item ID or a balance value. `upgrades` excludes the trained bit.
+            || self.upgrades(entry, owner.ability_id)? & (128 >> 1) == 0
+        {
+            return Ok(None);
+        }
+        Ok(Some(format!(
+            "{} in {} has a corrupted upgrade that is not included; its exact value is not resolved",
+            effect["property_name"].as_str().unwrap_or("property"),
+            owner.record_key,
+        )))
     }
 
     fn effect(
@@ -2281,6 +2398,135 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[test]
+    fn recorded_types_separate_multistat_sources_and_unrelated_penalties() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        catalog.heroes.get_mut(&999).unwrap().definition["m_mapScalingStats"] = json!({});
+        catalog.modifiers[0].stat_changes = vec![
+            json!({"stat": PERCENT}),
+            json!({"stat": "MODIFIER_VALUE_TECH_RANGE_PERCENT"}),
+        ];
+        // Deliberately invented enum ordinals: use the selected catalog, not numbers in code.
+        catalog.modifier_value_types.extend([
+            (900, PERCENT.into()),
+            (901, "MODIFIER_VALUE_STAMINA".into()),
+            (902, "MODIFIER_VALUE_COOLDOWN_REDUCTION_PERCENTAGE".into()),
+        ]);
+        let ctx = Context::new(1.0 / 64.0).unwrap();
+        let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
+        let mut trace = Vec::new();
+        let mut resolver = Resolver {
+            ctx: &ctx,
+            catalog: &catalog,
+            controller: &controller,
+            hero_id: 999,
+            steam_id: None,
+            slot: PlayerSlot(0),
+            game_time: None,
+            game_start: None,
+            explain: true,
+            contributions: &mut trace,
+            ignored_modifiers: BTreeMap::new(),
+            inferred_bindings: BTreeSet::new(),
+            unmapped_inputs: BTreeSet::new(),
+        };
+        let hero = &catalog.heroes[&999];
+        let mut inputs = PlayerInputs {
+            hero,
+            level: None,
+            weapon: catalog.weapon(hero).unwrap(),
+            inventory: vec![],
+            owned: vec![],
+            active: vec![],
+            permanent: vec![
+                RecordedStat {
+                    source_id: 10,
+                    value_type: Some(900),
+                    value: 13.0,
+                },
+                RecordedStat {
+                    source_id: 12,
+                    value_type: Some(901),
+                    value: -1.0,
+                },
+                RecordedStat {
+                    source_id: 12,
+                    value_type: Some(902),
+                    value: -17.0,
+                },
+            ],
+        };
+        assert_eq!(resolver.ammo(&inputs).unwrap(), 23);
+        assert_eq!(
+            resolver
+                .total("MODIFIER_VALUE_STAMINA", "stamina", "flat", &inputs)
+                .unwrap(),
+            -1.0
+        );
+        assert_eq!(
+            resolver.recorded_stat(&inputs.permanent[2]).unwrap(),
+            Some("MODIFIER_VALUE_COOLDOWN_REDUCTION_PERCENTAGE")
+        );
+        assert_eq!(resolver.contributions.len(), 3); // Base ammo, ammo bonus, stamina penalty.
+        // A known type is still usable without a source catalog record.
+        inputs.permanent[0].source_id = 987654;
+        assert_eq!(resolver.ammo(&inputs).unwrap(), 23);
+        assert_eq!(
+            resolver.contributions.last().unwrap().source,
+            "modifier:987654"
+        );
+        // An unknown type cannot be silently inferred from a conflicting source binding.
+        inputs.permanent[0].value_type = Some(999);
+        assert!(
+            resolver
+                .ammo(&inputs)
+                .unwrap_err()
+                .to_string()
+                .contains("modifier value type 999")
+        );
+        // Missing type evidence still permits the existing unique-source fallback.
+        inputs.permanent[0].value_type = None;
+        inputs.permanent[0].source_id = 10;
+        assert!(
+            resolver
+                .ammo(&inputs)
+                .unwrap_err()
+                .to_string()
+                .contains("ambiguous permanent stat source")
+        );
+    }
+
+    #[test]
+    fn absent_catalog_states_exclude_old_modifiers_but_missing_evidence_does_not() {
+        let folder = super::super::catalog::tests::fixture();
+        let path = folder.path().join("modifiers.json");
+        let mut file: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        file["modifier_states"] = json!({"35":"MODIFIER_STATE_TEST", "70":"MODIFIER_STATE_OTHER"});
+        file["records"][2]["definition"]["m_nEnabledStateMask"] =
+            json!("MODIFIER_STATE_TEST | MODIFIER_STATE_OTHER");
+        std::fs::write(path, serde_json::to_vec(&file).unwrap()).unwrap();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        let source = catalog.modifier(12, None).unwrap();
+        assert!(modifier_states_absent(source, &catalog, &[0, 0, 0]));
+        for evidence in [&[0, 8, 0][..], &[0, 0, 64], &[0], &[]] {
+            assert!(!modifier_states_absent(source, &catalog, evidence));
+        }
+        // A new or unavailable enum mapping cannot establish inactivity.
+        catalog.modifier_states.remove("MODIFIER_STATE_OTHER");
+        assert!(!modifier_states_absent(
+            catalog.modifier(12, None).unwrap(),
+            &catalog,
+            &[0, 0, 0]
+        ));
+        // Ordinary modifiers without declared states keep their normal lifetime.
+        assert!(!modifier_states_absent(
+            catalog.modifier(10, None).unwrap(),
+            &catalog,
+            &[0, 0, 0]
+        ));
+    }
+
     fn stat_result(
         catalog: &StatCatalog,
         active: bool,
@@ -2348,7 +2594,14 @@ mod tests {
             inventory: vec![weapon],
             owned: if owned { vec![weapon] } else { vec![] },
             active: modifier.into_iter().collect(),
-            permanent,
+            permanent: permanent
+                .into_iter()
+                .map(|(source_id, value)| RecordedStat {
+                    source_id,
+                    value_type: None,
+                    value,
+                })
+                .collect(),
         };
         let result = match stat {
             HeroStat::ClipSize => resolver.ammo(&inputs).map(f64::from),
@@ -3862,6 +4115,45 @@ mod tests {
     }
 
     #[test]
+    fn weapon_stats_support_both_catalog_layouts_and_report_the_source_path() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        catalog.heroes.get_mut(&999).unwrap().definition["m_mapScalingStats"] = json!({});
+        let info = json!({
+            "m_iClipSize":31, "m_flBulletSpeed":1000, "m_reloadDuration":2.75,
+            "m_flDamageFalloffStartRange":400, "m_flDamageFalloffEndRange":1000
+        });
+        for path in ["m_WeaponInfo", "m_mapWeaponInfos/primary"] {
+            catalog.abilities.get_mut(&123).unwrap().definition = if path == "m_WeaponInfo" {
+                json!({"m_WeaponInfo":info})
+            } else {
+                // Prefer the new primary block, not a stale legacy or alternate weapon.
+                json!({"m_WeaponInfo":{"m_iClipSize":99},
+                    "m_mapWeaponInfos":{"primary":info,"secondary":{"m_iClipSize":7}}})
+            };
+            for (stat, expected, field) in [
+                (HeroStat::ClipSize, 31.0, "m_iClipSize"),
+                (HeroStat::BulletVelocity, 25.4, "m_flBulletSpeed"),
+                (HeroStat::ReloadTime, 2.75, "m_reloadDuration"),
+                (HeroStat::FalloffStart, 10.16, "m_flDamageFalloffStartRange"),
+                (HeroStat::FalloffEnd, 25.4, "m_flDamageFalloffEndRange"),
+            ] {
+                let (value, trace, _) = stat_result(&catalog, false, stat);
+                assert!((value.unwrap() - expected).abs() < 1e-10);
+                assert_eq!(
+                    trace[0].definition_path,
+                    format!("/test_gun/{path}/{field}")
+                );
+            }
+        }
+        catalog.abilities.get_mut(&123).unwrap().definition = json!({
+            "m_WeaponInfo":{"m_iClipSize":99},
+            "m_mapWeaponInfos":{"secondary":{"m_iClipSize":7}}
+        });
+        assert!(stat_result(&catalog, false, HeroStat::ClipSize).0.is_err());
+    }
+
+    #[test]
     fn falloff_endpoints_use_catalog_values_and_only_active_range_bonuses() {
         let folder = super::super::catalog::tests::fixture();
         let ability_path = folder.path().join("abilities.json");
@@ -4255,6 +4547,22 @@ mod tests {
             1
         );
         catalog.generic_data["m_nItemPricePerTier"][2] = json!(3100);
+        assert_eq!(
+            stat_result(&catalog, false, HeroStat::WeaponDamage)
+                .0
+                .unwrap(),
+            41.0
+        );
+        let hero = &mut catalog.heroes.get_mut(&999).unwrap().definition;
+        hero.as_object_mut().unwrap().remove("m_mapPurchaseBonuses");
+        let table = hero["m_MapModCostBonuses"]
+            .as_object_mut()
+            .unwrap()
+            .remove("test_slot")
+            .unwrap();
+        hero["m_MapModCostBonuses"] = json!({"EItemSlotType_WeaponMod": table});
+        catalog.abilities.get_mut(&123).unwrap().definition["m_eItemSlotType"] =
+            json!("EItemSlotType_WeaponMod");
         assert_eq!(
             stat_result(&catalog, false, HeroStat::WeaponDamage)
                 .0

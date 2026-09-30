@@ -4,12 +4,19 @@
 
 Unreleased.
 
+- Require pbdems2 0.3.3 to read fields with the `fixed8` encoder in new demos.
+- Update protobufs to Deadlock 6712 (`boon-proto 0.4.11056283+6712`). The direct protobuf API has renamed and removed fields and types.
+- Read new combat log messages and modifier fields. Keep old item change labels; add `leveled_up` for new demos.
+
 - Add `calculate_hero_stats()` and `calculate_ability_stats()` with data from boon-data.
+- Read both weapon data formats. Use controller ticks when pawn simulation time is absent.
+- Use recorded stat types for permanent bonuses and corruption penalties. Mark missing corruption bonuses as partial.
+- Add snapshot Steam IDs and `ammo_fraction`. With `data_version`, add `ammo`, `max_ammo`, and `unlimited_ammo`. Keep finite capacity during unlimited ammo.
 - Add `player_states()` for recorded states, such as `SPRINTING` and `IN_COMBAT`.
 - Add `imbues()` for item effects on selected abilities.
 - Use `steam_ids` for stat, imbue, and state queries. Add Steam IDs to summary tables.
-- Correct modifier tracking after table changes and game pauses. Exclude future modifier state.
-- Read shop bonuses and item prices from boon-data. Do not apply unbound ability bonuses from ownership.
+- Correct modifier tracking after table changes and game pauses. Exclude future modifier state and effects with absent catalog state flags.
+- Read old and new shop bonus tables and item prices from boon-data. Do not apply unbound ability bonuses from ownership.
 
 Hero stat strings:
 

@@ -153,6 +153,9 @@ recorded permanent stat totals. Shop bonuses use each category's total item cost
 and the highest reached threshold in `m_MapModCostBonuses`. Item prices come from
 `misc.json` → `generic_data.m_nItemPricePerTier`. Boon uses the old tier table only
 when the hero has no cost-based table. Missing prices produce an unresolved value.
+If the old table is absent, the calculation rules link the weapon category to
+weapon damage and the spirit category to spirit power. The catalog supplies all
+prices, thresholds, and bonus values.
 Catalog-defined weapon-percentage boon growth also applies. No balance amounts
 are fixed in code.
 Contribution rows with `kind="purchase_cost"` show item prices in souls. Do not
@@ -214,15 +217,26 @@ ceil((base ammo + flat bonuses) * (1 + sum(percent bonuses) / 100))
 Percent inputs use percentage points: `19` means +19%. For base ammo 20,
 flat ammo 10, and bonuses of 15% and 4%, the result is 36 rounds.
 
-Boon reads the primary weapon definition from the hero's catalog. It resolves
+Boon uses the hero's primary weapon reference to read its ability record.
+Weapon fields come from `m_mapWeaponInfos.primary`, or `m_WeaponInfo` in older
+catalogs. Contribution paths show the source used. Boon does not select an
+alternate weapon when the primary definition is absent. It resolves
 owned item and ability properties, upgrades, and effective modifier instances.
 It counts bound properties through their modifier and does not add them again
 from the item. Expired modifiers and modifiers outside their aura do not apply.
-Modifier timers use simulation time minus accumulated pause time.
+Modifier timers use pawn simulation time minus accumulated pause time. If pawn
+simulation time is absent, Boon uses `m_nTickBase` from player controllers with
+hero pawns. It multiplies ticks by the replay's tick interval, then subtracts
+accumulated pause time. Spectator controllers do not supply this clock.
 
-Permanent pickup totals come from the replay's stat-viewer vector. Their source
-modifier IDs identify the stat through boon-data. Boon does not multiply these
-totals by a catalog pickup amount or use numeric modifier-enum guesses.
+Permanent bonuses and corruption penalties come from the replay's stat-viewer
+vector. Boon maps each recorded `m_eValType` through the selected catalog's
+`modifier_value_types`. One modifier can supply several stats. Each recorded
+value counts once; Boon does not multiply it by a catalog pickup amount.
+If enum data is absent, the source must identify one stat.
+
+Corrupted property bonuses are not yet applied. Affected values are partial
+subtotals with a diagnostic. Recorded penalties still apply.
 
 Hero ammo scaling comes from `m_mapScalingStats.EClipSize`. The supported spirit
 input includes catalog base values, standard level upgrades, shop
@@ -245,7 +259,7 @@ base speed in Source units/s * (1 + sum(percent bonuses) / 100) * 0.0254
 without rounding. One Source distance unit is one inch; `0.0254` converts inches
 to metres. This conversion is part of the rule, not a hero or item balance value.
 
-Boon reads `m_WeaponInfo.m_flBulletSpeed` from the hero's primary weapon and
+Boon reads `m_flBulletSpeed` from the primary weapon block and
 `MODIFIER_VALUE_BONUS_BULLET_SPEED_PERCENT` from catalog effects. Item ownership,
 active modifiers, and ability upgrades use the same resolver as ammo. Bound
 properties count only through active modifiers. Ability-projectile speed is a
@@ -275,8 +289,8 @@ where weapon damage begins to decrease. End is the distance where the falloff
 penalty reaches its maximum. End is not maximum bullet travel distance.
 For example, 20-50 metres with a +20% bonus becomes 24-60 metres. Results are not rounded.
 
-Boon reads `m_WeaponInfo.m_flDamageFalloffStartRange` and
-`m_WeaponInfo.m_flDamageFalloffEndRange` from the hero's primary weapon in
+Boon reads `m_flDamageFalloffStartRange` and `m_flDamageFalloffEndRange`
+from the primary weapon block in
 boon-data. Range bonuses use `MODIFIER_VALUE_BONUS_ATTACK_RANGE_PERCENT` and the
 shared item, modifier, and upgrade resolver. Bound bonuses count once, only while
 their modifier is effective. No hero distances or item bonus values are stored in code.
@@ -392,7 +406,7 @@ strict mode and unresolved-input checks apply as for the other stats.
 base reload seconds * (1 + percent adjustment / 100)
 ```
 
-`reload_time.v1` reads `m_WeaponInfo.m_reloadDuration` from the primary weapon
+`reload_time.v1` reads `m_reloadDuration` from the primary weapon block
 and `MODIFIER_VALUE_RELOAD_SPEED` from catalog effects. A negative adjustment
 reduces time: 2 seconds with -10% gives 1.8 seconds. The result is not rounded.
 V1 supports no adjustment or one nonzero adjustment. The catalogs do not specify
@@ -444,6 +458,12 @@ resolved spirit power by the catalog's `flScale` when `eScalingStat` is
 `ETechPower`. No hero ID or coefficient is embedded in code. Permanent pickup
 bonuses use recorded totals; gun powerups use their catalog range and application
 time. The same item, ability-upgrade, modifier-expiry, and binding checks apply.
+
+Before it applies modifier effects, Boon checks the state flags declared in the
+catalog. It excludes a modifier when all its declared states are absent from the
+pawn's recorded masks. Missing masks or state names do not establish inactivity.
+A disabled state also prevents this exclusion. Raw modifier rows remain available.
+A present state does not prove that each old modifier row is active.
 
 Boon uses explicit catalog property bindings first. If a conditional property
 has no binding, Boon looks for one non-intrinsic modifier nested in its owning

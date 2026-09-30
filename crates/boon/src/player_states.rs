@@ -155,6 +155,27 @@ impl PlayerStateQuery {
 
 /// Cached wire keys for a fixed array. Its length comes from the demo schema.
 struct MaskKeys(Vec<u64>);
+/// Bits present in any recorded mask, without assigning mask precedence.
+/// A disabled bit can hide a live modifier's state, so it also counts as evidence.
+pub(crate) fn modifier_state_evidence(ctx: &Context, pawn: &Entity) -> Option<Vec<u32>> {
+    let serializer = ctx.serializers().get(&pawn.class_name)?;
+    let mut evidence = Vec::new();
+    let mut words = Vec::new();
+    for name in [
+        "m_bvEnabledPredictedStateMask",
+        "m_bvEnabledStateMask",
+        "m_bvDisabledStateMask",
+    ] {
+        MaskKeys::resolve(serializer, &format!("m_pModifierProp.{name}"))?
+            .read(pawn, &mut words)?;
+        evidence.resize(words.len().max(evidence.len()), 0);
+        for (bits, word) in evidence.iter_mut().zip(&words) {
+            *bits |= word;
+        }
+    }
+    Some(evidence)
+}
+
 impl MaskKeys {
     fn resolve(serializer: &Serializer, path: &str) -> Option<Self> {
         let mut fp = FieldPath::unpack(serializer.resolve_field_key(path)?);
