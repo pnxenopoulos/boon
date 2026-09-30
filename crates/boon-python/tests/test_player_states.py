@@ -96,6 +96,7 @@ def test_native_empty_schema_and_missing_tick(state_demo):
     for selection in ({"ticks": []}, {"steam_ids": []}):
         result = state_demo.player_states(data_version=VERSION, **selection)
         assert result.is_empty()
+        assert "player_slot" not in result.columns
         assert result.schema["steam_id"] == pl.UInt64
         assert result.schema["states"] == pl.List(pl.String)
         assert result.schema["unknown_states"] == pl.List(pl.UInt32)

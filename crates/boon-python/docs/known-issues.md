@@ -28,7 +28,9 @@ bonus. These unclassified rows can still cause a partial result.
 
 Baseline mode excludes effects whose passive or active role is unknown and
 reports a partial value. Current mode retains the existing calculation limits.
-Movement values do not simulate all movement states. Baseline gravity scale is
+Movement values do not apply crouching, sprint acceleration, or bullet-hit slows,
+even in current mode. The movement rules do not yet read and combine those inputs.
+Baseline gravity scale is
 unavailable because the replay supplies only the current pawn value.
 
 ## Spirit power and modifier bindings

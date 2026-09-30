@@ -41,13 +41,16 @@ def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> N
         pytest.skip("fixture has no recorded barriers")
     # Include ticks throughout the match, rather than only the opening keyframe.
     ticks = populated[:: max(1, len(populated) // 8)][:8]
-    expected = full.filter(pl.col("tick").is_in(ticks)).sort(["tick", "player_slot"])
+    expected = full.filter(pl.col("tick").is_in(ticks)).sort(
+        ["tick", "steam_id", "hero_id"]
+    )
     direct = Demo(_fixture(), preload=False)
     for tick in ticks:
         snapshot = direct.snapshots(ticks=tick)
         assert isinstance(snapshot, pl.DataFrame)
         assert_frame_equal(
-            snapshot.sort("player_slot"), expected.filter(pl.col("tick") == tick)
+            snapshot.sort(["steam_id", "hero_id"]),
+            expected.filter(pl.col("tick") == tick),
         )
     for segments in (1, 4):
         monkeypatch.setenv("BOON_TICK_SEGMENTS", str(segments))
@@ -57,7 +60,9 @@ def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> N
         )
         assert isinstance(sampled, pl.DataFrame)
         assert_frame_equal(
-            sampled.filter(pl.col("tick").is_in(ticks)).sort(["tick", "player_slot"]),
+            sampled.filter(pl.col("tick").is_in(ticks)).sort(
+                ["tick", "steam_id", "hero_id"]
+            ),
             expected,
         )
 

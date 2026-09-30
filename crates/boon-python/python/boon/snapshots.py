@@ -38,7 +38,8 @@ def snapshots(
 
     Select ticks, a stride (every or seconds), event ticks, or a tick window.
     One dataset returns a DataFrame; multiple datasets return a dict.
-    Player rows always include the primary weapon's recorded ammo_fraction.
+    Player rows include steam_id, hero_id, and the recorded ammo_fraction.
+    Use steam_id to join player rows. Missing IDs remain null.
 
     Set data_version to a boon-data client version to add ammo, max_ammo,
     unlimited_ammo, ammo_status, and ammo_diagnostic to player_ticks. A missing
@@ -50,6 +51,7 @@ def snapshots(
     ammo. Missing inputs produce null values and diagnostics. unlimited_ammo
     reports INFINITE_CLIP in the recorded predicted-state mask; unknown state
     bits make it null unless INFINITE_CLIP is present. It does not change capacity.
+    Missing or duplicate Steam IDs leave calculated ammo and state values null.
     """
     if data_version is not None:
         if not isinstance(data_version, str) or not data_version:
@@ -83,7 +85,7 @@ def _with_ammo(demo: Demo, frame: pl.DataFrame, version: str) -> pl.DataFrame:
         )
     columns = frame.columns
     ticks = frame["tick"].unique().sort().to_list()
-    keys = ["tick", "player_slot", "hero_id"]
+    keys = ["tick", "steam_id", "hero_id"]
     capacity = demo.calculate_hero_stats(
         ticks=ticks, data_version=version, stats=[HeroStat.CLIP_SIZE], strict=False
     ).values.select(
@@ -101,10 +103,29 @@ def _with_ammo(demo: Demo, frame: pl.DataFrame, version: str) -> pl.DataFrame:
         .otherwise(None)
         .alias("unlimited_ammo"),
     )
-    # Slots identify rows within one tick, including bots with no Steam ID and
-    # duplicate heroes. Keep the exact UInt64 Steam ID in the returned snapshot.
-    frame = frame.join(capacity, on=keys, how="left", validate="1:1").join(
-        states, on=keys, how="left", validate="1:1"
+    # Never match missing IDs or choose between duplicate account rows.
+    unique_account = (
+        pl.col("steam_id").is_not_null() & pl.struct("tick", "steam_id").is_unique()
+    )
+    frame = (
+        frame.join(
+            capacity.filter(unique_account),
+            on=keys,
+            how="left",
+            validate="m:1",
+            maintain_order="left",
+        )
+        .join(
+            states.filter(unique_account),
+            on=keys,
+            how="left",
+            validate="m:1",
+            maintain_order="left",
+        )
+        .with_columns(
+            pl.when(unique_account).then(pl.col(name)).otherwise(None).alias(name)
+            for name in ("max_ammo", "unlimited_ammo", "ammo_status", "ammo_diagnostic")
+        )
     )
     missing = pl.col("ammo_fraction").is_null() | pl.col("max_ammo").is_null()
     return frame.with_columns(
@@ -118,6 +139,9 @@ def _with_ammo(demo: Demo, frame: pl.DataFrame, version: str) -> pl.DataFrame:
         .alias("ammo_status"),
         pl.concat_str(
             pl.col("ammo_diagnostic"),
+            pl.when(~unique_account).then(
+                pl.lit("Steam ID unavailable or not unique at this tick")
+            ),
             pl.when(pl.col("ammo_fraction").is_null()).then(
                 pl.lit("ammo fraction unavailable")
             ),

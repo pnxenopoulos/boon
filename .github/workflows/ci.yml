@@ -192,6 +192,7 @@ jobs:
       REGRESSION_DEMO_URLS: >-
         https://github.com/pnxenopoulos/boon-fixtures/releases/download/103129247/103129247.dem
         https://github.com/pnxenopoulos/boon-fixtures/releases/download/100655353/100655353.dem
+        https://github.com/pnxenopoulos/boon-fixtures/releases/download/108575009/108575009.dem
 
     steps:
       - name: Checkout

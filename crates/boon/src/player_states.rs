@@ -125,7 +125,6 @@ pub struct DecodedStates {
 pub struct PlayerStateRow {
     pub tick: i32,
     pub steam_id: Option<u64>,
-    pub player_slot: u32,
     pub hero_id: i64,
     /// Recorded predicted-state mask. This is not a prediction made by Boon.
     pub states: Option<Arc<DecodedStates>>,
@@ -289,14 +288,11 @@ impl<'a> Reader<'a> {
         query: &PlayerStateQuery,
         visit: &mut impl FnMut(PlayerStateRow),
     ) {
-        for (index, controller) in ctx
+        for (_, controller) in ctx
             .entities()
             .iter()
             .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
         {
-            let Some(slot) = index.checked_sub(1).and_then(|i| u32::try_from(i).ok()) else {
-                continue;
-            };
             let Some(hero_id) = integer(controller, self.hero)
                 .filter(|&v| v != 0)
                 .and_then(|v| i64::try_from(v).ok())
@@ -320,7 +316,6 @@ impl<'a> Reader<'a> {
             visit(PlayerStateRow {
                 tick: ctx.tick(),
                 steam_id,
-                player_slot: slot,
                 hero_id,
                 states: self.mask(0, pawn),
                 enabled_states: self.mask(1, pawn),

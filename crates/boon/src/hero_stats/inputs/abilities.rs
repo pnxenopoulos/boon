@@ -120,6 +120,7 @@ impl ImbueQuery {
 pub struct AbilityStatQuery {
     selection: ImbueQuery,
     stats: Vec<AbilityStat>,
+    mode: StatMode,
     abilities: Option<Vec<u32>>,
     include_items: bool,
     explain: bool,
@@ -136,11 +137,18 @@ impl AbilityStatQuery {
         Self {
             selection: ImbueQuery::new(ticks),
             stats,
+            mode: StatMode::default(),
             abilities: None,
             include_items: false,
             explain: false,
             strict: true,
         }
+    }
+    /// Select passive and permanent inputs, or include supported active effects.
+    #[must_use]
+    pub fn mode(mut self, mode: StatMode) -> Self {
+        self.mode = mode;
+        self
     }
     #[must_use]
     pub fn steam_ids(mut self, ids: impl IntoIterator<Item = u64>) -> Self {
@@ -170,14 +178,18 @@ impl AbilityStatQuery {
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct AbilityMetadata {
+    /// Selected calculation mode. Absent for recorded imbue queries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<StatMode>,
     pub data_version: String,
     pub snapshot_version: String,
     pub source_commit: String,
     pub rulesets: Vec<AbilityRule>,
 }
 impl AbilityMetadata {
-    fn new(catalog: &StatCatalog, stats: &[AbilityStat]) -> Self {
+    fn new(catalog: &StatCatalog, stats: &[AbilityStat], mode: Option<StatMode>) -> Self {
         Self {
+            mode,
             data_version: catalog.data_version.clone(),
             snapshot_version: catalog.snapshot_version.clone(),
             source_commit: catalog.source_commit.clone(),
@@ -191,8 +203,6 @@ pub struct ImbueBinding {
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
-    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
-    pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub item_id: u32,
     pub item_name: Option<String>,
@@ -239,11 +249,10 @@ pub enum EffectState {
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct AbilityContribution {
+    pub mode: StatMode,
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
-    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
-    pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub ability_id: u32,
     pub stat: AbilityStat,
@@ -260,11 +269,10 @@ pub struct AbilityContribution {
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct AbilityStatRow {
+    pub mode: StatMode,
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
-    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
-    pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub ability_id: u32,
     pub ability_name: Option<String>,
@@ -288,38 +296,27 @@ fn display(record: &Record) -> Option<String> {
         .clone()
         .or_else(|| record.ability_name.clone())
 }
-fn players<'a>(
-    ctx: &'a Context,
-    selected: Option<&[u64]>,
-) -> Result<Vec<(PlayerSlot, i64, &'a Entity)>> {
+fn players<'a>(ctx: &'a Context, selected: Option<&[u64]>) -> Result<Vec<(i64, &'a Entity)>> {
     let mut result = Vec::new();
-    for (index, controller) in ctx
+    for (_, controller) in ctx
         .entities()
         .iter()
         .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
     {
-        let slot = PlayerSlot(
-            u32::try_from(
-                index
-                    .checked_sub(1)
-                    .ok_or_else(|| invalid("invalid controller slot"))?,
-            )
-            .map_err(|_| invalid("invalid controller slot"))?,
-        );
         if selected.is_some_and(|ids| steam_id(ctx, controller).is_none_or(|id| !ids.contains(&id)))
         {
             continue;
         }
         let hero = required(ctx, controller, "m_PlayerDataGlobal.m_nHeroID")? as i64;
         if hero != 0 {
-            result.push((slot, hero, controller));
+            result.push((hero, controller));
         }
     }
     if let Some(ids) = selected {
         for id in ids {
             if !result
                 .iter()
-                .any(|(_, _, controller)| steam_id(ctx, controller) == Some(*id))
+                .any(|(_, controller)| steam_id(ctx, controller) == Some(*id))
             {
                 return Err(invalid(format!(
                     "Steam ID {id} has no hero at tick {}",
@@ -328,7 +325,7 @@ fn players<'a>(
             }
         }
     }
-    result.sort_by_key(|(slot, _, controller)| (steam_id(ctx, controller), slot.0));
+    result.sort_by_key(|(hero, controller)| (steam_id(ctx, controller), *hero));
     Ok(result)
 }
 fn bindings(ctx: &Context, controller: &Entity) -> Result<BTreeSet<(u32, u32)>> {
@@ -380,12 +377,12 @@ impl Parser {
         let mut result = ImbueResult {
             bindings: Vec::new(),
             effects: Vec::new(),
-            metadata: AbilityMetadata::new(catalog, &[]),
+            metadata: AbilityMetadata::new(catalog, &[], None),
         };
         self.visit_stat_ticks(&query.ticks, catalog, |ctx, _| {
-            for (slot, hero, controller) in players(ctx, query.steam_ids.as_deref())? {
+            for (hero, controller) in players(ctx, query.steam_ids.as_deref())? {
                 let mut scratch = Vec::new();
-                let resolver = resolver(ctx, catalog, controller, slot, hero, &mut scratch);
+                let resolver = resolver(ctx, catalog, controller, hero, &mut scratch);
                 for (item_id, ability_id) in bindings(ctx, controller)? {
                     let item = catalog.abilities.get(&item_id);
                     let ability = catalog.abilities.get(&ability_id);
@@ -393,7 +390,6 @@ impl Parser {
                     let binding = ImbueBinding {
                         tick: ctx.tick(),
                         steam_id: resolver.steam_id,
-                        player_slot: slot,
                         hero_id: hero,
                         item_id,
                         item_name: item.and_then(display),
@@ -462,16 +458,15 @@ impl Parser {
         let mut result = AbilityStatResult {
             values: Vec::new(),
             contributions: Vec::new(),
-            metadata: AbilityMetadata::new(catalog, &query.stats),
+            metadata: AbilityMetadata::new(catalog, &query.stats, Some(query.mode)),
         };
         self.visit_stat_ticks(&query.selection.ticks, catalog, |ctx, modifiers| {
-            for (slot, hero, controller) in players(ctx, query.selection.steam_ids.as_deref())? {
+            for (hero, controller) in players(ctx, query.selection.steam_ids.as_deref())? {
                 calculate_player(
                     ctx,
                     catalog,
                     modifiers,
                     controller,
-                    slot,
                     hero,
                     query,
                     &mut result,
@@ -495,7 +490,6 @@ fn resolver<'a, 'b>(
     ctx: &'a Context,
     catalog: &'a StatCatalog,
     controller: &'a Entity,
-    slot: PlayerSlot,
     hero_id: i64,
     contributions: &'b mut Vec<Contribution>,
 ) -> Resolver<'a, 'b> {
@@ -505,7 +499,6 @@ fn resolver<'a, 'b>(
         catalog,
         controller,
         steam_id: steam_id(ctx, controller),
-        slot,
         hero_id,
         game_time: ModifierClock::resolve(ctx).game_time(ctx).map(f64::from),
         game_start: ctx
@@ -547,7 +540,7 @@ impl Effect {
     ) -> Option<Self> {
         let symbol = definition["stat"].as_str()?;
         let stat = AbilityStat::from_symbol(symbol)?;
-        if empty_declaration(source, definition) {
+        if empty_declaration(source, definition) || !resolver.mode.includes_effect(definition) {
             return None;
         }
         let value = resolver.effect(definition, source, entry);
@@ -658,6 +651,61 @@ fn inferred_state(
     state
 }
 
+/// Runtime values need their own role evidence; a target alone is not proof
+/// of a persistent imbue. Keep ambiguous values unresolved so they cannot be
+/// replaced by a plausible but unverified catalog default during deduplication.
+#[derive(Debug, Eq, PartialEq)]
+enum DynamicRole {
+    Passive,
+    Temporary,
+    Unknown,
+}
+
+fn dynamic_role(catalog: &StatCatalog, owner: &Record, property: Option<&Value>) -> DynamicRole {
+    let Some(property) = property else {
+        return DynamicRole::Unknown;
+    };
+    if !StatMode::Baseline.includes_effect(property) {
+        return DynamicRole::Temporary;
+    }
+    if let Some(keys) = property["modifier_keys"]
+        .as_array()
+        .filter(|keys| !keys.is_empty())
+    {
+        let mut intrinsic = false;
+        let mut temporary = false;
+        for key in keys {
+            let Some(modifier) = catalog
+                .modifiers
+                .iter()
+                .find(|modifier| key.as_str() == Some(&modifier.record_key))
+            else {
+                return DynamicRole::Unknown;
+            };
+            if modifier.is_intrinsic_modifier_of(owner) {
+                intrinsic = true;
+            } else {
+                temporary = true;
+            }
+        }
+        return match (intrinsic, temporary) {
+            (true, false) => DynamicRole::Passive,
+            (false, true) => DynamicRole::Temporary,
+            _ => DynamicRole::Unknown,
+        };
+    }
+    if property["usage_flags"]
+        .as_str()
+        .is_some_and(|flags| flags.contains("IntrinsicallyProvidedInAbility"))
+    {
+        DynamicRole::Passive
+    } else if cast_modifiers(catalog, owner).is_some() {
+        DynamicRole::Temporary
+    } else {
+        DynamicRole::Unknown
+    }
+}
+
 fn dynamic_effects(resolver: &Resolver<'_, '_>, inputs: &PlayerInputs<'_>) -> Result<Vec<Effect>> {
     let path = "m_PlayerDataGlobal.m_vecDynamicAbilityValues";
     let mut result = Vec::new();
@@ -698,6 +746,9 @@ fn dynamic_effects(resolver: &Resolver<'_, '_>, inputs: &PlayerInputs<'_>) -> Re
             .collect();
         let property = match properties.as_slice() {
             [one] => Some(*one),
+            // A runtime stat type does not identify which of several same-stat
+            // properties supplied it. Baseline must not guess a persistent role.
+            _ if resolver.mode == StatMode::Baseline => None,
             _ => {
                 let mut conditional = properties.iter().filter(|e| {
                     e["usage_flags"]
@@ -738,13 +789,31 @@ fn dynamic_effects(resolver: &Resolver<'_, '_>, inputs: &PlayerInputs<'_>) -> Re
         if symbol == "MODIFIER_VALUE_ULTIMATE_COOLDOWN_REDUCTION_PERCENTAGE" {
             effect.scope = EffectScope::Ultimate;
         }
+        if resolver.mode == StatMode::Baseline {
+            if !inputs
+                .owned
+                .iter()
+                .any(|record| record.ability_id == Some(owner_id))
+            {
+                continue;
+            }
+            match dynamic_role(resolver.catalog, owner, property) {
+                DynamicRole::Temporary => continue,
+                DynamicRole::Passive => {}
+                DynamicRole::Unknown => effect.conditional(
+                    EffectState::Unresolved,
+                    "baseline excludes this dynamic value; its passive or active role is unknown",
+                ),
+            }
+        }
         if properties.len() > 1 && property.is_none() {
             effect.conditional(
                 EffectState::Unresolved,
                 "dynamic source has several matching properties; cannot deduplicate safely",
             );
         }
-        if effect.targets.is_empty()
+        if resolver.mode == StatMode::Current
+            && effect.targets.is_empty()
             && value != 0.0
             && let Some((ready, _)) = cast_modifiers(resolver.catalog, owner)
         {
@@ -802,7 +871,16 @@ fn effects(
     inputs: &PlayerInputs<'_>,
     imbues: &BTreeSet<(u32, u32)>,
 ) -> Result<Vec<Effect>> {
-    let mut result = dynamic_effects(resolver, inputs)?;
+    let dynamic = dynamic_effects(resolver, inputs)?;
+    catalog_effects(resolver, inputs, imbues, dynamic)
+}
+
+fn catalog_effects(
+    resolver: &mut Resolver<'_, '_>,
+    inputs: &PlayerInputs<'_>,
+    imbues: &BTreeSet<(u32, u32)>,
+    mut result: Vec<Effect>,
+) -> Result<Vec<Effect>> {
     let dynamic_len = result.len();
     // Accumulated values already include repeated permanent pickups. Never
     // exponentiate a pickup count or add the pickup's live modifier again.
@@ -929,7 +1007,12 @@ fn effects(
             if effect.value == Some(0.0) {
                 continue;
             }
-            if let Some((ready, applied)) = cast_modifiers(resolver.catalog, owner) {
+            if !flags.contains("IntrinsicallyProvidedInAbility")
+                && let Some((ready, applied)) = cast_modifiers(resolver.catalog, owner)
+            {
+                if resolver.mode == StatMode::Baseline {
+                    continue;
+                }
                 effect.scope = EffectScope::NextCast;
                 effect.conditional(if inputs.active.iter().any(|e|active_record(e,ready)) {EffectState::Ready}
                     else if inputs.active.iter().any(|e|active_record(e,applied)) {EffectState::Unresolved}
@@ -1038,8 +1121,10 @@ fn applies(effect: &Effect, target: &Target<'_>, resolver: &Resolver<'_, '_>) ->
             let property = &target.record.definition["m_mapAbilityProperties"]["AbilityCharges"];
             let def = json!({"stat":"", "property_name":"AbilityCharges", "value":number(&property["m_strValue"]),"definition_path":target.record.definition_path});
             // AbilityCharges' scaling encodes charge-count semantics rather than
-            // spirit scaling. Use the recorded maximum when available.
-            if let Ok(entity) = resolver.owned_ability(target.record)
+            // spirit scaling. Only current mode can use a recorded maximum,
+            // which may include temporary changes.
+            if resolver.mode == StatMode::Current
+                && let Ok(entity) = resolver.owned_ability(target.record)
                 && let Some(value) = field(resolver.ctx, entity, "m_iMaxAbilityCharges")
             {
                 return Ok(value > 0.0);
@@ -1057,14 +1142,14 @@ fn calculate_player(
     catalog: &StatCatalog,
     modifiers: &EffectiveModifierState,
     controller: &Entity,
-    slot: PlayerSlot,
     hero: i64,
     query: &AbilityStatQuery,
     result: &mut AbilityStatResult,
 ) -> Result<()> {
     let mut scratch = Vec::new();
-    let mut resolver = resolver(ctx, catalog, controller, slot, hero, &mut scratch);
-    let inputs = match PlayerInputs::collect(ctx, catalog, controller, hero, modifiers) {
+    let mut resolver = resolver(ctx, catalog, controller, hero, &mut scratch);
+    resolver.mode = query.mode;
+    let mut inputs = match PlayerInputs::collect(ctx, catalog, controller, hero, modifiers) {
         Ok(inputs) => inputs,
         Err(error) if query.strict => return Err(error),
         Err(error) => {
@@ -1092,9 +1177,9 @@ fn calculate_player(
             for ability_id in ids {
                 for &stat in &query.stats {
                     result.values.push(AbilityStatRow {
+                        mode: query.mode,
                         tick: ctx.tick(),
                         steam_id: resolver.steam_id,
-                        player_slot: slot,
                         hero_id: hero,
                         ability_id,
                         ability_name: catalog.abilities.get(&ability_id).and_then(display),
@@ -1110,6 +1195,7 @@ fn calculate_player(
             return Ok(());
         }
     };
+    let mode_diagnostics = inputs.select_mode(catalog, query.mode);
     let imbues = bindings(ctx, controller)?;
     let targets = targets(&inputs, catalog, query)?;
     let resolved = effects(&mut resolver, &inputs, &imbues);
@@ -1156,9 +1242,9 @@ fn calculate_player(
                             }
                             if query.explain {
                                 result.contributions.push(AbilityContribution {
+                                    mode: query.mode,
                                     tick: ctx.tick(),
                                     steam_id: resolver.steam_id,
-                                    player_slot: slot,
                                     hero_id: hero,
                                     ability_id,
                                     stat,
@@ -1177,6 +1263,7 @@ fn calculate_player(
                         }
                     }
                 }
+                diagnostics.extend(mode_diagnostics.iter().cloned());
                 for message in resolver.ignored_modifiers.values() {
                     diagnostics.insert(message.clone());
                 }
@@ -1210,7 +1297,7 @@ fn calculate_player(
                     ctx.tick(),
                     resolver
                         .steam_id
-                        .map_or_else(|| format!("slot {}", slot.0), |id| id.to_string()),
+                        .map_or_else(|| "without a Steam ID".into(), |id| id.to_string()),
                     stat.as_str()
                 );
                 if query.strict {
@@ -1219,9 +1306,9 @@ fn calculate_player(
                 diagnostics.insert(message);
             }
             result.values.push(AbilityStatRow {
+                mode: query.mode,
                 tick: ctx.tick(),
                 steam_id: resolver.steam_id,
-                player_slot: slot,
                 hero_id: hero,
                 ability_id,
                 ability_name: display(target.record),
@@ -1283,14 +1370,7 @@ mod tests {
         let ctx = Context::new(1.0 / 64.0).unwrap();
         let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
         let mut scratch = Vec::new();
-        let resolver = resolver(
-            &ctx,
-            &catalog,
-            &controller,
-            PlayerSlot(0),
-            999,
-            &mut scratch,
-        );
+        let resolver = resolver(&ctx, &catalog, &controller, 999, &mut scratch);
         let a = record(123, json!({}));
         let b = record(456, json!({}));
         let effects = [
@@ -1343,14 +1423,7 @@ mod tests {
         let ctx = Context::new(1.0 / 64.0).unwrap();
         let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
         let mut scratch = Vec::new();
-        let resolver = resolver(
-            &ctx,
-            &catalog,
-            &controller,
-            PlayerSlot(0),
-            999,
-            &mut scratch,
-        );
+        let resolver = resolver(&ctx, &catalog, &controller, 999, &mut scratch);
         for (charges, expected) in [(0, false), (1, true), (3, true)] {
             let record = record(
                 456,
@@ -1466,6 +1539,138 @@ mod tests {
             EffectState::Unresolved
         );
     }
+    #[test]
+    fn modes_keep_permanent_and_imbued_bonuses_but_separate_active_buffs() {
+        let mut catalog = catalog();
+        catalog
+            .modifier_value_types
+            .insert(900, AbilityStat::RangeBonus.symbol().into());
+        let intrinsic = &mut catalog.modifiers[1];
+        intrinsic.definition_path = "/test_gun/m_AutoIntrinsicModifiers/0".into();
+        intrinsic.stat_changes = vec![
+            json!({"stat":AbilityStat::RangeBonus.symbol(),"value":10,"property_name":"GlobalRange","definition_path":"/global"}),
+            json!({"stat":AbilityStat::RangeBonus.symbol(),"value":20,"property_name":"ImbuedRange","definition_path":"/imbued","apply_filter":"EApplyFilter_OnlyIfImbued"}),
+        ];
+        let buff = &mut catalog.modifiers[2];
+        buff.ability_id = Some(123);
+        buff.definition_path = "/test_gun/m_BuffModifier".into();
+        buff.stat_changes = vec![json!({
+            "stat":AbilityStat::RangeBonus.symbol(),"value":25,"definition_path":"/active"
+        })];
+        let entries = [
+            CModifierTableEntry {
+                modifier_subclass: Some(11),
+                serial_number: Some(1),
+                ..Default::default()
+            },
+            CModifierTableEntry {
+                modifier_subclass: Some(12),
+                serial_number: Some(2),
+                duration: Some(5.0),
+                last_applied_time: Some(10.0),
+                ..Default::default()
+            },
+        ];
+        let ctx = Context::new(1.0 / 64.0).unwrap();
+        let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
+        let imbues = BTreeSet::from([(123, 777)]);
+        for mode in [StatMode::Baseline, StatMode::Current] {
+            let mut inputs = PlayerInputs {
+                hero: &catalog.heroes[&999],
+                level: Some(0.0),
+                weapon: &catalog.abilities[&123],
+                inventory: vec![],
+                owned: vec![&catalog.abilities[&123]],
+                active: entries.iter().collect(),
+                permanent: vec![RecordedStat {
+                    source_id: 10,
+                    value_type: Some(900),
+                    value: 5.0,
+                }],
+            };
+            assert!(inputs.select_mode(&catalog, mode).is_empty());
+            let mut scratch = Vec::new();
+            let mut resolver = resolver(&ctx, &catalog, &controller, 999, &mut scratch);
+            resolver.mode = mode;
+            resolver.game_time = Some(12.0);
+            let effects = catalog_effects(&mut resolver, &inputs, &imbues, vec![]).unwrap();
+            for (id, baseline, current) in [(777, 31.6, 48.7), (888, 14.5, 35.875)] {
+                let ability = record(id, json!({}));
+                let target = Target {
+                    record: &ability,
+                    ultimate: false,
+                    item: false,
+                };
+                let values = effects
+                    .iter()
+                    .filter(|effect| applies(effect, &target, &resolver).unwrap())
+                    .filter(|effect| effect.state == EffectState::Active)
+                    .filter_map(|effect| effect.value);
+                let value = crate::rulesets::range_bonus::calculate(values).unwrap();
+                assert!(
+                    (value
+                        - if mode == StatMode::Baseline {
+                            baseline
+                        } else {
+                            current
+                        })
+                    .abs()
+                        < 1e-10
+                );
+            }
+            assert_eq!(
+                effects.iter().any(|effect| effect.serial == Some(2)),
+                mode == StatMode::Current
+            );
+        }
+    }
+
+    #[test]
+    fn dynamic_baseline_needs_passive_evidence_not_just_an_imbue_target() {
+        let mut catalog = catalog();
+        catalog.modifiers[1].definition_path = "/test_gun/m_AutoIntrinsicModifiers/0".into();
+        catalog.modifiers[2].definition_path = "/test_gun/m_BuffModifier".into();
+        let owner = &catalog.abilities[&123];
+        let passive = json!({"modifier_keys":[catalog.modifiers[1].record_key]});
+        let temporary = json!({"modifier_keys":[catalog.modifiers[2].record_key]});
+        let mixed = json!({"modifier_keys":[catalog.modifiers[1].record_key,catalog.modifiers[2].record_key]});
+        let conditional = json!({"usage_flags":"ConditionallyApplied"});
+        let declared = json!({"usage_flags":"IntrinsicallyProvidedInAbility"});
+        assert_eq!(
+            dynamic_role(&catalog, owner, Some(&passive)),
+            DynamicRole::Passive
+        );
+        assert_eq!(
+            dynamic_role(&catalog, owner, Some(&declared)),
+            DynamicRole::Passive
+        );
+        assert_eq!(
+            dynamic_role(&catalog, owner, Some(&temporary)),
+            DynamicRole::Temporary
+        );
+        assert_eq!(
+            dynamic_role(&catalog, owner, Some(&conditional)),
+            DynamicRole::Temporary
+        );
+        for property in [
+            None,
+            Some(&mixed),
+            Some(&json!({"apply_filter":"EApplyFilter_OnlyIfImbued"})),
+        ] {
+            assert_eq!(
+                dynamic_role(&catalog, owner, property),
+                DynamicRole::Unknown
+            );
+        }
+        // An ambiguous recorded value must suppress a catalog fallback on that
+        // target, even though the recorded value cannot enter the subtotal.
+        let mut recorded = bonus(EffectScope::Imbued, 35.0);
+        recorded.conditional(EffectState::Unresolved, "unknown baseline role");
+        let mut default = bonus(EffectScope::Global, 10.0);
+        assert!(!replaced_by_runtime(&mut default, &[recorded]));
+        assert_eq!(default.excluded_targets, BTreeSet::from([123]));
+    }
+
     #[test]
     fn all_v1_rules_use_complement_products_and_reject_invalid_values() {
         for rule in [

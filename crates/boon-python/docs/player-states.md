@@ -47,7 +47,6 @@ respawn, even when the controller selects a spectator pawn.
 |---|---|---|
 | `tick` | Int32 | Exact demo tick. |
 | `steam_id` | UInt64 | Steam account ID, or null if unavailable. |
-| `player_slot` | UInt32 | Player slot within this replay. |
 | `hero_id` | Int64 | Hero ID recorded on the controller at this tick. |
 | `states` | List(String) | Names from the recorded predicted-state mask. |
 | `enabled_states` | List(String) | Names from the enabled-state mask. |
@@ -67,13 +66,13 @@ enabled-state mask.
 An empty list means no matching entries. Check the corresponding `unknown_*`
 list before you conclude that no bits are set. Null in both columns means that
 the pawn, mask, or a required mask word is unavailable. A player without a Steam
-ID retains a row with a null ID and its replay slot. A Steam ID filter selects
+ID retains a row with a null ID. A Steam ID filter selects
 only rows with a matching recorded ID. An unknown Steam ID returns no rows.
 Stat and imbue queries instead report an error for an absent requested player.
 
 Use `steam_id` to join these rows to `demo.players`.
 Use `tick` and `steam_id` to join state rows to stat results.
-Do not join null Steam IDs. Summary slots can differ from controller slots.
+Do not join null Steam IDs.
 
 ## Use state lists
 

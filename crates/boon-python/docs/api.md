@@ -52,6 +52,8 @@ See {doc}`hero-stats` for supported stats, equations, input sources, and limits.
 
 Calculate bonus percentages for each ability. Select stats with `AbilityStat` enum members.
 Set `ticks`, `data_version`, and optional `steam_ids`.
+Use `mode="current"` (default) for supported active effects, or `mode="baseline"`
+for passive bonuses, permanent changes, and persistent imbues.
 See {doc}`ability-stats` for targeting filters, equations, and limits.
 
 #### `imbues(...)`
@@ -225,6 +227,7 @@ stat and state queries at the selected ticks; it requires `player_ticks`.
 Partial capacity produces partial ammo. Missing capacity makes both counts null.
 A missing fraction makes `ammo` null, but can leave `max_ammo` available.
 Unknown state bits make `unlimited_ammo` null unless `INFINITE_CLIP` is present.
+Missing or duplicate Steam IDs leave calculated ammo and state values null.
 Unlimited ammo does not change the counts to infinity. Neither `demo.player_ticks`
 nor `demo.load("player_ticks")` calculates these added fields.
 
@@ -246,11 +249,14 @@ post-match statistics. They do not estimate healing from changes in health.
 The first call builds and caches all six tables.
 
 - **`snapshots`** has one row per player and `snapshot_time_s`. It includes
-  `steam_id`, `player_slot`, `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
+  `steam_id`, `hero_id`, `kills`, `deaths`, `assists`, `net_worth`, `denies`,
   `level`, `lane`, `creep_kills`, and `neutral_kills`.
   Recorded damage totals are `player_damage`, `creep_damage`, `neutral_damage`,
   `boss_damage`, `self_damage`, and `player_damage_taken`.
   Healing totals are `player_healing`, `teammate_healing`, and `self_healing`.
+  `barrier_absorption` is damage stopped by barriers this player provided
+  (recorded `player_barriering`). It is separate from healing.
+  `damage_absorbed` is damage stopped by barriers on this player.
   Other recorded counters are `damage_mitigated`, `damage_absorbed`,
   `absorption_provided`, `heal_prevented`, and `heal_lost`.
   The added counters are null when the message omits them.
@@ -260,7 +266,7 @@ The first call builds and caches all six tables.
   `cultist_sacrifice_*`, `assists_*`, and `unknown_*`.
   The `unknown_*` columns refer to the Goose Egg source.
 - **`gold_sources`** has one row per recorded player, snapshot, and soul source.
-  Columns are `snapshot_time_s`, `steam_id`, `player_slot`, `hero_id`, `source_id`,
+  Columns are `snapshot_time_s`, `steam_id`, `hero_id`, `source_id`,
   `source_name`, `gold`, `gold_orbs`, `kills`, and `damage`.
   The counters are cumulative at that snapshot. `gold` and `gold_orbs` preserve
   the separate counters from the message. Use `snapshots.net_worth` for net worth.
@@ -268,15 +274,14 @@ The first call builds and caches all six tables.
   `k_eAssists`. Unknown IDs remain available as `unknown_<id>`.
   Absent source IDs, names, or counters are null. This table preserves sources
   that have no column in `snapshots`.
-- **`last_hits`** contains `steam_id`, `player_slot`, `hero_id`, and the final scoreboard `last_hits` total.
+- **`last_hits`** contains `steam_id`, `hero_id`, and the final scoreboard `last_hits` total.
 - **`objectives`** contains `team_objective_id`, `team`, `destroyed_time_s`,
   `first_damage_time_s`, `creep_damage`, `player_damage`, and
   `player_spirit_damage`. Absent times are null.
 - **`damage`** contains the full recorded matrix. Each row identifies a
   `dealer_steam_id`, `target_steam_id`, `source_name`, `stat_type`, and
   `sample_time_s`. `dealer_hero_id` and `target_hero_id` identify roster heroes.
-  Non-player slots have null hero IDs. Raw slots remain in `dealer_player_slot`
-  and `target_player_slot`.
+  Non-player sources and targets have null hero IDs.
   `damage` is the amount for the interval from `interval_start_s` to
   `sample_time_s`. **`total` is the recorded cumulative amount at `sample_time_s`.**
   `stat_type` is `damage`, `healing`, `heal_prevented`, `mitigated`, `lethal`, or
@@ -286,8 +291,8 @@ The first call builds and caches all six tables.
   Select categories or specific sources before aggregation. Do not add them together.
 - **`healing`** selects `healing` and `regen` rows from the matrix and excludes
   category duplicates. Columns are `interval_start_s`, `interval_end_s`,
-  `healer_steam_id`, `healer_player_slot`, `healer_hero_id`,
-  `target_steam_id`, `target_player_slot`, `target_hero_id`,
+  `healer_steam_id`, `healer_hero_id`,
+  `target_steam_id`, `target_hero_id`,
   `source_name`, `stat_type`, `amount`, and `total`.
   `amount` is the interval amount. **`total` is the recorded cumulative amount
   at `interval_end_s`.** Periods with no increase remain in the table.
@@ -301,9 +306,8 @@ samples. Boon does not add rows for unrecorded periods.
 Hero IDs come from the match roster. Steam IDs identify players across hero changes.
 Use Steam IDs to join these tables to `demo.players`.
 Boon matches summary account IDs to recorded Steam IDs.
-IDs use UInt64. Unmatched accounts and non-player sources have null Steam IDs. Raw `*_player_slot` columns remain
-available. Do not group or join null Steam IDs as if they were one player.
-Summary slots can differ from controller slots in stat and state tables.
+IDs use UInt64. Unmatched accounts and non-player sources have null Steam IDs.
+Do not group or join null Steam IDs as if they were one player. Tables do not return player slots.
 
 To get a total at one reporting period, select that time and sum `total` across
 sources. **Do not sum `total` across reporting periods.** To combine periods,
@@ -704,7 +708,6 @@ hero stats or all temporary effects. Do not use them as final or effective stats
 |--------|------|-------------|
 | `tick` | `int` | The game tick |
 | `steam_id` | `UInt64`, nullable | Steam account ID |
-| `player_slot` | `UInt32` | Recorded slot for this tick |
 | `hero_id` | `int` | Hero ID |
 | `ammo_fraction` | `Float32`, nullable | Recorded primary-gun ammo fraction |
 | `x` | `float` | Player X position in world (Hammer) units |

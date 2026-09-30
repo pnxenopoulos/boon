@@ -227,8 +227,11 @@ class Demo:
         Return six cached Polars DataFrames:
 
         - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
-          Includes ``steam_id``, ``player_slot``, ``hero_id``, damage by target type, damage taken,
+          Includes ``steam_id``, ``hero_id``, damage by target type, damage taken,
           ``player_healing``, ``teammate_healing``, and ``self_healing``.
+          ``barrier_absorption`` is damage stopped by barriers this player provided
+          (recorded ``player_barriering``). ``damage_absorbed`` is damage stopped
+          by barriers on this player. Healing and barrier absorption are separate.
           Added counters are null when absent.
         - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
           for each player, snapshot, and source. Includes ``source_id`` and the protobuf
@@ -241,13 +244,13 @@ class Demo:
           healing, regeneration, or another recorded statistic. Category rows
           (``is_category=True``) duplicate specific sources; do not add them together.
         - ``healing``: healing and regeneration rows without category duplicates.
-          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_player_slot``,
-          ``healer_hero_id``, ``target_steam_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_hero_id``,
+          ``target_steam_id``, ``target_hero_id``, ``source_name``,
           ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
           ``total`` is the recorded cumulative amount. Zero changes remain in the table.
 
         Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
-        Do not sum cumulative totals across periods. Use player slots across hero changes;
+        Do not sum cumulative totals across periods. Use Steam IDs across hero changes;
         hero IDs come from the match roster. These tables do not contain individual heals.
 
         Raises ``DemoMessageError`` if the post-match message is absent or invalid.
@@ -289,7 +292,7 @@ class Demo:
                 A missing version is downloaded. Without this option, snapshots
                 require no catalog.
 
-        Player rows include steam_id, player_slot, and recorded ammo_fraction.
+        Player rows include steam_id, hero_id, and recorded ammo_fraction.
         With data_version, ammo and max_ammo are nullable UInt32 columns.
         ammo is fraction times capacity, rounded nearest, with halves rounded up.
         max_ammo stays finite when unlimited_ammo is True. That nullable flag
@@ -322,7 +325,6 @@ class Demo:
         start_tick: int | None = ...,
         end_tick: int | None = ...,
     ) -> pl.DataFrame | dict[str, pl.DataFrame]: ...
-
     def imbues(
         self,
         /,
@@ -338,6 +340,7 @@ class Demo:
         ticks: int | Sequence[int],
         data_version: str,
         stats: Sequence[AbilityStat | str] = ...,
+        mode: StatMode | str = ...,
         steam_ids: Sequence[int] | None = None,
         abilities: Sequence[int] | None = None,
         include_items: bool = False,
@@ -358,6 +361,7 @@ class Demo:
         ticks: list[int],
         *,
         stats: list[str],
+        mode: str = ...,
         steam_ids: Sequence[int] | None = None,
         abilities: Sequence[int] | None = None,
         include_items: bool = False,
@@ -628,7 +632,6 @@ class Demo:
         Columns:
             - **tick** (*int*) -- The game tick.
             - **steam_id** (*int, nullable*) -- Steam account ID (UInt64).
-            - **player_slot** (*int*) -- Recorded slot for this tick.
             - **hero_id** (*int*) -- The player's hero ID.
             - **ammo_fraction** (*float, nullable*) -- Recorded primary-gun ammo fraction.
               Use snapshots(data_version=...) to calculate ammo and max_ammo.

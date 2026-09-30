@@ -27,7 +27,8 @@ from conftest import FIXTURES_DIR, _require_demo_fixture
 # ---------------------------------------------------------------------------
 
 PLAYER_TICKS_COLUMNS = {
-    "tick", "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
+    "tick", "steam_id", "ammo_fraction",
+    "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
     "in_regen_zone", "in_item_shop",
     "death_time", "last_spawn_time", "respawn_time",
     "health", "max_health", "barrier",

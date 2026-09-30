@@ -13,7 +13,7 @@ import polars as pl
 from boon import data
 from boon import rulesets as builtin_rulesets
 from boon._selection import validate_steam_ids
-from boon.hero_stats import CalculationError
+from boon.hero_stats import CalculationError, StatMode
 from boon.rulesets import Rule
 
 if TYPE_CHECKING:
@@ -51,7 +51,6 @@ class AbilityStatResult:
 _IDENTITY = {
     "tick": pl.Int32,
     "steam_id": pl.UInt64,
-    "player_slot": pl.UInt32,
     "hero_id": pl.Int64,
 }
 _BINDING = {
@@ -139,6 +138,7 @@ def calculate_ability_stats(
         AbilityStat.RANGE_BONUS,
         AbilityStat.RADIUS_BONUS,
     ),
+    mode: StatMode | str = StatMode.CURRENT,
     steam_ids: Sequence[int] | None = None,
     abilities: Sequence[int] | None = None,
     include_items: bool = False,
@@ -158,6 +158,11 @@ def calculate_ability_stats(
     Ability and item cooldown reductions remain separate. Range and radius are
     separate stats. These values are not seconds, metres, or remaining cooldowns.
 
+    Use ``mode="current"`` (default) to include supported active effects.
+    Use ``mode="baseline"`` for owned passive bonuses, persistent imbues, and
+    permanent recorded changes. Temporary and next-cast effects are excluded.
+    Unknown source roles retain diagnostics. Results and metadata include mode.
+
     V1 combines source percentages as 100 * (1 - product(1 - bonus / 100)).
     Permanent totals, active modifiers, and recorded dynamic values are included
     once. Catalog filters restrict imbued and charged-ability effects.
@@ -166,6 +171,7 @@ def calculate_ability_stats(
     Unsupported activation is partial with a diagnostic. Missing inputs raise
     CalculationError; strict=False returns unresolved rows with null values.
     """
+    mode = StatMode(mode)
     ticks = _query(ticks, data_version, steam_ids)
     _ids("abilities", abilities)
     selected = list(dict.fromkeys(AbilityStat(stat) for stat in stats))
@@ -188,6 +194,7 @@ def calculate_ability_stats(
                 directory,
                 ticks,
                 stats=[stat.value for stat in selected],
+                mode=mode.value,
                 steam_ids=steam_ids,
                 abilities=abilities,
                 include_items=include_items,
@@ -202,6 +209,7 @@ def calculate_ability_stats(
         pl.DataFrame(
             payload["values"],
             schema={
+                "mode": pl.String,
                 **_IDENTITY,
                 "ability_id": pl.UInt32,
                 "ability_name": pl.String,
@@ -216,6 +224,7 @@ def calculate_ability_stats(
         pl.DataFrame(
             payload["contributions"],
             schema={
+                "mode": pl.String,
                 **_IDENTITY,
                 "ability_id": pl.UInt32,
                 "stat": pl.String,

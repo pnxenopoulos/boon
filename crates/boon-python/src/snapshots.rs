@@ -429,7 +429,6 @@ impl BarrierTimeline {
 #[derive(Default)]
 pub(super) struct PtCols {
     pub(super) steam_id: Vec<Option<u64>>,
-    pub(super) player_slot: Vec<u32>,
     pub(super) ammo_fraction: Vec<Option<f32>>,
     pub(super) tick: Vec<i32>,
     pub(super) hero_id: Vec<i64>,
@@ -496,14 +495,11 @@ impl PtCols {
         barriers: &BarrierTimeline,
         ammo: &HashMap<u32, Option<f32>>,
     ) {
-        for (index, ctrl) in ctx
+        for (_, ctrl) in ctx
             .entities()
             .iter()
             .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
         {
-            let Some(slot) = index.checked_sub(1).and_then(|i| u32::try_from(i).ok()) else {
-                continue;
-            };
             let Some(pawn_handle) = ctrl.get_handle(k.pawn_handle) else {
                 continue;
             };
@@ -519,7 +515,6 @@ impl PtCols {
                 Some(boon_parser::FieldValue::U64(id)) if *id != 0 => Some(*id),
                 _ => None,
             });
-            self.player_slot.push(slot);
             self.ammo_fraction
                 .push(ammo.get(&pawn_handle).copied().flatten());
             self.tick.push(ctx.tick());
@@ -619,7 +614,6 @@ impl PtCols {
         df_from_columns(vec![
             numeric_column("tick", self.tick),
             Column::new("steam_id".into(), self.steam_id),
-            numeric_column("player_slot", self.player_slot),
             Column::new("ammo_fraction".into(), self.ammo_fraction),
             numeric_column("hero_id", self.hero_id),
             numeric_column("x", self.x),

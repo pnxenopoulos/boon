@@ -142,7 +142,6 @@ causes an error at that tick. The old `players` slot filter is not supported.
 | `mode` | `current` or `baseline` (String) |
 | `tick` | Requested demo tick (Int32) |
 | `steam_id` | Steam account ID (UInt64), or null if missing |
-| `player_slot` | Raw controller slot within the demo (UInt32) |
 | `hero_id` | Hero at this tick (Int64) |
 | `stat` | Stat name, such as `clip_size` (String) |
 | `value` | Calculated value (Float64), or null |
@@ -160,8 +159,7 @@ opposing sources add to zero. Do not add intermediate rows to the final stat.
 
 Use `steam_id` to join results to `demo.players`. Use `tick` and `steam_id` to
 join state rows to stat rows. A Steam ID stays constant through hero changes.
-Rows without a Steam ID keep their raw slot. Do not join null Steam IDs.
-Summary slots can differ from controller slots.
+Rows without a Steam ID retain a null ID. Do not join null Steam IDs.
 
 `metadata` records the mode, client version, catalog snapshot, source commit, and rules.
 Each rule has a name, version, and documentation date. The date is not a game

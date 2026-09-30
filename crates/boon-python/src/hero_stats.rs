@@ -69,13 +69,14 @@ impl Demo {
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (directory, ticks, *, stats, steam_ids=None, abilities=None, include_items=false, explain=false, strict=true))]
+    #[pyo3(signature = (directory, ticks, *, stats, mode="current", steam_ids=None, abilities=None, include_items=false, explain=false, strict=true))]
     fn _calculate_ability_stats(
         &self,
         py: Python<'_>,
         directory: PathBuf,
         ticks: Vec<i32>,
         stats: Vec<String>,
+        mode: &str,
         steam_ids: Option<Vec<u64>>,
         abilities: Option<Vec<u32>>,
         include_items: bool,
@@ -84,6 +85,7 @@ impl Demo {
     ) -> PyResult<String> {
         py.detach(|| {
             use boon_parser::ability_stats::{AbilityRuleset, AbilityStat, AbilityStatQuery};
+            let mode: StatMode = mode.parse()?;
             let stats: Vec<AbilityStat> =
                 stats.iter().map(|s| s.parse()).collect::<Result<_, _>>()?;
             let rules = stats
@@ -91,6 +93,7 @@ impl Demo {
                 .fold(AbilityRuleset::new(), |rules, stat| rules.with(stat.rule()));
             let catalog = StatCatalog::from_directory(&directory)?;
             let mut query = AbilityStatQuery::new(ticks, stats)
+                .mode(mode)
                 .include_items(include_items)
                 .explain(explain)
                 .strict(strict);

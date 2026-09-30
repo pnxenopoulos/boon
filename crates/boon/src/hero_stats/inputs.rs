@@ -4,8 +4,8 @@ mod modes;
 
 use super::catalog::{Record, number};
 use super::{
-    CalculationError, Contribution, HeroStat, HeroStatQuery, PlayerSlot, StatCatalog, StatMode,
-    StatResult, StatRow,
+    CalculationError, Contribution, HeroStat, HeroStatQuery, StatCatalog, StatMode, StatResult,
+    StatRow,
 };
 use crate::{Context, EffectiveModifierState, Entity, FieldValue, ModifierClock, rulesets};
 use boon_proto::proto::CModifierTableEntry;
@@ -151,19 +151,11 @@ pub(super) fn collect(
         .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")
         .and_then(|(_, e)| field(ctx, e, "m_pGameRules.m_flGameStartTime"));
     let mut selected = HashSet::new();
-    for (index, controller) in ctx
+    for (_, controller) in ctx
         .entities()
         .iter()
         .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
     {
-        let slot = PlayerSlot(
-            u32::try_from(
-                index
-                    .checked_sub(1)
-                    .ok_or_else(|| invalid("invalid controller slot"))?,
-            )
-            .map_err(|_| invalid("invalid controller slot"))?,
-        );
         let steam_id = steam_id(ctx, controller);
         if query
             .steam_ids
@@ -189,7 +181,6 @@ pub(super) fn collect(
             controller,
             hero_id,
             steam_id,
-            slot,
             game_time,
             game_start,
             explain: query.explain,
@@ -258,7 +249,7 @@ pub(super) fn collect(
                     let message = format!(
                         "tick {} player {} hero {hero_id} {}: {error}",
                         ctx.tick(),
-                        steam_id.map_or_else(|| format!("slot {}", slot.0), |id| id.to_string()),
+                        steam_id.map_or_else(|| "without a Steam ID".into(), |id| id.to_string()),
                         stat.as_str()
                     );
                     if query.strict {
@@ -316,7 +307,6 @@ pub(super) fn collect(
                 mode: query.mode,
                 tick: ctx.tick(),
                 steam_id,
-                player_slot: slot,
                 hero_id,
                 stat,
                 value,
@@ -538,7 +528,6 @@ struct Resolver<'a, 'b> {
     controller: &'a Entity,
     hero_id: i64,
     steam_id: Option<u64>,
-    slot: PlayerSlot,
     game_time: Option<f64>,
     game_start: Option<f64>,
     explain: bool,
@@ -626,7 +615,6 @@ impl<'a> Resolver<'a, '_> {
                 mode: self.mode,
                 tick: self.ctx.tick(),
                 steam_id: self.steam_id,
-                player_slot: self.slot,
                 hero_id: self.hero_id,
                 input: input.into(),
                 kind,
@@ -1295,7 +1283,6 @@ impl<'a> Resolver<'a, '_> {
                 mode: self.mode,
                 tick: self.ctx.tick(),
                 steam_id: self.steam_id,
-                player_slot: self.slot,
                 hero_id: self.hero_id,
                 input: "gravity_scale".into(),
                 kind: "base",
@@ -1978,7 +1965,6 @@ impl<'a> Resolver<'a, '_> {
                     mode: self.mode,
                     tick: self.ctx.tick(),
                     steam_id: self.steam_id,
-                    player_slot: self.slot,
                     hero_id: self.hero_id,
                     input: input.into(),
                     kind,
@@ -2477,7 +2463,6 @@ mod tests {
             controller: &controller,
             hero_id: 999,
             steam_id: None,
-            slot: PlayerSlot(0),
             game_time: None,
             game_start: None,
             explain: true,
@@ -2701,7 +2686,6 @@ mod tests {
             controller: &controller,
             hero_id: 999,
             steam_id: None,
-            slot: PlayerSlot(0),
             game_time: Some(12.0),
             game_start: Some(0.0),
             explain: true,
@@ -5399,7 +5383,6 @@ mod tests {
             controller: &controller,
             hero_id: 999,
             steam_id: None,
-            slot: PlayerSlot(0),
             game_time: Some(800.0),
             game_start: Some(100.0),
             explain: true,

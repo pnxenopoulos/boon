@@ -32,8 +32,8 @@ def player_states(
     the mask is unavailable. Unknown bit indices are retained in ``unknown_states``,
     ``unknown_enabled_states``, and ``unknown_disabled_states``.
 
-    Rows include tick, steam_id, player_slot, and hero_id. Players without a
-    Steam ID retain their slot and a null ID. Empty selections return no rows.
+    Rows include tick, steam_id, and hero_id. Players without a
+    Steam ID retain a row with a null ID. Empty selections return no rows.
     Invalid or absent ticks raise ValueError. This does not calculate stats.
     """
     if not isinstance(data_version, str) or not data_version:

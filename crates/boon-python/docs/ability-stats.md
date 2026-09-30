@@ -7,7 +7,7 @@ Both methods read replay state and a selected boon-data version.
 ## Python
 
 ```python
-from boon import AbilityStat, Demo
+from boon import AbilityStat, Demo, StatMode
 
 version = "6694"  # Select the client version for your demo.
 steam_id = 76561197999389679  # Venator in this demo.
@@ -22,6 +22,7 @@ result = demo.calculate_ability_stats(
     steam_ids=[steam_id],
     data_version=version,
     stats=[AbilityStat.COOLDOWN_REDUCTION, AbilityStat.RANGE_BONUS],
+    mode=StatMode.CURRENT,  # Default; BASELINE selects passive and permanent inputs.
     explain=True,
     strict=False,
 )
@@ -52,6 +53,25 @@ Use `abilities=[ability_id, ...]` to select owned abilities or items by catalog 
 Use `include_items=True` to add all owned items.
 Each requested ability ID must belong to a selected player during the query.
 
+## Select baseline or current effects
+
+Use `mode="current"` (default) for supported active effects. Use
+`mode="baseline"` for owned passive bonuses, permanent recorded changes,
+and persistent imbues. `StatMode.CURRENT` and `StatMode.BASELINE` also work.
+
+Both modes use the selected tick and retain targeting filters. Baseline excludes
+temporary buffs, powerups, conditional effects, and next-cast bonuses.
+An untimed modifier or a recorded target alone does not prove a passive effect.
+Unknown source roles produce partial values with diagnostics.
+
+Recorded dynamic values need a passive catalog binding for baseline. Ambiguous
+values do not enter its subtotal or silently fall back to catalog defaults.
+Current mode can use recorded maximum charges for charge filters. Baseline uses
+catalog charges and upgrades, without temporary changes to the recorded maximum.
+The mode does not change units or equations.
+
+`imbues()` reads recorded selections and has no mode parameter.
+
 ## Results
 
 | Table | Contents |
@@ -61,10 +81,12 @@ Each requested ability ID must belong to a selected player during the query.
 | `result.values` | One row per tick, player, ability, and stat; includes the value, unit, rule, status, and diagnostic. |
 | `result.contributions` | Input sources, properties, scope, activation state, and whether each input was included. Requires `explain=True`. |
 
-Each table includes `tick`, `steam_id`, `player_slot`, and `hero_id`.
+Stat values and contributions also contain `mode` (`current` or `baseline`).
+Their metadata records the same mode.
+
+Each table includes `tick`, `steam_id`, and `hero_id`.
 Steam IDs use UInt64. Join to `demo.players` with `steam_id`.
-A missing Steam ID is null; its row keeps the raw player slot.
-Do not join null Steam IDs. Summary slots can differ from controller slots.
+A missing Steam ID is null. Keep these rows separate; do not join null Steam IDs.
 
 Missing catalog records do not remove recorded imbue bindings.
 A binding can have no effect rows when the catalog has no mapped stat changes.
@@ -99,14 +121,15 @@ Ability cooldown reduction applies to hero abilities. Item cooldown reduction ap
 An item that disables cooldown scaling has status `not_applicable` and a null value.
 Range and duration bonuses can apply to items. Range and radius remain separate stats.
 
-For charged abilities, filters use recorded maximum charges or catalog charges with upgrades.
+For charged abilities, current-mode filters use recorded maximum charges or catalog charges with upgrades.
 Ultimate-only filters select the fourth signature slot.
 Charge recovery time and the delay between casts are separate properties.
 An event that reduces a running cooldown does not become a permanent stat bonus.
 
 ## Sources and limits
 
-Boon includes recorded stat totals, active modifiers, catalog effects, and ability upgrades.
+The selected mode determines which recorded stat totals, modifiers, catalog effects,
+and ability upgrades enter the calculation.
 It applies imbue and charge filters only to their targets.
 It does not add a pickup modifier again when the recorded total includes that pickup.
 A recorded dynamic value replaces its matching catalog contribution, including when the value is zero.
@@ -136,7 +159,7 @@ See [Known Issues](known-issues.md#ability-bonuses-and-arcane-surge).
 use boon::{
     Parser,
     ability_stats::{AbilityRuleset, AbilityStat, AbilityStatQuery, ImbueQuery},
-    hero_stats::StatCatalog,
+    hero_stats::{StatCatalog, StatMode},
 };
 use std::path::Path;
 
@@ -152,6 +175,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rules = stats.iter().fold(AbilityRuleset::new(), |r, s| r.with(s.rule()));
     let query = AbilityStatQuery::new([50707], stats)
         .steam_ids([steam_id])
+        .mode(StatMode::Current)
         .explain(true)
         .strict(false);
     let result = parser.calculate_ability_stats(&query, &catalog, &rules)?;

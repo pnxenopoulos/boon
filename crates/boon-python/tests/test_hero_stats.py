@@ -27,7 +27,6 @@ class RecordedResult:
                         "mode": kwargs["mode"],
                         "tick": ticks[0],
                         "steam_id": 76561197999389679,
-                        "player_slot": 0,
                         "hero_id": 999,
                         "stat": "clip_size",
                         "value": 36,
@@ -362,13 +361,14 @@ def test_recorded_gravity_does_not_require_hero_or_modifier_definitions(
         demo.calculate_hero_stats(ticks=10000, data_version=VERSION, steam_ids=[1])
 
 
-def test_missing_steam_id_keeps_slot(monkeypatch, tmp_path):
+def test_missing_steam_id_keeps_stat_row(monkeypatch, tmp_path):
     monkeypatch.setattr(data, "update", lambda _: tmp_path)
     result = calculate_hero_stats(
         cast(Demo, RecordedResult(steam_id=None)), ticks=50, data_version=VERSION
     )
     assert result.values["steam_id"].item() is None
-    assert result.values["player_slot"].item() == 0
+    assert result.values["value"].item() == 36
+    assert "player_slot" not in result.values.columns
 
 
 def test_old_slot_keyword_is_not_silently_reinterpreted():

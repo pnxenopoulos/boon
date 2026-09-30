@@ -97,7 +97,7 @@ def calculate_hero_stats(
     Both filters apply when set. Get Steam IDs from ``demo.players``.
     Omit both filters to include all players. An empty filter selects no players.
     Results contain ``steam_id`` (UInt64), or null when the ID is missing.
-    The raw ``player_slot`` remains available.
+    Use ``steam_id`` for player joins. Do not join missing IDs as one player.
 
     Set ``data_version`` to a client version from ``boon versions``.
     Boon downloads and verifies a missing version. Omit ``rulesets`` to use V1.
@@ -198,7 +198,6 @@ def calculate_hero_stats(
             "mode": pl.String,
             "tick": pl.Int32,
             "steam_id": pl.UInt64,
-            "player_slot": pl.UInt32,
             "hero_id": pl.Int64,
             "stat": pl.String,
             "value": pl.Float64,
@@ -214,7 +213,6 @@ def calculate_hero_stats(
             "mode": pl.String,
             "tick": pl.Int32,
             "steam_id": pl.UInt64,
-            "player_slot": pl.UInt32,
             "hero_id": pl.Int64,
             "input": pl.String,
             "kind": pl.String,

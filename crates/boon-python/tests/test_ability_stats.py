@@ -5,7 +5,7 @@ from typing import cast
 
 import polars as pl
 import pytest
-from boon import AbilityStat, CalculationError, Demo, data, rulesets
+from boon import AbilityStat, CalculationError, Demo, StatMode, data, rulesets
 from boon.ability_stats import calculate_ability_stats, imbues
 
 
@@ -21,7 +21,9 @@ class RecordedResult:
 
     def _calculate_ability_stats(self, directory, ticks, **kwargs):
         self.calls.append((directory, ticks, kwargs))
-        return json.dumps({"values": [], "contributions": [], "metadata": {}})
+        return json.dumps(
+            {"values": [], "contributions": [], "metadata": {"mode": kwargs["mode"]}}
+        )
 
 
 @pytest.mark.parametrize("function", [imbues, calculate_ability_stats])
@@ -49,6 +51,8 @@ def test_invalid_selection_does_not_download(monkeypatch, function, options):
     "options",
     [
         {"stats": []},
+        {"mode": "effective"},
+        {"mode": None},
         {"stats": ["unknown"]},
         {"abilities": [-1]},
         {"rulesets": {}},
@@ -86,6 +90,10 @@ def test_empty_tables_keep_types_and_selected_version(monkeypatch, tmp_path):
         explain=True,
         strict=False,
     )
+    assert stats.metadata["mode"] == "current"
+    assert demo.calls[1][2]["mode"] == "current"
+    assert stats.values.schema["mode"] == pl.String
+    assert stats.contributions.schema["mode"] == pl.String
     assert stats.values.schema["steam_id"] == pl.UInt64
     assert stats.contributions.schema["steam_id"] == pl.UInt64
     assert stats.values.schema["value"] == pl.Float64
@@ -127,6 +135,9 @@ def test_native_steam_selection_and_imbue_identity(demo: Demo, tmp_path, monkeyp
         )
     monkeypatch.setattr(data, "update", lambda _: tmp_path)
     all_imbues = demo.imbues(ticks=tick, data_version="1234")
+    assert "mode" not in all_imbues.metadata
+    assert "player_slot" not in all_imbues.bindings.columns
+    assert "player_slot" not in all_imbues.effects.columns
     assert all_imbues.bindings.height > 0
     steam_id = all_imbues.bindings["steam_id"][0]
     assert steam_id in demo.players["steam_id"]
@@ -143,6 +154,33 @@ def test_native_steam_selection_and_imbue_identity(demo: Demo, tmp_path, monkeyp
     assert demo.imbues(
         ticks=tick, steam_ids=[], data_version="1234"
     ).bindings.is_empty()
-    assert demo.calculate_ability_stats(
-        ticks=tick, steam_ids=[], data_version="1234"
-    ).values.is_empty()
+    for mode in StatMode:
+        result = demo.calculate_ability_stats(
+            ticks=tick,
+            steam_ids=[],
+            data_version="1234",
+            mode=mode,
+        )
+        assert result.values.is_empty()
+        assert "player_slot" not in result.values.columns
+        assert "player_slot" not in result.contributions.columns
+        assert result.metadata["mode"] == mode
+        assert result.values.schema["mode"] == pl.String
+
+
+@pytest.mark.parametrize(
+    "mode", ["baseline", StatMode.BASELINE, "current", StatMode.CURRENT]
+)
+def test_mode_reaches_native_ability_query(monkeypatch, tmp_path, mode):
+    monkeypatch.setattr(data, "update", lambda _: tmp_path)
+    demo = RecordedResult()
+    result = calculate_ability_stats(
+        cast(Demo, demo),
+        ticks=50,
+        data_version="1234",
+        mode=mode,
+    )
+    assert demo.calls[0][2]["mode"] == mode
+    assert result.metadata["mode"] == mode
+    assert result.values.schema["mode"] == pl.String
+    assert result.contributions.schema["mode"] == pl.String

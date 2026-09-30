@@ -99,8 +99,12 @@ def test_summary_healing_json(part: str) -> None:
 
 
 def test_summary_gold_sources_json() -> None:
-    result = runner.invoke(app, ["summary", str(_fixture()), "--part", "gold_sources", "--json"])
+    result = runner.invoke(
+        app, ["summary", str(_fixture()), "--part", "gold_sources", "--json"]
+    )
     assert result.exit_code == 0, result.output
     sources = json.loads(result.stdout)["gold_sources"]
     assert sources
-    assert {"snapshot_time_s", "player_slot", "source_id", "gold", "gold_orbs"} <= sources[0].keys()
+    assert {"snapshot_time_s", "steam_id", "source_id", "gold", "gold_orbs"} <= sources[
+        0
+    ].keys()

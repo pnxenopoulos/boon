@@ -15,21 +15,19 @@ class AmmoDemo:
         self.frame = pl.DataFrame(
             {
                 "tick": [7] * 6,
-                "player_slot": list(range(6)),
                 "steam_id": [
                     76561197999389679,
                     76561197999389680,
-                    None,
-                    None,
-                    None,
-                    None,
+                    76561197999389681,
+                    76561197999389682,
+                    76561197999389683,
+                    76561197999389684,
                 ],
                 "hero_id": [99] * 6,
                 "ammo_fraction": [0.25, 1.2, None, 0.91, 1.0, 0.5],
             },
             schema_overrides={
                 "tick": pl.Int32,
-                "player_slot": pl.UInt32,
                 "steam_id": pl.UInt64,
                 "ammo_fraction": pl.Float32,
             },
@@ -47,7 +45,7 @@ class AmmoDemo:
     def calculate_hero_stats(self, **kwargs):
         self.calls.append(("capacity", kwargs))
         values = (
-            self.frame.select("tick", "player_slot", "hero_id")
+            self.frame.select("tick", "steam_id", "hero_id")
             .with_columns(
                 pl.Series("value", [10, 10, 15, 100, None, 10], dtype=pl.Float64),
                 pl.Series(
@@ -80,7 +78,7 @@ class AmmoDemo:
     def player_states(self, **kwargs):
         self.calls.append(("states", kwargs))
         return (
-            self.frame.select("tick", "player_slot", "hero_id")
+            self.frame.select("tick", "steam_id", "hero_id")
             .with_columns(
                 pl.Series(
                     "states",
@@ -111,7 +109,8 @@ def test_rounds_capacity_and_unlimited_state_keep_identity_and_uncertainty():
     )
     assert isinstance(frames, dict)
     assert frames["world_ticks"].to_dict(as_series=False) == {"tick": [7]}
-    frame = frames["player_ticks"].sort("player_slot")
+    frame = frames["player_ticks"]
+    assert "player_slot" not in frame.columns
     assert frame["steam_id"].to_list() == demo.frame["steam_id"].to_list()
     assert frame["ammo"].to_list() == [3, 12, None, 91, None, 5]
     assert frame["max_ammo"].to_list() == [10, 10, 15, 100, None, 10]
@@ -160,12 +159,13 @@ def test_raw_and_empty_snapshots_need_no_catalog(empty):
     frame = snapshots(cast(Demo, demo), ticks=7, data_version="1234" if empty else None)
     assert isinstance(frame, pl.DataFrame)
     assert len(demo.calls) == 1
+    assert "player_slot" not in frame.columns
     if empty:
         assert frame.is_empty()
         assert frame.schema["max_ammo"] == pl.UInt32
         assert frame.schema["unlimited_ammo"] == pl.Boolean
     else:
-        assert frame is demo.frame
+        assert frame.equals(demo.frame)
         assert "max_ammo" not in frame.columns
 
 
@@ -178,3 +178,19 @@ def test_invalid_ammo_requests_fail_before_parsing(options):
     with pytest.raises(ValueError):
         snapshots(cast(Demo, demo), ticks=7, **options)
     assert not demo.calls
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_missing_or_duplicate_accounts_do_not_join_or_expand_rows(missing):
+    demo = AmmoDemo()
+    ids = demo.frame["steam_id"].to_list()
+    ids[:2] = [None, None] if missing else [ids[0], ids[0]]
+    demo.frame = demo.frame.with_columns(pl.Series("steam_id", ids, dtype=pl.UInt64))
+    frame = snapshots(cast(Demo, demo), ticks=7, data_version="1234")
+    assert isinstance(frame, pl.DataFrame)
+    assert frame.height == demo.frame.height
+    assert frame["max_ammo"].to_list() == [None, None, 15, 100, None, 10]
+    assert frame["ammo"].to_list() == [None, None, None, 91, None, 5]
+    assert frame["unlimited_ammo"].to_list() == [None, None, None, True, True, None]
+    assert frame["ammo_status"].to_list()[:2] == ["unresolved", "unresolved"]
+    assert all("Steam ID" in diagnostic for diagnostic in frame["ammo_diagnostic"][:2])

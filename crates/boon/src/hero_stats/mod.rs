@@ -225,10 +225,6 @@ impl std::str::FromStr for StatMode {
     }
 }
 
-/// Zero-based player slot (controller entity index minus one).
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
-pub struct PlayerSlot(pub u32);
-
 /// Selected equations. Rules are independent of catalog client versions.
 #[derive(Clone, Debug, Default)]
 pub struct Ruleset {
@@ -311,8 +307,6 @@ pub struct StatRow {
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
-    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
-    pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub stat: HeroStat,
     pub value: Option<f64>,
@@ -330,8 +324,6 @@ pub struct Contribution {
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
-    /// Raw controller slot, retained as a fallback when the Steam ID is absent.
-    pub player_slot: PlayerSlot,
     pub hero_id: i64,
     pub input: String,
     pub kind: &'static str,
@@ -401,7 +393,7 @@ impl Parser {
         })?;
         result
             .values
-            .sort_by_key(|r| (r.tick, r.steam_id, r.player_slot.0, r.stat));
+            .sort_by_key(|r| (r.tick, r.steam_id, r.hero_id, r.stat));
         Ok(result)
     }
     pub(crate) fn visit_stat_ticks(

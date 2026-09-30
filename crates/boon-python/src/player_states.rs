@@ -52,7 +52,6 @@ impl Demo {
             }
             let mut ticks = Vec::new();
             let mut steam_ids = Vec::new();
-            let mut slots = Vec::new();
             let mut heroes = Vec::new();
             let mut states = StateColumns::new("states", "unknown_states");
             let mut enabled = StateColumns::new("enabled_states", "unknown_enabled_states");
@@ -61,7 +60,6 @@ impl Demo {
                 .visit_player_states(&query, &catalog, |row| {
                     ticks.push(row.tick);
                     steam_ids.push(row.steam_id);
-                    slots.push(row.player_slot);
                     heroes.push(row.hero_id);
                     states.append(row.states.as_deref());
                     enabled.append(row.enabled_states.as_deref());
@@ -71,7 +69,6 @@ impl Demo {
             let mut columns = vec![
                 Column::new("tick".into(), ticks),
                 Column::new("steam_id".into(), steam_ids),
-                Column::new("player_slot".into(), slots),
                 Column::new("hero_id".into(), heroes),
             ];
             columns.extend(states.columns());
