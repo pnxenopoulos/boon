@@ -7113,6 +7113,13 @@ pub struct CsoCitadelHideoutLobby {
     pub active_account_hideout: ::core::option::Option<u32>,
     #[prost(message, repeated, tag = "11")]
     pub extra_messages: ::prost::alloc::vec::Vec<CExtraMsgBlock>,
+    #[prost(
+        enumeration = "cso_citadel_hideout_lobby::EServerStatus",
+        optional,
+        tag = "12",
+        default = "KENoServer"
+    )]
+    pub server_status: ::core::option::Option<i32>,
 }
 /// Nested message and enum types in `CSOCitadelHideoutLobby`.
 pub mod cso_citadel_hideout_lobby {
@@ -7125,6 +7132,52 @@ pub mod cso_citadel_hideout_lobby {
         pub hideout_holiday_award_2024: ::core::option::Option<bool>,
         #[prost(bool, optional, tag = "32")]
         pub hideout_holiday_award_2025: ::core::option::Option<bool>,
+    }
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(
+        Clone,
+        Copy,
+        Debug,
+        PartialEq,
+        Eq,
+        Hash,
+        PartialOrd,
+        Ord,
+        ::prost::Enumeration
+    )]
+    #[repr(i32)]
+    pub enum EServerStatus {
+        KENoServer = 0,
+        KEServerAssigned = 1,
+        KETooFewPlayers = 2,
+        KEPlayersInMatch = 3,
+        KEDisabled = 4,
+    }
+    impl EServerStatus {
+        /// String value of the enum field names used in the ProtoBuf definition.
+        ///
+        /// The values are not transformed in any way and thus are considered stable
+        /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+        pub fn as_str_name(&self) -> &'static str {
+            match self {
+                Self::KENoServer => "k_eNoServer",
+                Self::KEServerAssigned => "k_eServerAssigned",
+                Self::KETooFewPlayers => "k_eTooFewPlayers",
+                Self::KEPlayersInMatch => "k_ePlayersInMatch",
+                Self::KEDisabled => "k_eDisabled",
+            }
+        }
+        /// Creates an enum from field names used in the ProtoBuf definition.
+        pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+            match value {
+                "k_eNoServer" => Some(Self::KENoServer),
+                "k_eServerAssigned" => Some(Self::KEServerAssigned),
+                "k_eTooFewPlayers" => Some(Self::KETooFewPlayers),
+                "k_ePlayersInMatch" => Some(Self::KEPlayersInMatch),
+                "k_eDisabled" => Some(Self::KEDisabled),
+                _ => None,
+            }
+        }
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]

@@ -5,7 +5,7 @@
 Unreleased.
 
 - Require pbdems2 0.3.3 to read `fixed8` fields in new demos.
-- Update protobufs to Deadlock 6712 (`boon-proto 0.4.11056283+6712`). The direct protobuf API has changed fields and types.
+- Update protobufs to Deadlock 6726 (`boon-proto 0.4.11064056+6726`). The direct protobuf API has changed fields and types.
 - Correct light and heavy melee labels in `damage`. Read new combat log and modifier fields.
 - Add hero and ability stat queries with `baseline` and `current` modes. Use data from boon-data.
 - Read both weapon formats and shop bonus tables. Use controller ticks when pawn time is absent.
