@@ -9,7 +9,6 @@ constants for stat modifiers.
 import polars as pl
 import pytest
 from boon import Demo, NotStreetBrawlError
-
 from conftest import FIXTURES_DIR, get_demo
 
 FIXTURE_PATH = FIXTURES_DIR / "70555151.dem"
@@ -98,7 +97,9 @@ class TestPlayers:
 
     def test_team_composition(self, demo: Demo) -> None:
         teams = demo.players.group_by("team_num").len().sort("team_num")
-        counts = dict(zip(teams["team_num"].to_list(), teams["len"].to_list()))
+        counts = dict(
+            zip(teams["team_num"].to_list(), teams["len"].to_list(), strict=True)
+        )
         assert counts[2] == 6
         assert counts[3] == 6
 
@@ -135,15 +136,14 @@ class TestKills:
         assert len(demo.kills) == 59
 
     def test_kills_per_attacker(self, demo: Demo) -> None:
-        counts = (
-            demo.kills.group_by("attacker_hero_id")
-            .len()
-            .sort("attacker_hero_id")
+        counts = demo.kills.group_by("attacker_hero_id").len().sort("attacker_hero_id")
+        result = dict(
+            zip(
+                counts["attacker_hero_id"].to_list(),
+                counts["len"].to_list(),
+                strict=True,
+            )
         )
-        result = dict(zip(
-            counts["attacker_hero_id"].to_list(),
-            counts["len"].to_list(),
-        ))
         assert result == EXPECTED_KILLS_PER_HERO
 
 
@@ -201,7 +201,9 @@ class TestFlexSlots:
 
     def test_teams(self, demo: Demo) -> None:
         teams = demo.flex_slots.group_by("team_num").len().sort("team_num")
-        counts = dict(zip(teams["team_num"].to_list(), teams["len"].to_list()))
+        counts = dict(
+            zip(teams["team_num"].to_list(), teams["len"].to_list(), strict=True)
+        )
         assert counts[2] == 2
         assert counts[3] == 3
 
@@ -271,7 +273,14 @@ class TestStatModifierEvents:
 
     def test_stat_types(self, demo: Demo) -> None:
         types = sorted(demo.stat_modifier_events["stat_type"].unique().to_list())
-        assert types == ["ammo", "cooldown_reduction", "fire_rate", "health", "spirit_power", "weapon_damage"]
+        assert types == [
+            "ammo",
+            "cooldown_reduction",
+            "fire_rate",
+            "health",
+            "spirit_power",
+            "weapon_damage",
+        ]
 
     def test_first_event(self, demo: Demo) -> None:
         first = demo.stat_modifier_events.sort("tick").head(1)
@@ -376,7 +385,13 @@ class TestUrn:
 
     def test_event_types(self, demo: Demo) -> None:
         events = set(demo.urn["event"].to_list())
-        assert events == {"delivery_active", "delivery_inactive", "dropped", "picked_up", "returned"}
+        assert events == {
+            "delivery_active",
+            "delivery_inactive",
+            "dropped",
+            "picked_up",
+            "returned",
+        }
 
     def test_hero_events_have_position(self, demo: Demo) -> None:
         # 15 (was 17): balanced 6 picked_up / 6 dropped / 3 returned after the

@@ -1,30 +1,39 @@
 # Calculate hero stats
 
 `demo.calculate_hero_stats()` calculates values from replay state and a selected
-boon-data version. Supported stats are:
+boon-data version. The table lists every accepted stat string and enum member.
+Use these strings for `stats` and for keys in `rulesets`. Names are case-sensitive.
 
-| Stat | Unit |
-| --- | --- |
-| Ammo capacity (`clip_size`) | rounds |
-| Bullet velocity (`bullet_velocity`) | metres per second |
-| Weapon-damage bonus (`weapon_damage`) | percentage points |
-| Heavy-melee distance bonus (`melee_distance`) | percent |
-| Reload time (`reload_time`) | seconds |
-| Fire-rate increase or decrease (`fire_rate`) | percent |
-| Falloff start and end (`falloff_start`, `falloff_end`) | metres |
-| Light and heavy melee damage (`light_melee_damage`, `heavy_melee_damage`) | damage |
-| Slide-distance bonus (`slide_distance`) | percent |
-| Bullet evasion (`bullet_evasion`) | percent |
-| Recorded gravity scale (`gravity_scale`) | multiplier |
-| Maximum stamina (`stamina`) | points |
-| Recovery time per stamina point (`stamina_cooldown`) | seconds |
-| Ground and air dash speed (`dash_speed`, `air_dash_speed`) | metres per second |
-| Ground and air dash duration (`dash_duration`, `air_dash_duration`) | seconds |
-| Nominal move speed (`move_speed`) | metres per second |
-| Additional sprint speed (`sprint_speed`) | metres per second |
-| Debuff resistance (`debuff_resist`) | percentage points |
-| Bullet, spirit, and melee resistance (`bullet_resist`, `spirit_resist`, `melee_resist`) | percentage points |
-| Bullet, spirit, and melee lifesteal (`bullet_lifesteal`, `spirit_lifesteal`, `melee_lifesteal`) | percentage points |
+| String | Python enum | Rust enum | Unit |
+| --- | --- | --- | --- |
+| `clip_size` | `HeroStat.CLIP_SIZE` | `HeroStat::ClipSize` | `rounds` |
+| `bullet_velocity` | `HeroStat.BULLET_VELOCITY` | `HeroStat::BulletVelocity` | `m/s` |
+| `weapon_damage` | `HeroStat.WEAPON_DAMAGE` | `HeroStat::WeaponDamage` | `%` |
+| `fire_rate` | `HeroStat.FIRE_RATE` | `HeroStat::FireRate` | `%` |
+| `reload_time` | `HeroStat.RELOAD_TIME` | `HeroStat::ReloadTime` | `s` |
+| `falloff_start` | `HeroStat.FALLOFF_START` | `HeroStat::FalloffStart` | `m` |
+| `falloff_end` | `HeroStat.FALLOFF_END` | `HeroStat::FalloffEnd` | `m` |
+| `light_melee_damage` | `HeroStat.LIGHT_MELEE_DAMAGE` | `HeroStat::LightMeleeDamage` | `damage` |
+| `heavy_melee_damage` | `HeroStat.HEAVY_MELEE_DAMAGE` | `HeroStat::HeavyMeleeDamage` | `damage` |
+| `melee_distance` | `HeroStat.MELEE_DISTANCE` | `HeroStat::MeleeDistance` | `%` |
+| `move_speed` | `HeroStat.MOVE_SPEED` | `HeroStat::MoveSpeed` | `m/s` |
+| `sprint_speed` | `HeroStat.SPRINT_SPEED` | `HeroStat::SprintSpeed` | `m/s` |
+| `slide_distance` | `HeroStat.SLIDE_DISTANCE` | `HeroStat::SlideDistance` | `%` |
+| `gravity_scale` | `HeroStat.GRAVITY_SCALE` | `HeroStat::GravityScale` | `multiplier` |
+| `stamina` | `HeroStat.STAMINA` | `HeroStat::Stamina` | `points` |
+| `stamina_cooldown` | `HeroStat.STAMINA_COOLDOWN` | `HeroStat::StaminaCooldown` | `s` |
+| `dash_speed` | `HeroStat.DASH_SPEED` | `HeroStat::DashSpeed` | `m/s` |
+| `dash_duration` | `HeroStat.DASH_DURATION` | `HeroStat::DashDuration` | `s` |
+| `air_dash_speed` | `HeroStat.AIR_DASH_SPEED` | `HeroStat::AirDashSpeed` | `m/s` |
+| `air_dash_duration` | `HeroStat.AIR_DASH_DURATION` | `HeroStat::AirDashDuration` | `s` |
+| `bullet_evasion` | `HeroStat.BULLET_EVASION` | `HeroStat::BulletEvasion` | `%` |
+| `debuff_resist` | `HeroStat.DEBUFF_RESIST` | `HeroStat::DebuffResist` | `%` |
+| `bullet_resist` | `HeroStat.BULLET_RESIST` | `HeroStat::BulletResist` | `%` |
+| `spirit_resist` | `HeroStat.SPIRIT_RESIST` | `HeroStat::SpiritResist` | `%` |
+| `melee_resist` | `HeroStat.MELEE_RESIST` | `HeroStat::MeleeResist` | `%` |
+| `bullet_lifesteal` | `HeroStat.BULLET_LIFESTEAL` | `HeroStat::BulletLifesteal` | `%` |
+| `spirit_lifesteal` | `HeroStat.SPIRIT_LIFESTEAL` | `HeroStat::SpiritLifesteal` | `%` |
+| `melee_lifesteal` | `HeroStat.MELEE_LIFESTEAL` | `HeroStat::MeleeLifesteal` | `%` |
 
 Ammo capacity does not return rounds left in the gun. It stays finite during a
 slide or another unlimited-ammo effect.
@@ -53,6 +62,8 @@ The catalogs must contain `record_key`, `definition_path`, and `stat_changes`.
 Old catalogs can supply names but lack stat inputs.
 Use `boon get VERSION --force` after new files are published for that version.
 
+For complete query examples, see [stats, states, and ammo](examples.md#stats-states-and-ammo).
+
 ## Python
 
 Use `HeroStat` enum members to select hero stats. An enum gives each stat a named
@@ -79,7 +90,9 @@ print(result.contributions)
 print(result.metadata)
 ```
 
-`HeroStat.AMMO` and `HeroStat.CLIP_SIZE` select the same stat.
+`HeroStat.AMMO` is an alias for `HeroStat.CLIP_SIZE`; both have value `"clip_size"`.
+The string `"ammo"` is not accepted. Percent values use percentage points:
+`20` means 20%, not 0.20.
 If you omit `stats`, Boon selects ammo capacity. Use `stats=list(HeroStat)` to
 select all supported hero stats.
 
@@ -98,10 +111,12 @@ selected_rules = {
 
 ## Select baseline or current effects
 
-Use `mode="current"` (default) to include supported active buffs, debuffs,
-powerups, and conditional effects. Use `mode="baseline"` for hero values, boons,
-owned passive effects, and permanent recorded changes. `StatMode.CURRENT` and
-`StatMode.BASELINE` also work.
+These are the only accepted `mode` values. Both stat query methods use them.
+
+| String | Python enum | Rust enum | Inputs |
+| --- | --- | --- | --- |
+| `current` | `StatMode.CURRENT` | `StatMode::Current` | Supported effects active at the selected tick. Default. |
+| `baseline` | `StatMode.BASELINE` | `StatMode::Baseline` | Hero values, passive effects, and permanent changes at that tick. |
 
 Both modes use the requested tick. Items sold before that tick do not contribute.
 Permanent penalties remain in both modes. The mode also applies to dependent
@@ -123,8 +138,8 @@ value is null and its status is `unresolved`.
 
 ## Select ticks and players
 
-`ticks` accepts one integer or a list. Boon removes duplicate ticks and reads
-state after each tick. Missing ticks cause an error.
+`ticks` accepts one integer or a list of nonnegative integers below 2147483647.
+Boon removes duplicate ticks and reads state after each tick. Missing ticks cause an error.
 The selected stats use the same player inputs in one parser pass.
 
 Use `steam_ids` to select Steam accounts. Get IDs from `demo.players`.
@@ -550,40 +565,24 @@ received from another hero can contribute if its binding is explicit.
 
 ### Bullet evasion
 
-`bullet_evasion.v1` reads `MODIFIER_VALUE_BULLET_EVASION` and returns a chance
-in percent: 30 means 30%, not 0.3. It supports no known effect or one nonzero
-chance between 0% and 100%. Multiple nonzero chances remain unresolved until
-their stacking rule is verified. A chance does not predict which bullets miss.
+`bullet_evasion.v1` reads `MODIFIER_VALUE_BULLET_EVASION` and returns a percentage.
+A value of 30 means 30%, not 0.3. V1 supports zero or one nonzero chance between
+0% and 100%. Multiple nonzero chances remain unresolved.
 
-Boon prefers the catalog's stat declarations and modifier bindings. The effective
-modifier must be present. Upgrade values come from the owning ability's catalog
-record and the caster's recorded tiers.
+Explicit catalog declarations and modifier bindings take priority.
+The modifier must be active. Upgrades use the owning ability's catalog and the
+caster's recorded tiers.
 
-In client version 6694, Mirage's Dust Devil binds `WhirlwindEvasionChance` to its
-evasion modifier: 30% base plus 30 percentage points at tier 2. Grey Talon's Rain
-of Arrows binds `EvasionPercent` to its in-air modifier: 0% base plus 30 points
-at tier 3. These names and values are examples from the catalog, not code rules.
+If the catalog has no declaration for the exact property `EvasionPercent`, V1
+uses that property for bullet evasion. It assumes that the owner's unique effect
+modifier activates it. Intrinsic and cast-delay modifiers do not qualify.
+Active results are `partial`; the diagnostic identifies this assumption.
+The trace gives the modifier serial and property path.
 
-For an undeclared property named exactly `EvasionPercent`, V1 interprets its value
-as bullet-evasion percent. This is an explicit property rule, not a substring
-search. An existing stat declaration or binding takes priority.
-
-When there is exactly one non-intrinsic effect modifier under the owning ability,
-Boon assumes that this modifier activates the property. Cast-delay modifiers are
-excluded. The property and its upgrades apply only while that effect modifier is
-effective, including modifiers with no fixed duration. Such results have
-`status="partial"` and a diagnostic that identifies the inferred link. The
-contribution includes the modifier serial and the catalog property path.
-
-This supports Bullet Dance in client version 6694: 30% while active, plus 40
-percentage points at tier 3. No hero ID, ability ID, or balance amount is stored
-in the resolver. If the effect modifier is absent, this contribution is zero.
-If the owner has no unique effect modifier, Boon omits the unbound contribution
-and reports the missing activation link.
-
-Other undeclared properties remain unsupported. For example, V1 does not infer
-a binding for Electric Slippers' `EvasionWhileSliding`. A zero result does not
-prove that the player has no evasion. See [Known Issues](known-issues.md#movement-and-evasion-stat-coverage).
+This rule supports Haze's Bullet Dance without storing hero IDs or balance values
+in code. An absent modifier gives zero. Multiple candidate modifiers leave the
+property unbound. Other undeclared properties remain unsupported.
+See [evasion limits](known-issues.md#movement-and-evasion-stat-coverage).
 
 ### Gravity scale
 

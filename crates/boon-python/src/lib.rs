@@ -76,12 +76,8 @@ struct Demo {
     game_mode: i64,
     // Sorted ticks where the game was paused (lazily built from world_ticks)
     paused_ticks: Option<Vec<i32>>,
-    // Cached dataset DataFrames
-    cached_player_ticks: Option<DataFrame>,
+    cached_datasets: DatasetCache,
     cached_barriers: std::sync::OnceLock<BarrierTimeline>,
-    cached_world_ticks: Option<DataFrame>,
-    cached_kills: Option<DataFrame>,
-    cached_damage: Option<DataFrame>,
     cached_summary: Option<SummaryFrames>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
@@ -93,26 +89,7 @@ struct Demo {
     // `Some(vec![])` means no ban data. `None` means not scanned.
     banned_hero_ids: Option<Vec<u32>>,
     always_events_scanned: bool,
-    // Flex slot unlock events
-    cached_flex_slots: Option<DataFrame>,
-    cached_abilities: Option<DataFrame>,
-    cached_ability_upgrades: Option<DataFrame>,
-    cached_item_purchases: Option<DataFrame>,
-    cached_chat: Option<DataFrame>,
-    cached_objectives: Option<DataFrame>,
-    cached_mid_boss: Option<DataFrame>,
-    cached_troopers: Option<DataFrame>,
-    cached_neutrals: Option<DataFrame>,
-    cached_breakables: Option<DataFrame>,
-    cached_sinners_sacrifice: Option<DataFrame>,
-    cached_stat_modifier_events: Option<DataFrame>,
-    cached_active_modifiers: Option<DataFrame>,
-    cached_ability_ticks: Option<DataFrame>,
     cached_players: Option<DataFrame>,
-    cached_street_brawl_ticks: Option<DataFrame>,
-    cached_street_brawl_rounds: Option<DataFrame>,
-    cached_urn: Option<DataFrame>,
-    cached_rift: Option<DataFrame>,
 }
 
 /// Python bindings for the Boon Deadlock demo parser.

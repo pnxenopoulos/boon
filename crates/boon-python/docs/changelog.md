@@ -4,24 +4,21 @@
 
 Unreleased.
 
-- Require pbdems2 0.3.3 to read fields with the `fixed8` encoder in new demos.
-- Update protobufs to Deadlock 6712 (`boon-proto 0.4.11056283+6712`). The direct protobuf API has renamed and removed fields and types.
-- Correct reversed light and heavy melee labels in `damage`.
-- Read new combat log messages and modifier fields. Keep old item change labels; add `leveled_up` for new demos.
-- Add `calculate_hero_stats()` and `calculate_ability_stats()` with data from boon-data.
-- Add `baseline` and `current` modes to hero and ability stat queries.
-- Read both weapon data formats. Use controller ticks when pawn simulation time is absent.
+- Require pbdems2 0.3.3 to read `fixed8` fields in new demos.
+- Update protobufs to Deadlock 6712 (`boon-proto 0.4.11056283+6712`). The direct protobuf API has changed fields and types.
+- Correct light and heavy melee labels in `damage`. Read new combat log and modifier fields.
+- Add hero and ability stat queries with `baseline` and `current` modes. Use data from boon-data.
+- Read both weapon formats and shop bonus tables. Use controller ticks when pawn time is absent.
 - Use recorded stat types for permanent bonuses and corruption penalties. Mark missing corruption bonuses as partial.
-- Add snapshot Steam IDs and `ammo_fraction`. With `data_version`, add `ammo`, `max_ammo`, and `unlimited_ammo`. Keep finite capacity during unlimited ammo.
-- Add `player_states()` for recorded states, such as `SPRINTING` and `IN_COMBAT`.
-- Add `imbues()` for item effects on selected abilities.
-- Use `steam_ids` for stat, imbue, and state queries. Add Steam IDs to summary tables. Remove player slots from result tables. Join player rows by Steam ID.
-- Add `barrier_absorption` to summary snapshots. Keep it separate from healing.
-- Correct modifier tracking after table changes and game pauses. Exclude future state and keep ended applications inactive across later casts.
+- Add snapshot Steam IDs and `ammo_fraction`. With `data_version`, add `ammo`, `max_ammo`, and `unlimited_ammo`.
+- Add `player_states()` for recorded states and `imbues()` for item selections.
+- Use `steam_ids` for stat, imbue, and state queries. Add Steam IDs to summary tables. Remove player slots from results.
+- Add summary `barrier_absorption`. Keep healing separate.
+- Correct modifier tracking after table changes and pauses. Exclude future state and ended effects.
 - Make barrier snapshots agree across direct seeks and full passes.
-- Exclude ability-only bonuses from global hero stats. Keep flat and percentage spirit inputs separate.
-- Use catalog engine names to explain missing modifier definitions.
-- Read old and new shop bonus tables and item prices from boon-data. Do not apply unbound ability bonuses from ownership.
+- Keep ability-only bonuses out of global stats. Separate flat and percentage spirit inputs.
+- Share dataset caches and stat checks. Remove repeated code and temporary lookup allocations.
+- Add feature examples and lists of accepted stat names, modes, and dataset names.
 
 Hero stat strings:
 

@@ -37,36 +37,31 @@ impl Demo {
             || requested(Dataset::ItemPurchases)
             || requested(Dataset::Chat);
 
-        // Determine what to load (skip already cached)
-        let load_abilities = kill_cohort && self.cached_abilities.is_none();
-        let load_player_ticks =
-            requested(Dataset::PlayerTicks) && self.cached_player_ticks.is_none();
-        let load_world_ticks = requested(Dataset::WorldTicks) && self.cached_world_ticks.is_none();
-        let load_kills = kill_cohort && self.cached_kills.is_none();
-        let load_damage = requested(Dataset::Damage) && self.cached_damage.is_none();
-        let load_flex_slots = requested(Dataset::FlexSlots) && self.cached_flex_slots.is_none();
-        let load_ability_upgrades = controller_cohort && self.cached_ability_upgrades.is_none();
-        let load_item_purchases = controller_cohort && self.cached_item_purchases.is_none();
-        let load_chat = controller_cohort && self.cached_chat.is_none();
-        let load_objectives = requested(Dataset::Objectives) && self.cached_objectives.is_none();
-        let load_mid_boss = requested(Dataset::MidBoss) && self.cached_mid_boss.is_none();
-        let load_troopers = requested(Dataset::Troopers) && self.cached_troopers.is_none();
-        let load_neutrals = requested(Dataset::Neutrals) && self.cached_neutrals.is_none();
-        let load_breakables = requested(Dataset::Breakables) && self.cached_breakables.is_none();
-        let load_sinners_sacrifice =
-            requested(Dataset::SinnersSacrifice) && self.cached_sinners_sacrifice.is_none();
-        let load_stat_modifier_events =
-            requested(Dataset::StatModifierEvents) && self.cached_stat_modifier_events.is_none();
-        let load_active_modifiers =
-            requested(Dataset::ActiveModifiers) && self.cached_active_modifiers.is_none();
-        let load_ability_ticks =
-            requested(Dataset::AbilityTicks) && self.cached_ability_ticks.is_none();
-        let load_urn = requested(Dataset::Urn) && self.cached_urn.is_none();
-        let load_street_brawl_ticks =
-            requested(Dataset::StreetBrawlTicks) && self.cached_street_brawl_ticks.is_none();
-        let load_street_brawl_rounds =
-            requested(Dataset::StreetBrawlRounds) && self.cached_street_brawl_rounds.is_none();
-        let load_rift = requested(Dataset::Rift) && self.cached_rift.is_none();
+        let needs = |dataset| requested(dataset) && self.cached_datasets[dataset].is_none();
+        let load_abilities = kill_cohort && self.cached_datasets[Dataset::Abilities].is_none();
+        let load_player_ticks = needs(Dataset::PlayerTicks);
+        let load_world_ticks = needs(Dataset::WorldTicks);
+        let load_kills = kill_cohort && self.cached_datasets[Dataset::Kills].is_none();
+        let load_damage = needs(Dataset::Damage);
+        let load_flex_slots = needs(Dataset::FlexSlots);
+        let load_ability_upgrades =
+            controller_cohort && self.cached_datasets[Dataset::AbilityUpgrades].is_none();
+        let load_item_purchases =
+            controller_cohort && self.cached_datasets[Dataset::ItemPurchases].is_none();
+        let load_chat = controller_cohort && self.cached_datasets[Dataset::Chat].is_none();
+        let load_objectives = needs(Dataset::Objectives);
+        let load_mid_boss = needs(Dataset::MidBoss);
+        let load_troopers = needs(Dataset::Troopers);
+        let load_neutrals = needs(Dataset::Neutrals);
+        let load_breakables = needs(Dataset::Breakables);
+        let load_sinners_sacrifice = needs(Dataset::SinnersSacrifice);
+        let load_stat_modifier_events = needs(Dataset::StatModifierEvents);
+        let load_active_modifiers = needs(Dataset::ActiveModifiers);
+        let load_ability_ticks = needs(Dataset::AbilityTicks);
+        let load_urn = needs(Dataset::Urn);
+        let load_street_brawl_ticks = needs(Dataset::StreetBrawlTicks);
+        let load_street_brawl_rounds = needs(Dataset::StreetBrawlRounds);
+        let load_rift = needs(Dataset::Rift);
 
         if !load_abilities
             && !load_player_ticks
@@ -2242,7 +2237,7 @@ impl Demo {
                 assister_series,
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_kills = Some(df);
+            self.cached_datasets[Dataset::Kills] = Some(df);
         }
 
         if load_damage {
@@ -2329,7 +2324,7 @@ impl Demo {
                 Column::new("server_tick".into(), dmg_server_tick),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_damage = Some(df);
+            self.cached_datasets[Dataset::Damage] = Some(df);
         }
 
         if load_abilities {
@@ -2339,7 +2334,7 @@ impl Demo {
                 Column::new("ability".into(), ability_names),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_abilities = Some(df);
+            self.cached_datasets[Dataset::Abilities] = Some(df);
         }
 
         if load_flex_slots {
@@ -2348,7 +2343,7 @@ impl Demo {
                 Column::new("team_num".into(), flex_team_nums),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_flex_slots = Some(df);
+            self.cached_datasets[Dataset::FlexSlots] = Some(df);
         }
 
         if load_ability_upgrades {
@@ -2359,7 +2354,7 @@ impl Demo {
                 Column::new("tier".into(), au_tier),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_ability_upgrades = Some(df);
+            self.cached_datasets[Dataset::AbilityUpgrades] = Some(df);
         }
 
         if load_item_purchases {
@@ -2370,7 +2365,7 @@ impl Demo {
                 Column::new("change".into(), ip_changes),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_item_purchases = Some(df);
+            self.cached_datasets[Dataset::ItemPurchases] = Some(df);
         }
 
         if load_chat {
@@ -2381,7 +2376,7 @@ impl Demo {
                 Column::new("chat_type".into(), chat_types),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_chat = Some(df);
+            self.cached_datasets[Dataset::Chat] = Some(df);
         }
 
         if load_objectives {
@@ -2399,7 +2394,7 @@ impl Demo {
                 Column::new("entity_id".into(), obj_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_objectives = Some(df);
+            self.cached_datasets[Dataset::Objectives] = Some(df);
         }
 
         if load_mid_boss {
@@ -2409,7 +2404,7 @@ impl Demo {
                 Column::new("event".into(), mb_events),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_mid_boss = Some(df);
+            self.cached_datasets[Dataset::MidBoss] = Some(df);
         }
 
         if load_neutrals {
@@ -2424,7 +2419,7 @@ impl Demo {
                 Column::new("entity_id".into(), nt_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_neutrals = Some(df);
+            self.cached_datasets[Dataset::Neutrals] = Some(df);
         }
 
         if load_breakables {
@@ -2441,7 +2436,7 @@ impl Demo {
                 Column::new("z".into(), bk_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_breakables = Some(df);
+            self.cached_datasets[Dataset::Breakables] = Some(df);
         }
 
         if load_sinners_sacrifice {
@@ -2460,7 +2455,7 @@ impl Demo {
                 Column::new("z".into(), sn_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_sinners_sacrifice = Some(df);
+            self.cached_datasets[Dataset::SinnersSacrifice] = Some(df);
         }
 
         if load_stat_modifier_events {
@@ -2471,7 +2466,7 @@ impl Demo {
                 Column::new("amount".into(), sm_amount),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_stat_modifier_events = Some(df);
+            self.cached_datasets[Dataset::StatModifierEvents] = Some(df);
         }
 
         if load_active_modifiers {
@@ -2487,7 +2482,7 @@ impl Demo {
                 Column::new("stacks".into(), am_stacks),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_active_modifiers = Some(df);
+            self.cached_datasets[Dataset::ActiveModifiers] = Some(df);
         }
 
         if load_ability_ticks {
@@ -2503,7 +2498,7 @@ impl Demo {
                 Column::new("charge_recharge_end".into(), at_charge_recharge_end),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_ability_ticks = Some(df);
+            self.cached_datasets[Dataset::AbilityTicks] = Some(df);
         }
 
         if load_urn {
@@ -2517,7 +2512,7 @@ impl Demo {
                 Column::new("z".into(), urn_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_urn = Some(df);
+            self.cached_datasets[Dataset::Urn] = Some(df);
         }
 
         if load_street_brawl_ticks {
@@ -2533,7 +2528,7 @@ impl Demo {
                 Column::new("non_combat_time".into(), sbt_non_combat_time),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_street_brawl_ticks = Some(df);
+            self.cached_datasets[Dataset::StreetBrawlTicks] = Some(df);
         }
 
         if load_street_brawl_rounds {
@@ -2545,7 +2540,7 @@ impl Demo {
                 Column::new("sapphire_score".into(), sbr_sapphire_score),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_street_brawl_rounds = Some(df);
+            self.cached_datasets[Dataset::StreetBrawlRounds] = Some(df);
         }
 
         if load_rift {
@@ -2562,7 +2557,7 @@ impl Demo {
                 Column::new("z".into(), rift_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_rift = Some(df);
+            self.cached_datasets[Dataset::Rift] = Some(df);
         }
 
         Ok(())

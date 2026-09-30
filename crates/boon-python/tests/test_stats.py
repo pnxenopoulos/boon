@@ -1,8 +1,9 @@
 """Tests for the boon.stats analysis layer."""
 
+from typing import cast
+
 import polars as pl
 from boon import Demo, stats
-
 from conftest import _require_demo_fixture
 
 
@@ -20,7 +21,7 @@ class _TrackedDemo:
         self.load_calls.append(datasets)
         self._demo.load(*datasets)
 
-    def snapshots(self, *args: object, **kwargs: object) -> pl.DataFrame:
+    def snapshots(self, *args, **kwargs) -> pl.DataFrame:
         self.snapshot_calls.append(kwargs)
         result = self._demo.snapshots(*args, **kwargs)
         assert isinstance(result, pl.DataFrame)
@@ -224,19 +225,19 @@ class TestTeamfights:
 
 def test_in_combat_batches_snapshot_inputs() -> None:
     tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
-    stats.in_combat(tracked)  # type: ignore[arg-type]
+    stats.in_combat(cast(Demo, tracked))
     assert tracked.load_calls == [("player_ticks", "world_ticks")]
 
 
 def test_time_dead_batches_snapshot_inputs() -> None:
     tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
-    stats.time_dead(tracked)  # type: ignore[arg-type]
+    stats.time_dead(cast(Demo, tracked))
     assert tracked.load_calls == [("player_ticks", "world_ticks")]
 
 
 def test_teamfights_uses_batched_events_and_selected_positions() -> None:
     tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
-    stats.teamfights(tracked)  # type: ignore[arg-type]
+    stats.teamfights(cast(Demo, tracked))
 
     assert tracked.load_calls == [("damage", "kills", "world_ticks")]
     assert tracked.snapshot_calls == []

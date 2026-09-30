@@ -41,16 +41,20 @@ See {doc}`player-states` for columns, mask sources, and missing values.
 
 #### `calculate_hero_stats(...)`
 
-Calculate hero stats at selected ticks. Select stats with `HeroStat` enum members.
+Calculate hero stats at selected ticks. Select stats with `HeroStat` enum members
+or their matching strings. See the [full value table](hero-stats.md) for names and units.
 Set `data_version` and use `steam_ids` to select players.
 Use `mode="current"` (default) for supported active effects, or `mode="baseline"`
 for passive and permanent inputs. `StatMode` enum members also work. Results
 include the selected mode.
-See {doc}`hero-stats` for supported stats, equations, input sources, and limits.
+See {doc}`hero-stats` for supported stats, modes, equations, input sources, and limits.
+See [feature examples](examples.md#stats-states-and-ammo) for complete calls.
 
 #### `calculate_ability_stats(...)`
 
-Calculate bonus percentages for each ability. Select stats with `AbilityStat` enum members.
+Calculate bonus percentages for each ability. Select stats with `AbilityStat` enum members
+or their matching strings. See [Percentage rules](ability-stats.md#percentage-rules)
+for all accepted names.
 Set `ticks`, `data_version`, and optional `steam_ids`.
 Use `mode="current"` (default) for supported active effects, or `mode="baseline"`
 for passive bonuses, permanent changes, and persistent imbues.
@@ -81,6 +85,18 @@ Demo.available_datasets()  # -> list[str]
 ```
 
 Return all dataset names. You can pass these names to `load()` or access them as properties.
+The accepted strings are:
+
+```text
+abilities, ability_upgrades, ability_ticks, active_modifiers, breakables, chat,
+damage, flex_slots, item_purchases, kills, mid_boss, neutrals, objectives,
+player_ticks, rift, sinners_sacrifice, stat_modifier_events, troopers, urn,
+world_ticks, street_brawl_ticks, street_brawl_rounds
+```
+
+The two `street_brawl_*` names require a Street Brawl demo. There is no Python
+dataset enum. Calculated stats, state lists, and imbues are separate methods;
+their names are not accepted by `load()`.
 
 ---
 
@@ -201,7 +217,10 @@ in Python.
   `"world_ticks"`, `"troopers"`, or a list.
 - **`ticks`** -- a specific tick or list of ticks.
 - **`every`** / **`seconds`** -- a periodic stride (mutually exclusive).
-- **`events`** -- sample at the ticks of event datasets, such as `"kills"`.
+- **`events`** -- sample at the `tick` values in a named dataset, or a list.
+  Accepts the dataset names above except `"rift"`, which has no `tick` column.
+  Sampling a per-tick table can require loading that full table. Street Brawl
+  names require a Street Brawl demo.
 - **`start_tick`** / **`end_tick`** -- restrict to a contiguous window.
 
 Return one DataFrame for one dataset. Return a dictionary for multiple datasets.
@@ -232,6 +251,7 @@ Unlimited ammo does not change the counts to infinity. Neither `demo.player_tick
 nor `demo.load("player_ticks")` calculates these added fields.
 
 
+(summary)=
 #### `summary()`
 
 ```python
@@ -439,6 +459,43 @@ directly onto `player_ticks`, sorted by `tick` then `hero_id`:
 | `tick` | `int` | The game tick |
 | `hero_id` | `int` | The player's hero ID |
 | `in_combat` | `bool` | Whether the player is in combat on that tick |
+
+(teamfights)=
+#### `teamfights()`
+
+```python
+fights = demo.teamfights(gap_seconds=5.0, radius=1500.0, min_players=3)
+print(fights)
+```
+
+Group damage between opposing heroes by time and location. A fight does not
+require a kill. Events join the nearest active fight within `radius`; a gap of
+`gap_seconds` ends a fight. Discard groups with fewer than `min_players` heroes.
+These are detected groups, not official game events. The grouping gap uses
+tick distance; the returned times exclude paused time.
+
+| Parameter | Default | Meaning |
+| --- | --- | --- |
+| `gap_seconds` | `5.0` | Maximum gap between nearby damage events, in seconds. |
+| `radius` | `1500.0` | Maximum distance from the current fight centre, in Source map units. |
+| `min_players` | `3` | Minimum number of different heroes that deal or take damage. |
+
+Returns one row per fight, sorted by `start_tick`:
+
+| Columns | Contents |
+| --- | --- |
+| `fight_id` | Sequential ID, starting at 1. |
+| `start_tick`, `end_tick` | First and last damage ticks. |
+| `start_seconds`, `end_seconds`, `duration_seconds` | Elapsed times and duration, excluding pauses. |
+| `center_x`, `center_y` | Mean event position. |
+| `participants`, `num_participants` | Sorted hero IDs and their count. These IDs are not Steam IDs. |
+| `hero_damage` | Total damage between heroes. |
+| `kills` | Kills attributed through each victim's most recent damage event. |
+
+The method loads damage, kills, and world ticks, and samples event positions.
+It raises `ValueError` when the tick rate is zero.
+
+---
 
 ### Metadata Properties
 
@@ -1506,68 +1563,24 @@ Return a mapping of life state ID to life state name, for resolving the
 (stats)=
 ## Stats (`boon.stats`)
 
-These functions calculate metrics from parsed demo data. Each function takes
-a [`Demo`](#demo) and returns a Polars DataFrame. Most results use `hero_id`
-for joins with other datasets. `teamfights()` returns one row per fight.
-Each function also has a `Demo` method. For example,
-`demo.kill_participation()` calls `boon.stats.kill_participation(demo)`.
+These functions take a `Demo` and return a Polars DataFrame.
+Each function also has a `Demo` method with the same parameters and result columns.
 
-### `kill_participation()`
-
-```python
-from boon import stats
-
-stats.kill_participation(demo)                              # whole match
-stats.kill_participation(demo, start_tick=0, end_tick=18000)  # windowed
-demo.kill_participation()                                   # equivalent method form
-```
-
-Each player's `(kills + assists) / team_kills`.
-A kill credits a player as either the killer or an assister, never both.
-The ratio is in `[0, 1]`, or null if the team has no kills.
-Use `start_tick` and `end_tick` to select a window.
-The denominator counts team kills in that same window.
-
-**Returns:** `polars.DataFrame` with columns `hero_id`, `team_num`, `kills`,
-`assists`, `team_kills`, `kill_participation` (see the
-[`Demo.kill_participation()`](#kill-participation) table), one row per player,
-sorted by `team_num` then `hero_id`.
-
-### `time_dead()`
+| Function | Demo method |
+| --- | --- |
+| `stats.kill_participation()` | {ref}`demo.kill_participation() <kill-participation>` |
+| `stats.time_dead()` | {ref}`demo.time_dead() <time-dead>` |
+| `stats.in_combat()` | {ref}`demo.in_combat() <in-combat>` |
+| `stats.teamfights()` | {ref}`demo.teamfights() <teamfights>` |
 
 ```python
 from boon import stats
 
-stats.time_dead(demo)   # equivalently: demo.time_dead()
+stats.kill_participation(demo, start_tick=0, end_tick=18000)
+stats.time_dead(demo)
+stats.in_combat(demo)
+stats.teamfights(demo, gap_seconds=5.0, radius=1500.0, min_players=3)
 ```
-
-Time each player spent dead during regulation. A player is dead when
-`is_alive == False`. The function counts only unpaused ticks up to game over.
-The totals use the same time limits as `demo.regulation_ticks` and
-`demo.regulation_seconds`.
-
-**Returns:** `polars.DataFrame` with columns `hero_id`, `team_num`,
-`ticks_dead`, `seconds_dead`, `pct_regulation_dead` (see the
-[`Demo.time_dead()`](#time-dead) table), one row per player, sorted by
-`team_num` then `hero_id`.
-
-**Raises:** `ValueError` — if the demo has no game-over event.
-
-### `in_combat()`
-
-```python
-from boon import stats
-
-stats.in_combat(demo)   # equivalently: demo.in_combat()
-```
-
-Reports the combat state of each player for each tick. Boon uses the pawn's
-`in_combat_end_time` value in `player_ticks`. Boon calculates the current game
-time from non-paused ticks and a constant offset. Damage events set the offset.
-
-**Returns:** `polars.DataFrame` with columns `tick`, `hero_id`, `in_combat` (see
-the [`Demo.in_combat()`](#in-combat) table), one row per `(tick, hero_id)`,
-sorted by `tick` then `hero_id`.
 
 ---
 

@@ -8,11 +8,8 @@ pass. `BOON_TICK_SEGMENTS` forces the segment count (`1` = serial). Skips when n
 `.dem` fixture is present.
 """
 
-from pathlib import Path
-
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR
 
 SNAPSHOT_DATASETS = ["player_ticks", "world_ticks", "troopers"]
@@ -26,9 +23,7 @@ def _fixture() -> str:
 
 
 @pytest.mark.parametrize("dataset", SNAPSHOT_DATASETS)
-def test_parallel_matches_serial(
-    dataset: str, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_parallel_matches_serial(dataset: str, monkeypatch: pytest.MonkeyPatch) -> None:
     demo_path = _fixture()
 
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")

@@ -8,16 +8,12 @@ pub(crate) struct Modifiers {
 }
 
 fn combine(total: &mut f64, percent: f64) -> Result<(), CalculationError> {
-    if !percent.is_finite() || percent > 100.0 {
-        return Err(CalculationError::Invalid(
-            "invalid resistance percentage".into(),
-        ));
-    }
-    *total += percent * (1.0 - *total / 100.0);
-    if !total.is_finite() {
-        return Err(CalculationError::Invalid("resistance overflow".into()));
-    }
-    Ok(())
+    super::percentage::combine(
+        total,
+        percent,
+        "invalid resistance percentage",
+        "resistance overflow",
+    )
 }
 
 impl Modifiers {

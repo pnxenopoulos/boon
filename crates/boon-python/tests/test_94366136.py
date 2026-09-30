@@ -13,12 +13,18 @@ dataset.
 
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR
 
 FIXTURE_PATH = FIXTURES_DIR / "94366136.dem"
 
-PLAYERS_COLUMNS = ["player_name", "steam_id", "hero_id", "team_num", "start_lane", "rank"]
+PLAYERS_COLUMNS = [
+    "player_name",
+    "steam_id",
+    "hero_id",
+    "team_num",
+    "start_lane",
+    "rank",
+]
 
 
 @pytest.fixture(scope="module")
@@ -48,6 +54,6 @@ def test_players_not_empty(demo: Demo) -> None:
     assert players.height == 12
     assert players.columns == PLAYERS_COLUMNS
     # Every returned player has a real Steam ID (the zero-id skip still applies).
-    assert players["steam_id"].min() > 0
+    assert players["steam_id"].gt(0).all(ignore_nulls=False)
     # Two full 6-player teams.
     assert players["team_num"].n_unique() == 2

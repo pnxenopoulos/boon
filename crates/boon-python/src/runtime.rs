@@ -89,7 +89,7 @@ impl Demo {
         if self.paused_ticks.is_some() {
             return Ok(());
         }
-        if self.cached_world_ticks.is_none() {
+        if self.cached_datasets[Dataset::WorldTicks].is_none() {
             Python::attach(|py| self.load_datasets(py, &[Dataset::WorldTicks]))?;
         }
         let world_ticks = self.loaded_frame(Dataset::WorldTicks)?;
@@ -521,13 +521,13 @@ impl Demo {
     /// Populate the caches for the requested snapshot datasets that aren't
     /// already loaded, using a single parallel decode pass over the demo.
     pub(super) fn ensure_snapshots(&mut self, mut wants: SnapWants) -> PyResult<()> {
-        if self.cached_player_ticks.is_some() {
+        if self.cached_datasets[Dataset::PlayerTicks].is_some() {
             wants.player_ticks = false;
         }
-        if self.cached_world_ticks.is_some() {
+        if self.cached_datasets[Dataset::WorldTicks].is_some() {
             wants.world_ticks = false;
         }
-        if self.cached_troopers.is_some() {
+        if self.cached_datasets[Dataset::Troopers].is_some() {
             wants.troopers = false;
         }
         if !wants.any() {
@@ -535,43 +535,20 @@ impl Demo {
         }
         let (pt, wt, tr) = self.build_snapshots_parallel(wants, &TickPredicate::All)?;
         if let Some(df) = pt {
-            self.cached_player_ticks = Some(df);
+            self.cached_datasets[Dataset::PlayerTicks] = Some(df);
         }
         if let Some(df) = wt {
-            self.cached_world_ticks = Some(df);
+            self.cached_datasets[Dataset::WorldTicks] = Some(df);
         }
         if let Some(df) = tr {
-            self.cached_troopers = Some(df);
+            self.cached_datasets[Dataset::Troopers] = Some(df);
         }
         Ok(())
     }
 
     /// Borrow a cached frame for a validated dataset.
     fn cached_frame(&self, dataset: Dataset) -> Option<&DataFrame> {
-        match dataset {
-            Dataset::Abilities => self.cached_abilities.as_ref(),
-            Dataset::AbilityUpgrades => self.cached_ability_upgrades.as_ref(),
-            Dataset::AbilityTicks => self.cached_ability_ticks.as_ref(),
-            Dataset::Chat => self.cached_chat.as_ref(),
-            Dataset::MidBoss => self.cached_mid_boss.as_ref(),
-            Dataset::Objectives => self.cached_objectives.as_ref(),
-            Dataset::PlayerTicks => self.cached_player_ticks.as_ref(),
-            Dataset::WorldTicks => self.cached_world_ticks.as_ref(),
-            Dataset::Kills => self.cached_kills.as_ref(),
-            Dataset::Damage => self.cached_damage.as_ref(),
-            Dataset::FlexSlots => self.cached_flex_slots.as_ref(),
-            Dataset::ItemPurchases => self.cached_item_purchases.as_ref(),
-            Dataset::Troopers => self.cached_troopers.as_ref(),
-            Dataset::Neutrals => self.cached_neutrals.as_ref(),
-            Dataset::Breakables => self.cached_breakables.as_ref(),
-            Dataset::SinnersSacrifice => self.cached_sinners_sacrifice.as_ref(),
-            Dataset::StatModifierEvents => self.cached_stat_modifier_events.as_ref(),
-            Dataset::ActiveModifiers => self.cached_active_modifiers.as_ref(),
-            Dataset::Urn => self.cached_urn.as_ref(),
-            Dataset::StreetBrawlTicks => self.cached_street_brawl_ticks.as_ref(),
-            Dataset::StreetBrawlRounds => self.cached_street_brawl_rounds.as_ref(),
-            Dataset::Rift => self.cached_rift.as_ref(),
-        }
+        self.cached_datasets[dataset].as_ref()
     }
 
     /// Union of the `tick` columns of the given event datasets (loading each if

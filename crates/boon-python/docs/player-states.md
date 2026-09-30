@@ -74,6 +74,27 @@ Use `steam_id` to join these rows to `demo.players`.
 Use `tick` and `steam_id` to join state rows to stat results.
 Do not join null Steam IDs.
 
+## Available state names
+
+State names depend on the selected catalog. They are output strings, not a
+fixed Python enum or a selector argument. Examples include `SPRINTING`,
+`IN_COMBAT`, `INFINITE_CLIP`, and `SILENCED`. Read the full list for your version:
+
+```python
+import json
+from boon import data
+
+catalog = json.loads(data.catalog_path("modifiers", "6694").read_text(encoding="utf-8"))
+state_names = sorted(
+    name.removeprefix("MODIFIER_STATE_")
+    for name in catalog["modifier_states"].values()
+)
+print(state_names)
+```
+
+This lists defined states, including states never set in your replay.
+The `unknown_*` columns retain bits absent from that catalog.
+
 ## Use state lists
 
 ```python

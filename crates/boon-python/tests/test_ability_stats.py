@@ -32,6 +32,8 @@ class RecordedResult:
     [
         {"ticks": []},
         {"ticks": -1},
+        {"ticks": 2**31 - 1},
+        {"ticks": 2**40},
         {"ticks": [True]},
         {"ticks": 1, "steam_ids": [-1]},
         {"ticks": 1, "steam_ids": [0]},

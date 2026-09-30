@@ -30,6 +30,7 @@ def test_specific_ticks_match_full_frame(demo: Demo) -> None:
     full = demo.player_ticks
     some = sorted(full["tick"].unique().to_list())[100:103]
     snap = demo.snapshots(ticks=some)
+    assert isinstance(snap, pl.DataFrame)
     expected = full.filter(pl.col("tick").is_in(some))
     assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
 
@@ -69,7 +70,9 @@ def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> N
 
 def test_player_positions_match_snapshot_columns(demo: Demo) -> None:
     ticks = sorted(demo.player_ticks["tick"].unique().to_list())[100:103]
-    expected = demo.snapshots(ticks=ticks).select("tick", "hero_id", "x", "y")
+    frame = demo.snapshots(ticks=ticks)
+    assert isinstance(frame, pl.DataFrame)
+    expected = frame.select("tick", "hero_id", "x", "y")
     positions = demo._player_positions(ticks)
     assert positions.sort(["tick", "hero_id"]).equals(
         expected.sort(["tick", "hero_id"])
@@ -80,6 +83,7 @@ def test_single_tick_matches_full_frame(demo: Demo) -> None:
     full = demo.player_ticks
     t = sorted(full["tick"].unique().to_list())[500]
     snap = demo.snapshots(ticks=t)
+    assert isinstance(snap, pl.DataFrame)
     expected = full.filter(pl.col("tick") == t)
     assert snap.sort("hero_id").equals(expected.sort("hero_id"))
 
@@ -87,6 +91,7 @@ def test_single_tick_matches_full_frame(demo: Demo) -> None:
 def test_window_matches_full_frame(demo: Demo) -> None:
     full = demo.player_ticks
     snap = demo.snapshots(start_tick=10000, end_tick=11000)
+    assert isinstance(snap, pl.DataFrame)
     expected = full.filter((pl.col("tick") >= 10000) & (pl.col("tick") <= 11000))
     assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
 
@@ -94,6 +99,7 @@ def test_window_matches_full_frame(demo: Demo) -> None:
 def test_stride_downsamples_to_subset(demo: Demo) -> None:
     full = demo.player_ticks
     snap = demo.snapshots(every=640)
+    assert isinstance(snap, pl.DataFrame)
     assert 0 < snap.height < full.height
     # Every sampled row is a real row from the full frame.
     expected = full.filter(pl.col("tick").is_in(snap["tick"].unique().to_list()))
@@ -102,12 +108,14 @@ def test_stride_downsamples_to_subset(demo: Demo) -> None:
 
 def test_events_align_to_event_ticks(demo: Demo) -> None:
     snap = demo.snapshots(events="kills")
+    assert isinstance(snap, pl.DataFrame)
     kill_ticks = set(demo.kills["tick"].to_list())
     assert set(snap["tick"].unique().to_list()) <= kill_ticks
 
 
 def test_multiple_events_align_to_union_of_event_ticks(demo: Demo) -> None:
     snap = demo.snapshots(events=["kills", "damage"])
+    assert isinstance(snap, pl.DataFrame)
     event_ticks = set(demo.kills["tick"].to_list())
     event_ticks.update(demo.damage["tick"].to_list())
     assert set(snap["tick"].unique().to_list()) <= event_ticks
@@ -124,10 +132,12 @@ def test_message_only_event_ticks_match_loaded_datasets() -> None:
     ]
     direct_demo = Demo(_fixture(), preload=False)
     direct = direct_demo.snapshots(events=events)
+    assert isinstance(direct, pl.DataFrame)
 
     loaded_demo = Demo(_fixture(), preload=False)
     loaded_demo.load(*events)
     loaded = loaded_demo.snapshots(events=events)
+    assert isinstance(loaded, pl.DataFrame)
 
     keys = ["tick", "hero_id"]
     assert direct.sort(keys).equals(loaded.sort(keys))
@@ -169,6 +179,7 @@ def test_event_selection_rejects_unknown_names_consistently(
 
 def test_duplicate_snapshot_names_preserve_return_shape(demo: Demo) -> None:
     expected = demo.snapshots("world_ticks", ticks=1000)
+    assert isinstance(expected, pl.DataFrame)
     repeated = demo.snapshots(["world_ticks", "world_ticks"], ticks=1000)
     assert isinstance(repeated, dict)
     assert list(repeated) == ["world_ticks"]

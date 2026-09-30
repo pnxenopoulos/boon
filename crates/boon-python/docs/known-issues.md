@@ -9,8 +9,8 @@ Some stat calculations can give incorrect values. This can occur even when
 
 Report incorrect values on [GitHub](https://github.com/pnxenopoulos/boon/issues)
 or [Discord](https://discord.gg/WmjZHxWrCD). Include the demo, tick, hero, stat
-name, query mode, and boon-data version. Give the calculated value and the value in the demo
-viewer.
+name, query mode, and boon-data version. Give both the calculated value and the
+viewer value.
 
 Some untimed modifier rows remain after their effects end. Stat queries exclude
 rows when all states declared by the catalog are absent from the pawn's recorded
@@ -30,8 +30,7 @@ Baseline mode excludes effects whose passive or active role is unknown and
 reports a partial value. Current mode retains the existing calculation limits.
 Movement values do not apply crouching, sprint acceleration, or bullet-hit slows,
 even in current mode. The movement rules do not yet read and combine those inputs.
-Baseline gravity scale is
-unavailable because the replay supplies only the current pawn value.
+Baseline gravity scale is unavailable because the replay supplies only the current pawn value.
 
 ## Spirit power and modifier bindings
 
@@ -70,10 +69,10 @@ when you check these values. An unresolved result does not mean zero.
 Ammo counts use calculated capacity. If the capacity is partial, the count is
 also partial. Haze and Yamato can have null counts when spirit scaling cannot
 be resolved. The recorded ammo fraction and unlimited-ammo state remain separate.
+Snapshot ammo joins require a unique Steam ID at each tick. Missing or duplicate
+IDs leave `ammo`, `max_ammo`, and `unlimited_ammo` null with a diagnostic.
 
-Barrier snapshots use one cached history of recorded pool changes for direct
-seeks and full passes. This corrects differences caused by keyframe modifier
-tables. These values do not identify barrier grants or damage absorption.
+Barrier snapshots report pool values. See [barrier pool limits](#barrier-pool-snapshots-are-not-grant-events).
 
 ## Battle Vest health condition
 
@@ -83,11 +82,10 @@ rule that links the bonus to health above the threshold. The intrinsic modifier
 can be present above or below the threshold. Its presence does not prove that
 the bonus is active.
 
-When this condition affects a `calculate_hero_stats()` fire-rate result:
-
-- The default `strict=True` raises `CalculationError`.
-- With `strict=False`, the affected row has a null `value`,
-  `status="unresolved"`, and a `diagnostic` that explains the missing condition.
+An unbound bonus can leave a `partial` subtotal with a diagnostic. If a declared
+condition cannot be resolved, `strict=True` raises `CalculationError`.
+With `strict=False`, that row has a null `value` and `status="unresolved"`.
+The outcome depends on the selected catalog's effect bindings and usage flags.
 
 A null result does not mean zero fire-rate bonus. Boon does not assume that the
 bonus is always active. Battle Vest item and modifier data remain available.
@@ -118,8 +116,8 @@ weapon bonus still applies. Melee uses these same inputs and exclusions.
 
 Shop bonuses need the catalog's cost thresholds and item prices in `misc.json`.
 Older releases must be rebuilt with `generic_data.vdata`. Then run
-`boon get VERSION --force`. Engine effects absent from the catalog can still be missing. Legacy weapon
-power has no verified conversion to a percentage and is reported when nonzero.
+`boon get VERSION --force`. Effects absent from the catalog can still be missing.
+Legacy weapon power has no verified conversion to a percentage and is reported when nonzero.
 Unsupported bound scaling or modifier stacks remain unresolved. For example,
 Plot Armor's weapon bonus uses `scale_function_tech_damage`, which this rule does
 not yet evaluate. It needs the caster's spirit value and a verified scaling rule.
@@ -263,7 +261,8 @@ and scaling remain unresolved. See [the rules and inputs](hero-stats.md#debuff-r
 `player_ticks.barrier` reads the recorded modifier tracker from packet changes.
 It excludes relay keyframe modifier tables, which can have a different capture
 time. Do not treat every pool rise as a new barrier grant or every fall as
-absorption. Exact grant lifecycles remain unresolved.
+absorption. Direct seeks and full passes use the same cached history. These values do not
+identify individual grants or absorbed damage.
 
 ## Player stat modifiers are not final stats
 
@@ -285,30 +284,19 @@ The fixed `player_ticks.stat_modifier_*` decoder does not use that map.
 
 ## Banned heroes are frequently absent
 
-`demo.banned_heroes` reads the `k_EUserMsg_BannedHeroes` user message. Its
-`msg_type` is 366. The server can send this message once before the match.
-GOTV recordings do not always contain the message. Some older demos contain
-it. None of the newer tested demos contain it.
+`demo.banned_heroes` reads the `k_EUserMsg_BannedHeroes` message (type 366).
+The server can send it before the match. A recording can omit this message,
+even when another recording from the same server version contains it.
 
-An empty frame means that the demo contains no ban data. It does not prove
-that the match had no bans. The demo cannot distinguish these cases:
-
-- The match had no bans.
-- The server build did not send the message.
-
-Two demos from the same server version can differ. One demo can contain the
-message while the other demo does not contain it.
-
-The message contains only hero IDs. It does not contain the team, banning
-player, or draft order. Boon can list unavailable heroes, but it cannot build
-the draft order.
+An empty frame means no recorded ban data. It does not establish that the match
+had no bans. The message supplies hero IDs only, without teams, players, or
+draft order.
 
 ## Ability upgrades empty on older demos
 
 Valve renamed `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding.
 Boon uses `m_nUpgradeInfo`. Therefore, `ability_upgrades` returns an empty
 DataFrame for demos that Valve recorded before this change.
-
 
 ## Ability bonuses and Arcane Surge
 

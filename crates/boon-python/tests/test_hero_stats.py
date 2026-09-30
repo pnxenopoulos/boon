@@ -95,6 +95,8 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
     [
         {"ticks": []},
         {"ticks": -1},
+        {"ticks": 2**31 - 1},
+        {"ticks": 2**40},
         {"ticks": 1, "mode": "permanent"},
         {"ticks": 1, "mode": None},
         {"ticks": [True]},

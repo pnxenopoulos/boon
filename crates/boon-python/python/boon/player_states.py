@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 import polars as pl
 
 from boon import data
-from boon._selection import validate_steam_ids
+from boon._selection import select_ticks, validate_steam_ids, validate_version
 
 if TYPE_CHECKING:
     from boon import Demo
@@ -36,17 +36,10 @@ def player_states(
     Steam ID retain a row with a null ID. Empty selections return no rows.
     Invalid or absent ticks raise ValueError. This does not calculate stats.
     """
-    if not isinstance(data_version, str) or not data_version:
-        raise ValueError(
-            "data_version must be an explicit version from `boon versions`"
-        )
-    selected = (
-        None if ticks is None else [ticks] if isinstance(ticks, int) else list(ticks)
-    )
-    if selected is not None and any(
-        type(tick) is not int or not 0 <= tick < 2**31 - 1 for tick in selected
-    ):
-        raise ValueError("ticks must contain nonnegative integers below 2147483647")
+    validate_version(data_version)
+    if not data_version:
+        raise ValueError("data_version must be a version from `boon versions`")
+    selected = None if ticks is None else select_ticks(ticks, allow_empty=True)
     validate_steam_ids(steam_ids)
     return demo._player_states(
         data.update(data_version), ticks=selected, steam_ids=steam_ids

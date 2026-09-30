@@ -7,13 +7,13 @@
 
 ## Installation
 
-We recommend using [uv](https://docs.astral.sh/uv/):
+Install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv add boon-deadlock
 ```
 
-If you do not use uv, use pip:
+Or use pip:
 
 ```bash
 pip install boon-deadlock
@@ -23,14 +23,10 @@ Boon is a Rust library. Its Python bindings use [PyO3](https://pyo3.rs) and [mat
 
 ## Quick Start
 
-The `Demo` class is the entry point for parsing. Give it the path to a `.dem`
-file. Construction loads kills, damage, and abilities together. Other datasets
-load when you first access their properties. Use `Demo(path, preload=False)` to
-keep construction lightweight, then `load()` to request several datasets
-together. Call `Demo.available_datasets()` to get all dataset names.
-
-Most properties return [Polars](https://pola.rs) DataFrames. Use the Polars API
-to filter, group, and analyze the data.
+Give `Demo` the path to a `.dem` file. It loads kills, damage, and abilities.
+Other datasets load on first access. Use `preload=False` to defer all dataset loads.
+Use `load()` to read compatible datasets in one pass.
+Most results are [Polars](https://pola.rs) DataFrames.
 
 ```python
 from boon import Demo
@@ -38,23 +34,16 @@ from boon import Demo
 demo = Demo("match.dem")
 
 # Read metadata.
-print(demo.map_name)         # "dl_midtown"
-print(demo.total_ticks)      # 54000
-print(demo.total_clock_time) # "30:00"
-print(demo.match_id)         # 28309863
+print(demo.map_name)
+print(demo.total_ticks)
+print(demo.total_clock_time)
+print(demo.match_id)
 
 # Get a dataset as a Polars DataFrame.
 players = demo.players
 print(players)
-# shape: (12, 6)
-# ┌─────────────┬───────────────┬─────────┬──────────┬────────────┬──────┐
-# │ player_name ┆ steam_id      ┆ hero_id ┆ team_num ┆ start_lane ┆ rank │
-# │ ---         ┆ ---           ┆ ---     ┆ ---      ┆ ---        ┆ ---  │
-# │ str         ┆ u64           ┆ i64     ┆ i64      ┆ i64        ┆ i64  │
-# ╞═════════════╪═══════════════╪═════════╪══════════╪════════════╪══════╡
-# │ Player1     ┆ 7656119...    ┆ 13      ┆ 2        ┆ 1          ┆ 61   │
-# │ ...         ┆ ...           ┆ ...     ┆ ...      ┆ ...        ┆ ...  │
-# └─────────────┴───────────────┴─────────┴──────────┴────────────┴──────┘
+# List dataset names.
+print(Demo.available_datasets())
 
 # Load additional datasets together; existing frames are cached.
 demo.load("kills", "damage", "item_purchases", "ability_upgrades")
@@ -74,7 +63,7 @@ print(world.columns)  # ['tick', 'is_paused', 'next_midboss']
 # Player state per tick (one row per player per tick)
 player_ticks = demo.player_ticks
 print(player_ticks.shape)    # Row counts depend on the recorded pawns and ticks.
-print(player_ticks.columns)  # ['tick', 'hero_id', 'x', 'y', 'z', ...]
+print(player_ticks.columns)  # ['tick', 'steam_id', 'ammo_fraction', 'hero_id', ...]
 ```
 
 ## Events and Economy
@@ -115,22 +104,35 @@ troopers = demo.troopers
 
 ## Filtering with Polars
 
-Boon returns [Polars](https://pola.rs) DataFrames. Use the Polars API to filter,
-group, and analyze the data:
+Select players by Steam ID. Include `tick` when you join sampled player rows:
 
 ```python
 import polars as pl
 
-# Select one player's data.
-haze = player_ticks.filter(pl.col("hero_id") == 13)
+# Select one account, across hero changes.
+steam_id = demo.players["steam_id"][0]
+player = player_ticks.filter(pl.col("steam_id") == steam_id)
 
 # Health over time
-haze.select("tick", "health", "max_health")
+player.select("tick", "hero_id", "health", "max_health")
 
 # Net worth at end of game
 final_tick = player_ticks.filter(pl.col("tick") == player_ticks["tick"].max())
 final_tick.select("hero_id", "gold_net_worth", "ap_net_worth", "kills", "deaths", "assists")
 ```
+
+## Stats, states, and imbues
+
+Use `calculate_hero_stats()` for supported hero values, `calculate_ability_stats()`
+for ability bonus percentages, `imbues()` for item-to-ability selections, and
+`player_states()` for recorded state names. Each method needs a boon-data client
+version. List versions with `boon versions` and install one with `boon get VERSION`.
+A query downloads a missing version automatically.
+
+Start with the [feature examples](examples.md#stats-states-and-ammo).
+The [hero stat table](hero-stats.md) and [ability stat table](ability-stats.md#percentage-rules)
+list all accepted strings and enum members. Join player rows with `steam_id`;
+include `tick` when you join sampled results.
 
 ## Error Handling
 

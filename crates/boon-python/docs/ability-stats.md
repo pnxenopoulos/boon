@@ -30,7 +30,8 @@ print(result.values)
 print(result.contributions)
 ```
 
-Use `AbilityStat` enum members in Python code. Matching strings are also accepted;
+Use `AbilityStat` enum members or the strings in [Percentage rules](#percentage-rules).
+The same strings work as keys in `rulesets`. Names are case-sensitive;
 unknown names cause an error. The result's `stat` column contains strings.
 Use `HeroStat` with [hero stat queries](hero-stats.md).
 
@@ -41,8 +42,9 @@ Use `boon get VERSION --force` after a release adds that map.
 
 ## Select ticks, players, and abilities
 
-`ticks` accepts one integer or a list. Results describe state after each tick.
-Multiple ticks use one parser pass. Missing ticks cause an error.
+`ticks` accepts one integer or a list of nonnegative integers below 2147483647.
+Results describe state after each tick. Multiple ticks use one parser pass.
+Missing ticks cause an error.
 
 Use `steam_ids` to select Steam accounts. Get IDs from `demo.players`.
 Omit the filter to include all players. An empty filter selects no players.
@@ -71,6 +73,11 @@ catalog charges and upgrades, without temporary changes to the recorded maximum.
 The mode does not change units or equations.
 
 `imbues()` reads recorded selections and has no mode parameter.
+See the [mode table](hero-stats.md#select-baseline-or-current-effects) for all
+accepted strings and Python/Rust enum members.
+
+For examples that select an imbued ability or include items, see
+[ability bonuses and imbues](examples.md#ability-bonuses-and-imbues).
 
 ## Results
 
@@ -80,6 +87,10 @@ The mode does not change units or equations.
 | `imbues.effects` | Catalog properties, values, stat symbols, and targeting filters for each binding. No stacking rule is applied. |
 | `result.values` | One row per tick, player, ability, and stat; includes the value, unit, rule, status, and diagnostic. |
 | `result.contributions` | Input sources, properties, scope, activation state, and whether each input was included. Requires `explain=True`. |
+
+Stat-row statuses are `calculated`, `partial`, `unresolved`, and `not_applicable`.
+Binding statuses are `recorded` and `unresolved`. An effect whose value cannot be
+resolved also has `unresolved` status. Check `diagnostic` for the reason.
 
 Stat values and contributions also contain `mode` (`current` or `baseline`).
 Their metadata records the same mode.
@@ -94,13 +105,13 @@ A binding can have no effect rows when the catalog has no mapped stat changes.
 
 ## Percentage rules
 
-| Enum member | Rule |
-| --- | --- |
-| `AbilityStat.COOLDOWN_REDUCTION` | `boon.rulesets.cooldown_reduction.v1` |
-| `AbilityStat.ITEM_COOLDOWN_REDUCTION` | `boon.rulesets.item_cooldown_reduction.v1` |
-| `AbilityStat.DURATION_BONUS` | `boon.rulesets.duration_bonus.v1` |
-| `AbilityStat.RANGE_BONUS` | `boon.rulesets.range_bonus.v1` |
-| `AbilityStat.RADIUS_BONUS` | `boon.rulesets.radius_bonus.v1` |
+| String | Python enum | Rust enum | Python rule |
+| --- | --- | --- | --- |
+| `cooldown_reduction` | `AbilityStat.COOLDOWN_REDUCTION` | `AbilityStat::CooldownReduction` | `rulesets.cooldown_reduction.v1` |
+| `item_cooldown_reduction` | `AbilityStat.ITEM_COOLDOWN_REDUCTION` | `AbilityStat::ItemCooldownReduction` | `rulesets.item_cooldown_reduction.v1` |
+| `duration_bonus` | `AbilityStat.DURATION_BONUS` | `AbilityStat::DurationBonus` | `rulesets.duration_bonus.v1` |
+| `range_bonus` | `AbilityStat.RANGE_BONUS` | `AbilityStat::RangeBonus` | `rulesets.range_bonus.v1` |
+| `radius_bonus` | `AbilityStat.RADIUS_BONUS` | `AbilityStat::RadiusBonus` | `rulesets.radius_bonus.v1` |
 
 Omit `stats` to select all except item cooldown reduction.
 Use `stats=list(AbilityStat)` to include all five stats.

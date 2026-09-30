@@ -10,7 +10,6 @@ import random
 
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR
 
 
@@ -42,6 +41,6 @@ def test_corrupt_and_truncated_demos_never_panic(tmp_path) -> None:
             _ = demo.player_ticks
             _ = demo.damage
         except Exception as e:  # noqa: BLE001 - any *clean* error is acceptable
-            assert (
-                type(e).__name__ != "PanicException"
-            ), f"case {i} panicked instead of erroring cleanly: {e}"
+            assert type(e).__name__ != "PanicException", (
+                f"case {i} panicked instead of erroring cleanly: {e}"
+            )

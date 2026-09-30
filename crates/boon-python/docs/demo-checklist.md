@@ -1,13 +1,13 @@
 # Replay verification checklist
 
 Use this checklist with the demo open in the game viewer and the current Boon
-build installed. Record what you see in the viewer **before** inspecting Boon's
-answer. A successful parse alone does not establish that the data is correct.
+build installed. Record viewer values **before** you inspect Boon's results.
+Compare values as well as checking that the file can be read.
 
 ## Manual pass with the viewer open
 
 For each check, record **pass**, **fail**, **not observed**, or **not directly
-observable**. An event missing from this match is a coverage gap, not a pass.
+observable**. Record **not observed** for events absent from this match.
 Use this log for discrepancies:
 
 | Demo tick / match clock | Player / entity | Dataset and field | Viewer observation | Boon value | Outcome / notes |
@@ -31,7 +31,7 @@ Use this log for discrepancies:
 
 ### 2. Pause at three quiet moments
 
-Choose an early, middle and late tick. Do a check of **each player** at each tick with
+Choose an early, middle and late tick. Check **each player** at each tick with
 `demo.snapshots(ticks=[...])`:
 
 - [ ] Current/max health, level, alive/dead state and kills/deaths/assists match
@@ -100,12 +100,32 @@ with isolated actions; use a busy fight as an additional check.
   direct viewer readout; teamfights use a heuristic and have no official
   scoreboard answer. Do not count visual plausibility as exact verification.
 
-### 6. Record the limits of the check
+### 6. Verify stats, states, and imbues
+
+Use the matching boon-data client version. See [feature examples](examples.md#stats-states-and-ammo).
+
+- [ ] Record `data_version`, tick, Steam ID, query mode, and the viewer value.
+  Use the tick passed to `demo_gototick`; the pause message can show a server tick.
+- [ ] Compare each supported hero stat. Check units, `status`, and `diagnostic`.
+  `partial` can omit an effect; `unresolved` does not mean zero.
+- [ ] Compare `baseline` and `current` before and during a temporary effect.
+  Movement values remain nominal in both modes.
+- [ ] Compare `ammo_fraction`, `ammo`, and finite `max_ammo`. Check
+  `unlimited_ammo` during a slide or another unlimited-ammo effect.
+- [ ] Compare `player_states()` with visible combat, movement, and debuff states.
+  Check unknown bits and null masks before you interpret absent flags.
+- [ ] Compare `imbues().bindings` with each item selection. Check that ability
+  stat bonuses apply to the selected ability, including item cooldown rules.
+- [ ] Compare summary `player_healing` and `barrier_absorption` separately.
+  Some viewer screens show their combined total.
+
+### 7. Record the limits of the check
 
 - [ ] Leave unobservable IDs, exact timers and coordinates marked unverified
   unless you have an independent readout. Record HUD rounding or interpolation
   differences rather than silently shifting ticks to make values agree.
-- [ ] Do not expect `demo.healing`, `demo.barriers()` or calculated hero stats.
+- [ ] Do not expect `demo.healing` or `demo.barriers()`. Use the stat query
+  methods to calculate supported hero and ability values.
   Raw healing counters, `player_ticks.barrier` and damage shield fields remain;
   they do not reconstruct healing or barrier events.
 - [ ] Do not compare `stat_modifier_*` directly with final UI ammo, fire rate,
@@ -115,8 +135,9 @@ with isolated actions; use a busy fight as an additional check.
 
 ## Inspect a tick while watching
 
-This uses the Python API directly. Neither `--cli` nor `--data-version` is
-required. Replace the filename and ticks with those you are viewing.
+This uses the Python API directly. No CLI flags are required. Raw snapshots
+do not require `data_version`; stats, states, imbues, and calculated ammo do.
+Replace the filename and ticks with those you are viewing.
 
 ```python
 import polars as pl
@@ -290,7 +311,7 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
 - [ ] All 22 rows above have a recorded outcome or an explicit coverage gap.
 - [ ] The recorded `player_ticks.barrier`, healing counters, and damage-message
   shield fields are compared only with their documented raw observations. There is
-  no `demo.healing`, `demo.barriers()`, or calculated hero-attribute API.
+  no `demo.healing` or `demo.barriers()`. Calculated stats use separate methods.
 - [ ] Check `stat_modifier_values_available` and `unknown_stat_modifier_count`.
   Never compare `stat_modifier_*` directly with final UI resistances/fire rate.
 - [ ] Do not require `health <= max_health` at every transitional tick without

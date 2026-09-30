@@ -12,7 +12,7 @@ import polars as pl
 
 from boon import data
 from boon import rulesets as builtin_rulesets
-from boon._selection import validate_steam_ids
+from boon._selection import select_ticks, validate_steam_ids, validate_version
 from boon.hero_stats import CalculationError, StatMode
 from boon.rulesets import Rule
 
@@ -64,25 +64,6 @@ _BINDING = {
 }
 
 
-def _query(ticks, data_version, steam_ids):
-    if not isinstance(data_version, str):
-        raise ValueError(
-            "data_version must be an explicit version from `boon versions`"
-        )
-    ticks = [ticks] if isinstance(ticks, int) else list(ticks)
-    if not ticks or any(type(tick) is not int or tick < 0 for tick in ticks):
-        raise ValueError("provide nonnegative integer ticks")
-    validate_steam_ids(steam_ids)
-    return ticks
-
-
-def _ids(name, values):
-    if values is not None and any(
-        type(v) is not int or not 0 <= v <= 2**32 - 1 for v in values
-    ):
-        raise ValueError(f"{name} must contain unsigned 32-bit integers")
-
-
 def imbues(
     demo: Demo,
     /,
@@ -100,7 +81,9 @@ def imbues(
     Effects contain catalog values, not combined bonuses or final cast values.
     Temporary next-cast effects are reported by calculate_ability_stats instead.
     """
-    ticks = _query(ticks, data_version, steam_ids)
+    validate_version(data_version)
+    ticks = select_ticks(ticks)
+    validate_steam_ids(steam_ids)
     directory = data.update(data_version)
     try:
         payload = json.loads(demo._imbues(directory, ticks, steam_ids=steam_ids))
@@ -172,8 +155,13 @@ def calculate_ability_stats(
     CalculationError; strict=False returns unresolved rows with null values.
     """
     mode = StatMode(mode)
-    ticks = _query(ticks, data_version, steam_ids)
-    _ids("abilities", abilities)
+    validate_version(data_version)
+    ticks = select_ticks(ticks)
+    validate_steam_ids(steam_ids)
+    if abilities is not None and any(
+        type(value) is not int or not 0 <= value < 2**32 for value in abilities
+    ):
+        raise ValueError("abilities must contain unsigned 32-bit integers")
     selected = list(dict.fromkeys(AbilityStat(stat) for stat in stats))
     if not selected:
         raise ValueError("provide at least one ability stat")

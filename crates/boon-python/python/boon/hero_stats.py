@@ -12,7 +12,7 @@ import polars as pl
 
 from boon import data
 from boon import rulesets as builtin_rulesets
-from boon._selection import validate_steam_ids
+from boon._selection import select_ticks, validate_steam_ids, validate_version
 from boon.rulesets import Rule
 
 if TYPE_CHECKING:
@@ -118,58 +118,24 @@ def calculate_hero_stats(
     Move speed and sprint speed are nominal values, without current movement states.
     See the hero stats guide for units, equations, and limits for each stat.
     """
-    if not isinstance(data_version, str):
-        raise ValueError(
-            "data_version must be an explicit client version from `boon versions`"
-        )
+    validate_version(data_version)
     mode = StatMode(mode)
     selected = list(dict.fromkeys(HeroStat(stat) for stat in stats))
-    requested_ticks = [ticks] if isinstance(ticks, int) else list(ticks)
-    if not selected or not requested_ticks:
+    requested_ticks = select_ticks(ticks)
+    if not selected:
         raise ValueError("provide ticks and at least one stat")
-    if any(type(tick) is not int or tick < 0 for tick in requested_ticks):
-        raise ValueError("ticks must be nonnegative integers")
     validate_steam_ids(steam_ids)
     if heroes is not None and any(
         type(value) is not int or value < 0 for value in heroes
     ):
         raise ValueError("heroes must contain nonnegative integers")
-    defaults = {
-        HeroStat.CLIP_SIZE: builtin_rulesets.clip_size.v1,
-        HeroStat.BULLET_VELOCITY: builtin_rulesets.bullet_velocity.v1,
-        HeroStat.MELEE_DISTANCE: builtin_rulesets.melee_distance.v1,
-        HeroStat.RELOAD_TIME: builtin_rulesets.reload_time.v1,
-        HeroStat.FIRE_RATE: builtin_rulesets.fire_rate.v1,
-        HeroStat.FALLOFF_START: builtin_rulesets.falloff_start.v1,
-        HeroStat.FALLOFF_END: builtin_rulesets.falloff_end.v1,
-        HeroStat.LIGHT_MELEE_DAMAGE: builtin_rulesets.light_melee_damage.v1,
-        HeroStat.HEAVY_MELEE_DAMAGE: builtin_rulesets.heavy_melee_damage.v1,
-        HeroStat.SLIDE_DISTANCE: builtin_rulesets.slide_distance.v1,
-        HeroStat.BULLET_EVASION: builtin_rulesets.bullet_evasion.v1,
-        HeroStat.DEBUFF_RESIST: builtin_rulesets.debuff_resist.v1,
-        HeroStat.WEAPON_DAMAGE: builtin_rulesets.weapon_damage.v1,
-        HeroStat.MELEE_RESIST: builtin_rulesets.melee_resist.v1,
-        HeroStat.SPIRIT_RESIST: builtin_rulesets.spirit_resist.v1,
-        HeroStat.BULLET_RESIST: builtin_rulesets.bullet_resist.v1,
-        HeroStat.MELEE_LIFESTEAL: builtin_rulesets.melee_lifesteal.v1,
-        HeroStat.SPIRIT_LIFESTEAL: builtin_rulesets.spirit_lifesteal.v1,
-        HeroStat.BULLET_LIFESTEAL: builtin_rulesets.bullet_lifesteal.v1,
-        HeroStat.GRAVITY_SCALE: builtin_rulesets.gravity_scale.v1,
-        HeroStat.STAMINA: builtin_rulesets.stamina.v1,
-        HeroStat.STAMINA_COOLDOWN: builtin_rulesets.stamina_cooldown.v1,
-        HeroStat.DASH_SPEED: builtin_rulesets.dash_speed.v1,
-        HeroStat.DASH_DURATION: builtin_rulesets.dash_duration.v1,
-        HeroStat.AIR_DASH_SPEED: builtin_rulesets.air_dash_speed.v1,
-        HeroStat.AIR_DASH_DURATION: builtin_rulesets.air_dash_duration.v1,
-        HeroStat.MOVE_SPEED: builtin_rulesets.move_speed.v1,
-        HeroStat.SPRINT_SPEED: builtin_rulesets.sprint_speed.v1,
-    }
+    defaults = {stat: getattr(builtin_rulesets, stat.value).v1 for stat in selected}
     chosen = (
-        {stat: defaults[stat] for stat in selected}
+        defaults
         if rulesets is None
         else {HeroStat(stat): rule for stat, rule in rulesets.items()}
     )
-    if set(chosen) != set(selected):
+    if chosen.keys() != defaults.keys():
         raise ValueError("select one ruleset for each requested stat")
     for stat in selected:
         if chosen[stat] != defaults[stat]:

@@ -121,6 +121,24 @@ impl Dataset {
     }
 }
 
+/// Fixed-size storage keeps dataset lookup allocation-free.
+#[derive(Default)]
+pub(super) struct DatasetCache([Option<DataFrame>; Dataset::ALL.len()]);
+
+impl std::ops::Index<Dataset> for DatasetCache {
+    type Output = Option<DataFrame>;
+
+    fn index(&self, dataset: Dataset) -> &Self::Output {
+        &self.0[dataset as usize]
+    }
+}
+
+impl std::ops::IndexMut<Dataset> for DatasetCache {
+    fn index_mut(&mut self, dataset: Dataset) -> &mut Self::Output {
+        &mut self.0[dataset as usize]
+    }
+}
+
 impl std::str::FromStr for Dataset {
     type Err = PyErr;
 

@@ -15,16 +15,6 @@
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11–3.14"></a>
 </p>
 
-<!-- <p>
-  <a href="https://crates.io/crates/boon-deadlock"><img src="https://flat.badgen.net/crates/v/boon-deadlock?color=orange" alt="crates.io"></a>
-  <a href="https://crates.io/crates/boon-deadlock"><img src="https://flat.badgen.net/crates/d/boon-deadlock" alt="crates.io Downloads"></a>
-</p>
-
-<p>
-  <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/v/release/pnxenopoulos/boon?style=for-the-badge" alt="GitHub Release"></a>
-  <a href="https://github.com/pnxenopoulos/boon/releases"><img src="https://img.shields.io/github/downloads/pnxenopoulos/boon/total?style=for-the-badge" alt="CLI Downloads"></a>
-</p> -->
-
 </div>
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. The Rust core has native Python bindings. Boon reads Source 2 `.dem` files and returns [Polars](https://pola.rs) DataFrames.
@@ -43,27 +33,27 @@ Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) 
 
 ## Why Boon?
 
-Deadlock demos contain player positions, kills, damage, item builds, objective state, and other match data. The Source 2 demo format is complex and undocumented. Boon handles the format so that you can analyze structured data.
+Boon reads player state, combat events, items, and objectives from Deadlock demos.
 
-- ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
-- 📊 **Structured output.** Each dataset is a Polars DataFrame. You can filter, group, join, and display the data.
-- 🎯 **Select the datasets to parse.** Boon preloads kills, damage, and abilities. Set `preload=False` to load datasets only when requested. Compatible datasets share a parser pass.
-- 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
-- 💻 **CLI included.** `pip install boon-deadlock` ships a `boon` command for quick inspection without writing any code.
+- **Rust core:** Read Source 2 demo files with native Python bindings.
+- **DataFrames:** Filter, group, and join results with Polars.
+- **Dataset selection:** Load compatible datasets in one parser pass.
+- **Game data:** Use boon-data catalogs for names and calculated stats.
+- **CLI:** Inspect demos with the `boon` command.
 
 ## Installation
 
-Boon can be used as a Python library, a Rust crate, or a standalone CLI tool.
+Use Boon as a Python library, Rust crate, or CLI.
 
 ### Python
 
-We recommend using [uv](https://docs.astral.sh/uv/):
+Install with [uv](https://docs.astral.sh/uv/):
 
 ```bash
 uv add boon-deadlock
 ```
 
-You can also use pip:
+Or use pip:
 
 ```bash
 pip install boon-deadlock
@@ -112,11 +102,13 @@ Demo.available_datasets()
 demo.kill_participation()    # (kills + assists) / team kills, per player
 ```
 
-Use [hero stats](crates/boon-python/docs/hero-stats.md) for calculated hero values.
-Use [ability stats](crates/boon-python/docs/ability-stats.md) for ability bonuses and imbues.
-Use [player states](crates/boon-python/docs/player-states.md) for recorded state flags.
-Select stats with `HeroStat` or `AbilityStat`, and select players with `steam_ids`.
-These methods require a boon-data client version from `boon versions`.
+Use `calculate_hero_stats()` for hero values, `calculate_ability_stats()` for
+ability bonuses, `imbues()` for item selections, and `player_states()` for state
+names. Select a boon-data version from `boon versions`.
+See the [feature examples](crates/boon-python/docs/examples.md#stats-states-and-ammo),
+[hero stat names](crates/boon-python/docs/hero-stats.md), and
+[ability stat names](crates/boon-python/docs/ability-stats.md#percentage-rules).
+The guides list accepted strings and enum members.
 
 ### CLI
 
@@ -140,6 +132,7 @@ boon --help
 ```
 
 The `boon-dev` tool adds low-level commands such as `entities`, `events`, and `send-tables`. Build it with `cargo build --release -p boon-dev`. See the [CLI reference](https://boon.readthedocs.io/en/latest/cli.html).
+
 
 ## Available Datasets
 

@@ -936,7 +936,7 @@ fn catalog_effects(
             else {
                 continue;
             };
-            bound.insert((source.ability_id, effect.property_name.clone()));
+            bound.insert((source.ability_id, definition["property_name"].as_str()));
             if replaced_by_runtime(&mut effect, &result[..dynamic_len]) {
                 continue;
             }
@@ -973,7 +973,7 @@ fn catalog_effects(
             else {
                 continue;
             };
-            if bound.contains(&(owner.ability_id, effect.property_name.clone()))
+            if bound.contains(&(owner.ability_id, definition["property_name"].as_str()))
                 || replaced_by_runtime(&mut effect, &result[..dynamic_len])
             {
                 continue;

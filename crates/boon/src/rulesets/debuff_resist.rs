@@ -17,20 +17,12 @@ pub(crate) struct Modifiers {
 
 impl Modifiers {
     pub(crate) fn add(&mut self, percent: f64) -> Result<(), CalculationError> {
-        if !percent.is_finite() || percent > 100.0 {
-            return Err(CalculationError::Invalid(
-                "invalid debuff resistance".into(),
-            ));
-        }
-        // Equivalent to 100 * (1 - product(1 - each resistance / 100)).
-        // Keep percentage points to preserve small and single contributions.
-        self.percent += percent * (1.0 - self.percent / 100.0);
-        if !self.percent.is_finite() {
-            return Err(CalculationError::Invalid(
-                "debuff-resistance overflow".into(),
-            ));
-        }
-        Ok(())
+        super::percentage::combine(
+            &mut self.percent,
+            percent,
+            "invalid debuff resistance",
+            "debuff-resistance overflow",
+        )
     }
 
     pub(crate) fn calculate(self) -> f64 {

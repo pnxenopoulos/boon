@@ -263,7 +263,8 @@ class TestMatchClock:
         start = demo.game_start_tick
         if start is not None:
             # The match clock is 0:00 at game start, by construction (± rounding).
-            assert abs(demo.tick_to_match_seconds(start)) < 1.0
+            seconds = demo.tick_to_match_seconds(start)
+            assert seconds is not None and abs(seconds) < 1.0
 
     def test_match_seconds_identity(self, demo: Demo) -> None:
         pg = demo.pregame_seconds
@@ -278,13 +279,14 @@ class TestMatchClock:
         start = demo.game_start_tick
         if start is not None and start > 1:
             # A tick inside the pre-game reads as a negative match clock.
-            assert demo.tick_to_match_seconds(start // 2) < 0.0
+            seconds = demo.tick_to_match_seconds(start // 2)
+            assert seconds is not None and seconds < 0.0
 
     def test_match_clock_format(self, demo: Demo) -> None:
         if demo.pregame_seconds is None:
             return
         clock = demo.tick_to_match_clock(demo.total_ticks // 2)
-        assert re.match(r"-?\d+:\d{2}", clock)
+        assert clock is not None and re.fullmatch(r"-?\d+:\d{2}", clock)
 
     def test_match_clock_none_when_offset_unavailable(self, demo: Demo) -> None:
         # tick_to_match_* and game_start_tick are None exactly when the offset is.
@@ -546,7 +548,7 @@ class TestAbilityTicks:
 
     def test_charges_nonnegative(self, demo: Demo) -> None:
         at = demo.ability_ticks
-        assert at["remaining_charges"].min() >= 0
+        assert at["remaining_charges"].ge(0).all(ignore_nulls=False)
 
     def test_hero_ids_in_player_history(self, demo: Demo) -> None:
         heroes = set(demo.player_ticks["hero_id"].unique().to_list())
@@ -571,13 +573,13 @@ class TestActiveModifiers:
     def test_stacks_nonnegative(self, demo: Demo) -> None:
         am = demo.active_modifiers
         if len(am) > 0:
-            assert am["stacks"].min() >= 0
+            assert am["stacks"].ge(0).all(ignore_nulls=False)
 
     def test_serial_lifecycle_transitions_are_valid(self, demo: Demo) -> None:
         am = demo.active_modifiers
         if len(am) == 0:
             pytest.skip("no modifier events in this demo")
-        assert am["serial"].min() > 0
+        assert am["serial"].gt(0).all(ignore_nulls=False)
         for _, grp in am.group_by(["hero_id", "serial"], maintain_order=True):
             active = False
             for event in grp["event"]:
@@ -693,7 +695,7 @@ class TestRift:
         if len(rift) == 0:
             pytest.skip("no rifts in this demo")
         for axis in ("x", "y", "z"):
-            assert rift[axis].abs().max() < 1.0e6, f"{axis} looks like a sentinel"
+            assert rift[axis].abs().lt(1.0e6).all(ignore_nulls=False), f"{axis} looks like a sentinel"
 
     def test_lane_resolves_when_position_known(self, demo: Demo) -> None:
         # Every Rift site seen so far maps to a lane; a 0 here means a new site
@@ -743,7 +745,7 @@ class TestBreakables:
             pytest.skip("no breakable events in this demo")
         for axis in ("x", "y", "z"):
             assert df[axis].is_finite().all()
-            assert df[axis].abs().max() < 1.0e6
+            assert df[axis].abs().lt(1.0e6).all(ignore_nulls=False)
 
 
 # ===================================================================
@@ -790,7 +792,7 @@ class TestSinnersSacrifice:
             pytest.skip("no Sinner's Sacrifice machines in this demo")
         for axis in ("x", "y", "z"):
             assert df[axis].is_finite().all()
-            assert df[axis].abs().max() < 1.0e6
+            assert df[axis].abs().lt(1.0e6).all(ignore_nulls=False)
 
     def test_known_hit_has_exact_attacker(self, demo: Demo) -> None:
         if Path(demo.path).name != "96850353.dem":

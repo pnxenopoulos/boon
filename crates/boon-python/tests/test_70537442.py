@@ -8,7 +8,6 @@ street brawl-specific datasets and the 4v4 player format.
 import polars as pl
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR, get_demo
 
 FIXTURE_PATH = FIXTURES_DIR / "70537442.dem"
@@ -64,12 +63,11 @@ class TestGameResult:
     def test_game_over_tick(self, demo: Demo) -> None:
         assert demo.game_over_tick == 30697
 
-    def test_default_match_clock_uses_active_tick_fallback(
-        self, demo: Demo
-    ) -> None:
+    def test_default_match_clock_uses_active_tick_fallback(self, demo: Demo) -> None:
         assert demo.regulation_ticks == 30_697
         assert demo.regulation_seconds == pytest.approx(30_697 / 64)
         assert demo.regulation_clock_time == "7:59"
+
 
 # ===================================================================
 # Players and teams
@@ -100,7 +98,9 @@ class TestPlayers:
     def test_team_composition(self, demo: Demo) -> None:
         """4v4 street brawl."""
         teams = demo.players.group_by("team_num").len().sort("team_num")
-        counts = dict(zip(teams["team_num"].to_list(), teams["len"].to_list()))
+        counts = dict(
+            zip(teams["team_num"].to_list(), teams["len"].to_list(), strict=True)
+        )
         assert counts[2] == 4
         assert counts[3] == 4
 
@@ -118,15 +118,14 @@ class TestKills:
         assert len(demo.kills) == 15
 
     def test_kills_per_attacker(self, demo: Demo) -> None:
-        counts = (
-            demo.kills.group_by("attacker_hero_id")
-            .len()
-            .sort("attacker_hero_id")
+        counts = demo.kills.group_by("attacker_hero_id").len().sort("attacker_hero_id")
+        result = dict(
+            zip(
+                counts["attacker_hero_id"].to_list(),
+                counts["len"].to_list(),
+                strict=True,
+            )
         )
-        result = dict(zip(
-            counts["attacker_hero_id"].to_list(),
-            counts["len"].to_list(),
-        ))
         assert result == EXPECTED_KILLS_PER_HERO
 
 

@@ -1,6 +1,6 @@
 # Game data downloads
 
-Boon acquires versioned JSON catalogs from
+Boon downloads versioned JSON catalogs from
 [boon-data](https://github.com/pnxenopoulos/boon-data). No Deadlock installation
 is required. These commands download, verify, and store the JSON files locally.
 
@@ -9,7 +9,7 @@ is required. These commands download, verify, and store the JSON files locally.
 `hero_names()`, `ability_names()`, `ability_display_names()`, `modifier_names()`,
 and `breakable_names()`
 read these catalogs. They use the newest verified local client version. If none
-is installed, they download the latest version automatically. An explicit
+is installed, they download the latest version. An explicit
 `version="6698"` selects that client version and downloads it if missing.
 Existing installations work offline; lookup calls do not search for newer releases.
 `boon get` explicitly downloads the latest published version.
@@ -91,14 +91,14 @@ The local `.install.json` receipt records the requested client version and
 source build date and time. It also stores the publication timestamp, snapshot,
 and expected checksums. Offline listings use this receipt to verify the files.
 
-Set `BOON_DATA_DIR` before importing Boon or invoking the CLI to choose a
+Set `BOON_DATA_DIR` before you import Boon or run the CLI to choose a
 different cache root. For example:
 
 ```bash
 BOON_DATA_DIR=/path/to/data boon get 6698
 ```
 
-Downloads are staged under the cache root. Each file must match its size and SHA-256 checksum in the version index.
+Downloads are staged under the cache root. Each file must match the size and SHA-256 checksum in the version index.
 The manifest must also agree with the index. Boon makes the installation
 available only after these checks pass. A failed `--force`
 download preserves the existing installation. Ordinary downloads never replace
@@ -132,9 +132,14 @@ for entry in data.local_versions():
 | `data.available_versions()` | Return published version metadata dictionaries, newest first |
 | `data.local_versions()` | Return verified installed version metadata dictionaries, newest first; no network |
 | `data.resolve_version(version=None)` | Validate an explicit version, otherwise choose newest installed, otherwise latest published |
-| `data.manifest(version=None)` | Read the manifest, acquiring missing files first |
-| `data.available_files(version=None)` | List the selected release's JSON asset names, acquiring missing files first |
-| `data.catalog_path(name, version=None)` | Return a verified local path; accepts `abilities` or `abilities.json` |
+| `data.manifest(version=None)` | Read the manifest, downloading missing files first |
+| `data.available_files(version=None)` | List the selected release's JSON asset names, downloading missing files first |
+| `data.catalog_path(name, version=None)` | Return a verified local JSON path; accepted names are listed below |
+
+`catalog_path()` accepts `abilities`, `heroes`, `modifiers`, `misc`, and `manifest`.
+Each name also accepts its `.json` suffix. Other names cause `DataError`.
+`version` is a numeric client-version string from `boon versions`, such as `"6712"`.
+It is not Boon's package version or a replay tick.
 
 Read helpers without a version prefer the newest installed client version.
 `data.update()` always reads the online index to find the latest version.
@@ -149,7 +154,9 @@ catalog version. Name lookups use the selection policy described above.
 Select `version=` explicitly to get names from a particular client.
 
 Catalogs provide names and definitions. {doc}`hero-stats` explains how to use
-them to calculate ammo capacity, bullet velocity, and melee distance bonus.
+them to calculate the supported weapon, movement, resistance, and lifesteal stats.
+Use {doc}`ability-stats` for ability bonuses and imbues, and {doc}`player-states`
+for recorded state flags.
 Calculations do not change raw demo datasets.
 
 If the published index has no designated `latest` (for example, after only

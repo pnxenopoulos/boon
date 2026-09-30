@@ -34,9 +34,12 @@ def test_regulation_time_uses_match_clock(demo: Demo) -> None:
     assert demo.regulation_clock_time == "32:54"
 
     # Demo ticks include about 30 seconds before the HUD clock starts.
-    raw_seconds = demo.tick_to_seconds(demo.game_over_tick)
+    game_over = demo.game_over_tick
+    regulation_seconds = demo.regulation_seconds
+    assert game_over is not None and regulation_seconds is not None
+    raw_seconds = demo.tick_to_seconds(game_over)
     assert raw_seconds == pytest.approx(2004.578125)
-    assert raw_seconds - demo.regulation_seconds == pytest.approx(30.03125)
+    assert raw_seconds - regulation_seconds == pytest.approx(30.03125)
 
 
 def test_no_pauses(demo: Demo) -> None:
@@ -70,9 +73,10 @@ def test_stat_modifier_events_on_build_10854(demo: Demo) -> None:
 
 
 def test_player_tick_stat_modifiers(demo: Demo) -> None:
+    frame = demo.snapshots("player_ticks", ticks=130000)
+    assert isinstance(frame, pl.DataFrame)
     row = (
-        demo.snapshots("player_ticks", ticks=130000)
-        .filter(pl.col("hero_id") == 25)
+        frame.filter(pl.col("hero_id") == 25)
         .select(
             "tick",
             "hero_id",
@@ -110,8 +114,7 @@ def test_player_tick_stat_modifiers(demo: Demo) -> None:
 def test_sinners_sacrifice(demo: Demo) -> None:
     events = demo.sinners_sacrifice
     counts = {
-        row["event"]: row["len"]
-        for row in events.group_by("event").len().to_dicts()
+        row["event"]: row["len"] for row in events.group_by("event").len().to_dicts()
     }
     assert counts == {"spawned": 12, "hit": 236, "reset": 36}
 
@@ -121,14 +124,8 @@ def test_sinners_sacrifice(demo: Demo) -> None:
 
 
 def test_breakable_subclasses(demo: Demo) -> None:
-    rows = (
-        demo.breakables.group_by("subclass_id", "subclass_name")
-        .len()
-        .to_dicts()
-    )
-    counts = {
-        (row["subclass_id"], row["subclass_name"]): row["len"] for row in rows
-    }
+    rows = demo.breakables.group_by("subclass_id", "subclass_name").len().to_dicts()
+    counts = {(row["subclass_id"], row["subclass_name"]): row["len"] for row in rows}
     assert counts == {
         (3719077267, "citadel_breakable_item_container"): 109,
         (3986897915, "citadel_breakable_prop_wooden_crate"): 340,
@@ -169,9 +166,7 @@ def test_player_melee_damage(demo: Demo) -> None:
         .agg(pl.len().alias("hits"), pl.col("damage").sum())
         .to_dicts()
     )
-    totals = {
-        row["melee_type"]: (row["hits"], row["damage"]) for row in rows
-    }
+    totals = {row["melee_type"]: (row["hits"], row["damage"]) for row in rows}
     assert totals == {
         "heavy": (60, 9505),
         "light": (100, 9467),
@@ -192,10 +187,7 @@ def test_willpower_modifier_uses_its_effective_lifetime(demo: Demo) -> None:
 
 
 def test_banned_heroes(demo: Demo) -> None:
-    bans = {
-        (row["hero_id"], row["hero_name"])
-        for row in demo.banned_heroes.to_dicts()
-    }
+    bans = {(row["hero_id"], row["hero_name"]) for row in demo.banned_heroes.to_dicts()}
     assert bans == {
         (67, "Paige"),
         (66, "Victor"),
