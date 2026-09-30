@@ -78,6 +78,7 @@ struct Demo {
     paused_ticks: Option<Vec<i32>>,
     // Cached dataset DataFrames
     cached_player_ticks: Option<DataFrame>,
+    cached_barriers: std::sync::OnceLock<BarrierTimeline>,
     cached_world_ticks: Option<DataFrame>,
     cached_kills: Option<DataFrame>,
     cached_damage: Option<DataFrame>,
@@ -137,57 +138,110 @@ fn _boon(m: &Bound<'_, PyModule>) -> PyResult<()> {
 
 #[cfg(test)]
 mod barrier_state_tests {
-    use super::{BARRIER_TRACKER_MODIFIER_ID, BarrierState};
+    use super::{BARRIER_TRACKER_MODIFIER_ID, BarrierTimeline};
     use boon_proto::proto::CModifierTableEntry;
-
-    fn entry(float2: Option<f32>) -> CModifierTableEntry {
-        CModifierTableEntry {
-            entry_type: Some(1),
-            parent: Some(42),
-            serial_number: Some(7),
-            modifier_subclass: Some(BARRIER_TRACKER_MODIFIER_ID),
-            float2,
-            ..Default::default()
-        }
-    }
-
-    fn apply(state: &mut BarrierState, index: usize, entry: CModifierTableEntry) {
-        for change in state.modifiers.apply_delta(index, entry) {
-            match change.kind {
-                boon_parser::ModifierChangeKind::Removed => {
-                    state.remove_serial(change.serial);
-                }
-                boon_parser::ModifierChangeKind::Applied
-                | boon_parser::ModifierChangeKind::Changed => {
-                    state.apply_live_entry(change.serial, &change.entry);
-                }
-            }
-        }
-    }
+    use std::collections::HashMap;
 
     #[test]
-    fn barrier_defaults_clamps_preserves_and_removes() {
-        let mut state = BarrierState::default();
-        assert_eq!(state.remaining(42), 0.0);
-
-        apply(&mut state, 3, entry(Some(-1.0)));
-        assert_eq!(state.remaining(42), 0.0);
-
-        apply(&mut state, 3, entry(Some(123.5)));
-        assert_eq!(state.remaining(42), 123.5);
-
-        apply(&mut state, 3, entry(None));
-        assert_eq!(state.remaining(42), 123.5);
-
-        apply(
-            &mut state,
-            3,
-            CModifierTableEntry {
-                entry_type: Some(2),
-                serial_number: Some(7),
-                ..Default::default()
-            },
-        );
-        assert_eq!(state.remaining(42), 0.0);
+    fn barrier_history_merges_changes_and_keeps_pawn_generations_separate() {
+        let mut timeline = BarrierTimeline::default();
+        let mut state = boon_parser::ModifierState::default();
+        let mut serials = HashMap::new();
+        let parent = 42;
+        for (tick, entry) in [
+            (
+                10,
+                CModifierTableEntry {
+                    serial_number: Some(7),
+                    parent: Some(parent),
+                    modifier_subclass: Some(BARRIER_TRACKER_MODIFIER_ID),
+                    float2: Some(123.5),
+                    ..Default::default()
+                },
+            ),
+            (
+                11,
+                CModifierTableEntry {
+                    serial_number: Some(7),
+                    stack_count: Some(2),
+                    ..Default::default()
+                },
+            ),
+            (
+                12,
+                CModifierTableEntry {
+                    serial_number: Some(7),
+                    float2: Some(90.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                12,
+                CModifierTableEntry {
+                    serial_number: Some(7),
+                    float2: Some(80.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                13,
+                CModifierTableEntry {
+                    serial_number: Some(7),
+                    parent: Some(43),
+                    ..Default::default()
+                },
+            ),
+            (
+                14,
+                CModifierTableEntry {
+                    serial_number: Some(8),
+                    parent: Some(43),
+                    modifier_subclass: Some(BARRIER_TRACKER_MODIFIER_ID),
+                    float2: Some(50.0),
+                    ..Default::default()
+                },
+            ),
+            (
+                15,
+                CModifierTableEntry {
+                    entry_type: Some(2),
+                    serial_number: Some(7),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            for change in state.apply_delta(0, entry) {
+                timeline.apply(tick, change, &mut serials);
+            }
+        }
+        for (tick, expected) in [
+            (9, 0.0),
+            (10, 123.5),
+            (11, 123.5),
+            (12, 80.0),
+            (13, 0.0),
+            (15, 0.0),
+        ] {
+            assert_eq!(timeline.remaining(tick, parent), expected);
+        }
+        assert_eq!(timeline.remaining(13, 43), 80.0);
+        assert_eq!(timeline.remaining(14, 43), 50.0);
+        assert_eq!(timeline.remaining(15, 43), 50.0);
+        for (tick, serial, value) in [(16, 9, -1.0), (17, 10, f32::NAN)] {
+            for change in state.apply_delta(
+                0,
+                CModifierTableEntry {
+                    serial_number: Some(serial),
+                    parent: Some(43),
+                    modifier_subclass: Some(BARRIER_TRACKER_MODIFIER_ID),
+                    float2: Some(value),
+                    ..Default::default()
+                },
+            ) {
+                timeline.apply(tick, change, &mut serials);
+            }
+            assert_eq!(timeline.remaining(tick, 43), 0.0);
+        }
+        assert_eq!(timeline.remaining(11, parent + (1 << 14)), 0.0);
     }
 }

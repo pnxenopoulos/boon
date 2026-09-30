@@ -17,6 +17,19 @@ pub(super) struct CatalogFile {
     modifier_states: HashMap<u32, String>,
     #[serde(default)]
     generic_data: Value,
+    #[serde(default)]
+    engine_modifier_names: EngineModifierNames,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct EngineModifierNames {
+    records: Vec<EngineModifierName>,
+}
+
+#[derive(Debug, Deserialize)]
+struct EngineModifierName {
+    modifier_id: u32,
+    modifier_name: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +105,7 @@ pub struct StatCatalog {
     pub(super) modifier_states: HashMap<String, u32>,
     pub(super) modifiers: Vec<Record>,
     modifier_ids: HashMap<u32, Vec<usize>>,
+    engine_modifier_names: HashMap<u32, Option<String>>,
     conditional_modifiers: HashMap<u32, Option<usize>>,
     pub(super) misc: HashMap<u32, Record>,
     pub(super) generic_data: Value,
@@ -149,6 +163,19 @@ impl StatCatalog {
                 }
             }
         }
+        // Engine strings provide names, not effects. Retain collisions as unknown
+        // and use these names only to explain missing stat definitions.
+        let mut engine_modifier_names: HashMap<u32, Option<String>> = HashMap::new();
+        for entry in modifiers.engine_modifier_names.records {
+            engine_modifier_names
+                .entry(entry.modifier_id)
+                .and_modify(|name| {
+                    if name.as_ref() != Some(&entry.modifier_name) {
+                        *name = None;
+                    }
+                })
+                .or_insert(Some(entry.modifier_name));
+        }
         let ability_names = abilities
             .records
             .iter()
@@ -190,6 +217,7 @@ impl StatCatalog {
                 .collect(),
             modifiers: modifiers.records,
             modifier_ids,
+            engine_modifier_names,
             conditional_modifiers,
             misc: indexed(misc.records, |r| r.misc_id)?,
             generic_data: misc.generic_data,
@@ -220,10 +248,16 @@ impl StatCatalog {
     }
 
     pub(super) fn modifier(&self, id: u32, ability: Option<u32>) -> Result<&Record> {
-        let candidates = self
-            .modifier_ids
-            .get(&id)
-            .ok_or_else(|| CalculationError::Invalid(format!("unresolved modifier ID {id}")))?;
+        let candidates = self.modifier_ids.get(&id).ok_or_else(|| {
+            let detail = self
+                .engine_modifier_names
+                .get(&id)
+                .and_then(Option::as_deref);
+            CalculationError::Invalid(match detail {
+                Some(name) => format!("modifier ID {id} ({name}) has no stat definition"),
+                None => format!("unresolved modifier ID {id}"),
+            })
+        })?;
         let mut records = candidates.iter().map(|&i| &self.modifiers[i]).filter(|r| {
             ability.is_none_or(|a| a == 0 || r.ability_id.is_none() || r.ability_id == Some(a))
         });
@@ -400,6 +434,31 @@ pub(super) mod tests {
             Some(12)
         );
         assert!(catalog.modifier(123456, None).is_err());
+    }
+
+    #[test]
+    fn engine_names_explain_missing_definitions_without_resolving_them() {
+        let folder = fixture();
+        let path = folder.path().join("modifiers.json");
+        let mut file: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        file["engine_modifier_names"] = json!({"records": [
+            {"modifier_id": 90, "modifier_name": "modifier_known_name"},
+            {"modifier_id": 90, "modifier_name": "modifier_known_name"},
+            {"modifier_id": 91, "modifier_name": "modifier_collision_a"},
+            {"modifier_id": 91, "modifier_name": "modifier_collision_b"},
+            {"modifier_id": 10, "modifier_name": "modifier_has_definition"}
+        ]});
+        fs::write(path, serde_json::to_vec(&file).unwrap()).unwrap();
+        let catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        assert_eq!(
+            catalog.modifier(90, None).unwrap_err().to_string(),
+            "modifier ID 90 (modifier_known_name) has no stat definition"
+        );
+        assert_eq!(
+            catalog.modifier(91, None).unwrap_err().to_string(),
+            "unresolved modifier ID 91"
+        );
+        assert!(catalog.modifier(10, None).is_ok());
     }
 
     #[test]

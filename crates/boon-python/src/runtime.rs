@@ -369,6 +369,17 @@ impl Demo {
         Ok(merged)
     }
 
+    fn barrier_timeline(&self, wants: SnapWants) -> PyResult<Option<&BarrierTimeline>> {
+        if !wants.player_ticks {
+            return Ok(None);
+        }
+        if self.cached_barriers.get().is_none() {
+            let timeline = BarrierTimeline::build(&self.parser).map_err(to_py_err)?;
+            let _ = self.cached_barriers.set(timeline);
+        }
+        Ok(self.cached_barriers.get())
+    }
+
     /// Decode requested snapshot datasets in one parallel pass.
     ///
     /// Each full packet contains a new keyframe for the required entity state.
@@ -381,6 +392,7 @@ impl Demo {
         wants: SnapWants,
         pred: &TickPredicate,
     ) -> PyResult<SnapshotFrames> {
+        let barriers = self.barrier_timeline(wants)?;
         let mut classes: Vec<&str> = Vec::new();
         if wants.player_ticks {
             classes.push("CCitadelPlayerPawn");
@@ -415,9 +427,8 @@ impl Demo {
             let mut cols = SegSnap::default();
             self.parser
                 .decode_segment(None, i32::MAX, &filter, |ctx| {
-                    cols.update(ctx, wants);
                     if pred.matches(ctx.tick()) {
-                        cols.collect_tick(ctx, &keys, wants);
+                        cols.collect_tick(ctx, &keys, wants, barriers);
                     }
                 })
                 .map_err(to_py_err)?;
@@ -435,9 +446,8 @@ impl Demo {
                             let mut cols = SegSnap::default();
                             parser
                                 .decode_segment(start, end_tick, filter, |ctx| {
-                                    cols.update(ctx, wants);
                                     if pred.matches(ctx.tick()) {
-                                        cols.collect_tick(ctx, keys, wants);
+                                        cols.collect_tick(ctx, keys, wants, barriers);
                                     }
                                 })
                                 .map_err(to_py_err)?;
@@ -466,6 +476,7 @@ impl Demo {
     /// contains a new keyframe for these entities. Therefore, a direct seek
     /// produces the same state as a full decode at `tick`.
     pub(super) fn snapshot_at_tick(&self, tick: i32, wants: SnapWants) -> PyResult<SnapshotFrames> {
+        let barriers = self.barrier_timeline(wants)?;
         let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
         let mut cols = SegSnap::default();
         if ctx.tick() == tick {
@@ -479,10 +490,7 @@ impl Demo {
                 wk: WkKeys::resolve(&ctx),
                 tk: TkKeys::resolve(&ctx),
             };
-            if wants.player_ticks {
-                cols.barriers.rebuild(&ctx);
-            }
-            cols.collect_tick(&ctx, &keys, wants);
+            cols.collect_tick(&ctx, &keys, wants, barriers);
         }
         cols.into_frames(wants)
     }

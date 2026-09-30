@@ -3,6 +3,7 @@
 //! Clip size is magazine capacity, not remaining rounds or unlimited-ammo state.
 mod catalog;
 mod inputs;
+mod lifetimes;
 use crate::{
     Parser,
     rulesets::{self, Rule},
@@ -199,6 +200,31 @@ impl std::str::FromStr for HeroStat {
     }
 }
 
+/// Which effects enter the calculation. Stat units and equations do not change.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum StatMode {
+    /// Include supported active effects as well as baseline inputs.
+    #[default]
+    Current,
+    /// Include hero values, owned passive effects and permanent recorded changes.
+    Baseline,
+}
+
+impl std::str::FromStr for StatMode {
+    type Err = CalculationError;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "current" => Ok(Self::Current),
+            "baseline" => Ok(Self::Baseline),
+            _ => Err(CalculationError::Invalid(format!(
+                "unsupported stat mode {value}; use current or baseline"
+            ))),
+        }
+    }
+}
+
 /// Zero-based player slot (controller entity index minus one).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize)]
 pub struct PlayerSlot(pub u32);
@@ -224,6 +250,7 @@ impl Ruleset {
 pub struct HeroStatQuery {
     ticks: Vec<i32>,
     stats: Vec<HeroStat>,
+    mode: StatMode,
     steam_ids: Option<Vec<u64>>,
     heroes: Option<Vec<i64>>,
     explain: bool,
@@ -240,11 +267,18 @@ impl HeroStatQuery {
         Self {
             ticks: ticks.into_iter().collect(),
             stats,
+            mode: StatMode::default(),
             steam_ids: None,
             heroes: None,
             explain: false,
             strict: true,
         }
+    }
+    /// Select baseline or current effects, including inputs to spirit scaling.
+    #[must_use]
+    pub fn mode(mut self, mode: StatMode) -> Self {
+        self.mode = mode;
+        self
     }
     #[must_use]
     pub fn steam_ids(mut self, ids: impl IntoIterator<Item = u64>) -> Self {
@@ -262,7 +296,7 @@ impl HeroStatQuery {
         self
     }
     /// If false, unresolved rows have null values and an explanatory diagnostic.
-    /// Skipped modifiers and inferred activation produce partial rows in either mode.
+    /// Skipped modifiers and inferred activation produce partial rows with either strict setting.
     #[must_use]
     pub fn strict(mut self, strict: bool) -> Self {
         self.strict = strict;
@@ -273,6 +307,7 @@ impl HeroStatQuery {
 /// One calculated stat; `value` is null if its inputs could not be resolved.
 #[derive(Clone, Debug, Serialize)]
 pub struct StatRow {
+    pub mode: StatMode,
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
@@ -291,6 +326,7 @@ pub struct StatRow {
 /// One resolved input, including intermediate spirit-power inputs when needed.
 #[derive(Clone, Debug, Serialize)]
 pub struct Contribution {
+    pub mode: StatMode,
     pub tick: i32,
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
@@ -308,6 +344,7 @@ pub struct Contribution {
 /// Provenance sufficient to identify the selected catalogs and equation.
 #[derive(Clone, Debug, Serialize)]
 pub struct CalculationMetadata {
+    pub mode: StatMode,
     pub data_version: String,
     pub snapshot_version: String,
     pub source_commit: String,
@@ -352,13 +389,14 @@ impl Parser {
             values: Vec::new(),
             contributions: Vec::new(),
             metadata: CalculationMetadata {
+                mode: query.mode,
                 data_version: catalog.data_version.clone(),
                 snapshot_version: catalog.snapshot_version.clone(),
                 source_commit: catalog.source_commit.clone(),
                 rulesets: query.stats.iter().map(|stat| stat.rule()).collect(),
             },
         };
-        self.visit_stat_ticks(&query.ticks, |ctx, modifiers| {
+        self.visit_stat_ticks(&query.ticks, catalog, |ctx, modifiers| {
             inputs::collect(ctx, query, catalog, modifiers, &mut result)
         })?;
         result
@@ -369,6 +407,7 @@ impl Parser {
     pub(crate) fn visit_stat_ticks(
         &self,
         requested: &[i32],
+        catalog: &StatCatalog,
         mut visit: impl FnMut(
             &crate::Context,
             &crate::EffectiveModifierState,
@@ -401,8 +440,10 @@ impl Parser {
         let mut modifiers = crate::EffectiveModifierState::default();
         let clock = crate::ModifierClock::resolve(&initial);
         modifiers.rebuild(&initial, clock.game_time(&initial));
+        let mut lifetimes = lifetimes::ModifierLifetimes::new(&initial, catalog, &modifiers);
         self.decode_stat_ticks(end, &classes, |ctx| {
-            modifiers.update(ctx, clock.game_time(ctx));
+            let changes = modifiers.update(ctx, clock.game_time(ctx));
+            lifetimes.update(ctx, catalog, &mut modifiers, &changes);
             if failure.is_some()
                 || ticks.binary_search(&ctx.tick()).is_err()
                 || !seen.insert(ctx.tick())

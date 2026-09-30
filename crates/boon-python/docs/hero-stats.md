@@ -61,7 +61,7 @@ values and rejects unknown names. The `stat` column contains strings.
 Use `AbilityStat` with [ability stat queries](ability-stats.md).
 
 ```python
-from boon import Demo, HeroStat
+from boon import Demo, HeroStat, StatMode
 
 version = "6694"  # Select the client version for your demo.
 demo = Demo("106996573.dem", preload=False)
@@ -70,6 +70,7 @@ result = demo.calculate_hero_stats(
     steam_ids=[76561197999389679],  # Venator in this demo.
     data_version=version,
     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
+    mode=StatMode.CURRENT,  # Default; use BASELINE for passive and permanent inputs.
     explain=True,
     strict=False,
 )
@@ -95,6 +96,31 @@ selected_rules = {
 # Pass rulesets=selected_rules with these two stats.
 ```
 
+## Select baseline or current effects
+
+Use `mode="current"` (default) to include supported active buffs, debuffs,
+powerups, and conditional effects. Use `mode="baseline"` for hero values, boons,
+owned passive effects, and permanent recorded changes. `StatMode.CURRENT` and
+`StatMode.BASELINE` also work.
+
+Both modes use the requested tick. Items sold before that tick do not contribute.
+Permanent penalties remain in both modes. The mode also applies to dependent
+inputs, such as spirit power used for ammo scaling. Each mode runs the equation
+from its selected inputs. Do not subtract temporary bonuses from the final value.
+
+Catalog roles identify passive effects. An untimed modifier is not automatically
+passive. Unknown roles are excluded from baseline and reported as partial values.
+Missing intrinsic modifiers also retain their diagnostics.
+
+The mode does not change units. For example, ammo is capacity and fire rate is a
+bonus percentage. To compare the two results, join on `tick`, `steam_id`, and
+`stat`. Keep the `mode` column when you combine reports.
+
+The existing rules still apply. Movement values do not simulate firing, crouching,
+slows, speed limits, or sprint acceleration. `gravity_scale` has only a recorded
+current value. Baseline gravity scale raises an error; with `strict=False`, its
+value is null and its status is `unresolved`.
+
 ## Select ticks and players
 
 `ticks` accepts one integer or a list. Boon removes duplicate ticks and reads
@@ -113,6 +139,7 @@ causes an error at that tick. The old `players` slot filter is not supported.
 
 | Column | Contents |
 | --- | --- |
+| `mode` | `current` or `baseline` (String) |
 | `tick` | Requested demo tick (Int32) |
 | `steam_id` | Steam account ID (UInt64), or null if missing |
 | `player_slot` | Raw controller slot within the demo (UInt32) |
@@ -125,16 +152,18 @@ causes an error at that tick. The old `players` slot filter is not supported.
 | `diagnostic` | Missing inputs or assumed links; null when none are reported |
 
 `explain=True` adds input rows to `result.contributions`.
-Each row gives the input, value, source, property path, and modifier serial when present.
+Each row gives the mode, input, value, source, property path, and modifier serial when present.
 Intermediate rows, such as `input="spirit_power"`, explain other inputs.
-Do not add intermediate rows to the final stat.
+Spirit rows separate flat and percentage bonuses. Ability-only bonuses do not
+enter global spirit. Percentage spirit calculations remain unsupported, even if
+opposing sources add to zero. Do not add intermediate rows to the final stat.
 
 Use `steam_id` to join results to `demo.players`. Use `tick` and `steam_id` to
 join state rows to stat rows. A Steam ID stays constant through hero changes.
 Rows without a Steam ID keep their raw slot. Do not join null Steam IDs.
 Summary slots can differ from controller slots.
 
-`metadata` records the client version, catalog snapshot, source commit, and rules.
+`metadata` records the mode, client version, catalog snapshot, source commit, and rules.
 Each rule has a name, version, and documentation date. The date is not a game
 patch date. Catalog updates change inputs; rule versions identify equations.
 
@@ -463,7 +492,10 @@ Before it applies modifier effects, Boon checks the state flags declared in the
 catalog. It excludes a modifier when all its declared states are absent from the
 pawn's recorded masks. Missing masks or state names do not establish inactivity.
 A disabled state also prevents this exclusion. Raw modifier rows remain available.
-A present state does not prove that each old modifier row is active.
+Stat queries also check these masks throughout the replay. After an observed
+present-to-absent transition, the same application stays ended. A new application
+timestamp can restore it. Later stack changes or another cast's state flags cannot.
+Shared states can still hide an expiry while another source supplies the same flag.
 
 Boon uses explicit catalog property bindings first. If a conditional property
 has no binding, Boon looks for one non-intrinsic modifier nested in its owning
@@ -945,7 +977,7 @@ Rust queries use `HeroStat` enum members and `u64` Steam IDs.
 ```rust
 use boon::{
     Parser,
-    hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog},
+    hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog, StatMode},
     rulesets,
 };
 use std::path::Path;
@@ -958,6 +990,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         [HeroStat::ClipSize, HeroStat::FireRate],
     )
     .steam_ids([76561197999389679])
+    .mode(StatMode::Current)
     .explain(true)
     .strict(false);
     let rules = Ruleset::new()

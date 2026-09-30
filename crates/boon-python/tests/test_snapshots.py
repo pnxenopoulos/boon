@@ -10,8 +10,8 @@ import threading
 import polars as pl
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR
+from polars.testing import assert_frame_equal
 
 
 def _fixture() -> str:
@@ -32,6 +32,34 @@ def test_specific_ticks_match_full_frame(demo: Demo) -> None:
     snap = demo.snapshots(ticks=some)
     expected = full.filter(pl.col("tick").is_in(some))
     assert snap.sort(["tick", "hero_id"]).equals(expected.sort(["tick", "hero_id"]))
+
+
+def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> None:
+    full = demo.player_ticks
+    populated = full.filter(pl.col("barrier") > 0)["tick"].unique().sort().to_list()
+    if not populated:
+        pytest.skip("fixture has no recorded barriers")
+    # Include ticks throughout the match, rather than only the opening keyframe.
+    ticks = populated[:: max(1, len(populated) // 8)][:8]
+    expected = full.filter(pl.col("tick").is_in(ticks)).sort(["tick", "player_slot"])
+    direct = Demo(_fixture(), preload=False)
+    for tick in ticks:
+        snapshot = direct.snapshots(ticks=tick)
+        assert isinstance(snapshot, pl.DataFrame)
+        assert_frame_equal(
+            snapshot.sort("player_slot"), expected.filter(pl.col("tick") == tick)
+        )
+    for segments in (1, 4):
+        monkeypatch.setenv("BOON_TICK_SEGMENTS", str(segments))
+        # A window selects the full-pass path, even for a short fixture.
+        sampled = Demo(_fixture(), preload=False).snapshots(
+            start_tick=ticks[0], end_tick=ticks[-1]
+        )
+        assert isinstance(sampled, pl.DataFrame)
+        assert_frame_equal(
+            sampled.filter(pl.col("tick").is_in(ticks)).sort(["tick", "player_slot"]),
+            expected,
+        )
 
 
 def test_player_positions_match_snapshot_columns(demo: Demo) -> None:

@@ -1,23 +1,25 @@
 use crate::*;
-use boon_parser::hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog};
+use boon_parser::hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog, StatMode};
 
 #[pymethods]
 impl Demo {
     // Keyword arguments mirror the public Python query.
     #[allow(clippy::too_many_arguments)]
-    #[pyo3(signature = (directory, ticks, *, stats, steam_ids=None, heroes=None, explain=false, strict=true))]
+    #[pyo3(signature = (directory, ticks, *, stats, mode="current", steam_ids=None, heroes=None, explain=false, strict=true))]
     fn _calculate_hero_stats(
         &self,
         py: Python<'_>,
         directory: PathBuf,
         ticks: Vec<i32>,
         stats: Vec<String>,
+        mode: &str,
         steam_ids: Option<Vec<u64>>,
         heroes: Option<Vec<i64>>,
         explain: bool,
         strict: bool,
     ) -> PyResult<String> {
         py.detach(|| {
+            let mode: StatMode = mode.parse()?;
             let stats: Vec<HeroStat> = stats
                 .iter()
                 .map(|stat| stat.parse())
@@ -27,6 +29,7 @@ impl Demo {
                 .fold(Ruleset::new(), |rules, stat| rules.with(stat.rule()));
             let catalog = StatCatalog::from_directory(&directory)?;
             let mut query = HeroStatQuery::new(ticks, stats)
+                .mode(mode)
                 .explain(explain)
                 .strict(strict);
             if let Some(steam_ids) = steam_ids {

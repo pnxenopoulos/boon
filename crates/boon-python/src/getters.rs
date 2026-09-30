@@ -63,8 +63,8 @@ impl Demo {
     /// - citadel_type: Deadlock damage category (3 is melee-typed damage)
     /// - damage_flags: Raw Valve damage flags used for detailed classification
     /// - is_melee: True for any melee-typed damage (``citadel_type == 3``)
-    /// - melee_type: ``"light"`` or ``"heavy"`` for basic melee, ``"other"``
-    ///   for another melee-typed source, otherwise null
+    /// - melee_type: ``"light"`` or ``"heavy"`` from the recorded flags,
+    ///   ``"other"`` for neither or both flags on melee damage, otherwise null
     ///
     /// Boon preloads this dataset unless ``preload=False``.
     /// With preloading disabled, the first access loads and caches the data.

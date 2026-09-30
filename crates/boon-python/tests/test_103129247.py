@@ -8,7 +8,6 @@ damage types, and banned heroes.
 import polars as pl
 import pytest
 from boon import Demo
-
 from conftest import FIXTURES_DIR, get_demo
 
 FIXTURE_PATH = FIXTURES_DIR / "103129247.dem"
@@ -142,7 +141,7 @@ def test_melee_types(demo: Demo) -> None:
         row["melee_type"]: row["len"]
         for row in melee.group_by("melee_type").len().to_dicts()
     }
-    assert counts == {"heavy": 231, "light": 635, "other": 2627}
+    assert counts == {"heavy": 635, "light": 231, "other": 2627}
 
 
 def test_player_melee_damage(demo: Demo) -> None:
@@ -150,6 +149,7 @@ def test_player_melee_damage(demo: Demo) -> None:
         zip(
             demo.players["hero_id"].to_list(),
             demo.players["team_num"].to_list(),
+            strict=True,
         )
     )
     roster = list(teams)
@@ -173,8 +173,8 @@ def test_player_melee_damage(demo: Demo) -> None:
         row["melee_type"]: (row["hits"], row["damage"]) for row in rows
     }
     assert totals == {
-        "heavy": (100, 9467),
-        "light": (60, 9505),
+        "heavy": (60, 9505),
+        "light": (100, 9467),
     }
 
 

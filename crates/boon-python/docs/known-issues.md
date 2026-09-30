@@ -9,12 +9,41 @@ Some stat calculations can give incorrect values. This can occur even when
 
 Report incorrect values on [GitHub](https://github.com/pnxenopoulos/boon/issues)
 or [Discord](https://discord.gg/WmjZHxWrCD). Include the demo, tick, hero, stat
-name, and boon-data version. Give the calculated value and the value in the demo
+name, query mode, and boon-data version. Give the calculated value and the value in the demo
 viewer.
 
 Some untimed modifier rows remain after their effects end. Stat queries exclude
 rows when all states declared by the catalog are absent from the pawn's recorded
-masks. Rows without these state declarations can still cause incorrect values.
+masks. After an observed present-to-absent transition, the same application stays
+ended. A new application timestamp can restore it. Missing state declarations or
+overlapping state sources can still leave old effects in calculations.
+
+Engine strings can identify a modifier without defining its effects. Diagnostics
+include such names when the ID has one name. A name does not prove that a modifier
+is harmless or has expired. Some rows track general game state. For example,
+`modifier_citadel_pre_match_wait` remains in all 12 players' raw records in demo
+`108575009.dem`, although the recorded `PREMATCH` state clears at tick 2. Use
+`player_states()` for recorded states; row presence alone does not prove a stat
+bonus. These unclassified rows can still cause a partial result.
+
+Baseline mode excludes effects whose passive or active role is unknown and
+reports a partial value. Current mode retains the existing calculation limits.
+Movement values do not simulate all movement states. Baseline gravity scale is
+unavailable because the replay supplies only the current pawn value.
+
+## Spirit power and modifier bindings
+
+Percentage spirit power and some property scaling functions are not supported.
+Explanations list flat and percentage spirit inputs separately. Ability-only
+spirit bonuses do not enter the global total. Spirit Snatch still lacks a property
+binding. Replay counts match percentage-weighted effects from light and heavy
+melee hits; Boon does not yet apply this interpretation.
+
+New boon-data builds include Ice Path's friendly aura bindings and a curated
+Mercurial Magnum fire-rate binding. The latter uses an inferred activation link
+and keeps the result partial. It applies only while the fire-rate buff is active.
+The separate bullet-damage buff does not grant fire rate. To use these bindings,
+rebuild the required boon-data release, then run `boon get VERSION --force`.
 
 ## Client 6712 stat inputs
 
@@ -40,8 +69,9 @@ Ammo counts use calculated capacity. If the capacity is partial, the count is
 also partial. Haze and Yamato can have null counts when spirit scaling cannot
 be resolved. The recorded ammo fraction and unlimited-ammo state remain separate.
 
-In some recent demos, the existing `barrier` snapshot value differs between a
-direct tick query and a full pass. Check this value against the demo viewer.
+Barrier snapshots use one cached history of recorded pool changes for direct
+seeks and full passes. This corrects differences caused by keyframe modifier
+tables. These values do not identify barrier grants or damage absorption.
 
 ## Battle Vest health condition
 
@@ -228,11 +258,10 @@ and scaling remain unresolved. See [the rules and inputs](hero-stats.md#debuff-r
 
 ## Barrier pool snapshots are not grant events
 
-`player_ticks.barrier` mirrors the replicated modifier tracker. A full-packet
-snapshot can introduce a partial pool before the ordinary grant update.
-For example, match 100655353 shows a partial pool at tick 149761 and the grant
-update at tick 150923. Do not treat every pool rise as a new barrier grant or
-every fall as absorption. Exact grant lifecycles remain unresolved.
+`player_ticks.barrier` reads the recorded modifier tracker from packet changes.
+It excludes relay keyframe modifier tables, which can have a different capture
+time. Do not treat every pool rise as a new barrier grant or every fall as
+absorption. Exact grant lifecycles remain unresolved.
 
 ## Player stat modifiers are not final stats
 

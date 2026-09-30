@@ -9,6 +9,7 @@ from .ability_stats import AbilityStatResult as AbilityStatResult
 from .ability_stats import ImbueResult as ImbueResult
 from .hero_stats import CalculationError as CalculationError
 from .hero_stats import HeroStat as HeroStat
+from .hero_stats import StatMode as StatMode
 from .hero_stats import StatResult as StatResult
 from .rulesets import Rule
 
@@ -387,6 +388,7 @@ class Demo:
         ticks: int | Sequence[int],
         data_version: str,
         stats: Sequence[HeroStat | str] = ...,
+        mode: StatMode | str = ...,
         steam_ids: Sequence[int] | None = ...,
         heroes: Sequence[int] | None = ...,
         rulesets: Mapping[HeroStat | str, Rule] | None = ...,
@@ -399,6 +401,7 @@ class Demo:
         ticks: list[int],
         *,
         stats: list[str],
+        mode: str = ...,
         steam_ids: list[int] | None = ...,
         heroes: list[int] | None = ...,
         explain: bool = ...,

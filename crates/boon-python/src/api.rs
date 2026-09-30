@@ -84,6 +84,7 @@ impl Demo {
             game_mode,
             paused_ticks: None,
             cached_player_ticks: None,
+            cached_barriers: std::sync::OnceLock::new(),
             cached_world_ticks: None,
             cached_kills: None,
             cached_damage: None,

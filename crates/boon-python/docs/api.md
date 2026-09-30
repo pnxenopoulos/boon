@@ -43,6 +43,9 @@ See {doc}`player-states` for columns, mask sources, and missing values.
 
 Calculate hero stats at selected ticks. Select stats with `HeroStat` enum members.
 Set `data_version` and use `steam_ids` to select players.
+Use `mode="current"` (default) for supported active effects, or `mode="baseline"`
+for passive and permanent inputs. `StatMode` enum members also work. Results
+include the selected mode.
 See {doc}`hero-stats` for supported stats, equations, input sources, and limits.
 
 #### `calculate_ability_stats(...)`
@@ -687,6 +690,10 @@ Per-tick, per-player state. Returns one row per player per tick.
 Rows where the pawn is not found or `hero_id == 0` are skipped.
 Boon loads this dataset on first access.
 
+Barrier values come from recorded packet changes. The first player snapshot
+query builds a cached barrier history. Direct seeks and full passes use this
+same history. Later queries reuse it. No boon-data version is needed for barriers.
+
 The `stat_modifier_*` columns are signed sums of known entries in the
 controller's `m_vecStatViewerModifierValues` vector. They do not include base
 hero stats or all temporary effects. Do not use them as final or effective stats.
@@ -850,9 +857,9 @@ means absent, not zero.
 
 `is_melee` contains Valve's melee damage category. The `DFLAG_LIGHT_MELEE`
 and `DFLAG_HEAVY_MELEE` bits identify light and heavy hits.
-`melee_type="other"` identifies melee abilities, NPC attacks, and unclear
-flag combinations. Boon does not use the ability name or damage value to
-classify melee damage.
+These flags can also apply to ability damage. `melee_type="other"` means that
+neither flag, or both flags, are set on melee-typed damage. Boon does not use
+the ability name or damage value to classify melee damage.
 
 ---
 

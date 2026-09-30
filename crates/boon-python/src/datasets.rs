@@ -155,8 +155,8 @@ pub(super) const MELEE_CITADEL_TYPE: i32 = 3;
 /// Valve damage flags that distinguish a light or heavy melee hit.
 /// These are the network values of ``DFLAG_LIGHT_MELEE`` and
 /// ``DFLAG_HEAVY_MELEE`` respectively.
-pub(super) const DAMAGE_FLAG_LIGHT_MELEE: u64 = 1 << 33;
-pub(super) const DAMAGE_FLAG_HEAVY_MELEE: u64 = 1 << 34;
+pub(super) const DAMAGE_FLAG_LIGHT_MELEE: u64 = 1 << 34;
+pub(super) const DAMAGE_FLAG_HEAVY_MELEE: u64 = 1 << 33;
 
 /// Return the melee flag and nullable melee subtype for a damage event.
 /// Non-melee damage has no subtype. Valve's explicit flags identify light and
@@ -186,29 +186,18 @@ mod damage_classification_tests {
 
     #[test]
     pub(super) fn separates_light_heavy_other_and_non_melee() {
-        assert_eq!(
-            classify_melee_damage(MELEE_CITADEL_TYPE, DAMAGE_FLAG_LIGHT_MELEE),
-            (true, Some("light"))
-        );
-        assert_eq!(
-            classify_melee_damage(MELEE_CITADEL_TYPE, DAMAGE_FLAG_HEAVY_MELEE),
-            (true, Some("heavy"))
-        );
-        assert_eq!(
-            classify_melee_damage(
-                MELEE_CITADEL_TYPE,
-                DAMAGE_FLAG_LIGHT_MELEE | DAMAGE_FLAG_HEAVY_MELEE
-            ),
-            (true, Some("other"))
-        );
-        assert_eq!(
-            classify_melee_damage(MELEE_CITADEL_TYPE, 0),
-            (true, Some("other"))
-        );
-        assert_eq!(
-            classify_melee_damage(1, DAMAGE_FLAG_LIGHT_MELEE),
-            (false, None)
-        );
+        // Capture fixtures use raw flags, independent of the constants under test.
+        // TakeDamageFlags_t agrees in both older and current source schemas:
+        // DFLAG_HEAVY_MELEE = 8589934592; DFLAG_LIGHT_MELEE = 17179869184.
+        for (citadel_type, flags, expected) in [
+            (3, 17_179_869_186, (true, Some("light"))),
+            (3, 77_577_846_786, (true, Some("heavy"))),
+            (3, 25_769_803_776, (true, Some("other"))),
+            (3, 0, (true, Some("other"))),
+            (1, 17_179_869_186, (false, None)),
+        ] {
+            assert_eq!(classify_melee_damage(citadel_type, flags), expected);
+        }
     }
 }
 

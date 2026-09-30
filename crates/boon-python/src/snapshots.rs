@@ -347,89 +347,79 @@ impl PlayerPositionCols {
 /// `float2`; demos without that tracker naturally stay at zero.
 pub(super) const BARRIER_TRACKER_MODIFIER_ID: u32 = 4_267_845_006; // modifier_barrier_tracker
 
+/// Recorded barrier changes, independent of entity seeking or segment boundaries.
 #[derive(Default)]
-pub(super) struct BarrierState {
-    pub(super) modifiers: boon_parser::ModifierState,
-    pub(super) remaining_by_pawn: HashMap<i32, f32>,
-    pub(super) serial_to_pawn: HashMap<u32, i32>,
-    pub(super) pawn_to_serial: HashMap<i32, u32>,
+pub(super) struct BarrierTimeline {
+    values: HashMap<u32, Vec<(i32, f32)>>,
 }
 
-impl BarrierState {
-    pub(super) fn remove_serial(&mut self, serial: u32) {
-        let Some(pawn) = self.serial_to_pawn.remove(&serial) else {
-            return;
-        };
-        if self.pawn_to_serial.get(&pawn) == Some(&serial) {
-            self.pawn_to_serial.remove(&pawn);
-            self.remaining_by_pawn.remove(&pawn);
-        }
+impl BarrierTimeline {
+    pub(super) fn build(parser: &boon_parser::Parser) -> boon_parser::Result<Self> {
+        let mut timeline = Self::default();
+        let mut serials = HashMap::new();
+        parser.visit_modifier_changes(|tick, change| timeline.apply(tick, change, &mut serials))?;
+        Ok(timeline)
     }
 
-    pub(super) fn apply_live_entry(
+    pub(super) fn apply(
         &mut self,
-        serial: u32,
-        entry: &boon_proto::proto::CModifierTableEntry,
+        tick: i32,
+        change: boon_parser::ModifierChange,
+        serials: &mut HashMap<u32, u32>,
     ) {
-        if entry.modifier_subclass != Some(BARRIER_TRACKER_MODIFIER_ID) {
-            self.remove_serial(serial);
+        let entry = &change.entry;
+        let parent = entry
+            .parent
+            .filter(|&h| boon_parser::protobuf_handle_index(Some(h)).is_some());
+        if change.kind == boon_parser::ModifierChangeKind::Removed
+            || entry.modifier_subclass != Some(BARRIER_TRACKER_MODIFIER_ID)
+            || parent.is_none()
+        {
+            if let Some(parent) = serials.remove(&change.serial) {
+                self.record(tick, parent, 0.0);
+            }
             return;
         }
-        let Some(pawn) = boon_parser::protobuf_handle_index(entry.parent) else {
-            return;
-        };
-        let remaining = entry.float2.unwrap_or(0.0);
-        let remaining = if remaining.is_finite() {
-            remaining.max(0.0)
-        } else {
-            0.0
-        };
-
-        if let Some(old_pawn) = self.serial_to_pawn.insert(serial, pawn)
-            && old_pawn != pawn
-            && self.pawn_to_serial.get(&old_pawn) == Some(&serial)
+        let parent = parent.expect("validated tracker parent");
+        if let Some(old_parent) = serials.insert(change.serial, parent)
+            && old_parent != parent
         {
-            self.pawn_to_serial.remove(&old_pawn);
-            self.remaining_by_pawn.remove(&old_pawn);
+            self.record(tick, old_parent, 0.0);
         }
-        if let Some(old_serial) = self.pawn_to_serial.insert(pawn, serial)
-            && old_serial != serial
-        {
-            self.serial_to_pawn.remove(&old_serial);
-        }
-        self.remaining_by_pawn.insert(pawn, remaining);
+        // One pool tracker per pawn. A late removal of a replaced serial must
+        // not erase the new tracker's value. Keep one active tracker per pawn.
+        serials.retain(|&serial, owner| serial == change.serial || *owner != parent);
+        let remaining = entry
+            .float2
+            .filter(|value| value.is_finite())
+            .unwrap_or_default()
+            .max(0.0);
+        self.record(tick, parent, remaining);
     }
 
-    pub(super) fn update(&mut self, ctx: &boon_parser::Context) {
-        for change in self.modifiers.update(ctx) {
-            match change.kind {
-                boon_parser::ModifierChangeKind::Removed => {
-                    self.remove_serial(change.serial);
-                }
-                boon_parser::ModifierChangeKind::Applied
-                | boon_parser::ModifierChangeKind::Changed => {
-                    self.apply_live_entry(change.serial, &change.entry);
-                }
+    fn record(&mut self, tick: i32, parent: u32, remaining: f32) {
+        let values = self.values.entry(parent).or_default();
+        if let Some(last) = values.last_mut() {
+            if last.0 == tick {
+                last.1 = remaining;
+                return;
+            }
+            if last.1 == remaining {
+                return;
             }
         }
+        values.push((tick, remaining));
     }
 
-    pub(super) fn rebuild(&mut self, ctx: &boon_parser::Context) {
-        let mut modifiers = std::mem::take(&mut self.modifiers);
-        modifiers.rebuild(ctx);
-        self.remaining_by_pawn.clear();
-        self.serial_to_pawn.clear();
-        self.pawn_to_serial.clear();
-        for (&serial, entry) in modifiers.entries() {
-            self.apply_live_entry(serial, entry);
-        }
-        self.modifiers = modifiers;
-    }
-
-    pub(super) fn remaining(&self, pawn_handle: u32) -> f32 {
-        boon_parser::protobuf_handle_index(Some(pawn_handle))
-            .and_then(|idx| self.remaining_by_pawn.get(&idx).copied())
-            .unwrap_or(0.0)
+    pub(super) fn remaining(&self, tick: i32, pawn_handle: u32) -> f32 {
+        // Keep the handle's generation: a reused entity index is a new pawn.
+        self.values
+            .get(&pawn_handle)
+            .and_then(|values| {
+                let end = values.partition_point(|&(at, _)| at <= tick);
+                end.checked_sub(1).map(|index| values[index].1)
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -503,7 +493,7 @@ impl PtCols {
         &mut self,
         ctx: &boon_parser::Context,
         k: &PtKeys,
-        barriers: &BarrierState,
+        barriers: &BarrierTimeline,
         ammo: &HashMap<u32, Option<f32>>,
     ) {
         for (index, ctrl) in ctx
@@ -555,7 +545,8 @@ impl PtCols {
             } else {
                 pawn.get_i64(k.max_health)
             });
-            self.barrier.push(barriers.remaining(pawn_handle));
+            self.barrier
+                .push(barriers.remaining(ctx.tick(), pawn_handle));
             let stat_modifier_values_available =
                 stat_viewer_values_available(k.stat_viewer_count, &k.stat_viewer);
             let stat_modifier_count = ctrl
@@ -887,7 +878,6 @@ pub(super) struct SegSnap {
     pub(super) pt: PtCols,
     pub(super) wt: WtCols,
     pub(super) tr: TrCols,
-    pub(super) barriers: BarrierState,
 }
 
 impl SegSnap {
@@ -908,22 +898,21 @@ impl SegSnap {
         ))
     }
 
-    pub(super) fn update(&mut self, ctx: &boon_parser::Context, wants: SnapWants) {
-        if wants.player_ticks {
-            self.barriers.update(ctx);
-        }
-    }
-
     pub(super) fn collect_tick(
         &mut self,
         ctx: &boon_parser::Context,
         keys: &SnapKeys,
         wants: SnapWants,
+        barriers: Option<&BarrierTimeline>,
     ) {
         if wants.player_ticks {
             keys.ammo.collect(ctx, &mut self.ammo_by_owner);
-            self.pt
-                .collect_tick(ctx, &keys.pt, &self.barriers, &self.ammo_by_owner);
+            self.pt.collect_tick(
+                ctx,
+                &keys.pt,
+                barriers.expect("player snapshots have a barrier timeline"),
+                &self.ammo_by_owner,
+            );
         }
         if wants.world_ticks {
             self.wt.collect_tick(ctx, &keys.wk);

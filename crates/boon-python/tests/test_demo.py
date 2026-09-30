@@ -491,8 +491,8 @@ class TestDatasets:
 class TestDamageMelee:
     """Raw damage metadata and flag-based melee classification."""
 
-    LIGHT_MELEE_FLAG = 1 << 33
-    HEAVY_MELEE_FLAG = 1 << 34
+    LIGHT_MELEE_FLAG = 1 << 34
+    HEAVY_MELEE_FLAG = 1 << 33
 
     def test_fields_present_and_typed(self, demo: Demo) -> None:
         df = demo.damage

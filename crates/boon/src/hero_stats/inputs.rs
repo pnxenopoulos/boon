@@ -1,10 +1,11 @@
 //! Resolve replay inputs without embedding hero IDs, item values or enum numbers.
 pub mod abilities;
+mod modes;
 
 use super::catalog::{Record, number};
 use super::{
-    CalculationError, Contribution, HeroStat, HeroStatQuery, PlayerSlot, StatCatalog, StatResult,
-    StatRow,
+    CalculationError, Contribution, HeroStat, HeroStatQuery, PlayerSlot, StatCatalog, StatMode,
+    StatResult, StatRow,
 };
 use crate::{Context, EffectiveModifierState, Entity, FieldValue, ModifierClock, rulesets};
 use boon_proto::proto::CModifierTableEntry;
@@ -182,6 +183,7 @@ pub(super) fn collect(
         }
         selected.extend(steam_id);
         let mut resolver = Resolver {
+            mode: query.mode,
             ctx,
             catalog,
             controller,
@@ -196,11 +198,15 @@ pub(super) fn collect(
             inferred_bindings: BTreeSet::new(),
             unmapped_inputs: BTreeSet::new(),
         };
-        let inputs = PlayerInputs::collect(ctx, catalog, controller, hero_id, modifiers);
+        let mut inputs = PlayerInputs::collect(ctx, catalog, controller, hero_id, modifiers);
+        let mode_diagnostics = inputs.as_mut().map_or_else(
+            |_| BTreeSet::new(),
+            |inputs| inputs.select_mode(catalog, query.mode),
+        );
         for &stat in &query.stats {
             resolver.ignored_modifiers.clear();
             resolver.inferred_bindings.clear();
-            resolver.unmapped_inputs.clear();
+            resolver.unmapped_inputs.clone_from(&mode_diagnostics);
             let value = if stat == HeroStat::GravityScale {
                 resolver.gravity_scale().map_err(|error| error.to_string())
             } else {
@@ -307,6 +313,7 @@ pub(super) fn collect(
                 });
             }
             result.values.push(StatRow {
+                mode: query.mode,
                 tick: ctx.tick(),
                 steam_id,
                 player_slot: slot,
@@ -525,6 +532,7 @@ impl<'a> PlayerInputs<'a> {
 }
 
 struct Resolver<'a, 'b> {
+    mode: StatMode,
     ctx: &'a Context,
     catalog: &'a StatCatalog,
     controller: &'a Entity,
@@ -615,6 +623,7 @@ impl<'a> Resolver<'a, '_> {
     ) {
         if self.explain {
             self.contributions.push(Contribution {
+                mode: self.mode,
                 tick: self.ctx.tick(),
                 steam_id: self.steam_id,
                 player_slot: self.slot,
@@ -820,7 +829,7 @@ impl<'a> Resolver<'a, '_> {
             .collect();
         for owner in &inputs.owned {
             for effect in &owner.stat_changes {
-                if effect["stat"] != symbol {
+                if effect["stat"] != symbol || !self.mode.includes_effect(effect) {
                     continue;
                 }
                 let Some(keys) = effect["modifier_keys"].as_array() else {
@@ -1073,7 +1082,7 @@ impl<'a> Resolver<'a, '_> {
         entry: Option<&CModifierTableEntry>,
     ) -> Result<()> {
         for effect in &owner.stat_changes {
-            if empty_declaration(owner, effect) {
+            if empty_declaration(owner, effect) || !self.mode.includes_effect(effect) {
                 continue;
             }
             if effect["stat"] == symbol
@@ -1110,6 +1119,13 @@ impl<'a> Resolver<'a, '_> {
         }
         for owner in &inputs.owned {
             for name in ["MeleeLifesteal", "TargetLifesteal"] {
+                if self.mode == StatMode::Baseline
+                    && (name == "TargetLifesteal"
+                        || owner.definition["m_eAbilityActivation"]
+                            != "CITADEL_ABILITY_ACTIVATION_PASSIVE")
+                {
+                    continue;
+                }
                 let Some(property) = owner.definition["m_mapAbilityProperties"].get(name) else {
                     continue;
                 };
@@ -1266,11 +1282,17 @@ impl<'a> Resolver<'a, '_> {
     }
 
     fn gravity_scale(&mut self) -> Result<f64> {
+        if self.mode == StatMode::Baseline {
+            return Err(invalid(
+                "baseline gravity scale is unavailable: the replay records only the current pawn value",
+            ));
+        }
         let pawn = hero_pawn(self.ctx, self.controller)
             .ok_or_else(|| invalid("player has no current pawn"))?;
         let base = required(self.ctx, pawn, "m_flGravityScale")?;
         if self.explain {
             self.contributions.push(Contribution {
+                mode: self.mode,
                 tick: self.ctx.tick(),
                 steam_id: self.steam_id,
                 player_slot: self.slot,
@@ -1533,7 +1555,10 @@ impl<'a> Resolver<'a, '_> {
         for owner in &inputs.owned {
             self.unbound_weapon_damage(owner);
             for effect in &owner.stat_changes {
-                if effect["stat"] != WEAPON_DAMAGE || effect.get("runtime_counts").is_none() {
+                if effect["stat"] != WEAPON_DAMAGE
+                    || !self.mode.includes_effect(effect)
+                    || effect.get("runtime_counts").is_none()
+                {
                     continue;
                 }
                 if effect["modifier_keys"]
@@ -1653,6 +1678,7 @@ impl<'a> Resolver<'a, '_> {
     fn unbound_weapon_damage(&mut self, owner: &Record) {
         for effect in &owner.stat_changes {
             if effect["stat"] != WEAPON_DAMAGE
+                || !self.mode.includes_effect(effect)
                 || effect.get("runtime_counts").is_some()
                 || effect["modifier_keys"]
                     .as_array()
@@ -1841,21 +1867,23 @@ impl<'a> Resolver<'a, '_> {
             &format!("{}/m_mapStartingStats/ETechPower", hero.definition_path),
             None,
         );
-        let mut total = base
+        let total = base
             + self.level_bonus(inputs, SPIRIT, "spirit_power", "flat")?
             + self.purchase_bonus(inputs, SPIRIT, "spirit_power", "flat")?;
-        total += self.total(SPIRIT, "spirit_power", "flat", inputs)?;
-        // Do not guess the interaction of percentage spirit modifiers with scaling.
-        if self.total(
+        let flat = self.total(SPIRIT, "spirit_power", "flat", inputs);
+        // Trace percentage inputs even if an unbound flat effect prevents a total.
+        let percent = self.total_and_count(
             "MODIFIER_VALUE_TECH_POWER_PERCENT",
             "spirit_power",
             "percent",
             inputs,
-        )? != 0.0
-        {
+        );
+        let flat = flat?;
+        // Opposing percentages cannot cancel under an unverified combination rule.
+        if percent?.1 != 0 {
             return Err(invalid("percentage spirit-power scaling is not supported"));
         }
-        Ok(total)
+        Ok(total + flat)
     }
 
     fn total(
@@ -1897,6 +1925,25 @@ impl<'a> Resolver<'a, '_> {
         self.visit_values(stat, input, kind, inputs, ValuePolicy::Declared, add)
     }
 
+    fn global_effect(&mut self, source: &Record, effect: &Value) -> bool {
+        use abilities::EffectScope;
+        let filter = abilities::apply_filter(self.catalog, source, effect);
+        match abilities::scope(filter) {
+            EffectScope::Global => true,
+            EffectScope::Unknown => {
+                self.unmapped_inputs.insert(format!(
+                    "unknown apply filter {} in {}",
+                    filter.unwrap_or_default(),
+                    source.record_key
+                ));
+                false
+            }
+            // An ability-specific property cannot contribute to a nominal hero
+            // stat, including spirit power used for weapon or hero scaling.
+            _ => false,
+        }
+    }
+
     fn visit_values(
         &mut self,
         stat: &str,
@@ -1928,6 +1975,7 @@ impl<'a> Resolver<'a, '_> {
             if self.explain {
                 let source = self.recorded_source(recorded.source_id);
                 self.contributions.push(Contribution {
+                    mode: self.mode,
                     tick: self.ctx.tick(),
                     steam_id: self.steam_id,
                     player_slot: self.slot,
@@ -1946,6 +1994,8 @@ impl<'a> Resolver<'a, '_> {
         for item in owned {
             for effect in &item.stat_changes {
                 if effect["stat"] != stat
+                    || !self.mode.includes_effect(effect)
+                    || !self.global_effect(item, effect)
                     || effect["modifier_keys"]
                         .as_array()
                         .is_some_and(|v| !v.is_empty())
@@ -2060,6 +2110,7 @@ impl<'a> Resolver<'a, '_> {
             {
                 for effect in &ability.stat_changes {
                     if effect["stat"] == stat
+                        && self.global_effect(ability, effect)
                         && effect["modifier_keys"]
                             .as_array()
                             .is_none_or(|keys| keys.is_empty())
@@ -2102,7 +2153,10 @@ impl<'a> Resolver<'a, '_> {
                 .map(|effect| (effect, None))
                 .chain(inferred)
             {
-                if effect["stat"] != stat {
+                if effect["stat"] != stat
+                    || !self.mode.includes_effect(effect)
+                    || !self.global_effect(source, effect)
+                {
                     continue;
                 }
                 if entry.duration.is_some_and(|d| d > 0.0)
@@ -2417,6 +2471,7 @@ mod tests {
         let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
         let mut trace = Vec::new();
         let mut resolver = Resolver {
+            mode: StatMode::Current,
             ctx: &ctx,
             catalog: &catalog,
             controller: &controller,
@@ -2498,6 +2553,75 @@ mod tests {
     }
 
     #[test]
+    fn ability_scoped_bonuses_do_not_enter_global_hero_stats() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        catalog.heroes.get_mut(&999).unwrap().definition["m_mapScalingStats"] = json!({});
+        let baseline = stat_result(&catalog, true, HeroStat::ClipSize).0.unwrap();
+        for filter in ["EApplyFilter_OnlyIfImbued", "EApplyFilter_OnlyIfHasCharges"] {
+            let mut effect = json!({"stat": PERCENT, "property_name": "ScopedAmmo"});
+            effect["apply_filter"] = json!(filter);
+            effect["definition_path"] = json!("/test/scoped-ammo");
+            effect["value"] = json!(900);
+            catalog.modifiers[2].stat_changes.push(effect);
+            assert_eq!(
+                stat_result(&catalog, true, HeroStat::ClipSize).0.unwrap(),
+                baseline
+            );
+            catalog.modifiers[2].stat_changes.pop();
+        }
+    }
+
+    #[test]
+    fn spirit_inputs_keep_scope_and_do_not_cancel_unsupported_percentages() {
+        let folder = super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        catalog.heroes.get_mut(&999).unwrap().definition["m_mapLevelInfo"] = json!({});
+        catalog.modifiers[2].stat_changes = vec![
+            json!({"stat": SPIRIT, "value": 8, "definition_path": "/flat"}),
+            json!({"stat": SPIRIT, "value": 90, "definition_path": "/imbued",
+                "apply_filter": "EApplyFilter_OnlyIfImbued"}),
+            json!({"stat": "MODIFIER_VALUE_TECH_POWER_PERCENT", "value": 40,
+                "definition_path": "/imbued-percent", "apply_filter": "EApplyFilter_OnlyIfImbued"}),
+        ];
+        let (result, trace, _) = stat_result(&catalog, true, HeroStat::ClipSize);
+        assert_eq!(result.unwrap(), 26.0); // 20 base + 8 global spirit * 0.75.
+        assert!(!trace.iter().any(|c| c.definition_path.contains("imbued")));
+        catalog.modifiers[2].stat_changes.extend([
+            json!({"stat": "MODIFIER_VALUE_TECH_POWER_PERCENT", "value": 15,
+                "definition_path": "/positive"}),
+            json!({"stat": "MODIFIER_VALUE_TECH_POWER_PERCENT", "value": -15,
+                "definition_path": "/negative"}),
+        ]);
+        let (result, trace, _) = stat_result(&catalog, true, HeroStat::ClipSize);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("percentage spirit-power")
+        );
+        assert_eq!(
+            trace
+                .iter()
+                .filter(|c| c.input == "spirit_power" && c.kind == "percent")
+                .map(|c| c.value)
+                .collect::<Vec<_>>(),
+            [15.0, -15.0]
+        );
+        // A flat-value failure still leaves the separate percentage inputs visible.
+        catalog.modifiers[2].stat_changes[0]["value"] = json!("unknown");
+        let (result, trace, _) = stat_result(&catalog, true, HeroStat::ClipSize);
+        assert!(result.is_err());
+        assert_eq!(
+            trace
+                .iter()
+                .filter(|c| c.input == "spirit_power" && c.kind == "percent")
+                .count(),
+            2
+        );
+    }
+
+    #[test]
     fn absent_catalog_states_exclude_old_modifiers_but_missing_evidence_does_not() {
         let folder = super::super::catalog::tests::fixture();
         let path = folder.path().join("modifiers.json");
@@ -2571,6 +2695,7 @@ mod tests {
         let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
         let mut contributions = Vec::new();
         let mut resolver = Resolver {
+            mode: StatMode::Current,
             ctx: &ctx,
             catalog,
             controller: &controller,
@@ -5268,6 +5393,7 @@ mod tests {
         let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
         let mut contributions = Vec::new();
         let resolver = Resolver {
+            mode: StatMode::Current,
             ctx: &ctx,
             catalog: &catalog,
             controller: &controller,

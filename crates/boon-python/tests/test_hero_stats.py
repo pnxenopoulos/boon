@@ -6,7 +6,7 @@ from typing import cast
 
 import polars as pl
 import pytest
-from boon import CalculationError, Demo, HeroStat, data, rulesets
+from boon import CalculationError, Demo, HeroStat, StatMode, data, rulesets
 from boon.hero_stats import calculate_hero_stats
 from catalog_helpers import VERSION, release
 
@@ -24,6 +24,7 @@ class RecordedResult:
             {
                 "values": [
                     {
+                        "mode": kwargs["mode"],
                         "tick": ticks[0],
                         "steam_id": 76561197999389679,
                         "player_slot": 0,
@@ -38,7 +39,11 @@ class RecordedResult:
                     }
                 ],
                 "contributions": [],
-                "metadata": {"source_commit": "a" * 40, "snapshot_version": VERSION},
+                "metadata": {
+                    "mode": kwargs["mode"],
+                    "source_commit": "a" * 40,
+                    "snapshot_version": VERSION,
+                },
             }
         )
 
@@ -74,6 +79,7 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
         [50],
         {
             "stats": ["clip_size"],
+            "mode": "current",
             "steam_ids": [76561197999389679],
             "heroes": None,
             "explain": True,
@@ -90,6 +96,8 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
     [
         {"ticks": []},
         {"ticks": -1},
+        {"ticks": 1, "mode": "permanent"},
+        {"ticks": 1, "mode": None},
         {"ticks": [True]},
         {"ticks": 1, "stats": []},
         {"ticks": 1, "stats": ["unimplemented_stat"]},
@@ -147,7 +155,8 @@ def test_old_catalog_has_actionable_native_error(demo_paths):
         demo.calculate_hero_stats(ticks=1000, data_version=VERSION)
 
 
-def test_native_missing_ticks_and_empty_result(demo_paths, tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", list(StatMode))
+def test_native_missing_ticks_and_empty_result(demo_paths, tmp_path, monkeypatch, mode):
     if not demo_paths:
         pytest.skip("no demo fixtures")
     for name in ("heroes", "abilities", "modifiers", "misc"):
@@ -167,6 +176,7 @@ def test_native_missing_ticks_and_empty_result(demo_paths, tmp_path, monkeypatch
         demo.calculate_hero_stats(ticks=2_000_000_000, data_version=VERSION)
     result = demo.calculate_hero_stats(
         ticks=1000,
+        mode=mode,
         heroes=[],
         data_version=VERSION,
         stats=list(HeroStat),
@@ -174,6 +184,9 @@ def test_native_missing_ticks_and_empty_result(demo_paths, tmp_path, monkeypatch
     assert {rule["id"] for rule in result.metadata["rulesets"]} == {
         f"{stat.value}.v1" for stat in HeroStat
     }
+    assert result.metadata["mode"] == mode
+    assert result.values.schema["mode"] == pl.String
+    assert result.contributions.schema["mode"] == pl.String
     assert result.values.is_empty()
     assert result.values.schema["tick"] == pl.Int32
     assert result.contributions.is_empty()
@@ -366,3 +379,17 @@ def test_old_slot_keyword_is_not_silently_reinterpreted():
             data_version=VERSION,
             players=[0],  # ty: ignore[unknown-argument] -- Reject the old slot keyword.
         )
+
+
+@pytest.mark.parametrize(
+    "mode", ["baseline", StatMode.BASELINE, "current", StatMode.CURRENT]
+)
+def test_stat_mode_reaches_native_query_and_results(monkeypatch, tmp_path, mode):
+    monkeypatch.setattr(data, "update", lambda _: tmp_path)
+    demo = RecordedResult()
+    result = calculate_hero_stats(
+        cast(Demo, demo), ticks=50, data_version=VERSION, mode=mode
+    )
+    assert demo.calls[0][2]["mode"] == mode
+    assert result.values["mode"].item() == mode
+    assert result.metadata["mode"] == mode

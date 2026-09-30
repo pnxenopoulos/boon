@@ -255,6 +255,20 @@ fn pause_adjusted_time(simulation_time: f32, paused_ticks: u32, interval: f32) -
 pub struct EffectiveModifierState {
     raw: ModifierState,
     effective_by_serial: HashMap<u32, CModifierTableEntry>,
+    ended_applications: HashMap<u32, ModifierApplication>,
+}
+
+/// Recorded identity of one application, separate from later payload changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ModifierApplication(Option<u32>, Option<u32>);
+
+impl From<&CModifierTableEntry> for ModifierApplication {
+    fn from(entry: &CModifierTableEntry) -> Self {
+        Self(
+            entry.creation_time.map(f32::to_bits),
+            entry.last_applied_time.map(f32::to_bits),
+        )
+    }
 }
 
 impl EffectiveModifierState {
@@ -284,6 +298,7 @@ impl EffectiveModifierState {
     /// capture time differs from the entity tick; exact stat queries replay
     /// packet deltas instead.
     pub fn rebuild(&mut self, ctx: &Context, game_time: Option<f32>) {
+        self.ended_applications.clear();
         self.raw.rebuild(ctx);
         self.effective_by_serial = self
             .raw
@@ -298,6 +313,17 @@ impl EffectiveModifierState {
     pub fn clear(&mut self) {
         self.raw.clear();
         self.effective_by_serial.clear();
+        self.ended_applications.clear();
+    }
+
+    /// End effects using additional replay evidence, while keeping raw payloads.
+    /// A changed stack/value cannot revive the same application. A new recorded
+    /// application time can; it may need fields retained in the raw row.
+    pub(crate) fn end_application(&mut self, serial: u32) {
+        if let Some(entry) = self.effective_by_serial.remove(&serial) {
+            self.ended_applications
+                .insert(serial, ModifierApplication::from(&entry));
+        }
     }
 
     fn reconcile(
@@ -317,6 +343,7 @@ impl EffectiveModifierState {
                 {
                     continue;
                 }
+                self.ended_applications.remove(&serial);
                 // Explicit removal, dispel, and owner cleanup take
                 // precedence over the duration deadline. If the timer already
                 // ended the effect, suppress this later table cleanup.
@@ -330,6 +357,12 @@ impl EffectiveModifierState {
                 continue;
             }
 
+            if self.ended_applications.get(&serial)
+                == Some(&ModifierApplication::from(&change.entry))
+            {
+                continue;
+            }
+            self.ended_applications.remove(&serial);
             if modifier_is_effective_at(&change.entry, game_time) {
                 // A finite modifier can use the same serial for a refresh. If
                 // its old lifetime ended, this is a new effective application
@@ -499,6 +532,65 @@ mod tests {
             float1: Some(7.0),
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn state_mask_expiry_persists_until_a_recorded_refresh() {
+        let mut state = EffectiveModifierState::default();
+        let mut entry = active(7);
+        entry.duration = None;
+        entry.creation_time = Some(10.0);
+        entry.last_applied_time = Some(10.0);
+        let changes = state.raw.apply_delta(0, entry);
+        state.reconcile(changes, Some(10.0));
+        state.end_application(7);
+        assert!(state.entries().is_empty());
+        // Moving an unchanged raw row between slots cannot restore the effect.
+        let same = state.raw.get(7).unwrap().clone();
+        let mut changes = state.raw.apply_delta(
+            0,
+            CModifierTableEntry {
+                entry_type: Some(2),
+                serial_number: Some(7),
+                ..Default::default()
+            },
+        );
+        changes.extend(state.raw.apply_delta(1, same));
+        assert!(state.reconcile(changes, Some(11.0)).is_empty());
+        let changes = state.raw.apply_delta(
+            1,
+            CModifierTableEntry {
+                serial_number: Some(7),
+                stack_count: Some(2),
+                ..Default::default()
+            },
+        );
+        assert!(state.reconcile(changes, Some(20.0)).is_empty());
+        assert!(state.entries().is_empty());
+        let changes = state.raw.apply_delta(
+            2,
+            CModifierTableEntry {
+                serial_number: Some(7),
+                last_applied_time: Some(20.0),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            state.reconcile(changes, Some(20.0))[0].kind,
+            ModifierChangeKind::Applied
+        );
+        assert_eq!(state.entries()[&7].stack_count, Some(2));
+        state.end_application(7);
+        let changes = state.raw.apply_delta(
+            3,
+            CModifierTableEntry {
+                entry_type: Some(2),
+                serial_number: Some(7),
+                ..Default::default()
+            },
+        );
+        state.reconcile(changes, Some(21.0));
+        assert!(state.ended_applications.is_empty());
     }
 
     #[test]

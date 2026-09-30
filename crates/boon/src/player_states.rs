@@ -158,22 +158,33 @@ struct MaskKeys(Vec<u64>);
 /// Bits present in any recorded mask, without assigning mask precedence.
 /// A disabled bit can hide a live modifier's state, so it also counts as evidence.
 pub(crate) fn modifier_state_evidence(ctx: &Context, pawn: &Entity) -> Option<Vec<u32>> {
-    let serializer = ctx.serializers().get(&pawn.class_name)?;
-    let mut evidence = Vec::new();
-    let mut words = Vec::new();
-    for name in [
-        "m_bvEnabledPredictedStateMask",
-        "m_bvEnabledStateMask",
-        "m_bvDisabledStateMask",
-    ] {
-        MaskKeys::resolve(serializer, &format!("m_pModifierProp.{name}"))?
-            .read(pawn, &mut words)?;
-        evidence.resize(words.len().max(evidence.len()), 0);
-        for (bits, word) in evidence.iter_mut().zip(&words) {
-            *bits |= word;
-        }
+    StateEvidenceKeys::resolve(ctx.serializers().get(&pawn.class_name)?)?.read(pawn)
+}
+
+/// Resolve once for consumers that check modifier lifetimes on every tick.
+pub(crate) struct StateEvidenceKeys([MaskKeys; 3]);
+
+impl StateEvidenceKeys {
+    pub(crate) fn resolve(serializer: &Serializer) -> Option<Self> {
+        Some(Self([
+            MaskKeys::resolve(serializer, "m_pModifierProp.m_bvEnabledPredictedStateMask")?,
+            MaskKeys::resolve(serializer, "m_pModifierProp.m_bvEnabledStateMask")?,
+            MaskKeys::resolve(serializer, "m_pModifierProp.m_bvDisabledStateMask")?,
+        ]))
     }
-    Some(evidence)
+
+    pub(crate) fn read(&self, pawn: &Entity) -> Option<Vec<u32>> {
+        let mut evidence = Vec::new();
+        let mut words = Vec::new();
+        for keys in &self.0 {
+            keys.read(pawn, &mut words)?;
+            evidence.resize(words.len().max(evidence.len()), 0);
+            for (bits, word) in evidence.iter_mut().zip(&words) {
+                *bits |= word;
+            }
+        }
+        Some(evidence)
+    }
 }
 
 impl MaskKeys {

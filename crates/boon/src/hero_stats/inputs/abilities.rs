@@ -345,7 +345,7 @@ fn bindings(ctx: &Context, controller: &Entity) -> Result<BTreeSet<(u32, u32)>> 
     Ok(result)
 }
 /// Recover filters from older JSON artifacts whose raw definition already has them.
-fn apply_filter<'a>(
+pub(super) fn apply_filter<'a>(
     catalog: &'a StatCatalog,
     source: &'a Record,
     effect: &'a Value,
@@ -362,7 +362,7 @@ fn apply_filter<'a>(
             owner.definition["m_mapAbilityProperties"][name]["m_eApplyFilter"].as_str()
         })
 }
-fn scope(filter: Option<&str>) -> EffectScope {
+pub(super) fn scope(filter: Option<&str>) -> EffectScope {
     match filter {
         None | Some("" | "EApplyFilter_None") => EffectScope::Global,
         Some("EApplyFilter_OnlyIfImbued") => EffectScope::Imbued,
@@ -382,7 +382,7 @@ impl Parser {
             effects: Vec::new(),
             metadata: AbilityMetadata::new(catalog, &[]),
         };
-        self.visit_stat_ticks(&query.ticks, |ctx, _| {
+        self.visit_stat_ticks(&query.ticks, catalog, |ctx, _| {
             for (slot, hero, controller) in players(ctx, query.steam_ids.as_deref())? {
                 let mut scratch = Vec::new();
                 let resolver = resolver(ctx, catalog, controller, slot, hero, &mut scratch);
@@ -464,7 +464,7 @@ impl Parser {
             contributions: Vec::new(),
             metadata: AbilityMetadata::new(catalog, &query.stats),
         };
-        self.visit_stat_ticks(&query.selection.ticks, |ctx, modifiers| {
+        self.visit_stat_ticks(&query.selection.ticks, catalog, |ctx, modifiers| {
             for (slot, hero, controller) in players(ctx, query.selection.steam_ids.as_deref())? {
                 calculate_player(
                     ctx,
@@ -500,6 +500,7 @@ fn resolver<'a, 'b>(
     contributions: &'b mut Vec<Contribution>,
 ) -> Resolver<'a, 'b> {
     Resolver {
+        mode: super::StatMode::Current,
         ctx,
         catalog,
         controller,

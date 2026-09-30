@@ -136,6 +136,24 @@ impl Parser {
         Ok(())
     }
 
+    /// Visit merged modifier changes at each recorded tick.
+    ///
+    /// Relay keyframe tables can have a different capture time from entities.
+    /// This reads packet deltas from signon and does not decode entities.
+    /// # Errors
+    /// Returns an error if the replay or a packet cannot be decoded.
+    pub fn visit_modifier_changes(
+        &self,
+        mut visit: impl FnMut(i32, crate::ModifierChange),
+    ) -> Result<()> {
+        let mut state = crate::ModifierState::default();
+        self.decode_stat_ticks(i32::MAX, &std::collections::HashSet::new(), |ctx| {
+            for change in state.update(ctx) {
+                visit(ctx.tick(), change);
+            }
+        })
+    }
+
     /// Parse entities and only selected final event message types in one pass.
     pub fn run_to_end_with_event_types_filtered<F>(
         &self,

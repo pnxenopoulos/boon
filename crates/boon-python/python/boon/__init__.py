@@ -27,7 +27,7 @@ from boon.errors import (
     InvalidDemoError,
     NotStreetBrawlError,
 )
-from boon.hero_stats import CalculationError, HeroStat, StatResult
+from boon.hero_stats import CalculationError, HeroStat, StatMode, StatResult
 from boon.names import (
     ability_display_names,
     ability_names,
@@ -58,6 +58,7 @@ __all__ = [
     "ability_stats",
     "CalculationError",
     "HeroStat",
+    "StatMode",
     "StatResult",
     "hero_stats",
     "rulesets",

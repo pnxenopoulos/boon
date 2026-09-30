@@ -53,6 +53,13 @@ class HeroStat(StrEnum):
     SPRINT_SPEED = "sprint_speed"
 
 
+class StatMode(StrEnum):
+    """Select current effects or baseline passive and permanent inputs."""
+
+    CURRENT = "current"
+    BASELINE = "baseline"
+
+
 class CalculationError(ValueError):
     """A requested stat cannot be calculated from the selected inputs."""
 
@@ -73,6 +80,7 @@ def calculate_hero_stats(
     ticks: int | Sequence[int],
     data_version: str,
     stats: Sequence[HeroStat | str] = (HeroStat.CLIP_SIZE,),
+    mode: StatMode | str = StatMode.CURRENT,
     steam_ids: Sequence[int] | None = None,
     heroes: Sequence[int] | None = None,
     rulesets: Mapping[HeroStat | str, Rule] | None = None,
@@ -95,6 +103,12 @@ def calculate_hero_stats(
     Boon downloads and verifies a missing version. Omit ``rulesets`` to use V1.
     Otherwise, supply one supported rule for each selected stat.
 
+    Use ``mode="current"`` (default) to include supported active effects.
+    Use ``mode="baseline"`` for hero values, owned passive effects, and permanent
+    recorded changes. Both modes use the selected tick and apply to dependencies.
+    Unknown effect roles produce partial baseline values. Baseline gravity scale
+    is unavailable. Mode does not change stat units or the selected equation.
+
     Set ``explain=True`` to include input sources and catalog paths.
     Unknown modifiers and assumed links produce partial values with diagnostics.
     Other missing inputs raise ``CalculationError``. With ``strict=False``, those
@@ -108,6 +122,7 @@ def calculate_hero_stats(
         raise ValueError(
             "data_version must be an explicit client version from `boon versions`"
         )
+    mode = StatMode(mode)
     selected = list(dict.fromkeys(HeroStat(stat) for stat in stats))
     requested_ticks = [ticks] if isinstance(ticks, int) else list(ticks)
     if not selected or not requested_ticks:
@@ -167,6 +182,7 @@ def calculate_hero_stats(
                 directory,
                 requested_ticks,
                 stats=[stat.value for stat in selected],
+                mode=mode.value,
                 steam_ids=None if steam_ids is None else list(steam_ids),
                 heroes=None if heroes is None else list(heroes),
                 explain=explain,
@@ -179,6 +195,7 @@ def calculate_hero_stats(
     values = pl.DataFrame(
         payload["values"],
         schema={
+            "mode": pl.String,
             "tick": pl.Int32,
             "steam_id": pl.UInt64,
             "player_slot": pl.UInt32,
@@ -194,6 +211,7 @@ def calculate_hero_stats(
     contributions = pl.DataFrame(
         payload["contributions"],
         schema={
+            "mode": pl.String,
             "tick": pl.Int32,
             "steam_id": pl.UInt64,
             "player_slot": pl.UInt32,
