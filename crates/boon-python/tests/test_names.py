@@ -190,7 +190,7 @@ def test_breakable_dataset_uses_catalog_and_retries_failed_download(
         }
     ]
     upstream["index"], upstream["files"] = release(records=records)
-    demo = Demo(str(path))
+    demo = Demo(str(path), preload=False)
 
     def offline(url):
         raise urllib.error.URLError("offline")

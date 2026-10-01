@@ -224,19 +224,19 @@ class TestTeamfights:
 
 
 def test_in_combat_batches_snapshot_inputs() -> None:
-    tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
+    tracked = _TrackedDemo(Demo(str(_require_demo_fixture()), preload=False))
     stats.in_combat(cast(Demo, tracked))
     assert tracked.load_calls == [("player_ticks", "world_ticks")]
 
 
 def test_time_dead_batches_snapshot_inputs() -> None:
-    tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
+    tracked = _TrackedDemo(Demo(str(_require_demo_fixture()), preload=False))
     stats.time_dead(cast(Demo, tracked))
     assert tracked.load_calls == [("player_ticks", "world_ticks")]
 
 
 def test_teamfights_uses_batched_events_and_selected_positions() -> None:
-    tracked = _TrackedDemo(Demo(str(_require_demo_fixture())))
+    tracked = _TrackedDemo(Demo(str(_require_demo_fixture()), preload=False))
     stats.teamfights(cast(Demo, tracked))
 
     assert tracked.load_calls == [("damage", "kills", "world_ticks")]

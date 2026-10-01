@@ -986,7 +986,7 @@ class TestErrors:
 
 
 def test_summary_repeated_access_is_stable() -> None:
-    demo = Demo(str(_require_demo_fixture()))
+    demo = Demo(str(_require_demo_fixture()), preload=False)
     try:
         first = demo.summary()
     except DemoMessageError:
