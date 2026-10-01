@@ -69,6 +69,14 @@ fn empty_declaration(owner: &Record, effect: &Value) -> bool {
             .is_some_and(|name| !owner.upgrades_property(name))
 }
 
+fn different_effect_owner(effect: &Value, entry: &CModifierTableEntry) -> bool {
+    effect["source_ability_id"].as_u64().is_some_and(|owner| {
+        entry
+            .ability_subclass
+            .is_some_and(|id| u64::from(id) != owner)
+    })
+}
+
 fn modifier_units(stat: &str, value: f64) -> f64 {
     if matches!(stat, MOVE_SPEED | SPRINT_SPEED) {
         value * rulesets::METERS_PER_SOURCE_UNIT
@@ -114,6 +122,22 @@ fn checked_runtime_count(value: f64, path: &str) -> Result<f64> {
         return Err(invalid(format!("invalid runtime count {path}")));
     }
     Ok(value)
+}
+
+fn checked_counter_contribution(value: f64, count: f64) -> Result<f64> {
+    let contribution = value * count;
+    if !contribution.is_finite() {
+        return Err(invalid("nonfinite counter contribution"));
+    }
+    Ok(contribution)
+}
+
+fn runtime_count_field(counter: &Value) -> Result<&str> {
+    counter
+        .as_str()
+        .or_else(|| counter["field"].as_str())
+        .filter(|field| !field.is_empty())
+        .ok_or_else(|| invalid("invalid catalog runtime count field"))
 }
 
 // Steam IDs exceed f64's exact integer range. Read the wire integer directly.
@@ -1859,18 +1883,19 @@ impl<'a> Resolver<'a, '_> {
             + self.purchase_bonus(inputs, SPIRIT, "spirit_power", "flat")?;
         let flat = self.total(SPIRIT, "spirit_power", "flat", inputs);
         // Trace percentage inputs even if an unbound flat effect prevents a total.
-        let percent = self.total_and_count(
+        let mut modifiers = rulesets::spirit_power::Modifiers::default();
+        let percent = self.for_each_value(
             "MODIFIER_VALUE_TECH_POWER_PERCENT",
             "spirit_power",
             "percent",
             inputs,
+            |value| modifiers.add(value),
         );
         let flat = flat?;
-        // Opposing percentages cannot cancel under an unverified combination rule.
-        if percent?.1 != 0 {
-            return Err(invalid("percentage spirit-power scaling is not supported"));
-        }
-        Ok(total + flat)
+        percent?;
+        // Percentage bonuses affect every resolved global flat source, including
+        // temporary effects. Ability-only inputs are excluded by the apply filter.
+        modifiers.calculate(total + flat)
     }
 
     fn total(
@@ -2140,6 +2165,7 @@ impl<'a> Resolver<'a, '_> {
                 .chain(inferred)
             {
                 if effect["stat"] != stat
+                    || different_effect_owner(effect, entry)
                     || !self.mode.includes_effect(effect)
                     || !self.global_effect(source, effect)
                 {
@@ -2175,11 +2201,9 @@ impl<'a> Resolver<'a, '_> {
                     ));
                 }
                 let mut value = self.effect(effect, source, Some(entry))?;
-                if let Some(counter) = effect.get("runtime_count") {
-                    let path = counter
-                        .as_str()
-                        .ok_or_else(|| invalid("invalid catalog runtime count field"))?;
-                    let count = self.runtime_count(source, entry, path)?;
+                if let Some(counter) = effect.get("runtime_count").filter(|c| !c.is_null()) {
+                    let path = runtime_count_field(counter)?;
+                    let count = self.runtime_count(source, entry, counter)?;
                     self.record(
                         input,
                         "runtime_count",
@@ -2188,10 +2212,7 @@ impl<'a> Resolver<'a, '_> {
                         path,
                         entry.serial_number,
                     );
-                    value *= count;
-                    if !value.is_finite() {
-                        return Err(invalid("nonfinite counter contribution"));
-                    }
+                    value = checked_counter_contribution(value, count)?;
                 }
                 if let Some(ability) = inferred_owner
                     && value != 0.0
@@ -2250,19 +2271,49 @@ impl<'a> Resolver<'a, '_> {
         &self,
         source: &Record,
         entry: &CModifierTableEntry,
-        path: &str,
+        counter: &Value,
     ) -> Result<f64> {
-        let ability_id = source
-            .ability_id
-            .ok_or_else(|| invalid("counter has no owning ability"))?;
-        let ability = entry
-            .ability
-            .and_then(|h| self.ctx.entities().get_by_handle(h))
-            .ok_or_else(|| invalid("counter has no owning ability entity"))?;
-        if id(self.ctx, ability, "m_nSubclassID")? != ability_id {
-            return Err(invalid("counter ability does not match the catalog owner"));
+        let path = runtime_count_field(counter)?;
+        let value = match counter
+            .as_str()
+            .map(|_| "ability")
+            .or_else(|| counter["source"].as_str())
+        {
+            Some("ability") => {
+                let ability_id = source
+                    .ability_id
+                    .ok_or_else(|| invalid("counter has no owning ability"))?;
+                let ability = entry
+                    .ability
+                    .and_then(|h| self.ctx.entities().get_by_handle(h))
+                    .ok_or_else(|| invalid("counter has no owning ability entity"))?;
+                if id(self.ctx, ability, "m_nSubclassID")? != ability_id {
+                    return Err(invalid("counter ability does not match the catalog owner"));
+                }
+                required(self.ctx, ability, path)?
+            }
+            Some("modifier") => {
+                let count = match path {
+                    "stack_count" => entry.stack_count,
+                    _ => return Err(invalid("unsupported modifier counter field")),
+                };
+                count
+                    .map(f64::from)
+                    .ok_or_else(|| invalid("modifier counter is missing"))?
+            }
+            _ => return Err(invalid("unsupported catalog runtime count source")),
+        };
+        let divisor = match counter.get("divisor") {
+            Some(value) => number(value)
+                .filter(|n| n.is_finite() && *n > 0.0)
+                .ok_or_else(|| invalid("invalid catalog runtime count divisor"))?,
+            None => 1.0,
+        };
+        let count = checked_runtime_count(value, path)? / divisor;
+        if !count.is_finite() {
+            return Err(invalid("nonfinite normalized runtime count"));
         }
-        checked_runtime_count(required(self.ctx, ability, path)?, path)
+        Ok(count)
     }
 
     fn corruption_diagnostic(
@@ -2298,34 +2349,73 @@ impl<'a> Resolver<'a, '_> {
         )))
     }
 
+    fn check_scaling(&self, effect: &Value) -> Result<()> {
+        let Some(scale) = effect["scaling"]["$value"]
+            .as_object()
+            .filter(|s| !s.is_empty())
+        else {
+            return Ok(());
+        };
+        let stat = effect["stat"].as_str().unwrap_or_default();
+        let scaling = &effect["scaling"]["$value"];
+        let class = scaling["_class"].as_str().unwrap_or_default();
+        let defaults = &self.catalog.scaling_class_defaults[class]["defaults"];
+        let base_defaults = &self.catalog.scaling_class_defaults["CScaleFunctionVData"]["defaults"];
+        // These inherited fields are common to scale functions. Do not infer a
+        // class alias or equation from an absent class or stat declaration.
+        let scaling_field = |name: &str| {
+            scaling
+                .get(name)
+                .or_else(|| defaults.get(name))
+                .or_else(|| base_defaults.get(name))
+        };
+        let disabled = match scaling_field("m_bFunctionDisabled") {
+            None => false,
+            Some(value) => value
+                .as_bool()
+                .ok_or_else(|| invalid("invalid scaling disabled flag"))?,
+        };
+        let nominal_lifesteal = matches!(
+            stat,
+            BULLET_LIFESTEAL | SPIRIT_LIFESTEAL | "melee_lifesteal"
+        );
+        // Nominal lifesteal is the fraction before healing boosts/reduction.
+        let nominal_healing = nominal_lifesteal
+            && class == "scale_function_single_stat"
+            && scale
+                .get("m_eSpecificStatScaleType")
+                .and_then(Value::as_str)
+                == Some("EHealingOutput");
+        let zero_linear = matches!(
+            class,
+            "scale_function_single_stat" | "scale_function_tech_damage"
+        ) && scaling_field("m_flStatScale").and_then(number) == Some(0.0);
+        if disabled || nominal_healing || zero_linear {
+            return Ok(());
+        }
+        Err(invalid(format!(
+            "unsupported property scaling at {} (class={class}, stat={}, coefficient={})",
+            effect["definition_path"],
+            scaling_field("m_eSpecificStatScaleType").unwrap_or(&Value::Null),
+            scaling_field("m_flStatScale").unwrap_or(&Value::Null),
+        )))
+    }
+
     fn effect(
         &self,
         effect: &Value,
         source: &Record,
         entry: Option<&CModifierTableEntry>,
     ) -> Result<f64> {
-        let stat = effect["stat"].as_str().unwrap_or_default();
-        let nominal_lifesteal = matches!(
-            stat,
-            BULLET_LIFESTEAL | SPIRIT_LIFESTEAL | "melee_lifesteal"
-        );
-        if let Some(scale) = effect["scaling"].get("$value").and_then(Value::as_object)
-            && !scale.is_empty()
-            // These stats describe the fraction before healing boosts/reduction.
-            // Other scaling functions (including spirit scaling) remain checked.
-            && !(nominal_lifesteal
-                && scale.get("_class").and_then(Value::as_str) == Some("scale_function_single_stat")
-                && scale.get("m_eSpecificStatScaleType").and_then(Value::as_str) == Some("EHealingOutput"))
-            && !(matches!(
-                scale.get("_class").and_then(Value::as_str),
-                Some("scale_function_single_stat" | "scale_function_tech_damage")
-            ) && scale.get("m_flStatScale").and_then(number) == Some(0.0))
+        if let Some(owner) = effect["source_ability_id"].as_u64()
+            && entry.and_then(|e| e.ability_subclass).map(u64::from) != Some(owner)
         {
-            return Err(invalid(format!(
-                "unsupported property scaling at {}",
-                effect["definition_path"]
-            )));
+            return Err(invalid(
+                "cannot resolve registered property's source ability",
+            ));
         }
+        self.check_scaling(effect)?;
+        let stat = effect["stat"].as_str().unwrap_or_default();
         let mut value = if let Some(value) = number(&effect["value"]).or_else(|| {
             matches!(stat, MOVE_SPEED | SPRINT_SPEED)
                 .then(|| speed_property_number(&effect["raw_value"], stat))
@@ -2364,6 +2454,19 @@ impl<'a> Resolver<'a, '_> {
             if let Some(ability) = ability_id.and_then(|id| self.catalog.abilities.get(&id))
                 && let Some(tiers) = ability.definition["m_vecAbilityUpgrades"].as_array()
             {
+                // A modifier's count does not supply its caster's upgrade tier.
+                // Require that caster for upgraded weighted effects; do not use
+                // the recipient's upgrades when the source entity is unavailable.
+                if effect["runtime_count"]["source"] == "modifier"
+                    && entry.is_some()
+                    && ability.upgrades_property(property)
+                    && entry
+                        .and_then(|e| e.caster)
+                        .and_then(|h| self.ctx.entities().get_by_handle(h))
+                        .is_none()
+                {
+                    return Err(invalid("cannot resolve modifier counter caster upgrades"));
+                }
                 let upgrades = self.upgrades(entry, ability_id)?;
                 for (tier, upgrade) in tiers.iter().enumerate() {
                     if tier >= u32::BITS as usize || upgrades & (1 << tier) == 0 {

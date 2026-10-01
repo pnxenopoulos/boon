@@ -133,14 +133,20 @@ mod tests {
 
     #[test]
     fn modes_recompute_nonlinear_stats_and_spirit_dependencies() {
-        let catalog = catalog();
+        let mut catalog = catalog();
+        for (index, percent) in [(1, 15), (2, 20)] {
+            catalog.modifiers[index].stat_changes.push(json!({
+                "stat": "MODIFIER_VALUE_TECH_POWER_PERCENT", "value": percent,
+                "definition_path": "/spirit-percent"
+            }));
+        }
         // Both rows are untimed: catalog roles, not duration, separate them.
         let entries = [entry(11, 1), entry(12, 2)];
         let ctx = Context::new(1.0 / 64.0).unwrap();
         let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
         for (mode, ammo, lifesteal, serials) in [
-            (StatMode::Baseline, 29, 20.0, vec![1]),
-            (StatMode::Current, 51, 44.0, vec![1, 2]),
+            (StatMode::Baseline, 30, 20.0, vec![1]),
+            (StatMode::Current, 57, 44.0, vec![1, 2]),
         ] {
             let mut inputs = inputs(&catalog, &entries);
             assert!(inputs.select_mode(&catalog, mode).is_empty());
@@ -176,7 +182,19 @@ mod tests {
             assert_eq!(
                 trace
                     .iter()
-                    .filter(|row| row.input == "spirit_power")
+                    .filter(|row| row.input == "spirit_power" && row.kind == "percent")
+                    .map(|row| row.value)
+                    .collect::<Vec<_>>(),
+                if mode == StatMode::Baseline {
+                    vec![15.0]
+                } else {
+                    vec![15.0, 20.0]
+                }
+            );
+            assert_eq!(
+                trace
+                    .iter()
+                    .filter(|row| row.input == "spirit_power" && row.kind == "flat")
                     .filter_map(|row| row.modifier_serial)
                     .collect::<Vec<_>>(),
                 serials

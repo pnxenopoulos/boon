@@ -168,8 +168,18 @@ causes an error at that tick. The old `players` slot filter is not supported.
 Each row gives the mode, input, value, source, property path, and modifier serial when present.
 Intermediate rows, such as `input="spirit_power"`, explain other inputs.
 Spirit rows separate flat and percentage bonuses. Ability-only bonuses do not
-enter global spirit. Percentage spirit calculations remain unsupported, even if
-opposing sources add to zero. Do not add intermediate rows to the final stat.
+enter global spirit. Do not add intermediate rows to the final stat.
+
+Global spirit power uses this equation:
+
+```text
+(base + sum(flat bonuses)) * product(1 + each percentage bonus / 100)
+```
+
+Each percentage bonus applies to the complete flat total. Current mode includes
+supported temporary sources. Baseline mode excludes them. For 100 flat spirit
+and bonuses of 20% and 30%, the result is 156. The catalog supplies the values,
+upgrades, and effect bindings. A missing binding can still leave a value unresolved.
 
 Use `steam_id` to join results to `demo.players`. Use `tick` and `steam_id` to
 join state rows to stat rows. A Steam ID stays constant through hero changes.
@@ -281,6 +291,12 @@ input includes catalog base values, standard level upgrades, shop
 bonuses, recorded permanent bonuses, and resolved item/modifier contributions.
 No hero IDs, base ammo values, pickup amounts, or scaling coefficients are
 embedded in the calculator.
+
+New catalogs bind Spirit Snatch's flat spirit gain and loss to separate recorded
+modifiers. The upgraded value is multiplied by the count and divided by the
+catalog divisor. Each application uses its own count and lifetime. Explanations
+show the normalized count and mark this curated link as inferred. Rebuild and
+install the matching boon-data release to use the binding.
 
 Time-ranged powerup values use their catalog minimum, maximum, and time bounds.
 The current resolver interpolates using match minutes at application. Treat

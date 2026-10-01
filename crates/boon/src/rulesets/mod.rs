@@ -30,6 +30,7 @@ pub mod reload_time;
 pub(crate) mod resistance;
 pub mod slide_distance;
 pub mod spirit_lifesteal;
+pub(crate) mod spirit_power;
 pub mod spirit_resist;
 pub mod sprint_speed;
 pub mod stamina;

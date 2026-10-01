@@ -37,11 +37,27 @@ Baseline gravity scale is unavailable because the replay supplies only the curre
 
 ## Spirit power and modifier bindings
 
-Percentage spirit power and some property scaling functions are not supported.
-Explanations list flat and percentage spirit inputs separately. Ability-only
-spirit bonuses do not enter the global total. Spirit Snatch still lacks a property
-binding. Replay counts match percentage-weighted effects from light and heavy
-melee hits; Boon does not yet apply this interpretation.
+Percentage spirit bonuses multiply the complete global flat total, including
+supported temporary sources. Ability-only spirit stays separate. Explanations
+list flat and percentage inputs. Active property scaling functions remain
+unsupported. Hero and ability queries share checks that read catalog defaults
+and `m_bFunctionDisabled`. Scaling errors show the class, stat, and coefficient.
+
+New boon-data builds bind Spirit Snatch's separate caster buff and victim debuff.
+Boon multiplies their upgraded flat spirit and resistance values by the normalized
+recorded count. This curated link uses replay evidence and stays in diagnostics.
+Recorded removals and count changes end contributions; Boon does not guess a
+separate target-death rule. Older catalogs lack this link.
+Ice Path's `BonusSpiritPct` still lacks an explicit stat type and modifier binding
+in catalog 6712.
+
+New boon-data builds resolve explicit non-embedded modifier references. For
+example, Escalating Exposure and Spirit Burn reference the same spirit-resist
+debuff. Boon selects its property through the recorded source ability. Missing
+source identity leaves the value unresolved; it does not select another item.
+At tick 187554 in `108575009.dem`, these recorded applications lower the known
+spirit-resist totals by 8 points. Some have a friendly caster. These new totals
+still need a viewer check; the source link alone does not verify all effect rules.
 
 New boon-data builds include Ice Path's friendly aura bindings and a curated
 Mercurial Magnum fire-rate binding. The latter uses an inferred activation link
@@ -66,8 +82,10 @@ can identify the source item. Do not count both records as separate penalties.
 ## Ammo and barrier snapshots
 
 Ammo counts use calculated capacity. If the capacity is partial, the count is
-also partial. Haze and Yamato can have null counts when spirit scaling cannot
-be resolved. The recorded ammo fraction and unlimited-ammo state remain separate.
+also partial. Missing spirit inputs can leave counts null. Percentage spirit
+bonuses no longer block Haze's capacity. Older catalogs without the Spirit Snatch
+binding can still leave Yamato's current capacity unresolved. The recorded ammo
+fraction and unlimited-ammo state remain separate.
 Snapshot ammo joins require a unique Steam ID at each tick. Missing or duplicate
 IDs leave `ammo`, `max_ammo`, and `unlimited_ammo` null with a diagnostic.
 

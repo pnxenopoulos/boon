@@ -9,6 +9,7 @@ Unreleased.
 - Update protobufs to Deadlock 6726 (`boon-proto 0.4.11064056+6726`). The direct protobuf API has changed fields and types.
 - Correct light and heavy melee labels in `damage`. Read new combat log and modifier fields.
 - Add hero and ability stat queries with `baseline` and `current` modes. Use data from boon-data.
+- Read source-specific bindings and normalized modifier counts. Use catalog scaling defaults and keep disabled scaling inactive.
 - Read both weapon formats and shop bonus tables. Use controller ticks when pawn time is absent.
 - Use recorded stat types for permanent bonuses and corruption penalties. Mark missing corruption bonuses as partial.
 - Add snapshot Steam IDs and `ammo_fraction`. With `data_version`, add `ammo`, `max_ammo`, and `unlimited_ammo`.
@@ -17,7 +18,7 @@ Unreleased.
 - Add summary `barrier_absorption`. Keep healing separate.
 - Correct modifier tracking after table changes and pauses. Exclude future state and ended effects.
 - Make barrier snapshots agree across direct seeks and full passes.
-- Keep ability-only bonuses out of global stats. Separate flat and percentage spirit inputs.
+- Keep ability-only bonuses out of global stats. Multiply percentage spirit bonuses after all flat sources.
 - Share dataset caches and stat checks. Remove repeated code and temporary lookup allocations.
 - Add feature examples and lists of accepted stat names, modes, and dataset names.
 

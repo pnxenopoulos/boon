@@ -353,6 +353,11 @@ pub(super) fn apply_filter<'a>(
         .or_else(|| {
             let owner = source
                 .ability_id
+                .or_else(|| {
+                    effect["source_ability_id"]
+                        .as_u64()
+                        .and_then(|id| u32::try_from(id).ok())
+                })
                 .and_then(|id| catalog.abilities.get(&id))
                 .unwrap_or(source);
             let name = effect["property_name"].as_str()?;
@@ -540,9 +545,15 @@ impl Effect {
     ) -> Option<Self> {
         let symbol = definition["stat"].as_str()?;
         let stat = AbilityStat::from_symbol(symbol)?;
-        if empty_declaration(source, definition) || !resolver.mode.includes_effect(definition) {
+        if empty_declaration(source, definition)
+            || entry.is_some_and(|entry| different_effect_owner(definition, entry))
+            || !resolver.mode.includes_effect(definition)
+        {
             return None;
         }
+        let source_ability_id = source
+            .ability_id
+            .or_else(|| entry.and_then(|e| e.ability_subclass));
         let value = resolver.effect(definition, source, entry);
         let mut scope = scope(apply_filter(resolver.catalog, source, definition));
         if symbol == "MODIFIER_VALUE_ULTIMATE_COOLDOWN_REDUCTION_PERCENTAGE" {
@@ -550,7 +561,7 @@ impl Effect {
         }
         let targets = imbues
             .iter()
-            .filter_map(|(item, target)| (Some(*item) == source.ability_id).then_some(*target))
+            .filter_map(|(item, target)| (Some(*item) == source_ability_id).then_some(*target))
             .collect();
         let corruption = resolver.corruption_diagnostic(definition, source, entry);
         let fatal = value.is_err() || corruption.is_err();
@@ -562,7 +573,7 @@ impl Effect {
         Some(Self {
             stat,
             source: source.record_key.clone(),
-            source_ability_id: source.ability_id,
+            source_ability_id,
             property_name: definition["property_name"].as_str().map(str::to_owned),
             path: definition["definition_path"]
                 .as_str()
@@ -936,7 +947,10 @@ fn catalog_effects(
             else {
                 continue;
             };
-            bound.insert((source.ability_id, definition["property_name"].as_str()));
+            bound.insert((
+                effect.source_ability_id,
+                definition["property_name"].as_str(),
+            ));
             if replaced_by_runtime(&mut effect, &result[..dynamic_len]) {
                 continue;
             }
@@ -948,9 +962,16 @@ fn catalog_effects(
                 effect.fatal = true;
                 effect.diagnostic = Some("cannot determine modifier expiry".into());
             }
-            if let Some(counter) = definition["runtime_count"].as_str() {
-                match resolver.runtime_count(source, entry, counter) {
-                    Ok(count) => effect.value = effect.value.map(|value| value * count),
+            if let Some(counter) = definition.get("runtime_count").filter(|c| !c.is_null()) {
+                match resolver
+                    .runtime_count(source, entry, counter)
+                    .and_then(|count| {
+                        effect
+                            .value
+                            .map(|value| checked_counter_contribution(value, count))
+                            .transpose()
+                    }) {
+                    Ok(value) => effect.value = value,
                     Err(error) => {
                         effect.value = None;
                         effect.state = EffectState::Unresolved;
@@ -1336,6 +1357,88 @@ fn calculate_player(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shared_registered_effects_keep_ability_identity() {
+        let folder = super::super::super::catalog::tests::fixture();
+        let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        let source = &mut catalog.modifiers[2];
+        source.ability_id = None;
+        source.stat_changes = vec![
+            json!({"stat":"MODIFIER_VALUE_TECH_RANGE_PERCENT", "value":17,
+                "source_ability_id":123, "definition_path":"/first/range"}),
+            json!({"stat":"MODIFIER_VALUE_TECH_RANGE_PERCENT", "value":90,
+                "source_ability_id":456, "definition_path":"/second/range"}),
+        ];
+        let ctx = Context::new(1.0 / 64.0).unwrap();
+        let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
+        let mut scratch = Vec::new();
+        let resolver = resolver(&ctx, &catalog, &controller, 999, &mut scratch);
+        let source = &catalog.modifiers[2];
+        let entry = CModifierTableEntry {
+            ability_subclass: Some(123),
+            ..Default::default()
+        };
+        let applicable: Vec<_> = source
+            .stat_changes
+            .iter()
+            .filter_map(|definition| {
+                Effect::catalog(
+                    &resolver,
+                    source,
+                    definition,
+                    Some(&entry),
+                    &BTreeSet::new(),
+                )
+            })
+            .collect();
+        assert_eq!(applicable.len(), 1);
+        assert_eq!(applicable[0].value, Some(17.0));
+        assert_eq!(applicable[0].source_ability_id, Some(123));
+    }
+
+    #[test]
+    fn ability_effects_use_catalog_modifier_count_units_and_reject_missing_counts() {
+        let mut catalog = catalog();
+        catalog.modifiers[2].stat_changes = vec![json!({
+            "stat":"MODIFIER_VALUE_TECH_RANGE_PERCENT", "value":40,
+            "definition_path":"/range", "runtime_count":{
+                "source":"modifier", "field":"stack_count", "divisor":200
+            }
+        })];
+        let ctx = Context::new(1.0 / 64.0).unwrap();
+        let controller = Entity::from_fields(1, 1, 0, "test", true, Default::default()).unwrap();
+        for (count, value, expected) in [
+            (Some(70), 40.0, Some(14.0)),
+            (Some(200), 40.0, Some(40.0)),
+            (None, 40.0, None),
+            (Some(400), f64::MAX, None),
+        ] {
+            catalog.modifiers[2].stat_changes[0]["value"] = json!(value);
+            let entry = CModifierTableEntry {
+                modifier_subclass: Some(12),
+                stack_count: count,
+                ..Default::default()
+            };
+            let inputs = PlayerInputs {
+                hero: &catalog.heroes[&999],
+                weapon: &catalog.abilities[&123],
+                level: None,
+                inventory: vec![],
+                owned: vec![],
+                active: vec![&entry],
+                permanent: vec![],
+            };
+            let mut scratch = Vec::new();
+            let mut resolver = resolver(&ctx, &catalog, &controller, 999, &mut scratch);
+            let effects =
+                catalog_effects(&mut resolver, &inputs, &BTreeSet::new(), vec![]).unwrap();
+            assert_eq!(effects.len(), 1);
+            assert_eq!(effects[0].value, expected);
+            assert_eq!(effects[0].fatal, expected.is_none());
+        }
+    }
+
     fn catalog() -> StatCatalog {
         let directory = crate::hero_stats::catalog::tests::fixture();
         StatCatalog::from_directory(directory.path()).unwrap()

@@ -16,6 +16,8 @@ pub(super) struct CatalogFile {
     #[serde(default)]
     modifier_states: HashMap<u32, String>,
     #[serde(default)]
+    scaling_class_defaults: Value,
+    #[serde(default)]
     generic_data: Value,
     #[serde(default)]
     engine_modifier_names: EngineModifierNames,
@@ -108,6 +110,7 @@ pub struct StatCatalog {
     conditional_modifiers: HashMap<u32, Option<usize>>,
     pub(super) misc: HashMap<u32, Record>,
     pub(super) generic_data: Value,
+    pub(super) scaling_class_defaults: Value,
 }
 
 impl StatCatalog {
@@ -181,6 +184,7 @@ impl StatCatalog {
             .filter_map(|r| Some((r.ability_name.clone()?, r.ability_id?)))
             .collect();
         let modifier_value_types = abilities.modifier_value_types;
+        let scaling_class_defaults = abilities.scaling_class_defaults;
         let mut abilities = indexed(abilities.records, |r| r.ability_id)?;
         bind_undeclared_evasion(&mut abilities, &mut modifiers.records);
         // Assumption: a unique non-intrinsic modifier can activate its owner's
@@ -220,6 +224,7 @@ impl StatCatalog {
             conditional_modifiers,
             misc: indexed(misc.records, |r| r.misc_id)?,
             generic_data: misc.generic_data,
+            scaling_class_defaults,
         })
     }
 

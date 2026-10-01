@@ -121,20 +121,28 @@ fn ability_scoped_bonuses_do_not_enter_global_hero_stats() {
 }
 
 #[test]
-fn spirit_inputs_keep_scope_and_do_not_cancel_unsupported_percentages() {
+fn spirit_inputs_keep_scope_and_multiply_percentages() {
     let folder = super::super::catalog::tests::fixture();
     let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
     catalog.heroes.get_mut(&999).unwrap().definition["m_mapLevelInfo"] = json!({});
     catalog.modifiers[2].stat_changes = vec![
-        json!({"stat": SPIRIT, "value": 8, "definition_path": "/flat"}),
+        json!({"stat": SPIRIT, "value": 40, "definition_path": "/flat"}),
         json!({"stat": SPIRIT, "value": 90, "definition_path": "/imbued",
             "apply_filter": "EApplyFilter_OnlyIfImbued"}),
         json!({"stat": "MODIFIER_VALUE_TECH_POWER_PERCENT", "value": 40,
             "definition_path": "/imbued-percent", "apply_filter": "EApplyFilter_OnlyIfImbued"}),
     ];
     let (result, trace, _) = stat_result(&catalog, true, HeroStat::ClipSize);
-    assert_eq!(result.unwrap(), 26.0); // 20 base + 8 global spirit * 0.75.
+    assert_eq!(result.unwrap(), 50.0); // 20 base + 40 global spirit * 0.75.
     assert!(!trace.iter().any(|c| c.definition_path.contains("imbued")));
+    catalog.modifiers[2].stat_changes.push(json!({
+        "stat":"MODIFIER_VALUE_TECH_POWER_PERCENT", "value":0, "definition_path":"/zero"
+    }));
+    assert_eq!(
+        stat_result(&catalog, true, HeroStat::ClipSize).0.unwrap(),
+        50.0
+    );
+    catalog.modifiers[2].stat_changes.pop();
     catalog.modifiers[2].stat_changes.extend([
         json!({"stat": "MODIFIER_VALUE_TECH_POWER_PERCENT", "value": 15,
             "definition_path": "/positive"}),
@@ -142,12 +150,12 @@ fn spirit_inputs_keep_scope_and_do_not_cancel_unsupported_percentages() {
             "definition_path": "/negative"}),
     ]);
     let (result, trace, _) = stat_result(&catalog, true, HeroStat::ClipSize);
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("percentage spirit-power")
-    );
+    assert_eq!(result.unwrap(), 50.0);
+    let scaled = trace
+        .iter()
+        .find(|c| c.input == "clip_size" && c.kind == "flat")
+        .unwrap();
+    assert!((scaled.value - 40.0 * 1.15 * 0.85 * 0.75).abs() < 1e-12);
     assert_eq!(
         trace
             .iter()
@@ -155,6 +163,13 @@ fn spirit_inputs_keep_scope_and_do_not_cancel_unsupported_percentages() {
             .map(|c| c.value)
             .collect::<Vec<_>>(),
         [15.0, -15.0]
+    );
+    // The complete flat total is multiplied once by each global percentage.
+    catalog.modifiers[2].stat_changes[3]["value"] = json!(20);
+    catalog.modifiers[2].stat_changes[4]["value"] = json!(30);
+    assert_eq!(
+        stat_result(&catalog, true, HeroStat::ClipSize).0.unwrap(),
+        67.0
     );
     // A flat-value failure still leaves the separate percentage inputs visible.
     catalog.modifiers[2].stat_changes[0]["value"] = json!("unknown");
@@ -971,6 +986,134 @@ fn runtime_property_requires_an_active_modifier_and_its_ability_entity() {
             .unwrap_err()
             .to_string()
             .contains("counter has no owning ability entity")
+    );
+}
+
+#[test]
+fn modifier_counter_units_come_from_catalog_and_counts_update_independently() {
+    let folder = super::super::catalog::tests::fixture();
+    let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+    catalog.heroes.get_mut(&999).unwrap().definition["m_mapLevelInfo"] = json!({});
+    catalog.modifiers[2].stat_changes = vec![json!({
+        "stat": SPIRIT, "value": 40, "definition_path": "/strength",
+        "runtime_count": {"source": "modifier", "field": "stack_count", "divisor": 200}
+    })];
+    let mut diagnostics = BTreeSet::new();
+    for (count, expected) in [(0, 20.0), (70, 31.0), (100, 35.0), (200, 50.0), (70, 31.0)] {
+        let entry = CModifierTableEntry {
+            modifier_subclass: Some(12),
+            serial_number: Some(42),
+            stack_count: Some(count),
+            ..Default::default()
+        };
+        let (result, trace, _) = stat_result_with_modifier(
+            &catalog,
+            HeroStat::ClipSize,
+            vec![],
+            Some(&entry),
+            true,
+            &mut diagnostics,
+        );
+        assert_eq!(result.unwrap(), expected);
+        assert_eq!(
+            trace
+                .iter()
+                .find(|c| c.kind == "runtime_count")
+                .unwrap()
+                .value,
+            f64::from(count) / 200.0
+        );
+    }
+    assert_eq!(
+        stat_result(&catalog, false, HeroStat::ClipSize).0.unwrap(),
+        20.0
+    );
+    let entry = CModifierTableEntry {
+        modifier_subclass: Some(12),
+        stack_count: Some(70),
+        ..Default::default()
+    };
+    for counter in [
+        json!({"source":"modifier", "field":"stack_count", "divisor":0}),
+        json!({"source":"modifier", "field":"stack_count", "divisor":-1}),
+        json!({"source":"modifier", "field":"stack_count", "divisor":"unknown"}),
+        json!({"source":"modifier", "field":"unknown"}),
+        json!({"source":"unknown", "field":"stack_count"}),
+        json!([]),
+    ] {
+        catalog.modifiers[2].stat_changes[0]["runtime_count"] = counter;
+        assert!(
+            stat_result_with_modifier(
+                &catalog,
+                HeroStat::ClipSize,
+                vec![],
+                Some(&entry),
+                true,
+                &mut diagnostics
+            )
+            .0
+            .is_err()
+        );
+    }
+    catalog.modifiers[2].stat_changes[0]["runtime_count"] =
+        json!({"source":"modifier", "field":"stack_count", "divisor":100});
+    for count in [None, Some(-1)] {
+        let entry = CModifierTableEntry {
+            stack_count: count,
+            ..entry.clone()
+        };
+        assert!(
+            stat_result_with_modifier(
+                &catalog,
+                HeroStat::ClipSize,
+                vec![],
+                Some(&entry),
+                true,
+                &mut diagnostics
+            )
+            .0
+            .is_err()
+        );
+    }
+    // Signed recipient reductions use the same normalized count, not a percent of
+    // the victim's current stat. They remain separate from the caster's gain.
+    catalog.heroes.get_mut(&999).unwrap().definition["m_mapStartingStats"] = json!({});
+    catalog.modifiers[2].stat_changes[0]["stat"] = json!("MODIFIER_VALUE_TECH_RESIST_REDUCTION");
+    catalog.modifiers[2].stat_changes[0]["value"] = json!(-30);
+    assert!(
+        (stat_result_with_modifier(
+            &catalog,
+            HeroStat::SpiritResist,
+            vec![],
+            Some(&entry),
+            true,
+            &mut diagnostics
+        )
+        .0
+        .unwrap()
+            + 21.0)
+            .abs()
+            < 1e-12
+    );
+    catalog.abilities.get_mut(&123).unwrap().definition["m_vecAbilityUpgrades"] = json!([
+        {"m_vecPropertyUpgrades":[{"m_strPropertyName":"Weighted", "m_strBonus":5}]}
+    ]);
+    catalog.modifiers[2].stat_changes[0]["stat"] = json!(SPIRIT);
+    catalog.modifiers[2].ability_id = Some(123);
+    catalog.modifiers[2].stat_changes[0]["property_name"] = json!("Weighted");
+    assert!(
+        stat_result_with_modifier(
+            &catalog,
+            HeroStat::ClipSize,
+            vec![],
+            Some(&entry),
+            true,
+            &mut diagnostics
+        )
+        .0
+        .unwrap_err()
+        .to_string()
+        .contains("counter caster upgrades")
     );
 }
 
@@ -2948,8 +3091,97 @@ fn powerup_uses_catalog_range_and_application_time() {
     assert!(resolver.effect(&effect, &source, None).is_err());
     let zero_scale = json!({"value":10,"scaling":{"$value":{"_class":"scale_function_tech_damage", "m_flStatScale":0}}});
     assert_eq!(resolver.effect(&zero_scale, &source, None).unwrap(), 10.0);
+    let disabled_scale = json!({"value":10,"scaling":{"$value":{
+        "_class":"scale_function_single_stat", "m_eSpecificStatScaleType":"ETechPower",
+        "m_flStatScale":0.2,"m_bFunctionDisabled":true
+    }}});
+    assert_eq!(
+        resolver.effect(&disabled_scale, &source, None).unwrap(),
+        10.0
+    );
     let nonzero_scale = json!({"value":10,"scaling":{"$value":{"_class":"scale_function_tech_damage", "m_flStatScale":0.2}}});
     assert!(resolver.effect(&nonzero_scale, &source, None).is_err());
     let unsupported = json!({"value":10,"scaling":{"$value":{"_class":"unknown"}}});
     assert!(resolver.effect(&unsupported, &source, None).is_err());
+}
+
+#[test]
+fn shared_registered_effects_require_the_recorded_source_ability() {
+    let folder = super::super::catalog::tests::fixture();
+    let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+    catalog.heroes.get_mut(&999).unwrap().definition["m_mapStartingStats"] = json!({});
+    catalog.modifiers[2].stat_changes = vec![
+        json!({"stat":"MODIFIER_VALUE_TECH_RESIST_REDUCTION", "value":-8,
+            "source_ability_id":123, "definition_path":"/first/shred"}),
+        json!({"stat":"MODIFIER_VALUE_TECH_RESIST_REDUCTION", "value":-50,
+            "source_ability_id":456, "definition_path":"/second/shred"}),
+    ];
+    // This is a standalone modifier shared by two abilities, not a nested owner.
+    catalog.modifiers[2].ability_id = None;
+    let mut diagnostics = BTreeSet::new();
+    let entry = CModifierTableEntry {
+        modifier_subclass: Some(12),
+        serial_number: Some(42),
+        ability_subclass: Some(123),
+        ..Default::default()
+    };
+    let value = stat_result_with_modifier(
+        &catalog,
+        HeroStat::SpiritResist,
+        vec![],
+        Some(&entry),
+        true,
+        &mut diagnostics,
+    )
+    .0
+    .unwrap();
+    assert_eq!(value, -8.0);
+    let missing = CModifierTableEntry {
+        ability_subclass: None,
+        ..entry
+    };
+    assert!(
+        stat_result_with_modifier(
+            &catalog,
+            HeroStat::SpiritResist,
+            vec![],
+            Some(&missing),
+            true,
+            &mut diagnostics
+        )
+        .0
+        .unwrap_err()
+        .to_string()
+        .contains("source ability")
+    );
+}
+
+#[test]
+fn scaling_checks_read_catalog_defaults_without_guessing_active_equations() {
+    let folder = super::super::catalog::tests::fixture();
+    let path = folder.path().join("abilities.json");
+    let mut file: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    file["scaling_class_defaults"] = json!({
+        "CScaleFunctionVData":{"defaults":{"m_bFunctionDisabled":true,"m_flStatScale":1}}
+    });
+    std::fs::write(&path, serde_json::to_vec(&file).unwrap()).unwrap();
+    let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+    catalog.modifiers[2].stat_changes = vec![json!({"stat":"MODIFIER_VALUE_FIRE_RATE",
+        "value":20,"definition_path":"/scaled","scaling":{"$value":{
+            "_class":"scale_function_single_stat","m_eSpecificStatScaleType":"ETechPower"
+        }}
+    })];
+    assert_eq!(
+        stat_result(&catalog, true, HeroStat::FireRate).0.unwrap(),
+        20.0
+    );
+    catalog.modifiers[2].stat_changes[0]["scaling"]["$value"]["m_bFunctionDisabled"] = json!(false);
+    let error = stat_result(&catalog, true, HeroStat::FireRate)
+        .0
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("coefficient=1"));
+    catalog.modifiers[2].stat_changes[0]["scaling"]["$value"]["m_bFunctionDisabled"] =
+        json!("invalid");
+    assert!(stat_result(&catalog, true, HeroStat::FireRate).0.is_err());
 }
