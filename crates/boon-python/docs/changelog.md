@@ -18,7 +18,7 @@ Unreleased.
 - Add summary `barrier_absorption`. Keep healing separate.
 - Correct modifier tracking after table changes and pauses. Exclude future state and ended effects.
 - Make barrier snapshots agree across direct seeks and full passes.
-- Keep ability-only bonuses out of global stats. Multiply percentage spirit bonuses after all flat sources.
+- Keep ability-only bonuses out of global stats. Apply spirit multipliers and catalog-declared post-multiplier bonuses.
 - Share dataset caches and stat checks. Remove repeated code and temporary lookup allocations.
 - Add feature examples and lists of accepted stat names, modes, and dataset names.
 

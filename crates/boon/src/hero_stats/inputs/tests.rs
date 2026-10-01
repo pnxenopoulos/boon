@@ -185,6 +185,62 @@ fn spirit_inputs_keep_scope_and_multiply_percentages() {
 }
 
 #[test]
+fn bound_spirit_bonuses_use_catalog_stages_and_require_activation() {
+    let folder = super::super::catalog::tests::fixture();
+    let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
+    catalog.heroes.get_mut(&999).unwrap().definition["m_mapLevelInfo"] = json!({});
+    let key = catalog.modifiers[2].record_key.clone();
+    let conditional = vec![
+        json!({"stat":SPIRIT,"value":20,"definition_path":"/active-flat",
+            "calculation_stage":"post_multiplier","usage_flags":"ConditionallyApplied",
+            "modifier_keys":[key]}),
+        json!({"stat":"MODIFIER_VALUE_TECH_POWER_PERCENT","value":35,
+            "definition_path":"/active-percent","usage_flags":"ConditionallyApplied",
+            "modifier_keys":[key]}),
+    ];
+    catalog.modifiers[2].stat_changes = conditional.clone();
+    catalog.abilities.get_mut(&123).unwrap().stat_changes = vec![
+        json!({"stat":SPIRIT,"value":100,"definition_path":"/passive-flat",
+            "usage_flags":"IntrinsicallyProvidedInAbility"}),
+        json!({"stat":"MODIFIER_VALUE_TECH_POWER_PERCENT","value":15,
+            "definition_path":"/passive-percent","usage_flags":"IntrinsicallyProvidedInAbility"}),
+    ];
+    catalog
+        .abilities
+        .get_mut(&123)
+        .unwrap()
+        .stat_changes
+        .extend(conditional);
+    let (inactive, trace, _) = stat_result(&catalog, false, HeroStat::ClipSize);
+    assert_eq!(inactive.unwrap(), 107.0);
+    assert!(
+        !trace
+            .iter()
+            .any(|row| row.definition_path.starts_with("/active"))
+    );
+    let (active, trace, _) = stat_result(&catalog, true, HeroStat::ClipSize);
+    assert_eq!(active.unwrap(), 152.0); // ceil((100 * 1.15 * 1.35 + 20) * 0.75 + 20).
+    let post: Vec<_> = trace
+        .iter()
+        .filter(|row| row.kind == "post_multiplier_flat")
+        .collect();
+    assert_eq!(post.len(), 1);
+    assert_eq!(post[0].value, 20.0);
+    assert_eq!(post[0].modifier_serial, Some(42));
+    // Never silently treat an invalid stage as an ordinary flat bonus.
+    for stage in [json!("unknown"), json!(42)] {
+        catalog.modifiers[2].stat_changes[0]["calculation_stage"] = stage;
+        assert!(
+            stat_result(&catalog, true, HeroStat::ClipSize)
+                .0
+                .unwrap_err()
+                .to_string()
+                .contains("unsupported spirit-power stage")
+        );
+    }
+}
+
+#[test]
 fn absent_catalog_states_exclude_old_modifiers_but_missing_evidence_does_not() {
     let folder = super::super::catalog::tests::fixture();
     let path = folder.path().join("modifiers.json");

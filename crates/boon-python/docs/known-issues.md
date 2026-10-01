@@ -37,9 +37,10 @@ Baseline gravity scale is unavailable because the replay supplies only the curre
 
 ## Spirit power and modifier bindings
 
-Percentage spirit bonuses multiply the complete global flat total, including
-supported temporary sources. Ability-only spirit stays separate. Explanations
-list flat and percentage inputs. Active property scaling functions remain
+Percentage spirit bonuses multiply the ordinary global flat total, including
+supported temporary sources. Catalog-declared post-multiplier bonuses are added
+last. Ability-only spirit stays separate. Explanations list each stage.
+Active property scaling functions remain
 unsupported. Hero and ability queries share checks that read catalog defaults
 and `m_bFunctionDisabled`. Scaling errors show the class, stat, and coefficient.
 
@@ -48,8 +49,13 @@ Boon multiplies their upgraded flat spirit and resistance values by the normaliz
 recorded count. This curated link uses replay evidence and stays in diagnostics.
 Recorded removals and count changes end contributions; Boon does not guess a
 separate target-death rule. Older catalogs lack this link.
-Ice Path's `BonusSpiritPct` still lacks an explicit stat type and modifier binding
-in catalog 6712.
+
+New builds also bind Ice Path's spirit bonuses to its active caster modifier.
+The flat bonus is added after the percentage multipliers. The raw intrinsic flag
+can show an always-on bonus in the game tooltip; Boon uses the curated activation
+link instead. Its ally spirit scope and linger effects still need verification.
+The friendly movement aura does not activate the caster's spirit bonus.
+Older catalogs lack this correction.
 
 New boon-data builds resolve explicit non-embedded modifier references. For
 example, Escalating Exposure and Spirit Burn reference the same spirit-resist

@@ -1,4 +1,4 @@
-//! Multiply the complete flat spirit total by each independent percentage bonus.
+//! Multiply global spirit sources, then add catalog-declared post-multiplier bonuses.
 use crate::hero_stats::CalculationError;
 
 #[derive(Debug)]
@@ -28,9 +28,13 @@ impl Modifiers {
         Ok(())
     }
 
-    pub(crate) fn calculate(self, flat: f64) -> Result<f64, CalculationError> {
-        let total = flat * self.multiplier;
-        if !flat.is_finite() || !total.is_finite() {
+    pub(crate) fn calculate(
+        self,
+        flat: f64,
+        post_multiplier: f64,
+    ) -> Result<f64, CalculationError> {
+        let total = flat * self.multiplier + post_multiplier;
+        if !flat.is_finite() || !post_multiplier.is_finite() || !total.is_finite() {
             return Err(CalculationError::Invalid(
                 "invalid spirit-power total".into(),
             ));
@@ -48,7 +52,7 @@ mod tests {
         for &percent in sources {
             modifiers.add(percent)?;
         }
-        modifiers.calculate(flat)
+        modifiers.calculate(flat, 0.0)
     }
 
     #[test]
@@ -59,6 +63,16 @@ mod tests {
         assert_eq!(calculate(100.0, &[20.0, 30.0]).unwrap(), 156.0);
         assert!((calculate(100.0, &[15.0, -15.0]).unwrap() - 97.75).abs() < 1e-12);
         assert_eq!(calculate(100.0, &[-100.0, 20.0]).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn adds_post_multiplier_bonuses_after_each_percentage() {
+        let mut modifiers = Modifiers::default();
+        modifiers.add(15.0).unwrap();
+        modifiers.add(35.0).unwrap();
+        assert!((modifiers.calculate(100.0, 20.0).unwrap() - 175.25).abs() < 1e-12);
+        assert!(Modifiers::default().calculate(0.0, f64::NAN).is_err());
+        assert!(Modifiers::default().calculate(f64::MAX, f64::MAX).is_err());
     }
 
     #[test]

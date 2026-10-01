@@ -167,19 +167,28 @@ causes an error at that tick. The old `players` slot filter is not supported.
 `explain=True` adds input rows to `result.contributions`.
 Each row gives the mode, input, value, source, property path, and modifier serial when present.
 Intermediate rows, such as `input="spirit_power"`, explain other inputs.
-Spirit rows separate flat and percentage bonuses. Ability-only bonuses do not
-enter global spirit. Do not add intermediate rows to the final stat.
+Spirit rows separate flat and percentage bonuses. `post_multiplier_flat` rows
+are added after the multipliers. Ability-only bonuses do not enter global spirit.
+Do not add intermediate rows to the final stat.
 
 Global spirit power uses this equation:
 
 ```text
 (base + sum(flat bonuses)) * product(1 + each percentage bonus / 100)
+    + sum(post-multiplier flat bonuses)
 ```
 
-Each percentage bonus applies to the complete flat total. Current mode includes
+Each percentage bonus applies to the ordinary flat total. Current mode includes
 supported temporary sources. Baseline mode excludes them. For 100 flat spirit
 and bonuses of 20% and 30%, the result is 156. The catalog supplies the values,
-upgrades, and effect bindings. A missing binding can still leave a value unresolved.
+upgrades, effect bindings, and calculation stage.
+
+New catalogs bind Ice Path's spirit bonuses to the active caster modifier.
+Its `BonusSpiritPct` multiplies ordinary spirit. Its `BonusSpirit` has
+`calculation_stage="post_multiplier"`, so Boundless Spirit does not multiply
+that flat bonus. This curated link stays in diagnostics. The friendly movement
+aura does not activate it. Linger effects still need verification.
+A missing binding can leave a value unresolved.
 
 Use `steam_id` to join results to `demo.players`. Use `tick` and `steam_id` to
 join state rows to stat rows. A Steam ID stays constant through hero changes.

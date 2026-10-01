@@ -85,6 +85,14 @@ fn modifier_units(stat: &str, value: f64) -> f64 {
     }
 }
 
+fn contribution_kind(kind: &'static str, effect: &Value) -> &'static str {
+    if effect["stat"] == SPIRIT && effect["calculation_stage"] == "post_multiplier" {
+        "post_multiplier_flat"
+    } else {
+        kind
+    }
+}
+
 fn invalid(message: impl Into<String>) -> CalculationError {
     CalculationError::Invalid(message.into())
 }
@@ -1881,7 +1889,25 @@ impl<'a> Resolver<'a, '_> {
         let total = base
             + self.level_bonus(inputs, SPIRIT, "spirit_power", "flat")?
             + self.purchase_bonus(inputs, SPIRIT, "spirit_power", "flat")?;
-        let flat = self.total(SPIRIT, "spirit_power", "flat", inputs);
+        let (mut flat, mut post_multiplier) = (0.0, 0.0);
+        let flat_result = self.visit_effect_values(
+            SPIRIT,
+            "spirit_power",
+            "flat",
+            inputs,
+            ValuePolicy::Declared,
+            |value, effect| {
+                match effect.and_then(|effect| effect.get("calculation_stage")) {
+                    None | Some(Value::Null) => flat += value,
+                    Some(stage) if stage == "pre_multiplier" => flat += value,
+                    Some(stage) if stage == "post_multiplier" => post_multiplier += value,
+                    Some(stage) => {
+                        return Err(invalid(format!("unsupported spirit-power stage {stage}")));
+                    }
+                }
+                Ok(())
+            },
+        );
         // Trace percentage inputs even if an unbound flat effect prevents a total.
         let mut modifiers = rulesets::spirit_power::Modifiers::default();
         let percent = self.for_each_value(
@@ -1891,11 +1917,11 @@ impl<'a> Resolver<'a, '_> {
             inputs,
             |value| modifiers.add(value),
         );
-        let flat = flat?;
+        flat_result?;
         percent?;
-        // Percentage bonuses affect every resolved global flat source, including
-        // temporary effects. Ability-only inputs are excluded by the apply filter.
-        modifiers.calculate(total + flat)
+        // Catalog bindings can declare a flat bonus after the multipliers.
+        // Ability-only inputs are excluded by the same apply filter in both stages.
+        modifiers.calculate(total + flat, post_multiplier)
     }
 
     fn total(
@@ -1965,6 +1991,18 @@ impl<'a> Resolver<'a, '_> {
         policy: ValuePolicy,
         mut add: impl FnMut(f64) -> Result<()>,
     ) -> Result<()> {
+        self.visit_effect_values(stat, input, kind, inputs, policy, |value, _| add(value))
+    }
+
+    fn visit_effect_values(
+        &mut self,
+        stat: &str,
+        input: &str,
+        kind: &'static str,
+        inputs: &PlayerInputs<'_>,
+        policy: ValuePolicy,
+        mut add: impl FnMut(f64, Option<&Value>) -> Result<()>,
+    ) -> Result<()> {
         let explicit_only = policy != ValuePolicy::Declared;
         let permanent = if policy == ValuePolicy::Recipient {
             &[][..]
@@ -1983,7 +2021,7 @@ impl<'a> Resolver<'a, '_> {
                 continue;
             }
             let value = modifier_units(stat, recorded.value);
-            add(value)?;
+            add(value, None)?;
             if self.explain {
                 let source = self.recorded_source(recorded.source_id);
                 self.contributions.push(Contribution {
@@ -2081,7 +2119,8 @@ impl<'a> Resolver<'a, '_> {
                 if let Some(message) = self.corruption_diagnostic(effect, item, None)? {
                     self.unmapped_inputs.insert(message);
                 }
-                add(value)?;
+                add(value, Some(effect))?;
+                let kind = contribution_kind(kind, effect);
                 self.record(
                     input,
                     kind,
@@ -2260,7 +2299,8 @@ impl<'a> Resolver<'a, '_> {
                 if let Some(message) = self.corruption_diagnostic(effect, source, Some(entry))? {
                     self.unmapped_inputs.insert(message);
                 }
-                add(value)?;
+                add(value, Some(effect))?;
+                let kind = contribution_kind(kind, effect);
                 self.record(input, kind, value, source, path, entry.serial_number);
             }
         }
