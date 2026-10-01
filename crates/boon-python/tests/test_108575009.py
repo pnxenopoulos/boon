@@ -7,7 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 from boon import Demo, data
-from conftest import FIXTURES_DIR
+from conftest import FIXTURES_DIR, get_demo
 
 FIXTURE_PATH = FIXTURES_DIR / "108575009.dem"
 TICK = 187554
@@ -23,7 +23,7 @@ SCOREBOARD = json.loads(
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("108575009.dem fixture not available")
-    return Demo(str(FIXTURE_PATH), preload=False)
+    return get_demo(FIXTURE_PATH)
 
 
 @pytest.fixture(scope="module")
@@ -154,3 +154,109 @@ def test_paige_healing_and_barrier_absorption(final_summary: pl.DataFrame) -> No
         "player_healing", "barrier_absorption"
     ).rows() == [(6081, 21516)]
     assert final_summary.schema["barrier_absorption"] == pl.UInt32
+
+
+def test_match_metadata_and_end(demo: Demo) -> None:
+    assert (
+        demo.build,
+        demo.total_ticks,
+        demo.winning_team_num,
+        demo.game_over_tick,
+    ) == (10932, 193317, 2, 190758)
+    assert demo.regulation_ticks == 188897
+    assert demo.regulation_clock_time == "49:11"
+    assert demo.regulation_seconds == pytest.approx(2951.515625)
+    patron_deaths = demo.objectives.filter(
+        (pl.col("objective_type") == "patron") & (pl.col("health") == 0)
+    )
+    assert patron_deaths["tick"].unique().to_list() == [demo.game_over_tick]
+
+
+def test_breakables_and_sinners_sacrifice(demo: Demo) -> None:
+    assert demo.breakables.group_by("subclass_id").len().sort("subclass_id").rows() == [
+        (202631964, 58),
+        (3719077267, 142),
+        (3986897915, 355),
+    ]
+    sacrifice = demo.sinners_sacrifice
+    assert sacrifice.group_by("event").len().sort("event").rows() == [
+        ("hit", 396),
+        ("reset", 66),
+        ("spawned", 15),
+    ]
+    assert sacrifice["damage"].sum() == 36848
+
+
+def test_player_melee_damage(demo: Demo) -> None:
+    roster = demo.players["hero_id"]
+    melee = demo.damage.filter(
+        pl.col("is_melee")
+        & pl.col("attacker_hero_id").is_in(roster.implode())
+        & pl.col("victim_hero_id").is_in(roster.implode())
+        & (pl.col("attacker_hero_id") != pl.col("victim_hero_id"))
+    )
+    assert melee.group_by("melee_type").agg(
+        pl.len().alias("hits"), pl.col("damage").sum()
+    ).sort("melee_type").rows() == [("heavy", 150, 27420), ("light", 92, 10814)]
+
+
+def test_summary_healing_and_regen_intervals(demo: Demo) -> None:
+    summary = demo.summary()
+    healing = summary["healing"]
+    assert (healing["interval_start_s"] < healing["interval_end_s"]).all()
+    assert healing["amount"].ge(0).all()
+    assert healing["amount"].eq(0).any()
+    assert healing.group_by("stat_type").agg(
+        pl.len().alias("rows"), pl.col("amount").sum()
+    ).sort("stat_type").rows() == [("healing", 670, 231435), ("regen", 1312, 224645)]
+    for stat_type in ("healing", "regen"):
+        recorded = summary["damage"].filter(
+            (pl.col("stat_type") == stat_type) & ~pl.col("is_category")
+        )
+        assert (
+            healing.filter(pl.col("stat_type") == stat_type)["amount"].sum()
+            == recorded["damage"].sum()
+        )
+    for snapshot in summary["snapshots"].iter_rows(named=True):
+        rows = healing.filter(
+            (pl.col("interval_end_s") == snapshot["snapshot_time_s"])
+            & (pl.col("healer_steam_id") == snapshot["steam_id"])
+            & (pl.col("stat_type") == "healing")
+        )
+        if rows.is_empty():
+            continue
+        assert rows["total"].sum() == snapshot["player_healing"]
+        assert (
+            rows.filter(pl.col("target_steam_id") == snapshot["steam_id"])[
+                "total"
+            ].sum()
+            == snapshot["self_healing"]
+        )
+
+
+def test_summary_soul_sources_and_identity(
+    demo: Demo, final_summary: pl.DataFrame
+) -> None:
+    player = final_summary.filter(pl.col("steam_id") == MCGINNIS).row(0, named=True)
+    assert (
+        player["player_healing"],
+        player["self_healing"],
+        player["teammate_healing"],
+    ) == (18346, 13853, 4493)
+    summary = demo.summary()
+    sources = summary["gold_sources"].filter(
+        (pl.col("steam_id") == MCGINNIS) & (pl.col("snapshot_time_s") == 2952)
+    )
+    assert sources.filter(pl.col("source_id") == 1).select(
+        "source_name", "gold", "gold_orbs", "damage"
+    ).rows() == [("k_ePlayers", 7385, 0, 52244)]
+    assert sources.filter(pl.col("source_id") == 6).select(
+        "gold", "gold_orbs"
+    ).rows() == [(6774, None)]
+    roster = demo.players.select("steam_id", "hero_id")
+    for name in ("snapshots", "last_hits", "gold_sources"):
+        identities = summary[name].select("steam_id", "hero_id").unique()
+        assert identities["steam_id"].null_count() == 0
+        assert identities.join(
+            roster, on=["steam_id", "hero_id"], how="anti"
+        ).is_empty()

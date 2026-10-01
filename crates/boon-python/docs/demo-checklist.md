@@ -128,8 +128,8 @@ Use the matching boon-data client version. See [feature examples](examples.md#st
   methods to calculate supported hero and ability values.
   Raw healing counters, `player_ticks.barrier` and damage shield fields remain;
   they do not reconstruct healing or barrier events.
-- [ ] Do not compare `stat_modifier_*` directly with final UI ammo, fire rate,
-  lifesteal or resistances. These columns omit base values and some effects.
+- [ ] Compare calculated stats with the viewer. Recorded bonus events are not final stats.
+
 - [ ] Record a second replay with features absent from the first. Examples include
   hero switching, pauses, Street Brawl, and optional map events.
 
@@ -143,8 +143,8 @@ Replace the filename and ticks with those you are viewing.
 import polars as pl
 from boon import Demo, hero_names
 
-demo = Demo("106996573.dem")
-ticks = [50707]
+demo = Demo("108575009.dem")
+ticks = [187554]
 names = hero_names()
 
 print(demo.players)
@@ -191,9 +191,9 @@ used to run it. It does not change the replay or parser.
 From the repository root, with the current Boon build installed:
 
 ```bash
-python scripts/check-demo.py 106996573.dem \
-  --out target/demo-checks/106996573 \
-  --ticks 50707
+python scripts/check-demo.py 108575009.dem \
+  --out target/demo-checks/108575009 \
+  --ticks 187554
 ```
 
 Use a new output directory for each run. On Windows, enter the command on one
@@ -201,7 +201,7 @@ line. If using this repository's WSL virtual environment, replace `python` with
 `crates/boon-python/.venv/bin/python`.
 
 Omit `--ticks` to select three ticks from the observed player history. You can
-supply several: `--ticks 30000 50707 70000`. Use **demo ticks**, not match seconds.
+supply several: `--ticks 30000 187554 70000`. Use **demo ticks**, not match seconds.
 The report includes both time conversions for the selected ticks.
 
 The full run loads and exports all datasets supported by the replay's mode,
@@ -213,9 +213,9 @@ troopers only; full trooper coverage will explicitly remain unverified.
 To also do checks of real data downloads and removal:
 
 ```bash
-python scripts/check-demo.py 106996573.dem \
-  --out target/demo-checks/106996573-with-data \
-  --ticks 50707 --cli --data-version 6698
+python scripts/check-demo.py 108575009.dem \
+  --out target/demo-checks/108575009-with-data \
+  --ticks 187554 --cli --data-version 6712
 ```
 
 Choose an available client version from `boon versions`. This option requires
@@ -312,8 +312,7 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
 - [ ] The recorded `player_ticks.barrier`, healing counters, and damage-message
   shield fields are compared only with their documented raw observations. There is
   no `demo.healing` or `demo.barriers()`. Calculated stats use separate methods.
-- [ ] Check `stat_modifier_values_available` and `unknown_stat_modifier_count`.
-  Never compare `stat_modifier_*` directly with final UI resistances/fire rate.
+- [ ] Use a boon-data catalog for the replay's client version when you check stat bonus events.
 - [ ] Do not require `health <= max_health` at every transitional tick without
   a comparison with the game; temporary health effects and replication can complicate it.
 
@@ -395,8 +394,8 @@ and {doc}`player-states` for the full rules and limits.
 from pathlib import Path
 import polars as pl
 
-folder = Path("target/demo-checks/106996573")
-tick, hero = 50707, 66
+folder = Path("target/demo-checks/108575009")
+tick, hero = 187554, 66
 
 players = pl.scan_parquet(folder / "player_ticks.parquet")
 print(players.filter((pl.col("tick") == tick) & (pl.col("hero_id") == hero)).collect())
@@ -421,21 +420,21 @@ Compare a fresh lazy load with the exported evidence from the bulk load:
 from boon import Demo
 from polars.testing import assert_frame_equal
 
-fresh = Demo("106996573.dem", preload=False)
+fresh = Demo("108575009.dem", preload=False)
 assert_frame_equal(fresh.damage, pl.read_parquet(folder / "damage.parquet"))
 ```
 
 ## Turn independent observations into repeatable assertions
 
 Transcribe a value from the replay UI, not from Boon's output. Suppose Victor has
-123 health at demo tick 50707. Save the following JSON in `observations.json`.
+123 health at demo tick 187554. Save the following JSON in `observations.json`.
 **123 is an example. Replace it with the value you observe.**
 
 ```json
 [
   {
     "dataset": "player_ticks",
-    "where": {"tick": 50707, "hero_id": 66},
+    "where": {"tick": 187554, "hero_id": 66},
     "expect": {"health": 123},
     "tolerance": 0
   }

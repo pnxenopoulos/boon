@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use boon::{StatModifierKind, decode_stat_modifier_value_type};
+use boon::{StatModifierKind, StatModifierTypes};
 use colored::Colorize;
 use serde::Serialize;
 
@@ -38,6 +38,8 @@ pub fn run(
 ) -> Result<()> {
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
+
+    let modifier_types = StatModifierTypes::load(None)?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerController"].into_iter().collect();
 
@@ -89,7 +91,7 @@ pub fn run(
                     if mid == 0 && vt == 0 && val == 0.0 {
                         continue;
                     }
-                    if let Some(decoded) = decode_stat_modifier_value_type(vt) {
+                    if let Some(decoded) = modifier_types.decode(vt) {
                         sums[decoded.kind.index()] += val * decoded.value_scale;
                     }
                 }

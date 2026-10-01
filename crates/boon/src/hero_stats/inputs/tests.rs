@@ -629,7 +629,7 @@ fn melee_lifesteal_uses_the_exact_passive_property_and_excludes_healing_procs() 
     let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
     for amount in [18, 31] {
         catalog.abilities.get_mut(&123).unwrap().definition = json!({
-            "m_WeaponInfo":{"m_iClipSize":20},
+            "m_mapWeaponInfos":{"primary":{"m_iClipSize":20}},
             "m_eAbilityActivation":"CITADEL_ABILITY_ACTIVATION_PASSIVE",
             "m_mapAbilityProperties":{
                 "MeleeLifesteal":{"m_strValue":amount,"m_subclassScaleFunction":{"$value":{
@@ -1765,41 +1765,37 @@ fn melee_ignores_unbound_target_damage_and_reports_missing_global_bonuses() {
 }
 
 #[test]
-fn weapon_stats_support_both_catalog_layouts_and_report_the_source_path() {
+fn weapon_stats_use_the_primary_catalog_block_and_report_its_path() {
     let folder = super::super::catalog::tests::fixture();
     let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
     catalog.heroes.get_mut(&999).unwrap().definition["m_mapScalingStats"] = json!({});
-    let info = json!({
-        "m_iClipSize":31, "m_flBulletSpeed":1000, "m_reloadDuration":2.75,
-        "m_flDamageFalloffStartRange":400, "m_flDamageFalloffEndRange":1000
-    });
-    for path in ["m_WeaponInfo", "m_mapWeaponInfos/primary"] {
-        catalog.abilities.get_mut(&123).unwrap().definition = if path == "m_WeaponInfo" {
-            json!({"m_WeaponInfo":info})
-        } else {
-            // Prefer the new primary block, not a stale legacy or alternate weapon.
-            json!({"m_WeaponInfo":{"m_iClipSize":99},
-                "m_mapWeaponInfos":{"primary":info,"secondary":{"m_iClipSize":7}}})
-        };
-        for (stat, expected, field) in [
-            (HeroStat::ClipSize, 31.0, "m_iClipSize"),
-            (HeroStat::BulletVelocity, 25.4, "m_flBulletSpeed"),
-            (HeroStat::ReloadTime, 2.75, "m_reloadDuration"),
-            (HeroStat::FalloffStart, 10.16, "m_flDamageFalloffStartRange"),
-            (HeroStat::FalloffEnd, 25.4, "m_flDamageFalloffEndRange"),
-        ] {
-            let (value, trace, _) = stat_result(&catalog, false, stat);
-            assert!((value.unwrap() - expected).abs() < 1e-10);
-            assert_eq!(
-                trace[0].definition_path,
-                format!("/test_gun/{path}/{field}")
-            );
-        }
-    }
     catalog.abilities.get_mut(&123).unwrap().definition = json!({
-        "m_WeaponInfo":{"m_iClipSize":99},
-        "m_mapWeaponInfos":{"secondary":{"m_iClipSize":7}}
+        "m_mapWeaponInfos": {
+            "primary": {
+                "m_iClipSize":31, "m_flBulletSpeed":1000, "m_reloadDuration":2.75,
+                "m_flDamageFalloffStartRange":400, "m_flDamageFalloffEndRange":1000
+            },
+            "secondary":{"m_iClipSize":7}
+        }
     });
+    for (stat, expected, field) in [
+        (HeroStat::ClipSize, 31.0, "m_iClipSize"),
+        (HeroStat::BulletVelocity, 25.4, "m_flBulletSpeed"),
+        (HeroStat::ReloadTime, 2.75, "m_reloadDuration"),
+        (HeroStat::FalloffStart, 10.16, "m_flDamageFalloffStartRange"),
+        (HeroStat::FalloffEnd, 25.4, "m_flDamageFalloffEndRange"),
+    ] {
+        let (value, trace, _) = stat_result(&catalog, false, stat);
+        assert!((value.unwrap() - expected).abs() < 1e-10);
+        assert_eq!(
+            trace[0].definition_path,
+            format!("/test_gun/m_mapWeaponInfos/primary/{field}")
+        );
+    }
+    catalog.abilities.get_mut(&123).unwrap().definition["m_mapWeaponInfos"]
+        .as_object_mut()
+        .unwrap()
+        .remove("primary");
     assert!(stat_result(&catalog, false, HeroStat::ClipSize).0.is_err());
 }
 
@@ -1823,7 +1819,7 @@ fn falloff_endpoints_use_catalog_values_and_only_active_range_bonuses() {
             .contains("no base falloff")
     );
     for (start, end, bonus) in [(1000.0, 2500.0, 20.0), (600.0, 900.0, 37.5)] {
-        abilities["records"][0]["definition"]["m_WeaponInfo"] = json!({
+        abilities["records"][0]["definition"]["m_mapWeaponInfos"]["primary"] = json!({
             "m_flDamageFalloffStartRange":start, "m_flDamageFalloffEndRange":end,
             "m_flRange":500, "m_flDamageFalloffBias":0.3,
             "m_flDamageFalloffStartScale":1, "m_flDamageFalloffEndScale":0.1
@@ -1868,7 +1864,7 @@ fn falloff_endpoints_use_catalog_values_and_only_active_range_bonuses() {
                 .contains("combining falloff-range bonuses")
         );
     }
-    abilities["records"][0]["definition"]["m_WeaponInfo"]["m_flDamageFalloffStartRange"] =
+    abilities["records"][0]["definition"]["m_mapWeaponInfos"]["primary"]["m_flDamageFalloffStartRange"] =
         json!(-1);
     std::fs::write(&ability_path, serde_json::to_vec(&abilities).unwrap()).unwrap();
     let catalog = StatCatalog::from_directory(folder.path()).unwrap();
@@ -1902,7 +1898,8 @@ fn velocity_uses_catalog_values_and_counts_bound_effects_only_when_active() {
     ]);
     std::fs::write(&modifier_path, serde_json::to_vec(&modifiers).unwrap()).unwrap();
     for base in [5000.0, 12000.0] {
-        abilities["records"][0]["definition"]["m_WeaponInfo"]["m_flBulletSpeed"] = json!(base);
+        abilities["records"][0]["definition"]["m_mapWeaponInfos"]["primary"]["m_flBulletSpeed"] =
+            json!(base);
         std::fs::write(&ability_path, serde_json::to_vec(&abilities).unwrap()).unwrap();
         let catalog = StatCatalog::from_directory(folder.path()).unwrap();
         let (inactive, _, _) = stat_result(&catalog, false, HeroStat::BulletVelocity);
@@ -2721,7 +2718,7 @@ fn reload_time_uses_catalog_duration_and_only_effective_adjustments() {
     modifiers["records"][2]["stat_changes"] = json!([effect, effect]);
     std::fs::write(&modifier_path, serde_json::to_vec(&modifiers).unwrap()).unwrap();
     for (base, single) in [(2.5, false), (0.4, true)] {
-        abilities["records"][0]["definition"]["m_WeaponInfo"] = json!({
+        abilities["records"][0]["definition"]["m_mapWeaponInfos"]["primary"] = json!({
             "m_reloadDuration":base, "m_bReloadSingleBullets":single,
             "m_flReloadSingleBulletsInitialDelay":0.7, "m_iClipSize":30
         });
@@ -2775,7 +2772,7 @@ fn reload_time_uses_catalog_duration_and_only_effective_adjustments() {
     );
 
     abilities["records"][0]["stat_changes"] = json!([]);
-    abilities["records"][0]["definition"]["m_WeaponInfo"]["m_bReloadUseActiveWeaponInfoDuration"] =
+    abilities["records"][0]["definition"]["m_mapWeaponInfos"]["primary"]["m_bReloadUseActiveWeaponInfoDuration"] =
         json!(true);
     std::fs::write(&ability_path, serde_json::to_vec(&abilities).unwrap()).unwrap();
     let catalog = StatCatalog::from_directory(folder.path()).unwrap();

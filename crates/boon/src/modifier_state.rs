@@ -9,7 +9,9 @@ use std::collections::HashMap;
 use boon_proto::proto::CModifierTableEntry;
 use prost::Message;
 
-use crate::{Context, EntityContainer, FieldValue};
+#[cfg(test)]
+use crate::FieldValue;
+use crate::{Context, EntityContainer};
 
 /// The lifecycle transition produced by a modifier-table delta.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -159,7 +161,6 @@ impl ModifierState {
 /// Resolve these keys once per replay, after its serializers are available.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ModifierClock {
-    simulation_time: Option<u64>,
     tick_base: Option<u64>,
     hero_pawn: Option<u64>,
     pawn: Option<u64>,
@@ -173,10 +174,6 @@ impl ModifierClock {
             tick_base: controller.and_then(|s| s.resolve_field_key("m_nTickBase")),
             hero_pawn: controller.and_then(|s| s.resolve_field_key("m_hHeroPawn")),
             pawn: controller.and_then(|s| s.resolve_field_key("m_hPawn")),
-            simulation_time: ctx
-                .serializers()
-                .get("CCitadelPlayerPawn")
-                .and_then(|s| s.resolve_field_key("m_flSimulationTime")),
             total_paused_ticks: ctx
                 .serializers()
                 .get("CCitadelGameRulesProxy")
@@ -185,45 +182,27 @@ impl ModifierClock {
     }
 
     /// Read simulation time minus accumulated pauses, in seconds.
-    /// Uses pawn simulation time when present, or controller tick bases otherwise.
+    /// Uses tick bases from controllers with a live hero pawn.
     /// Missing clock fields or a missing pause counter return `None`.
     pub fn game_time(&self, ctx: &Context) -> Option<f32> {
         self.time_from_entities(ctx.entities(), ctx.tick_interval())
     }
 
     fn time_from_entities(&self, entities: &EntityContainer, interval: f32) -> Option<f32> {
-        let simulation_time = self
-            .simulation_time
-            .and_then(|key| {
-                entities
-                    .iter()
-                    .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerPawn")
-                    .filter_map(|(_, e)| match e.fields.get(&key)? {
-                        FieldValue::F32(value) if value.is_finite() => Some(*value),
-                        _ => None,
-                    })
-                    .max_by(f32::total_cmp)
+        // Spectator tick bases can be ahead of the active players.
+        let simulation_time = entities
+            .iter()
+            .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
+            .filter(|(_, e)| {
+                [self.hero_pawn, self.pawn].into_iter().any(|key| {
+                    e.get_handle(key)
+                        .and_then(|handle| entities.get_by_handle(handle))
+                        .is_some_and(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                })
             })
-            .or_else(|| {
-                // New demos omit pawn simulation time. Player controller tick bases
-                // share the modifier clock's origin after accumulated pauses are removed.
-                // Spectator controllers can be ahead: only use controllers with a hero pawn.
-                entities
-                    .iter()
-                    .filter(|(_, e)| e.class_name.as_ref() == "CCitadelPlayerController")
-                    .filter(|(_, e)| {
-                        [self.hero_pawn, self.pawn].into_iter().any(|key| {
-                            e.get_handle(key)
-                                .and_then(|handle| entities.get_by_handle(handle))
-                                .is_some_and(|pawn| {
-                                    pawn.class_name.as_ref() == "CCitadelPlayerPawn"
-                                })
-                        })
-                    })
-                    .filter_map(|(_, e)| u32::try_from(e.get_u64(self.tick_base)?).ok())
-                    .max()
-                    .map(|tick| tick as f32 * interval)
-            })?;
+            .filter_map(|(_, e)| u32::try_from(e.get_u64(self.tick_base)?).ok())
+            .max()? as f32
+            * interval;
         let (_, rules) = entities
             .iter()
             .find(|(_, e)| e.class_name.as_ref() == "CCitadelGameRulesProxy")?;
@@ -285,8 +264,7 @@ impl EffectiveModifierState {
     /// the HUD match clock: it has a different origin.
     ///
     /// None disables time-based expiry for this tick. Explicit removals
-    /// and aura exits still apply. This fallback keeps older demos useful
-    /// when they do not replicate a compatible clock.
+    /// and aura exits still apply when no player clock is available.
     pub fn update(&mut self, ctx: &Context, game_time: Option<f32>) -> Vec<ModifierChange> {
         let raw_changes = self.raw.update(ctx);
         self.reconcile(raw_changes, game_time)
@@ -698,9 +676,8 @@ mod tests {
     }
 
     #[test]
-    fn controller_clock_excludes_spectators_and_preserves_legacy_simulation_time() {
+    fn controller_clock_excludes_spectators() {
         let clock = ModifierClock {
-            simulation_time: Some(0),
             tick_base: Some(1),
             total_paused_ticks: Some(2),
             hero_pawn: Some(3),
@@ -754,15 +731,6 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(clock.time_from_entities(&entities, 1.0 / 64.0), Some(15.0));
-        // Older demos retain their existing clock, even if a controller disagrees.
-        entities
-            .insert(entity(
-                10,
-                "CCitadelPlayerPawn",
-                vec![(0, FieldValue::F32(25.0))],
-            ))
-            .unwrap();
-        assert_eq!(clock.time_from_entities(&entities, 1.0 / 64.0), Some(14.0));
         assert_eq!(clock.time_from_entities(&entities, f32::NAN), None);
     }
 

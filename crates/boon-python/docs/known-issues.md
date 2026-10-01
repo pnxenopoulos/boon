@@ -1,5 +1,8 @@
 # ⚠️ Known Issues
 
+Use Boon **0.10.0 or earlier** for demos recorded before the **City Never
+Sleeps** update (**September 29, 2026**). Use Boon **0.11.0 or later** for
+demos recorded with that update.
 Deadlock updates can change the demo format and game rules.
 
 ## Stat calculations
@@ -59,10 +62,6 @@ but Boon does not yet apply corrupted property upgrades. Affected properties
 keep their known subtotal and report a partial result. The controller's stat
 table can also name the wrong source item for a penalty. Active modifier records
 can identify the source item. Do not count both records as separate penalties.
-
-The legacy `stat_modifier_*` snapshot columns use enum IDs from older clients.
-Their totals can be incorrect for this client. Keep the raw recorded entries
-when you check these values. An unresolved result does not mean zero.
 
 ## Ammo and barrier snapshots
 
@@ -264,23 +263,12 @@ time. Do not treat every pool rise as a new barrier grant or every fall as
 absorption. Direct seeks and full passes use the same cached history. These values do not
 identify individual grants or absorbed damage.
 
-## Player stat modifiers are not final stats
+## Recorded stat bonuses
 
-`demo.player_ticks` reads `m_vecStatViewerModifierValues` from each player
-controller. The `stat_modifier_*` columns contain signed sums for the value
-types that Boon knows. They do not include base hero stats, all item values, or
-all temporary effects. Do not use these columns as final damage mitigation or
-effective player stats.
-
-`stat_modifier_values_available` is false when the demo serializer does not
-contain this vector. `unknown_stat_modifier_count` is the number of vector
-entries with a nonzero `EModifierValue` that this Boon version does not know.
-
-Valve can renumber these values between client versions. The decoder contains
-aliases observed in tested demos; it does not select a layout by client version.
-An unknown-count value of zero does not prove that all aliases are correct for
-a new client. New boon-data catalogs include `modifier_value_types` for ability stat queries.
-The fixed `player_ticks.stat_modifier_*` decoder does not use that map.
+`stat_modifier_events` uses enum definitions from the newest installed boon-data
+catalog. Use data for the replay's client version. It records changes to known
+bonus types, not final hero stats. Use `calculate_hero_stats()` for calculated
+values. The old `stat_modifier_*` snapshot columns have been removed.
 
 ## Banned heroes are frequently absent
 
@@ -291,12 +279,6 @@ even when another recording from the same server version contains it.
 An empty frame means no recorded ban data. It does not establish that the match
 had no bans. The message supplies hero IDs only, without teams, players, or
 draft order.
-
-## Ability upgrades empty on older demos
-
-Valve renamed `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding.
-Boon uses `m_nUpgradeInfo`. Therefore, `ability_upgrades` returns an empty
-DataFrame for demos that Valve recorded before this change.
 
 ## Ability bonuses and Arcane Surge
 

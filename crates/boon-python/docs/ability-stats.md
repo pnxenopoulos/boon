@@ -9,16 +9,16 @@ Both methods read replay state and a selected boon-data version.
 ```python
 from boon import AbilityStat, Demo, StatMode
 
-version = "6694"  # Select the client version for your demo.
-steam_id = 76561197999389679  # Venator in this demo.
-demo = Demo("106996573.dem", preload=False)
+version = "6712"  # Select the client version for your demo.
+steam_id = 76561198037652386  # McGinnis in this demo.
+demo = Demo("108575009.dem", preload=False)
 
-imbues = demo.imbues(ticks=50707, steam_ids=[steam_id], data_version=version)
+imbues = demo.imbues(ticks=187554, steam_ids=[steam_id], data_version=version)
 print(imbues.bindings)
 print(imbues.effects)
 
 result = demo.calculate_ability_stats(
-    ticks=[50707, 60000],
+    ticks=[187554, 60000],
     steam_ids=[steam_id],
     data_version=version,
     stats=[AbilityStat.COOLDOWN_REDUCTION, AbilityStat.RANGE_BONUS],
@@ -151,7 +151,7 @@ A ready next-cast bonus requires a recorded target before Boon applies it to an 
 The resolver assumes next-cast roles from catalog surge-window and ability-watcher fields.
 A diagnostic identifies this assumption.
 
-In `106996573.dem` at tick 50707, Paradox has an Arcane Surge watcher without a recorded bonus target.
+An Arcane Surge watcher can lack a recorded bonus target.
 Boon omits that bonus and marks the known range, radius, and duration values as `partial`.
 It does not apply the bonus to all abilities.
 
@@ -175,16 +175,16 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("106996573.dem"))?;
-    let catalog = StatCatalog::load("6694")?;
-    let steam_id = 76561197999389679_u64;
+    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let catalog = StatCatalog::load("6712")?;
+    let steam_id = 76561198037652386_u64;
     let imbues = parser.imbues(
-        &ImbueQuery::new([50707]).steam_ids([steam_id]),
+        &ImbueQuery::new([187554]).steam_ids([steam_id]),
         &catalog,
     )?;
     let stats = [AbilityStat::CooldownReduction, AbilityStat::RangeBonus];
     let rules = stats.iter().fold(AbilityRuleset::new(), |r, s| r.with(s.rule()));
-    let query = AbilityStatQuery::new([50707], stats)
+    let query = AbilityStatQuery::new([187554], stats)
         .steam_ids([steam_id])
         .mode(StatMode::Current)
         .explain(true)

@@ -220,21 +220,10 @@ The repository does not contain demo files (`.dem`). Download them from the
 Each fixture is a named release whose tag is the match ID:
 
 ```bash
-gh release download 70555151 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 70537442 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 103129247 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 100655353 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
+for match in 108575009 70537442 100655353; do
+  gh release download "$match" --repo pnxenopoulos/boon-fixtures \
+    --dir crates/boon-python/tests/fixtures/
+done
 ```
 
 Tests that require a missing fixture are skipped automatically.
@@ -270,10 +259,12 @@ def demo() -> Demo:
 
 | Match ID | Game Mode | Description |
 |----------|-----------|-------------|
-| 70555151 | 6v6 | Standard 6v6 match |
-| 70537442 | Street Brawl | Street brawl (game_mode=4) match |
-| 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
-| 100655353 | 6v6 | Silver-to-Victor hero swap and post-match summary totals |
+| 108575009 | 6v6 | Current-format API tests, scoreboard and fight-state checks |
+| 70537442 | Street Brawl | Mode-specific regression checks only |
+| 100655353 | 6v6 | Silver-to-Victor hero-swap regression only |
+
+General tests use `108575009.dem`. The older files test behavior that the current
+fixture cannot cover; they do not establish support for old formats.
 
 ## Submitting Changes
 

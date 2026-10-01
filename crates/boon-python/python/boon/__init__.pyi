@@ -625,8 +625,6 @@ class Demo:
         Returns a DataFrame with one row per player per tick, containing
         position, health, combat timers, kills, deaths, net worth, and more.
         Rows where the pawn is not found or ``hero_id == 0`` are skipped.
-        The stat_modifier_* columns are observed controller contributions.
-        They are not final or effective player stats.
 
 
         Columns:
@@ -651,16 +649,6 @@ class Demo:
               buffs), from the controller's ``m_iHealthMax``.
             - **barrier** (*float*) -- Current barrier remaining. Returns ``0.0`` when
               the demo does not contain a barrier tracker for this player.
-            - **stat_modifier_health** (*float*) -- Observed health modifier total.
-            - **stat_modifier_spirit_power** (*float*) -- Observed spirit-power modifier total.
-            - **stat_modifier_fire_rate** (*float*) -- Observed fire-rate modifier total.
-            - **stat_modifier_weapon_damage** (*float*) -- Observed weapon-damage modifier total.
-            - **stat_modifier_cooldown_reduction** (*float*) -- Observed cooldown-reduction modifier total.
-            - **stat_modifier_ammo** (*float*) -- Observed ammo modifier total.
-            - **stat_modifier_bullet_resist** (*float*) -- Observed bullet-resistance modifier total.
-            - **stat_modifier_spirit_resist** (*float*) -- Observed spirit-resistance modifier total.
-            - **stat_modifier_values_available** (*bool*) -- Whether the demo serializer contains the stat-viewer vector.
-            - **unknown_stat_modifier_count** (*int*) -- Number of vector entries with an unknown nonzero value type.
             - **lifestate** (*int*) -- Life state value (use ``lifestate_names()`` to resolve).
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.
@@ -737,7 +725,7 @@ class Demo:
             - **tick** (*int*) -- The enclosing demo command tick.
             - **damage** (*int*) -- The damage dealt.
             - **pre_damage** (*float*) -- The damage before mitigation.
-            - **damage_absorbed** (*float | None*) -- Recorded absorption; falls back to the legacy integer field when needed.
+            - **damage_absorbed** (*float | None*) -- Recorded absorption; null when absent.
             - **victim_shield_new** (*int | None*) -- Remaining shield after the hit.
             - **victim_shield_max** (*int | None*) -- Shield capacity.
             - **server_tick** (*int | None*) -- Server tick recorded in the damage message.
@@ -999,7 +987,9 @@ class Demo:
 
         Not loaded by default. Access this property or call ``load("stat_modifier_events")`` explicitly.
 
-        Emits a row whenever a stat total changes (urn/breakable pickups).
+        Types come from the newest installed boon-data catalog. If no catalog is
+        installed, Boon downloads the latest version. Use data for the replay's client.
+        Emits a row whenever a recorded stat total changes.
 
         Columns:
             - **tick** (*int*) -- The game tick when the stat changed.

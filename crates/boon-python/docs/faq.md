@@ -3,7 +3,7 @@
 ## Where do I get demo files?
 
 Deadlock demo files (`.dem`) are GOTV match recordings. Download them from the in-game match history or from a replay service.
-The file name usually contains the match ID. For example, `70555151.dem` contains match 70555151.
+The file name usually contains the match ID. For example, `108575009.dem` contains match 108575009.
 
 ## Why does boon return Polars DataFrames instead of pandas?
 
@@ -32,9 +32,11 @@ Both property access and `load()` cache their results.
 
 GOTV recordings do not always include all player pawns. Boon can return data only for pawns that are in the demo.
 
-## Why is `ability_upgrades` empty?
+## Are old demos supported?
 
-Valve renamed `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding. Boon uses the current field name. Older demos return an empty DataFrame. See {doc}`known-issues`.
+Use Boon **0.10.0 or earlier** for demos recorded before the **City Never
+Sleeps** update (**September 29, 2026**). Use Boon **0.11.0 or later** for
+demos recorded with that update.
 
 ## What is `trooper_boss`?
 

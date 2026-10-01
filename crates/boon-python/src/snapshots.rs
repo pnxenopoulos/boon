@@ -58,14 +58,6 @@ pub(super) fn resolve_stat_viewer_keys(
     })
 }
 
-// The vector is usable only when the serializer exposes its count and entry fields.
-pub(super) fn stat_viewer_values_available(
-    count: Option<u64>,
-    keys: &[StatViewerKeys; STAT_VIEWER_SLOTS],
-) -> bool {
-    count.is_some() && keys[0].value_type.is_some() && keys[0].value.is_some()
-}
-
 /// Split the full-packet offsets into `n` contiguous `(start_offset, end_tick)`
 /// segments: segment 0 starts from the signon baseline (`None`), the rest
 /// cold-restart at an evenly spaced full packet.
@@ -218,8 +210,6 @@ pub(super) struct PtKeys {
     pub(super) kills: Option<u64>,
     pub(super) deaths: Option<u64>,
     pub(super) assists: Option<u64>,
-    pub(super) stat_viewer_count: Option<u64>,
-    pub(super) stat_viewer: [StatViewerKeys; STAT_VIEWER_SLOTS],
 }
 
 impl PtKeys {
@@ -228,7 +218,6 @@ impl PtKeys {
         let ctrl = ctx.serializers().get("CCitadelPlayerController");
         let p = |name: &str| pawn.and_then(|s| s.resolve_field_key(name));
         let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
-        let stat_viewer = resolve_stat_viewer_keys(ctrl);
         Self {
             steam_id: c("m_steamID"),
             hero_id: p("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"),
@@ -282,8 +271,6 @@ impl PtKeys {
             kills: c("m_PlayerDataGlobal.m_iPlayerKills"),
             deaths: c("m_PlayerDataGlobal.m_iDeaths"),
             assists: c("m_PlayerDataGlobal.m_iPlayerAssists"),
-            stat_viewer_count: c("m_PlayerDataGlobal.m_vecStatViewerModifierValues"),
-            stat_viewer,
         }
     }
 }
@@ -446,9 +433,6 @@ pub(super) struct PtCols {
     pub(super) health: Vec<i64>,
     pub(super) max_health: Vec<i64>,
     pub(super) barrier: Vec<f32>,
-    pub(super) stat_modifiers: [Vec<f32>; boon_parser::StatModifierKind::COUNT],
-    pub(super) stat_modifier_values_available: Vec<bool>,
-    pub(super) unknown_stat_modifier_count: Vec<u32>,
     pub(super) lifestate: Vec<i64>,
     pub(super) souls: Vec<i64>,
     pub(super) spent_souls: Vec<i64>,
@@ -542,23 +526,6 @@ impl PtCols {
             });
             self.barrier
                 .push(barriers.remaining(ctx.tick(), pawn_handle));
-            let stat_modifier_values_available =
-                stat_viewer_values_available(k.stat_viewer_count, &k.stat_viewer);
-            let stat_modifier_count = ctrl
-                .get_i64(k.stat_viewer_count)
-                .clamp(0, STAT_VIEWER_SLOTS as i64) as usize;
-            let stat_modifier_totals = boon_parser::aggregate_stat_modifier_values(
-                k.stat_viewer[..stat_modifier_count]
-                    .iter()
-                    .map(|keys| (ctrl.get_u32(keys.value_type), ctrl.get_f32(keys.value))),
-            );
-            for kind in boon_parser::StatModifierKind::ALL {
-                self.stat_modifiers[kind.index()].push(stat_modifier_totals[kind]);
-            }
-            self.stat_modifier_values_available
-                .push(stat_modifier_values_available);
-            self.unknown_stat_modifier_count
-                .push(stat_modifier_totals.unknown_count);
             let level = ctrl.get_i64(k.level);
             self.lifestate.push(pawn.get_i64(k.lifestate));
             self.souls.push(pawn.get_i64(k.souls));
@@ -601,16 +568,6 @@ impl PtCols {
 
     /// Build the `player_ticks` DataFrame. Column order/names must match `load()`.
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
-        let [
-            stat_modifier_health,
-            stat_modifier_spirit_power,
-            stat_modifier_fire_rate,
-            stat_modifier_weapon_damage,
-            stat_modifier_cooldown_reduction,
-            stat_modifier_ammo,
-            stat_modifier_bullet_resist,
-            stat_modifier_spirit_resist,
-        ] = self.stat_modifiers;
         df_from_columns(vec![
             numeric_column("tick", self.tick),
             Column::new("steam_id".into(), self.steam_id),
@@ -630,25 +587,6 @@ impl PtCols {
             numeric_column("health", self.health),
             numeric_column("max_health", self.max_health),
             numeric_column("barrier", self.barrier),
-            numeric_column("stat_modifier_health", stat_modifier_health),
-            numeric_column("stat_modifier_spirit_power", stat_modifier_spirit_power),
-            numeric_column("stat_modifier_fire_rate", stat_modifier_fire_rate),
-            numeric_column("stat_modifier_weapon_damage", stat_modifier_weapon_damage),
-            numeric_column(
-                "stat_modifier_cooldown_reduction",
-                stat_modifier_cooldown_reduction,
-            ),
-            numeric_column("stat_modifier_ammo", stat_modifier_ammo),
-            numeric_column("stat_modifier_bullet_resist", stat_modifier_bullet_resist),
-            numeric_column("stat_modifier_spirit_resist", stat_modifier_spirit_resist),
-            Column::new(
-                "stat_modifier_values_available".into(),
-                self.stat_modifier_values_available,
-            ),
-            numeric_column(
-                "unknown_stat_modifier_count",
-                self.unknown_stat_modifier_count,
-            ),
             numeric_column("lifestate", self.lifestate),
             numeric_column("souls", self.souls),
             numeric_column("spent_souls", self.spent_souls),

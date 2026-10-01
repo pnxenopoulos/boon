@@ -99,6 +99,20 @@ impl Demo {
             HashMap::new()
         };
 
+        let modifier_types = if load_stat_modifier_events {
+            let directory: PathBuf = py
+                .import("boon.data")?
+                .getattr("update")?
+                .call0()?
+                .extract()?;
+            Some(
+                boon_parser::StatModifierTypes::from_directory(&directory)
+                    .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?,
+            )
+        } else {
+            None
+        };
+
         // One-pass fast path: if everything still to load is a parallel-safe
         // snapshot dataset (player_ticks / world_ticks / troopers), decode them
         // together in a single parallel keyframe-segmented pass and skip the
@@ -1209,7 +1223,7 @@ impl Demo {
                         // Emit events for changed stat types
                         for (vt_val, total) in &by_type {
                             let Some(decoded) =
-                                boon_parser::decode_stat_modifier_value_type(*vt_val)
+                                modifier_types.as_ref().expect("stat types loaded").decode(*vt_val)
                             else {
                                 continue;
                             };
@@ -2291,10 +2305,7 @@ impl Demo {
                 dmg_flags.push(damage_flags);
                 dmg_is_melee.push(is_melee);
                 dmg_melee_type.push(melee_type);
-                dmg_absorbed.push(
-                    msg.damage_absorbed
-                        .or_else(|| msg.damage_absorbed_deprecated.map(|amount| amount as f32)),
-                );
+                dmg_absorbed.push(msg.damage_absorbed);
                 dmg_shield_new.push(msg.victim_shield_new);
                 dmg_shield_max.push(msg.victim_shield_max);
                 dmg_server_tick.push(msg.server_tick);

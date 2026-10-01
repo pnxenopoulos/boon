@@ -50,11 +50,10 @@ pub(super) struct Record {
 impl Record {
     /// Borrow the primary weapon block and retain its path for explanations.
     pub(super) fn weapon_info(&self) -> (&Value, &'static str) {
-        if let Some(infos) = self.definition.get("m_mapWeaponInfos") {
-            (&infos["primary"], "m_mapWeaponInfos/primary")
-        } else {
-            (&self.definition["m_WeaponInfo"], "m_WeaponInfo")
-        }
+        (
+            &self.definition["m_mapWeaponInfos"]["primary"],
+            "m_mapWeaponInfos/primary",
+        )
     }
 
     pub(super) fn upgrades_property(&self, property: &str) -> bool {
@@ -373,7 +372,7 @@ pub(super) mod tests {
             (
                 "abilities",
                 json!([{"record_key":"abilities#/test_gun", "definition_path":"/test_gun", "ability_id":123,
-                "ability_name":"test_gun", "definition":{"m_WeaponInfo":{"m_iClipSize":20}}, "stat_changes":[]}]),
+                "ability_name":"test_gun", "definition":{"m_mapWeaponInfos":{"primary":{"m_iClipSize":20}}}, "stat_changes":[]}]),
             ),
             (
                 "modifiers",
@@ -399,7 +398,7 @@ pub(super) mod tests {
         let folder = fixture();
         let first = StatCatalog::from_directory(folder.path()).unwrap();
         assert_eq!(
-            first.weapon(&first.heroes[&999]).unwrap().definition["m_WeaponInfo"]["m_iClipSize"],
+            first.weapon(&first.heroes[&999]).unwrap().definition["m_mapWeaponInfos"]["primary"]["m_iClipSize"],
             20
         );
         assert_eq!(
@@ -408,11 +407,12 @@ pub(super) mod tests {
         );
         let path = folder.path().join("abilities.json");
         let mut json: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
-        json["records"][0]["definition"]["m_WeaponInfo"]["m_iClipSize"] = json!(31);
+        json["records"][0]["definition"]["m_mapWeaponInfos"]["primary"]["m_iClipSize"] = json!(31);
         fs::write(path, serde_json::to_vec(&json).unwrap()).unwrap();
         let second = StatCatalog::from_directory(folder.path()).unwrap();
         assert_eq!(
-            second.weapon(&second.heroes[&999]).unwrap().definition["m_WeaponInfo"]["m_iClipSize"],
+            second.weapon(&second.heroes[&999]).unwrap().definition["m_mapWeaponInfos"]["primary"]
+                ["m_iClipSize"],
             31
         );
     }

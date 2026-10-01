@@ -4,7 +4,7 @@ use crate::*;
 impl Demo {
     /// Per-tick, per-player state as a Polars DataFrame.
     ///
-    /// Records position, health, barrier, observed stat modifiers, combat timers,
+    /// Records position, health, barrier, combat timers,
     /// kills, deaths, and net worth for each recorded player and tick.
     /// Boon loads this dataset on first access.
     #[getter]
@@ -42,8 +42,7 @@ impl Demo {
     /// - tick: The enclosing demo command tick
     /// - damage: The damage dealt
     /// - pre_damage: The damage before mitigation
-    /// - damage_absorbed: Recorded barrier absorption, null when absent. Uses the
-    ///   legacy integer field when the float field is absent.
+    /// - damage_absorbed: Recorded barrier absorption, null when absent.
     /// - victim_shield_new: Remaining shield after this hit, null when absent
     /// - victim_shield_max: Shield capacity, null when absent
     /// - server_tick: Server tick recorded in the damage message; null when absent
@@ -240,7 +239,9 @@ impl Demo {
     /// ``"bullet_resist"``, or ``"spirit_resist"``.
     /// ``amount`` is the signed change from this event.
     ///
-    /// Emits a row whenever a stat total changes (idol/breakable pickups).
+    /// Uses enum IDs from the newest installed boon-data catalog. Downloads the
+    /// latest version if no local catalog is available.
+    /// Emits a row whenever a recorded stat total changes.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn stat_modifier_events(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {

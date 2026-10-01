@@ -6,6 +6,7 @@ import pytest
 from boon import Demo
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+PRIMARY_DEMO = FIXTURES_DIR / "108575009.dem"
 
 ALL_DATASETS = [
     "abilities",
@@ -34,10 +35,8 @@ STREET_BRAWL_DATASETS = ["street_brawl_ticks", "street_brawl_rounds"]
 
 
 def _demo_files() -> list[Path]:
-    """Return all .dem files in the fixtures directory."""
-    if not FIXTURES_DIR.is_dir():
-        return []
-    return sorted(FIXTURES_DIR.glob("*.dem"))
+    """Use the current-format replay for general API tests."""
+    return [PRIMARY_DEMO] if PRIMARY_DEMO.is_file() else []
 
 
 # Session-scoped cache: filename → Demo instance (parsed once, reused everywhere)

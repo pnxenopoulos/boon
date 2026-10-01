@@ -10,21 +10,14 @@ pass. `BOON_TICK_SEGMENTS` forces the segment count (`1` = serial). Skips when n
 
 import pytest
 from boon import Demo
-from conftest import FIXTURES_DIR
+from conftest import _require_demo_fixture
 
 SNAPSHOT_DATASETS = ["player_ticks", "world_ticks", "troopers"]
 
 
-def _fixture() -> str:
-    dems = sorted(FIXTURES_DIR.glob("*.dem")) if FIXTURES_DIR.is_dir() else []
-    if not dems:
-        pytest.skip("No demo fixtures available")
-    return str(dems[0])
-
-
 @pytest.mark.parametrize("dataset", SNAPSHOT_DATASETS)
 def test_parallel_matches_serial(dataset: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    demo_path = _fixture()
+    demo_path = str(_require_demo_fixture())
 
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")
     serial = getattr(Demo(demo_path, preload=False), dataset)
@@ -40,7 +33,7 @@ def test_parallel_matches_serial(dataset: str, monkeypatch: pytest.MonkeyPatch) 
 def test_mixed_load_keeps_snapshots_parallel_and_exact(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    demo_path = _fixture()
+    demo_path = str(_require_demo_fixture())
 
     # Serial reference for both planner groups.
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")

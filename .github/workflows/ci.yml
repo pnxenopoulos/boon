@@ -187,12 +187,11 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     env:
       # Space-separated list of public URLs for demo fixture files.
-      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/70555151/70555151.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem"
+      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/108575009/108575009.dem"
       # Large regression fixtures run on Python 3.13; their tests skip in other jobs.
       REGRESSION_DEMO_URLS: >-
-        https://github.com/pnxenopoulos/boon-fixtures/releases/download/103129247/103129247.dem
+        https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem
         https://github.com/pnxenopoulos/boon-fixtures/releases/download/100655353/100655353.dem
-        https://github.com/pnxenopoulos/boon-fixtures/releases/download/108575009/108575009.dem
 
     steps:
       - name: Checkout
@@ -246,7 +245,7 @@ jobs:
         run: |
           uv run --no-sync pytest benchmarks/test_benchmarks.py -q
           uv run --no-sync python benchmarks/bench_parse.py \
-            --demo tests/fixtures/103129247.dem \
+            --demo tests/fixtures/108575009.dem \
             --case construct --case snapshot/single --case load/combat \
             --repeat 1 --warmup 0 --build-profile debug \
             --output ../../target/benchmarks/ci-smoke.json

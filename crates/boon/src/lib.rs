@@ -107,8 +107,5 @@ pub use modifier_state::{
 };
 pub use patron_phases::{all_patron_phases, patron_phase_name};
 pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
-pub use stat_modifiers::{
-    DecodedStatModifierValue, StatModifierKind, StatModifierTotals, aggregate_stat_modifier_values,
-    decode_stat_modifier_value_type,
-};
+pub use stat_modifiers::{DecodedStatModifierValue, StatModifierKind, StatModifierTypes};
 pub use teams::{all_teams, team_name};

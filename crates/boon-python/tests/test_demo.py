@@ -32,11 +32,6 @@ PLAYER_TICKS_COLUMNS = {
     "in_regen_zone", "in_item_shop",
     "death_time", "last_spawn_time", "respawn_time",
     "health", "max_health", "barrier",
-    "stat_modifier_health", "stat_modifier_spirit_power",
-    "stat_modifier_fire_rate", "stat_modifier_weapon_damage",
-    "stat_modifier_cooldown_reduction", "stat_modifier_ammo",
-    "stat_modifier_bullet_resist", "stat_modifier_spirit_resist",
-    "stat_modifier_values_available", "unknown_stat_modifier_count",
     "lifestate", "souls", "spent_souls",
     "in_combat_end_time", "in_combat_last_damage_time", "in_combat_start_time",
     "player_damage_dealt_end_time", "player_damage_dealt_last_damage_time",
@@ -128,18 +123,8 @@ PLAYERS_COLUMNS = {
 
 BANNED_HEROES_COLUMNS = {"hero_id", "hero_name"}
 
-# Bans are recorded for each match. Thus, each fixture has expected values.
-# Tests apply only schema checks to a demo that is not in this map.
-# Demos `84133142` and `70537442` contain the `BannedHeroes` message.
-# Demo `70555151` uses the same server version as `70537442` but has no bans.
-# This empty result is a valid match state. It does not identify an unsupported
-# build.
-EXPECTED_BANS = {
-    "84133142.dem": [69, 63],
-    "70537442.dem": [2, 69],
-    "70555151.dem": [],
-    "94366136.dem": [],
-}
+# The primary replay has no recorded bans.
+EXPECTED_BANS = {"108575009.dem": []}
 
 # Maps dataset name -> expected column set for parameterized tests.
 DATASET_COLUMNS = {

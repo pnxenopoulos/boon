@@ -6,8 +6,8 @@ The names come from `modifiers.json` in the selected boon-data version.
 ```python
 from boon import Demo
 
-demo = Demo("106996573.dem", preload=False)
-states = demo.player_states(data_version="6694", ticks=[50707])
+demo = Demo("108575009.dem", preload=False)
+states = demo.player_states(data_version="6712", ticks=[187554])
 print(states.select("tick", "steam_id", "hero_id", "states"))
 ```
 
@@ -25,15 +25,15 @@ selects several. Boon sorts the selection and removes duplicate ticks. Negative
 or absent ticks cause an error. An empty tick or Steam ID list returns no rows.
 
 ```python
-venator = demo.player_states(
-    data_version="6694",
-    ticks=50707,
-    steam_ids=[76561197999389679],  # This player in 106996573.dem.
+mcginnis = demo.player_states(
+    data_version="6712",
+    ticks=187554,
+    steam_ids=[76561198037652386],  # This player in 108575009.dem.
 )
 
 # All ticks for this player.
 all_ticks = demo.player_states(
-    data_version="6694", steam_ids=[76561197999389679]
+    data_version="6712", steam_ids=[76561198037652386]
 )
 ```
 
@@ -84,7 +84,7 @@ fixed Python enum or a selector argument. Examples include `SPRINTING`,
 import json
 from boon import data
 
-catalog = json.loads(data.catalog_path("modifiers", "6694").read_text(encoding="utf-8"))
+catalog = json.loads(data.catalog_path("modifiers", "6712").read_text(encoding="utf-8"))
 state_names = sorted(
     name.removeprefix("MODIFIER_STATE_")
     for name in catalog["modifier_states"].values()
@@ -109,9 +109,8 @@ or stat equations. For example, `SLOWED` does not give a slow percentage.
 These flags do not change the calculated move-speed or sprint-speed stats.
 `INFINITE_CLIP` does not change the reported magazine capacity.
 
-A defined flag can stay unset in a replay. In `106996573.dem`, no hero has
-`IN_COMBAT_BULLET_HIT` set, although the demo contains bullet damage. Do not use
-that flag alone to count hits.
+A defined flag can stay unset in a replay. Do not use `IN_COMBAT_BULLET_HIT`
+alone to count hits.
 
 ## Rust
 
@@ -123,11 +122,11 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("106996573.dem"))?;
-    let catalog = StateCatalog::load("6694")?;
+    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let catalog = StateCatalog::load("6712")?;
     let query = PlayerStateQuery::default()
-        .ticks([50707])
-        .steam_ids([76561197999389679]);
+        .ticks([187554])
+        .steam_ids([76561198037652386]);
     let rows = parser.player_states(&query, &catalog)?;
     println!("{rows:?}");
     Ok(())

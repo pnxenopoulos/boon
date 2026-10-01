@@ -39,8 +39,7 @@ Ammo capacity does not return rounds left in the gun. It stays finite during a
 slide or another unlimited-ammo effect.
 
 Use the tick passed to `demo_gototick` for `ticks`. The pause message can show a
-server tick instead. In `106996573.dem`, command tick 49000 corresponds to server
-tick 50706. Do not use the pause message's number as the query tick.
+server tick instead. Do not use the pause message's number as the query tick.
 
 Modifier calculations replay packet changes from the start. Relay keyframes can
 contain future modifier state. A multi-tick query shares this replay pass.
@@ -74,11 +73,11 @@ Use `AbilityStat` with [ability stat queries](ability-stats.md).
 ```python
 from boon import Demo, HeroStat, StatMode
 
-version = "6694"  # Select the client version for your demo.
-demo = Demo("106996573.dem", preload=False)
+version = "6712"  # Select the client version for your demo.
+demo = Demo("108575009.dem", preload=False)
 result = demo.calculate_hero_stats(
-    ticks=[50707, 50800],
-    steam_ids=[76561197999389679],  # Venator in this demo.
+    ticks=[187554, 187600],
+    steam_ids=[76561198037652386],  # McGinnis in this demo.
     data_version=version,
     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
     mode=StatMode.CURRENT,  # Default; use BASELINE for passive and permanent inputs.
@@ -212,8 +211,8 @@ are outside this global percentage.
 
 ```python
 result = demo.calculate_hero_stats(
-    ticks=50707,
-    data_version="6694",  # Select the catalog version for your replay.
+    ticks=187554,
+    data_version="6712",  # Select the catalog version for your replay.
     stats=[HeroStat.WEAPON_DAMAGE],
     explain=True,
     strict=False,
@@ -260,15 +259,12 @@ Percent inputs use percentage points: `19` means +19%. For base ammo 20,
 flat ammo 10, and bonuses of 15% and 4%, the result is 36 rounds.
 
 Boon uses the hero's primary weapon reference to read its ability record.
-Weapon fields come from `m_mapWeaponInfos.primary`, or `m_WeaponInfo` in older
-catalogs. Contribution paths show the source used. Boon does not select an
+Weapon fields come from `m_mapWeaponInfos.primary`. Contribution paths show the source used. Boon does not select an
 alternate weapon when the primary definition is absent. It resolves
 owned item and ability properties, upgrades, and effective modifier instances.
 It counts bound properties through their modifier and does not add them again
 from the item. Expired modifiers and modifiers outside their aura do not apply.
-Modifier timers use pawn simulation time minus accumulated pause time. If pawn
-simulation time is absent, Boon uses `m_nTickBase` from player controllers with
-hero pawns. It multiplies ticks by the replay's tick interval, then subtracts
+Modifier timers use `m_nTickBase` from player controllers with hero pawns. It multiplies ticks by the replay's tick interval, then subtracts
 accumulated pause time. Spectator controllers do not supply this clock.
 
 Permanent bonuses and corruption penalties come from the replay's stat-viewer
@@ -337,9 +333,7 @@ boon-data. Range bonuses use `MODIFIER_VALUE_BONUS_ATTACK_RANGE_PERCENT` and the
 shared item, modifier, and upgrade resolver. Bound bonuses count once, only while
 their modifier is effective. No hero distances or item bonus values are stored in code.
 
-No final player falloff endpoints were found in the serializers of the inspected
-replay, `106996573.dem`. These results are calculated from the catalog and replay
-state. The equal scaling of both endpoints is a model to verify in the demo viewer;
+Boon calculates these endpoints from the catalog and replay state. The equal scaling of both endpoints is a model to verify in the demo viewer;
 VData does not supply the engine equation. V1 accepts no bonus or one nonzero bonus.
 Multiple nonzero bonuses remain unresolved until their stacking rule is verified.
 
@@ -605,8 +599,8 @@ row with source `replay/player_pawn` and definition path `m_flGravityScale`.
 
 ```python
 result = demo.calculate_hero_stats(
-    ticks=[50707, 64500],
-    data_version="6694",  # Select the catalog for your demo.
+    ticks=[187554, 187800],
+    data_version="6712",  # Select the catalog for your demo.
     stats=[
         HeroStat.STAMINA, HeroStat.STAMINA_COOLDOWN,
         HeroStat.DASH_SPEED, HeroStat.DASH_DURATION,
@@ -691,8 +685,8 @@ the source path. Active effects also include their modifier serial.
 
 ```python
 result = demo.calculate_hero_stats(
-    ticks=50707,
-    data_version="6694",  # Select the catalog for your demo.
+    ticks=187554,
+    data_version="6712",  # Select the catalog for your demo.
     stats=[HeroStat.MOVE_SPEED, HeroStat.SPRINT_SPEED],
     explain=True,
     strict=False,
@@ -814,8 +808,8 @@ hero-specific bindings are added for this stat.
 
 ```python
 result = demo.calculate_hero_stats(
-    ticks=50707,
-    data_version="6694",  # Select an installed version from boon versions.
+    ticks=187554,
+    data_version="6712",  # Select an installed version from boon versions.
     stats=[HeroStat.DEBUFF_RESIST],
     explain=True,
 )
@@ -872,8 +866,8 @@ scaling, or caster state remains unresolved.
 
 ```python
 result = demo.calculate_hero_stats(
-    ticks=50707,
-    data_version="6694",  # Select the version for the replay.
+    ticks=187554,
+    data_version="6712",  # Select the version for the replay.
     stats=[HeroStat.BULLET_RESIST, HeroStat.SPIRIT_RESIST, HeroStat.MELEE_RESIST],
     strict=False,
     explain=True,
@@ -928,8 +922,8 @@ melee lifesteal, even when the item name includes that term.
 
 ```python
 result = demo.calculate_hero_stats(
-    ticks=50707,
-    data_version="6694",  # Select the version for the replay.
+    ticks=187554,
+    data_version="6712",  # Select the version for the replay.
     stats=[
         HeroStat.BULLET_LIFESTEAL,
         HeroStat.SPIRIT_LIFESTEAL,
@@ -980,13 +974,13 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("106996573.dem"))?;
-    let catalog = StatCatalog::load("6694")?;
+    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let catalog = StatCatalog::load("6712")?;
     let query = HeroStatQuery::new(
-        [50707, 50800],
+        [187554, 187600],
         [HeroStat::ClipSize, HeroStat::FireRate],
     )
-    .steam_ids([76561197999389679])
+    .steam_ids([76561198037652386])
     .mode(StatMode::Current)
     .explain(true)
     .strict(false);

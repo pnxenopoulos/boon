@@ -755,10 +755,6 @@ Barrier values come from recorded packet changes. The first player snapshot
 query builds a cached barrier history. Direct seeks and full passes use this
 same history. Later queries reuse it. No boon-data version is needed for barriers.
 
-The `stat_modifier_*` columns are signed sums of known entries in the
-controller's `m_vecStatViewerModifierValues` vector. They do not include base
-hero stats or all temporary effects. Do not use them as final or effective stats.
-
 **Player fields** (from the player pawn and controller):
 
 | Column | Type | Description |
@@ -781,16 +777,6 @@ hero stats or all temporary effects. Do not use them as final or effective stats
 | `health` | `int` | Current health |
 | `max_health` | `int` | Maximum health |
 | `barrier` | `float` | Current barrier remaining; `0.0` when no tracker is present |
-| `stat_modifier_health` | `float` | Observed health modifier total |
-| `stat_modifier_spirit_power` | `float` | Observed spirit-power modifier total |
-| `stat_modifier_fire_rate` | `float` | Observed fire-rate modifier total |
-| `stat_modifier_weapon_damage` | `float` | Observed weapon-damage modifier total |
-| `stat_modifier_cooldown_reduction` | `float` | Observed cooldown-reduction modifier total |
-| `stat_modifier_ammo` | `float` | Observed ammo modifier total |
-| `stat_modifier_bullet_resist` | `float` | Observed bullet-resistance modifier total |
-| `stat_modifier_spirit_resist` | `float` | Observed spirit-resistance modifier total |
-| `stat_modifier_values_available` | `bool` | The demo serializer contains the stat-viewer vector |
-| `unknown_stat_modifier_count` | `int` | Vector entries with an unknown nonzero value type |
 | `lifestate` | `int` | Life state value (use `lifestate_names()` to resolve) |
 | `souls` | `int` | Current souls (currency) |
 | `spent_souls` | `int` | Total spent souls |
@@ -880,7 +866,7 @@ Damage events. Preloaded during construction unless `preload=False`.
 | `tick` | `int` | The enclosing demo command tick |
 | `damage` | `int` | The damage dealt |
 | `pre_damage` | `float` | The damage before mitigation |
-| `damage_absorbed` | `float` or null | Recorded absorption; legacy integer fallback when the float field is absent |
+| `damage_absorbed` | `float` or null | Recorded absorption; null when absent |
 | `victim_shield_new` | `int` or null | Remaining shield after the hit |
 | `victim_shield_max` | `int` or null | Shield capacity |
 | `server_tick` | `int` or null | Server tick recorded in the damage message |
@@ -1233,6 +1219,10 @@ demo.stat_modifier_events  # polars.DataFrame
 ```
 
 Permanent stat bonus changes from urn and breakable pickups. Boon emits a row when a stat total changes.
+
+Types come from the newest installed boon-data catalog. If no catalog is
+installed, Boon downloads the latest version. Use a catalog for the replay's
+client version. Numeric enum IDs can change between versions.
 
 Not loaded by default. Access this property or call `load("stat_modifier_events")` explicitly.
 

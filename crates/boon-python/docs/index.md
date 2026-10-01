@@ -2,6 +2,10 @@
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. The Rust core has native Python bindings. Boon reads Source 2 `.dem` files and returns [Polars](https://pola.rs) DataFrames.
 
+**Demo compatibility:** Use Boon **0.10.0 or earlier** for demos recorded before the **City Never
+Sleeps** update (**September 29, 2026**). Use Boon **0.11.0 or later** for
+demos recorded with that update.
+
 ## Get started
 
 Install with `uv add boon-deadlock` or `pip install boon-deadlock`.
