@@ -8,6 +8,7 @@ pass. `BOON_TICK_SEGMENTS` forces the segment count (`1` = serial). Skips when n
 `.dem` fixture is present.
 """
 
+import polars as pl
 import pytest
 from boon import Demo
 from conftest import _require_demo_fixture
@@ -15,12 +16,24 @@ from conftest import _require_demo_fixture
 SNAPSHOT_DATASETS = ["player_ticks", "world_ticks", "troopers"]
 
 
-@pytest.mark.parametrize("dataset", SNAPSHOT_DATASETS)
-def test_parallel_matches_serial(dataset: str, monkeypatch: pytest.MonkeyPatch) -> None:
-    demo_path = str(_require_demo_fixture())
+@pytest.fixture(scope="module")
+def serial_frames() -> dict[str, pl.DataFrame]:
+    """Decode the serial reference once; parallel checks use fresh parsers."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("BOON_TICK_SEGMENTS", "1")
+        serial = Demo(str(_require_demo_fixture()), preload=False)
+        serial.load(*SNAPSHOT_DATASETS, "kills")
+    return {name: getattr(serial, name) for name in (*SNAPSHOT_DATASETS, "kills")}
 
-    monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")
-    serial = getattr(Demo(demo_path, preload=False), dataset)
+
+@pytest.mark.parametrize("dataset", SNAPSHOT_DATASETS)
+def test_parallel_matches_serial(
+    dataset: str,
+    serial_frames: dict[str, pl.DataFrame],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    demo_path = str(_require_demo_fixture())
+    serial = serial_frames[dataset]
 
     monkeypatch.setenv("BOON_TICK_SEGMENTS", "4")
     parallel = getattr(Demo(demo_path, preload=False), dataset)
@@ -31,14 +44,10 @@ def test_parallel_matches_serial(dataset: str, monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_mixed_load_keeps_snapshots_parallel_and_exact(
+    serial_frames: dict[str, pl.DataFrame],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     demo_path = str(_require_demo_fixture())
-
-    # Serial reference for both planner groups.
-    monkeypatch.setenv("BOON_TICK_SEGMENTS", "1")
-    serial = Demo(demo_path, preload=False)
-    serial.load(*SNAPSHOT_DATASETS, "kills")
 
     # A mixed request must keep the snapshots on their parallel segmented path
     # while kills uses the filtered event/entity pass.
@@ -47,5 +56,5 @@ def test_mixed_load_keeps_snapshots_parallel_and_exact(
     mixed.load(*SNAPSHOT_DATASETS, "kills")
 
     for ds in SNAPSHOT_DATASETS:
-        assert getattr(serial, ds).equals(getattr(mixed, ds)), ds
-    assert serial.kills.equals(mixed.kills)
+        assert serial_frames[ds].equals(getattr(mixed, ds)), ds
+    assert serial_frames["kills"].equals(mixed.kills)

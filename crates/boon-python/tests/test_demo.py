@@ -931,7 +931,7 @@ class TestBulkLoad:
     )
     def test_load_invalid_dataset_raises(self, dataset: str) -> None:
         path = _require_demo_fixture()
-        d = Demo(str(path))
+        d = Demo(str(path), preload=False)
         with pytest.raises(ValueError, match="Unknown dataset"):
             d.load(dataset)
 

@@ -8,20 +8,12 @@ present.
 
 import random
 
-import pytest
 from boon import Demo
-from conftest import FIXTURES_DIR
-
-
-def _fixture_bytes() -> bytes:
-    dems = sorted(FIXTURES_DIR.glob("*.dem")) if FIXTURES_DIR.is_dir() else []
-    if not dems:
-        pytest.skip("No demo fixtures available")
-    return dems[0].read_bytes()
+from conftest import _require_demo_fixture
 
 
 def test_corrupt_and_truncated_demos_never_panic(tmp_path) -> None:
-    data = _fixture_bytes()
+    data = _require_demo_fixture().read_bytes()
     path = tmp_path / "corrupt.dem"
     rng = random.Random(0)
 

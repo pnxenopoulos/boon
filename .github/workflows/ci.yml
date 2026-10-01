@@ -190,7 +190,7 @@ jobs:
       DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/108575009/108575009.dem"
       # Large regression fixtures run on Python 3.13; their tests skip in other jobs.
       REGRESSION_DEMO_URLS: >-
-        https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem
+        https://github.com/pnxenopoulos/boon-fixtures/releases/download/109108139/109108139.dem
         https://github.com/pnxenopoulos/boon-fixtures/releases/download/100655353/100655353.dem
 
     steps:

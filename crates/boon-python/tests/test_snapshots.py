@@ -10,20 +10,13 @@ import threading
 import polars as pl
 import pytest
 from boon import Demo
-from conftest import FIXTURES_DIR
+from conftest import _require_demo_fixture
 from polars.testing import assert_frame_equal
-
-
-def _fixture() -> str:
-    dems = sorted(FIXTURES_DIR.glob("*.dem")) if FIXTURES_DIR.is_dir() else []
-    if not dems:
-        pytest.skip("No demo fixtures available")
-    return str(dems[0])
 
 
 @pytest.fixture(scope="module")
 def demo() -> Demo:
-    return Demo(_fixture(), preload=False)
+    return Demo(str(_require_demo_fixture()), preload=False)
 
 
 def test_specific_ticks_match_full_frame(demo: Demo) -> None:
@@ -45,7 +38,7 @@ def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> N
     expected = full.filter(pl.col("tick").is_in(ticks)).sort(
         ["tick", "steam_id", "hero_id"]
     )
-    direct = Demo(_fixture(), preload=False)
+    direct = Demo(str(_require_demo_fixture()), preload=False)
     for tick in ticks:
         snapshot = direct.snapshots(ticks=tick)
         assert isinstance(snapshot, pl.DataFrame)
@@ -56,7 +49,7 @@ def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> N
     for segments in (1, 4):
         monkeypatch.setenv("BOON_TICK_SEGMENTS", str(segments))
         # A window selects the full-pass path, even for a short fixture.
-        sampled = Demo(_fixture(), preload=False).snapshots(
+        sampled = Demo(str(_require_demo_fixture()), preload=False).snapshots(
             start_tick=ticks[0], end_tick=ticks[-1]
         )
         assert isinstance(sampled, pl.DataFrame)
@@ -130,11 +123,11 @@ def test_message_only_event_ticks_match_loaded_datasets() -> None:
         "item_purchases",
         "chat",
     ]
-    direct_demo = Demo(_fixture(), preload=False)
+    direct_demo = Demo(str(_require_demo_fixture()), preload=False)
     direct = direct_demo.snapshots(events=events)
     assert isinstance(direct, pl.DataFrame)
 
-    loaded_demo = Demo(_fixture(), preload=False)
+    loaded_demo = Demo(str(_require_demo_fixture()), preload=False)
     loaded_demo.load(*events)
     loaded = loaded_demo.snapshots(events=events)
     assert isinstance(loaded, pl.DataFrame)
@@ -170,7 +163,7 @@ def test_validation(demo: Demo) -> None:
 def test_event_selection_rejects_unknown_names_consistently(
     cached: bool, dataset: str
 ) -> None:
-    parsed = Demo(_fixture(), preload=False)
+    parsed = Demo(str(_require_demo_fixture()), preload=False)
     if cached:
         parsed.load("kills")
     with pytest.raises(ValueError, match="Unknown dataset"):
@@ -187,7 +180,7 @@ def test_duplicate_snapshot_names_preserve_return_shape(demo: Demo) -> None:
 
 
 def test_snapshots_release_gil() -> None:
-    parsed = Demo(_fixture(), preload=False)
+    parsed = Demo(str(_require_demo_fixture()), preload=False)
     ready = threading.Event()
     stop = threading.Event()
     progress = [0]

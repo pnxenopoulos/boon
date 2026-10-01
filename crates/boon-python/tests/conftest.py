@@ -31,8 +31,6 @@ ALL_DATASETS = [
     "world_ticks",
 ]
 
-STREET_BRAWL_DATASETS = ["street_brawl_ticks", "street_brawl_rounds"]
-
 
 def _demo_files() -> list[Path]:
     """Use the current-format replay for general API tests."""
@@ -48,10 +46,7 @@ def get_demo(path: Path) -> Demo:
     key = path.name
     if key not in _demo_cache:
         d = Demo(str(path), preload=False)
-        datasets = list(ALL_DATASETS)
-        if d.game_mode == 4:
-            datasets.extend(STREET_BRAWL_DATASETS)
-        d.load(*datasets)
+        d.load(*ALL_DATASETS)
         _demo_cache[key] = d
     return _demo_cache[key]
 
