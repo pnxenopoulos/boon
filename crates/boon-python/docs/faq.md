@@ -34,9 +34,9 @@ GOTV recordings do not always include all player pawns. Boon can return data onl
 
 ## Are old demos supported?
 
-Use Boon **0.10.0 or earlier** for demos recorded before the **City Never
-Sleeps** update (**September 29, 2026**). Use Boon **0.11.0 or later** for
-demos recorded with that update.
+Use Boon **0.10.0 or earlier** for demos recorded before
+the **City Never Sleeps** update (**September 29, 2026**).
+Use Boon **0.11.0 or later** for demos recorded with that update or later.
 
 ## What is `trooper_boss`?
 
