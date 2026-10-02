@@ -37,20 +37,6 @@ def _demo_files() -> list[Path]:
     return [PRIMARY_DEMO] if PRIMARY_DEMO.is_file() else []
 
 
-# Session-scoped cache: filename → Demo instance (parsed once, reused everywhere)
-_demo_cache: dict[str, Demo] = {}
-
-
-def get_demo(path: Path) -> Demo:
-    """Get or create a fully-loaded Demo instance, cached for the session."""
-    key = path.name
-    if key not in _demo_cache:
-        d = Demo(str(path), preload=False)
-        d.load(*ALL_DATASETS)
-        _demo_cache[key] = d
-    return _demo_cache[key]
-
-
 @pytest.fixture(scope="session")
 def demo_paths() -> list[Path]:
     """List of all .dem fixture file paths."""
@@ -59,12 +45,13 @@ def demo_paths() -> list[Path]:
 
 @pytest.fixture(scope="session", params=_demo_files(), ids=lambda p: p.name)
 def demo(request: pytest.FixtureRequest) -> Demo:
-    """Yield a fully-loaded Demo instance for each fixture file.
+    """Share loaded replay data for read-only assertions.
 
-    All datasets are loaded together in compatible parser passes so that
-    individual tests only check cached DataFrames.
+    Tests that check parsing, caches, or decoder settings use fresh Demo instances.
     """
-    return get_demo(request.param)
+    parsed = Demo(str(request.param), preload=False)
+    parsed.load(*ALL_DATASETS)
+    return parsed
 
 
 def _require_demo_fixture() -> Path:
@@ -76,7 +63,7 @@ def _require_demo_fixture() -> Path:
 
 
 @pytest.fixture(scope="session")
-def name_catalog_cache(tmp_path_factory):
+def name_catalog_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A verified catalog installation isolates replay tests from GitHub and user data."""
     import json
 
@@ -95,7 +82,7 @@ def name_catalog_cache(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def offline_catalogs(monkeypatch, name_catalog_cache):
+def offline_catalogs(monkeypatch: pytest.MonkeyPatch, name_catalog_cache: Path) -> None:
     from boon import data
 
     monkeypatch.setattr(data, "BOON_DATA_DIR", name_catalog_cache)

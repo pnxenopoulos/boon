@@ -7,9 +7,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 from boon import Demo, data
-from conftest import FIXTURES_DIR, get_demo
 
-FIXTURE_PATH = FIXTURES_DIR / "108575009.dem"
 TICK = 187554
 MCGINNIS = 76561198037652386
 KELVIN = 76561198055516822
@@ -17,13 +15,6 @@ PAIGE = 76561198295494515
 SCOREBOARD = json.loads(
     Path(__file__).with_name("108575009-scoreboard.json").read_text()
 )
-
-
-@pytest.fixture(scope="module")
-def demo() -> Demo:
-    if not FIXTURE_PATH.exists():
-        pytest.skip("108575009.dem fixture not available")
-    return get_demo(FIXTURE_PATH)
 
 
 @pytest.fixture(scope="module")
@@ -37,9 +28,14 @@ def fight(demo: Demo) -> pl.DataFrame:
 def final_players(demo: Demo) -> pl.DataFrame:
     # Pawns can disappear after death. Retain each player's last recorded row,
     # including the post-game interval, rather than require a pawn at game over.
-    frame = demo.snapshots(every=64)
-    assert isinstance(frame, pl.DataFrame)
-    return frame.sort("tick").group_by("steam_id").last()
+    return (
+        demo.player_ticks.select(
+            "tick", "steam_id", "kills", "deaths", "assists", "objective_damage"
+        )
+        .sort("tick")
+        .group_by("steam_id")
+        .last()
+    )
 
 
 @pytest.fixture(scope="module")

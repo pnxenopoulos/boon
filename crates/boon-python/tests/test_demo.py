@@ -565,18 +565,18 @@ class TestActiveModifiers:
         if len(am) == 0:
             pytest.skip("no modifier events in this demo")
         assert am["serial"].gt(0).all(ignore_nulls=False)
-        for _, grp in am.group_by(["hero_id", "serial"], maintain_order=True):
-            active = False
-            for event in grp["event"]:
-                if event == "applied":
-                    assert not active
-                    active = True
-                elif event == "changed":
-                    assert active
-                else:
-                    assert event == "removed"
-                    assert active
-                    active = False
+        active = set()
+        for hero_id, serial, event in am.select("hero_id", "serial", "event").iter_rows():
+            key = (hero_id, serial)
+            if event == "applied":
+                assert key not in active
+                active.add(key)
+            elif event == "changed":
+                assert key in active
+            else:
+                assert event == "removed"
+                assert key in active
+                active.remove(key)
 
     def test_no_restamp_reapplication_bursts(self, demo: Demo) -> None:
         """No tick re-applies modifiers the heroes already have across the roster.

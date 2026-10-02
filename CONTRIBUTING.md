@@ -228,6 +228,14 @@ done
 
 Tests that require a missing fixture are skipped automatically.
 
+Pytest manages the shared replay through a session fixture. Use shared replay
+and reference frames for read-only checks. Do not keep a separate global cache.
+Use a fresh `Demo` when a test checks parsing, caches, or decoder settings.
+
+Use function-scoped `monkeypatch` for temporary settings and `tmp_path` for mutable
+files. Use `tmp_path_factory` for catalog files shared by module or session fixtures.
+Keep fixture dependencies explicit. Do not call fixture functions directly.
+
 ### Adding a new fixture
 
 1. Place the `.dem` file in `crates/boon-python/tests/fixtures/` locally.
@@ -250,7 +258,9 @@ FIXTURE_PATH = FIXTURES_DIR / "<match_id>.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("<match_id>.dem fixture not available")
-    return get_demo(FIXTURE_PATH)
+    replay = Demo(str(FIXTURE_PATH), preload=False)
+    replay.load("chat", "item_purchases")  # Load only the datasets these tests need.
+    return replay
 ```
 
 4. Update CI to download the new fixture.

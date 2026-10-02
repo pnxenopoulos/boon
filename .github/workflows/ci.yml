@@ -237,13 +237,13 @@ jobs:
 
       - name: Run pytest
         working-directory: crates/boon-python
-        run: uv run --no-sync pytest tests/ -v
+        run: uv run --no-sync pytest tests/ -v --durations=10
 
       - name: Benchmark harness checks
         if: matrix.python-version == '3.13'
         working-directory: crates/boon-python
         run: |
-          uv run --no-sync pytest benchmarks/test_benchmarks.py -q
+          uv run --no-sync pytest benchmarks/test_benchmarks.py -q --durations=10
           uv run --no-sync python benchmarks/bench_parse.py \
             --demo tests/fixtures/108575009.dem \
             --case construct --case snapshot/single --case load/combat \

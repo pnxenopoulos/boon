@@ -12,7 +12,7 @@ FIXTURE_PATH = FIXTURES_DIR / "100655353.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("100655353.dem fixture not available")
-    replay = Demo(str(FIXTURE_PATH))
+    replay = Demo(str(FIXTURE_PATH), preload=False)
     replay.load("chat", "item_purchases")
     return replay
 

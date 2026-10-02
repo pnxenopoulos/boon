@@ -150,15 +150,17 @@ def test_native_steam_selection_and_imbue_identity(demo: Demo, tmp_path, monkeyp
     assert selected.effects.equals(
         all_imbues.effects.filter(pl.col("steam_id") == steam_id)
     )
+    # Selection validation does not require a mid-match replay pass.
+    first_tick = ticks[0]
     for function in (demo.imbues, demo.calculate_ability_stats):
         with pytest.raises(CalculationError, match="Steam ID 1 has no hero"):
-            function(ticks=tick, steam_ids=[1], data_version="1234")
+            function(ticks=first_tick, steam_ids=[1], data_version="1234")
     assert demo.imbues(
-        ticks=tick, steam_ids=[], data_version="1234"
+        ticks=first_tick, steam_ids=[], data_version="1234"
     ).bindings.is_empty()
     for mode in StatMode:
         result = demo.calculate_ability_stats(
-            ticks=tick,
+            ticks=first_tick,
             steam_ids=[],
             data_version="1234",
             mode=mode,
