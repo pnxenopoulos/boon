@@ -733,28 +733,24 @@ sprint ramp-up do not change these nominal values.
 ### Equations
 
 ```text
-move_bonus = 12 * (1 - product(1 - each_move_bonus / 12))
+move_bonus = sum(flat_move_adjustments)
 move_speed = (base_move_speed + move_bonus) * (1 + move_percent / 100)
 sprint_speed = base_sprint_speed + sum(sprint_bonuses)
 full_sprint_speed = move_speed + sprint_speed
 ```
 
-The constant 12 comes from the supplied movement equation. It belongs to the
-versioned rule. It is not a hero or item balance amount. Flat movement bonuses
-remain separate inputs; Boon does not sum them before this equation. For example,
-+2 and +3 m/s give +4.5 m/s. Sprint bonuses add without this reduction.
+Flat movement bonuses and penalties add. For example, +2 and +3 m/s give
++5 m/s. Sprint bonuses also add. Each source remains in the contribution table.
 
 For example, a hero has base movement of 6.4 m/s and base sprint of 1.6 m/s.
-Movement bonuses of +2 and +3 give 10.9 m/s movement speed.
+Movement bonuses of +2 and +3 give 11.4 m/s movement speed.
 Sprint bonuses of +2 and +1.5 give 5.1 m/s additional sprint speed.
-The full sprint speed is 16 m/s. Values are not rounded.
+The full sprint speed is 16.5 m/s. Values are not rounded.
 
 V1 accepts at most one nonzero movement percentage. It applies to the movement
-component, including flat bonuses, and does not multiply the sprint component.
-V1 supports a single flat movement penalty. The interaction of a penalty with
-other flat adjustments is not verified and remains unresolved. Flat bonuses above
-12 m/s, multiple movement percentages, and nonfinite or negative final values
-also remain unresolved. Boon does not clamp these to an invented value.
+component, including flat adjustments, and does not multiply the sprint component.
+Multiple movement percentages, nonfinite inputs, overflow, and negative final
+values remain unresolved. Boon does not clamp these values.
 
 ### Catalog inputs and coverage
 

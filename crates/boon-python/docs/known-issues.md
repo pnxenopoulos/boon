@@ -208,9 +208,8 @@ They do not simulate firing, crouching, slows, speed limits, sprint eligibility,
 acceleration, or sprint ramp-up. `player_states()` reports recorded state flags
 separately. Those flags do not adjust the calculated speeds.
 
-V1 does not combine multiple movement percentages or flat movement penalties
-with other flat adjustments. It does not extrapolate the diminishing-return rule
-for a single flat bonus above 12 m/s. These cases remain unresolved.
+V1 adds flat movement bonuses and penalties. It does not combine multiple
+movement percentages. That case remains unresolved.
 
 Older catalogs omit Trophy Collector's per-stack sprint binding. These catalogs
 produce partial rows. New catalogs declare the link to the ability entity's

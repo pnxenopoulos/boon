@@ -32,7 +32,7 @@ mod tests {
     fn sprint_bonuses_add_without_diminishing_returns() {
         assert!((calculate(1.6, 2.0 + 5.0).unwrap() - 8.6).abs() < 1e-12);
         let movement = super::super::move_speed::calculate(6.4, [2.0, 3.0], 0.0).unwrap();
-        assert!((movement + calculate(1.6, 2.0 + 1.5).unwrap() - 16.0).abs() < 1e-12);
+        assert!((movement + calculate(1.6, 2.0 + 1.5).unwrap() - 16.5).abs() < 1e-12);
         assert_eq!(calculate(1.0, -1.0).unwrap(), 0.0);
         for (base, bonus) in [
             (f64::NAN, 0.0),

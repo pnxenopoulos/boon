@@ -884,7 +884,7 @@ fn movement_uses_each_bound_bonus_and_normalizes_units() {
     std::fs::write(&modifier_path, serde_json::to_vec(&modifiers).unwrap()).unwrap();
     let catalog = StatCatalog::from_directory(folder.path()).unwrap();
     for (stat, base, expected) in [
-        (HeroStat::MoveSpeed, 6.4, 10.9),
+        (HeroStat::MoveSpeed, 6.4, 11.4),
         (HeroStat::SprintSpeed, 1.6, 5.1),
     ] {
         assert_eq!(stat_result(&catalog, false, stat).0.unwrap(), base);
@@ -901,7 +901,7 @@ fn movement_uses_each_bound_bonus_and_normalizes_units() {
     }));
     std::fs::write(&modifier_path, serde_json::to_vec(&modifiers).unwrap()).unwrap();
     let catalog = StatCatalog::from_directory(folder.path()).unwrap();
-    assert!((stat_result(&catalog, true, HeroStat::MoveSpeed).0.unwrap() - 18.53).abs() < 1e-12);
+    assert!((stat_result(&catalog, true, HeroStat::MoveSpeed).0.unwrap() - 19.38).abs() < 1e-12);
     assert!(
         (stat_result(&catalog, true, HeroStat::SprintSpeed)
             .0
