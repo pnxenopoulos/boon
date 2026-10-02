@@ -23439,6 +23439,12 @@ pub struct CCitadelUserMsgHudGameAnnouncement {
     pub duration_override: ::core::option::Option<f32>,
     #[prost(string, optional, tag = "7")]
     pub snippet_panel: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, repeated, tag = "8")]
+    pub dialog_variable_int_name: ::prost::alloc::vec::Vec<
+        ::prost::alloc::string::String,
+    >,
+    #[prost(int32, repeated, packed = "false", tag = "9")]
+    pub dialog_variable_int_value: ::prost::alloc::vec::Vec<i32>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
@@ -28793,9 +28799,9 @@ pub struct CUserMessageSendAudio {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct CUserMessageAudioParameter {
-    #[prost(uint32, optional, tag = "1")]
+    #[prost(uint32, optional, tag = "1", default = "0")]
     pub parameter_type: ::core::option::Option<u32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub value: ::core::option::Option<f32>,
@@ -29601,7 +29607,7 @@ pub struct CUserMessageHapticsManagerPulse {
 pub struct CUserMessageHapticsManagerEffect {
     #[prost(int32, optional, tag = "1")]
     pub hand_id: ::core::option::Option<i32>,
-    #[prost(uint32, optional, tag = "2")]
+    #[prost(uint32, optional, tag = "2", default = "0")]
     pub effect_name_hash_code: ::core::option::Option<u32>,
     #[prost(float, optional, tag = "3")]
     pub effect_scale: ::core::option::Option<f32>,
