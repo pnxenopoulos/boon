@@ -68,6 +68,7 @@ def test_downloads_all_json_files_and_reuses_them_offline(upstream):
     assert data.update(VERSION) == directory
     assert data.catalog_path("abilities") == directory / "abilities.json"
     assert data.catalog_path("heroes.json", VERSION) == directory / "heroes.json"
+    assert data.catalog_path("misc", VERSION) == directory / "misc.json"
     assert data.local_versions()[0]["released_at"] == PUBLISHED
     assert len(upstream["requests"]) == before
 
@@ -197,7 +198,7 @@ def test_invalid_index_is_rejected_before_asset_download(upstream, damage):
 
 
 @pytest.mark.parametrize(
-    "damage", ["source", "snapshot", "origin", "artifact", "checksum"]
+    "damage", ["source", "snapshot", "origin", "heroes.json", "misc.json", "checksum"]
 )
 def test_manifest_is_checked_even_when_download_matches_index(upstream, damage):
     manifest = json.loads(
@@ -209,12 +210,13 @@ def test_manifest_is_checked_even_when_download_matches_index(upstream, damage):
         manifest["release_key"] = "6699"
     elif damage == "origin":
         manifest["client_version"] = "6699"
-    elif damage == "artifact":
-        del manifest["artifacts"]["heroes.json"]
+    elif damage in {"heroes.json", "misc.json"}:
+        del manifest["artifacts"][damage]
     else:
         manifest["artifacts"]["heroes.json"]["sha256"] = "0" * 64
     replace_manifest(upstream, manifest)
-    with pytest.raises(data.DataError):
+    match = "every catalog" if damage in {"heroes.json", "misc.json"} else None
+    with pytest.raises(data.DataError, match=match):
         data.update(VERSION)
     assert data.local_versions() == []
 
@@ -305,6 +307,8 @@ def test_offline_versions_and_explicit_get_use_local_receipt(upstream):
         if args[0] == "versions":
             assert VERSION_DATE in result.stdout and VERSION_TIME in result.stdout
             assert "Released at" not in result.stdout and PUBLISHED not in result.stdout
+        else:
+            assert "5 JSON files" in result.stdout
     assert len(upstream["requests"]) == before
     result = runner.invoke(app, ["get"])
     assert result.exit_code == 1
@@ -336,33 +340,6 @@ def test_permission_error_listing_cache_is_reported(upstream, monkeypatch):
     result = CliRunner().invoke(app, ["versions", "--local"])
     assert result.exit_code == 1
     assert "could not list the boon-data cache" in result.output
-
-
-def test_misc_release_downloads_and_reports_all_five_files(upstream):
-    result = CliRunner().invoke(app, ["get", VERSION, "--json"])
-    assert result.exit_code == 0, result.output
-    assert set(json.loads(result.stdout)["files"]) == FILES
-    assert (
-        data.catalog_path("misc", VERSION).read_bytes()
-        == upstream["files"][f"{data._DOWNLOAD_URL}/{VERSION}/misc.json"]
-    )
-    upstream["offline"] = True
-    before = len(upstream["requests"])
-    assert set(data.available_files(VERSION)) == FILES
-    result = CliRunner().invoke(app, ["get", VERSION])
-    assert result.exit_code == 0 and "5 JSON files" in result.stdout
-    assert len(upstream["requests"]) == before
-
-
-def test_manifest_cannot_omit_misc_from_a_five_file_release(upstream):
-    manifest = json.loads(
-        upstream["files"][f"{data._DOWNLOAD_URL}/{VERSION}/manifest.json"]
-    )
-    del manifest["artifacts"]["misc.json"]
-    replace_manifest(upstream, manifest)
-    with pytest.raises(data.DataError, match="every catalog"):
-        data.update(VERSION)
-    assert data.local_versions() == []
 
 
 def test_remove_is_offline_and_preserves_other_versions(upstream):

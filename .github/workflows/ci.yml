@@ -71,6 +71,34 @@ jobs:
       - name: ty
         run: uv run --no-sync ty check python/boon
 
+  proto-freshness:
+    name: Protobuf Freshness (advisory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Upstream drift does not block CI Check or package releases.
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Compare protobuf files with upstream
+        shell: bash
+        run: ./scripts/sync-protos.sh --check 2>&1 | tee "$RUNNER_TEMP/proto-check.log"
+
+      - name: Report protobuf status
+        if: always()
+        run: |
+          {
+            echo '## Protobuf freshness'
+            echo '```text'
+            cat "$RUNNER_TEMP/proto-check.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Flag a failed check
+        if: failure()
+        run: echo "::warning::Protobuf files differ from upstream, or the check could not finish. See the Protobuf Freshness summary."
+
   deny:
     name: Dependency Check
     runs-on: ubuntu-latest
@@ -159,10 +187,10 @@ jobs:
         python-version: ["3.11", "3.12", "3.13", "3.14"]
     env:
       # Space-separated list of public URLs for demo fixture files.
-      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/70555151/70555151.dem https://github.com/pnxenopoulos/boon-fixtures/releases/download/70537442/70537442.dem"
+      DEMO_URLS: "https://github.com/pnxenopoulos/boon-fixtures/releases/download/108575009/108575009.dem"
       # Large regression fixtures run on Python 3.13; their tests skip in other jobs.
       REGRESSION_DEMO_URLS: >-
-        https://github.com/pnxenopoulos/boon-fixtures/releases/download/103129247/103129247.dem
+        https://github.com/pnxenopoulos/boon-fixtures/releases/download/109108139/109108139.dem
         https://github.com/pnxenopoulos/boon-fixtures/releases/download/100655353/100655353.dem
 
     steps:
@@ -209,15 +237,15 @@ jobs:
 
       - name: Run pytest
         working-directory: crates/boon-python
-        run: uv run --no-sync pytest tests/ -v
+        run: uv run --no-sync pytest tests/ -v --durations=10
 
       - name: Benchmark harness checks
         if: matrix.python-version == '3.13'
         working-directory: crates/boon-python
         run: |
-          uv run --no-sync pytest benchmarks/test_benchmarks.py -q
+          uv run --no-sync pytest benchmarks/test_benchmarks.py -q --durations=10
           uv run --no-sync python benchmarks/bench_parse.py \
-            --demo tests/fixtures/103129247.dem \
+            --demo tests/fixtures/108575009.dem \
             --case construct --case snapshot/single --case load/combat \
             --repeat 1 --warmup 0 --build-profile debug \
             --output ../../target/benchmarks/ci-smoke.json

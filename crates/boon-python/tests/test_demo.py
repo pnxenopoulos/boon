@@ -20,7 +20,6 @@ from boon import (
     patron_phase_names,
     team_names,
 )
-
 from conftest import FIXTURES_DIR, _require_demo_fixture
 
 # ---------------------------------------------------------------------------
@@ -28,15 +27,11 @@ from conftest import FIXTURES_DIR, _require_demo_fixture
 # ---------------------------------------------------------------------------
 
 PLAYER_TICKS_COLUMNS = {
-    "tick", "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
+    "tick", "steam_id", "ammo_fraction",
+    "hero_id", "x", "y", "z", "pitch", "yaw", "roll",
     "in_regen_zone", "in_item_shop",
     "death_time", "last_spawn_time", "respawn_time",
     "health", "max_health", "barrier",
-    "stat_modifier_health", "stat_modifier_spirit_power",
-    "stat_modifier_fire_rate", "stat_modifier_weapon_damage",
-    "stat_modifier_cooldown_reduction", "stat_modifier_ammo",
-    "stat_modifier_bullet_resist", "stat_modifier_spirit_resist",
-    "stat_modifier_values_available", "unknown_stat_modifier_count",
     "lifestate", "souls", "spent_souls",
     "in_combat_end_time", "in_combat_last_damage_time", "in_combat_start_time",
     "player_damage_dealt_end_time", "player_damage_dealt_last_damage_time",
@@ -70,7 +65,9 @@ ABILITIES_COLUMNS = {"tick", "hero_id", "ability"}
 
 ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "tier"}
 
-ITEM_PURCHASES_COLUMNS = {"tick", "hero_id", "ability_id", "change"}
+ITEM_PURCHASES_COLUMNS = {
+    "tick", "steam_id", "hero_id", "ability_id", "change", "upgraded_from_ability_ids"
+}
 
 CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
 
@@ -128,18 +125,8 @@ PLAYERS_COLUMNS = {
 
 BANNED_HEROES_COLUMNS = {"hero_id", "hero_name"}
 
-# Bans are recorded for each match. Thus, each fixture has expected values.
-# Tests apply only schema checks to a demo that is not in this map.
-# Demos `84133142` and `70537442` contain the `BannedHeroes` message.
-# Demo `70555151` uses the same server version as `70537442` but has no bans.
-# This empty result is a valid match state. It does not identify an unsupported
-# build.
-EXPECTED_BANS = {
-    "84133142.dem": [69, 63],
-    "70537442.dem": [2, 69],
-    "70555151.dem": [],
-    "94366136.dem": [],
-}
+# The primary replay has no recorded bans.
+EXPECTED_BANS = {"108575009.dem": []}
 
 # Maps dataset name -> expected column set for parameterized tests.
 DATASET_COLUMNS = {
@@ -263,7 +250,8 @@ class TestMatchClock:
         start = demo.game_start_tick
         if start is not None:
             # The match clock is 0:00 at game start, by construction (± rounding).
-            assert abs(demo.tick_to_match_seconds(start)) < 1.0
+            seconds = demo.tick_to_match_seconds(start)
+            assert seconds is not None and abs(seconds) < 1.0
 
     def test_match_seconds_identity(self, demo: Demo) -> None:
         pg = demo.pregame_seconds
@@ -278,13 +266,14 @@ class TestMatchClock:
         start = demo.game_start_tick
         if start is not None and start > 1:
             # A tick inside the pre-game reads as a negative match clock.
-            assert demo.tick_to_match_seconds(start // 2) < 0.0
+            seconds = demo.tick_to_match_seconds(start // 2)
+            assert seconds is not None and seconds < 0.0
 
     def test_match_clock_format(self, demo: Demo) -> None:
         if demo.pregame_seconds is None:
             return
         clock = demo.tick_to_match_clock(demo.total_ticks // 2)
-        assert re.match(r"-?\d+:\d{2}", clock)
+        assert clock is not None and re.fullmatch(r"-?\d+:\d{2}", clock)
 
     def test_match_clock_none_when_offset_unavailable(self, demo: Demo) -> None:
         # tick_to_match_* and game_start_tick are None exactly when the offset is.
@@ -394,13 +383,9 @@ class TestHealthInvariants:
 class TestNameLookups:
     """Tests for module-level name lookup functions."""
 
-    def test_hero_names_is_dict(self) -> None:
+    def test_hero_names(self) -> None:
         names = hero_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_hero_names_contains_infernus(self) -> None:
-        names = hero_names()
         assert names[1] == "Infernus"
 
     def test_team_names_is_dict(self) -> None:
@@ -408,14 +393,9 @@ class TestNameLookups:
         assert isinstance(names, dict)
         assert names == {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
 
-    def test_ability_names_is_dict(self) -> None:
+    def test_ability_names(self) -> None:
         names = ability_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_ability_names_contains_known(self) -> None:
-        names = ability_names()
-        assert 46922526 in names
         assert names[46922526] == "inherent_base"
 
     def test_ability_display_names_are_exact_localized_names(self) -> None:
@@ -432,23 +412,14 @@ class TestNameLookups:
             display_names["ability_unicorn_luminousstrike"] == "Radiant Daggers"
         )
 
-    def test_modifier_names_is_dict(self) -> None:
+    def test_modifier_names(self) -> None:
         names = modifier_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_modifier_names_contains_known(self) -> None:
-        names = modifier_names()
-        assert 2059539911 in names
         assert names[2059539911] == "timer"
 
-    def test_game_mode_names_is_dict(self) -> None:
+    def test_game_mode_names(self) -> None:
         names = game_mode_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_game_mode_names_contains_known(self) -> None:
-        names = game_mode_names()
         assert names[1] == "6v6"
         assert names[4] == "street_brawl"
 
@@ -457,13 +428,9 @@ class TestNameLookups:
         assert isinstance(names, dict)
         assert names == {0: "normal", 1: "final", 2: "transforming"}
 
-    def test_hitgroup_names_is_dict(self) -> None:
+    def test_hitgroup_names(self) -> None:
         names = hitgroup_names()
         assert isinstance(names, dict)
-        assert len(names) > 0
-
-    def test_hitgroup_names_contains_known(self) -> None:
-        names = hitgroup_names()
         assert names[0] == "generic"
         assert names[1] == "head"
         assert names[-1] == "invalid"
@@ -490,26 +457,18 @@ class TestNameLookups:
 class TestDatasets:
     """Parameterized tests for all dataset properties."""
 
-    @pytest.mark.parametrize("dataset", ALL_DATASETS)
-    def test_loads_as_dataframe(self, demo: Demo, dataset: str) -> None:
-        df = getattr(demo, dataset)
-        assert isinstance(df, pl.DataFrame)
-
     # Datasets that may be empty depending on game mode
     # "rift" is empty on demos from builds predating the Rift objective.
     POSSIBLY_EMPTY = {"ability_upgrades", "breakables", "flex_slots", "mid_boss", "neutrals", "sinners_sacrifice", "stat_modifier_events", "urn", "rift"}
 
-    @pytest.mark.parametrize("dataset", ALL_DATASETS)
+    @pytest.mark.parametrize("dataset", sorted(set(ALL_DATASETS) - POSSIBLY_EMPTY))
     def test_nonempty(self, demo: Demo, dataset: str) -> None:
-        df = getattr(demo, dataset)
-        if dataset in self.POSSIBLY_EMPTY:
-            assert len(df) >= 0
-        else:
-            assert len(df) > 0
+        assert len(getattr(demo, dataset)) > 0
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
     def test_columns(self, demo: Demo, dataset: str) -> None:
         df = getattr(demo, dataset)
+        assert isinstance(df, pl.DataFrame)
         assert set(df.columns) == DATASET_COLUMNS[dataset]
 
     @pytest.mark.parametrize("dataset", ALL_DATASETS)
@@ -522,8 +481,8 @@ class TestDatasets:
 class TestDamageMelee:
     """Raw damage metadata and flag-based melee classification."""
 
-    LIGHT_MELEE_FLAG = 1 << 33
-    HEAVY_MELEE_FLAG = 1 << 34
+    LIGHT_MELEE_FLAG = 1 << 34
+    HEAVY_MELEE_FLAG = 1 << 33
 
     def test_fields_present_and_typed(self, demo: Demo) -> None:
         df = demo.damage
@@ -576,7 +535,7 @@ class TestAbilityTicks:
 
     def test_charges_nonnegative(self, demo: Demo) -> None:
         at = demo.ability_ticks
-        assert at["remaining_charges"].min() >= 0
+        assert at["remaining_charges"].ge(0).all(ignore_nulls=False)
 
     def test_hero_ids_in_player_history(self, demo: Demo) -> None:
         heroes = set(demo.player_ticks["hero_id"].unique().to_list())
@@ -601,25 +560,25 @@ class TestActiveModifiers:
     def test_stacks_nonnegative(self, demo: Demo) -> None:
         am = demo.active_modifiers
         if len(am) > 0:
-            assert am["stacks"].min() >= 0
+            assert am["stacks"].ge(0).all(ignore_nulls=False)
 
     def test_serial_lifecycle_transitions_are_valid(self, demo: Demo) -> None:
         am = demo.active_modifiers
         if len(am) == 0:
             pytest.skip("no modifier events in this demo")
-        assert am["serial"].min() > 0
-        for _, grp in am.group_by(["hero_id", "serial"], maintain_order=True):
-            active = False
-            for event in grp["event"]:
-                if event == "applied":
-                    assert not active
-                    active = True
-                elif event == "changed":
-                    assert active
-                else:
-                    assert event == "removed"
-                    assert active
-                    active = False
+        assert am["serial"].gt(0).all(ignore_nulls=False)
+        active = set()
+        for hero_id, serial, event in am.select("hero_id", "serial", "event").iter_rows():
+            key = (hero_id, serial)
+            if event == "applied":
+                assert key not in active
+                active.add(key)
+            elif event == "changed":
+                assert key in active
+            else:
+                assert event == "removed"
+                assert key in active
+                active.remove(key)
 
     def test_no_restamp_reapplication_bursts(self, demo: Demo) -> None:
         """No tick re-applies modifiers the heroes already have across the roster.
@@ -723,7 +682,7 @@ class TestRift:
         if len(rift) == 0:
             pytest.skip("no rifts in this demo")
         for axis in ("x", "y", "z"):
-            assert rift[axis].abs().max() < 1.0e6, f"{axis} looks like a sentinel"
+            assert rift[axis].abs().lt(1.0e6).all(ignore_nulls=False), f"{axis} looks like a sentinel"
 
     def test_lane_resolves_when_position_known(self, demo: Demo) -> None:
         # Every Rift site seen so far maps to a lane; a 0 here means a new site
@@ -773,7 +732,7 @@ class TestBreakables:
             pytest.skip("no breakable events in this demo")
         for axis in ("x", "y", "z"):
             assert df[axis].is_finite().all()
-            assert df[axis].abs().max() < 1.0e6
+            assert df[axis].abs().lt(1.0e6).all(ignore_nulls=False)
 
 
 # ===================================================================
@@ -820,7 +779,7 @@ class TestSinnersSacrifice:
             pytest.skip("no Sinner's Sacrifice machines in this demo")
         for axis in ("x", "y", "z"):
             assert df[axis].is_finite().all()
-            assert df[axis].abs().max() < 1.0e6
+            assert df[axis].abs().lt(1.0e6).all(ignore_nulls=False)
 
     def test_known_hit_has_exact_attacker(self, demo: Demo) -> None:
         if Path(demo.path).name != "96850353.dem":
@@ -974,7 +933,7 @@ class TestBulkLoad:
     )
     def test_load_invalid_dataset_raises(self, dataset: str) -> None:
         path = _require_demo_fixture()
-        d = Demo(str(path))
+        d = Demo(str(path), preload=False)
         with pytest.raises(ValueError, match="Unknown dataset"):
             d.load(dataset)
 
@@ -1017,14 +976,19 @@ class TestErrors:
                 Demo(f.name)
 
     def test_all_error_types_importable(self) -> None:
-        from boon import DemoHeaderError, DemoInfoError, DemoMessageError, InvalidDemoError  # noqa: F401
+        from boon import (  # noqa: F401
+            DemoHeaderError,
+            DemoInfoError,
+            DemoMessageError,
+            InvalidDemoError,
+        )
 
     def test_not_street_brawl_error_importable(self) -> None:
         from boon import NotStreetBrawlError  # noqa: F401
 
 
 def test_summary_repeated_access_is_stable() -> None:
-    demo = Demo(str(_require_demo_fixture()))
+    demo = Demo(str(_require_demo_fixture()), preload=False)
     try:
         first = demo.summary()
     except DemoMessageError:

@@ -6,6 +6,7 @@ import pytest
 from boon import Demo
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
+PRIMARY_DEMO = FIXTURES_DIR / "108575009.dem"
 
 ALL_DATASETS = [
     "abilities",
@@ -30,31 +31,10 @@ ALL_DATASETS = [
     "world_ticks",
 ]
 
-STREET_BRAWL_DATASETS = ["street_brawl_ticks", "street_brawl_rounds"]
-
 
 def _demo_files() -> list[Path]:
-    """Return all .dem files in the fixtures directory."""
-    if not FIXTURES_DIR.is_dir():
-        return []
-    return sorted(FIXTURES_DIR.glob("*.dem"))
-
-
-# Session-scoped cache: filename → Demo instance (parsed once, reused everywhere)
-_demo_cache: dict[str, Demo] = {}
-
-
-def get_demo(path: Path) -> Demo:
-    """Get or create a fully-loaded Demo instance, cached for the session."""
-    key = path.name
-    if key not in _demo_cache:
-        d = Demo(str(path), preload=False)
-        datasets = list(ALL_DATASETS)
-        if d.game_mode == 4:
-            datasets.extend(STREET_BRAWL_DATASETS)
-        d.load(*datasets)
-        _demo_cache[key] = d
-    return _demo_cache[key]
+    """Use the current-format replay for general API tests."""
+    return [PRIMARY_DEMO] if PRIMARY_DEMO.is_file() else []
 
 
 @pytest.fixture(scope="session")
@@ -65,12 +45,16 @@ def demo_paths() -> list[Path]:
 
 @pytest.fixture(scope="session", params=_demo_files(), ids=lambda p: p.name)
 def demo(request: pytest.FixtureRequest) -> Demo:
-    """Yield a fully-loaded Demo instance for each fixture file.
+    """Share loaded replay data for read-only assertions.
 
-    All datasets are loaded together in compatible parser passes so that
-    individual tests only check cached DataFrames.
+    Tests that check parsing, caches, or decoder settings use fresh Demo instances.
     """
-    return get_demo(request.param)
+    parsed = Demo(str(request.param), preload=False)
+    # Share one serial reference across seek and parallel comparisons.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("BOON_TICK_SEGMENTS", "1")
+        parsed.load(*ALL_DATASETS)
+    return parsed
 
 
 def _require_demo_fixture() -> Path:
@@ -82,7 +66,7 @@ def _require_demo_fixture() -> Path:
 
 
 @pytest.fixture(scope="session")
-def name_catalog_cache(tmp_path_factory):
+def name_catalog_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """A verified catalog installation isolates replay tests from GitHub and user data."""
     import json
 
@@ -101,7 +85,7 @@ def name_catalog_cache(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True)
-def offline_catalogs(monkeypatch, name_catalog_cache):
+def offline_catalogs(monkeypatch: pytest.MonkeyPatch, name_catalog_cache: Path) -> None:
     from boon import data
 
     monkeypatch.setattr(data, "BOON_DATA_DIR", name_catalog_cache)

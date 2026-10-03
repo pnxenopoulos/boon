@@ -4,6 +4,7 @@
 *.vdata
 *.log
 .claude
+.skills/
 .DS_Store
 
 # Docs

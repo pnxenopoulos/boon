@@ -13,7 +13,6 @@ Boon does not embed these maps in its source or compiled package.
   entries with an English `display_name`.
 - `modifiers.json`: both `modifier_id` and `qualified_modifier_id` are accepted.
   They resolve to `modifier_name` and `qualified_modifier_name`, respectively.
-
 - `misc.json`: records with `definition._class = "citadel_breakable_prop"`
   supply `misc_id` to `misc_name` lookups. The ID matches the replay's raw
   breakable `m_nSubclassID`; names are not inferred from a prefix.
@@ -43,9 +42,9 @@ manifest consistency, before installation. A failed download leaves no partial
 installation. Installed versions work offline. Python caches parsed name maps
 and does file checks before reuse. Reinstalling a version invalidates its maps.
 
-`CatalogNames::from_directory` reads locally built JSONs directly. It does a check of
-catalog identities and shared provenance, but leaves checksum verification to
-the caller. This method does not use the network.
+`CatalogNames::from_directory` reads locally built JSONs directly. It checks catalog
+names and source revisions. The caller must verify checksums. This method does
+not use the network.
 
 ## Other lookup tables
 

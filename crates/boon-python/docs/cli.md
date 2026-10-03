@@ -20,7 +20,7 @@ pip install boon-deadlock   # or: uv add boon-deadlock
 ```
 
 Run `boon --help` for the full list, or `boon <command> --help` for one command.
-Pass `--json` (where available) for machine-readable output.
+Pass `--json` (where available) for JSON output.
 
 ### `info`
 
@@ -31,7 +31,6 @@ boon info match.dem
 boon info match.dem --json
 ```
 
----
 
 ### `players`
 
@@ -41,7 +40,6 @@ The player roster (name, Steam ID, hero, team, start lane), with hero names reso
 boon players match.dem
 ```
 
----
 
 ### `datasets`
 
@@ -51,7 +49,6 @@ List every dataset that `show` can display.
 boon datasets
 ```
 
----
 
 ### `show`
 
@@ -68,11 +65,10 @@ boon show match.dem objectives --json
 
 | Flag | Description |
 |------|-------------|
-| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
+| `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
 | `--tail` | Show the last rows instead of the first |
-| `--json` | Emit row-oriented JSON |
+| `--json` | Return JSON rows |
 
----
 
 ### `summary`
 
@@ -88,14 +84,14 @@ boon summary match.dem --part objectives
 | Flag | Description |
 |------|-------------|
 | `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, `healing`, `gold_sources`, or `all` (default: `last_hits`) |
-| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
-| `--json` | Emit JSON |
+| `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
+| `--json` | Return JSON |
 
----
 
 ### `stats`
 
-Derived metrics from [`boon.stats`](api.md).
+Derived metrics from [`boon.stats`](api.md). Use the Python stat query methods
+for hero values and ability bonuses; this command does not calculate them.
 
 ```bash
 boon stats match.dem --metric kill-participation
@@ -107,10 +103,9 @@ boon stats match.dem -m time-dead
 | Flag | Description |
 |------|-------------|
 | `--metric <M>` / `-m <M>` | `kill-participation`, `time-dead`, or `in-combat` |
-| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
-| `--json` | Emit JSON |
+| `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
+| `--json` | Return JSON |
 
----
 
 ### `verify`
 
@@ -141,9 +136,7 @@ how client versions differ from replay build numbers.
 
 ## boon-dev
 
-`boon-dev` is a low-level debugging CLI, built from the `boon-dev` crate. It is
-**not shipped** — there are no release binaries and no crates.io package. Build
-it from source:
+`boon-dev` reads raw demo data. Build it from the repository:
 
 ```bash
 cargo build --release -p boon-dev

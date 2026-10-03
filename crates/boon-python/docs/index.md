@@ -2,20 +2,22 @@
 
 Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. The Rust core has native Python bindings. Boon reads Source 2 `.dem` files and returns [Polars](https://pola.rs) DataFrames.
 
-## Why Boon?
-
-Deadlock demos contain player positions, kills, damage, item builds, objective state, and other match data. The Source 2 demo format is complex and undocumented. Boon handles the format so that you can analyze structured data.
-
-- ⚡ **Fast.** The core parser is written in Rust. Parsing a full match takes seconds, not minutes.
-- 📊 **Structured output.** Each dataset is a Polars DataFrame. You can filter, group, join, and display the data.
-- 🎯 **Select the datasets to parse.** Boon preloads kills, damage, and abilities. Set `preload=False` to load datasets only when requested. Compatible datasets share a parser pass.
-- 🗂️ **Comprehensive.** Player state, combat, economy, objectives, map props, Sinner's Sacrifice, derived stats, buffs/debuffs, urn and Rift tracking, and street brawl scoring.
-- 💻 **CLI included.** The Python package installs a `boon` command for quick inspection without writing code.
+**Demo compatibility:** Use Boon **0.10.0 or earlier** for demos recorded before
+the **City Never Sleeps** update (**September 29, 2026**).
+Use Boon **0.11.0 or later** for demos recorded with that update or later.
 
 ## Get started
 
-Install Boon with `uv add boon-deadlock` or `pip install boon-deadlock`. Then read {doc}`getting-started`.
-If you have a problem, read {doc}`known-issues`. Report other problems on [GitHub](https://github.com/pnxenopoulos/boon/issues) or in [Discord](https://discord.gg/WmjZHxWrCD).
+Install with `uv add boon-deadlock` or `pip install boon-deadlock`.
+Read {doc}`getting-started` for dataset queries and {doc}`examples` for complete examples.
+
+Use {doc}`hero-stats` for hero values, {doc}`ability-stats` for ability bonuses and
+imbues, and {doc}`player-states` for recorded states. These queries require a
+boon-data version; see {doc}`data`. The guides list accepted strings and enum members.
+
+Read {doc}`known-issues` for calculation limits.
+Report errors on [GitHub](https://github.com/pnxenopoulos/boon/issues)
+or [Discord](https://discord.gg/WmjZHxWrCD).
 
 ## Useful links
 
@@ -32,6 +34,9 @@ examples
 api
 cli
 data
+hero-stats
+ability-stats
+player-states
 demo-checklist
 benchmarks
 faq

@@ -1,8 +1,17 @@
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import polars as pl
 
 from . import data as data
+from .ability_stats import AbilityStat as AbilityStat
+from .ability_stats import AbilityStatResult as AbilityStatResult
+from .ability_stats import ImbueResult as ImbueResult
+from .hero_stats import CalculationError as CalculationError
+from .hero_stats import HeroStat as HeroStat
+from .hero_stats import StatMode as StatMode
+from .hero_stats import StatResult as StatResult
+from .rulesets import Rule
 
 __version__: str
 
@@ -218,8 +227,11 @@ class Demo:
         Return six cached Polars DataFrames:
 
         - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
-          Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+          Includes ``steam_id``, ``hero_id``, damage by target type, damage taken,
           ``player_healing``, ``teammate_healing``, and ``self_healing``.
+          ``barrier_absorption`` is damage stopped by barriers this player provided
+          (recorded ``player_barriering``). ``damage_absorbed`` is damage stopped
+          by barriers on this player. Healing and barrier absorption are separate.
           Added counters are null when absent.
         - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
           for each player, snapshot, and source. Includes ``source_id`` and the protobuf
@@ -232,13 +244,13 @@ class Demo:
           healing, regeneration, or another recorded statistic. Category rows
           (``is_category=True``) duplicate specific sources; do not add them together.
         - ``healing``: healing and regeneration rows without category duplicates.
-          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-          ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+          Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_hero_id``,
+          ``target_steam_id``, ``target_hero_id``, ``source_name``,
           ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
           ``total`` is the recorded cumulative amount. Zero changes remain in the table.
 
         Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
-        Do not sum cumulative totals across periods. Use player slots across hero changes;
+        Do not sum cumulative totals across periods. Use Steam IDs across hero changes;
         hero IDs come from the match roster. These tables do not contain individual heals.
 
         Raises ``DemoMessageError`` if the post-match message is absent or invalid.
@@ -247,6 +259,7 @@ class Demo:
 
     def snapshots(
         self,
+        /,
         datasets: str | list[str] | None = ...,
         *,
         ticks: int | list[int] | None = ...,
@@ -255,8 +268,9 @@ class Demo:
         events: str | list[str] | None = ...,
         start_tick: int | None = ...,
         end_tick: int | None = ...,
+        data_version: str | None = ...,
     ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-        """Snapshot per-tick state at selected ticks in a single parallel pass.
+        """Snapshot per-tick state at selected ticks.
 
         Decodes the demo once (across full-packet keyframe segments, in parallel)
         and collects rows only at the ticks you select — far cheaper than
@@ -273,6 +287,17 @@ class Demo:
                 or ``["kills", "damage"]``).
             start_tick: Restrict to ticks at or after this tick.
             end_tick: Restrict to ticks at or before this tick.
+            data_version: Optional boon-data version for ammo calculation in
+                player_ticks. Adds stat and state queries after the snapshot pass.
+                A missing version is downloaded. Without this option, snapshots
+                require no catalog.
+
+        Player rows include steam_id, hero_id, and recorded ammo_fraction.
+        With data_version, ammo and max_ammo are nullable UInt32 columns.
+        ammo is fraction times capacity, rounded nearest, with halves rounded up.
+        max_ammo stays finite when unlimited_ammo is True. That nullable flag
+        reads INFINITE_CLIP from the predicted-state mask. ammo_status and
+        ammo_diagnostic retain missing or partial calculation details.
 
         Returns:
             A single DataFrame when one dataset is requested, otherwise a dict
@@ -288,6 +313,104 @@ class Demo:
         """
         ...
 
+    def _snapshots(
+        self,
+        /,
+        datasets: str | list[str] | None = ...,
+        *,
+        ticks: int | list[int] | None = ...,
+        every: int | None = ...,
+        seconds: float | None = ...,
+        events: str | list[str] | None = ...,
+        start_tick: int | None = ...,
+        end_tick: int | None = ...,
+    ) -> pl.DataFrame | dict[str, pl.DataFrame]: ...
+    def imbues(
+        self,
+        /,
+        *,
+        ticks: int | Sequence[int],
+        data_version: str,
+        steam_ids: Sequence[int] | None = None,
+    ) -> ImbueResult: ...
+    def calculate_ability_stats(
+        self,
+        /,
+        *,
+        ticks: int | Sequence[int],
+        data_version: str,
+        stats: Sequence[AbilityStat | str] = ...,
+        mode: StatMode | str = ...,
+        steam_ids: Sequence[int] | None = None,
+        abilities: Sequence[int] | None = None,
+        include_items: bool = False,
+        rulesets: Mapping[AbilityStat | str, Rule] | None = None,
+        explain: bool = False,
+        strict: bool = True,
+    ) -> AbilityStatResult: ...
+    def _imbues(
+        self,
+        directory: Path,
+        ticks: list[int],
+        *,
+        steam_ids: Sequence[int] | None = None,
+    ) -> str: ...
+    def _calculate_ability_stats(
+        self,
+        directory: Path,
+        ticks: list[int],
+        *,
+        stats: list[str],
+        mode: str = ...,
+        steam_ids: Sequence[int] | None = None,
+        abilities: Sequence[int] | None = None,
+        include_items: bool = False,
+        explain: bool = False,
+        strict: bool = True,
+    ) -> str: ...
+    def player_states(
+        self,
+        /,
+        *,
+        data_version: str,
+        ticks: int | Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
+    ) -> pl.DataFrame:
+        """Recorded state names per player and tick; see boon.player_states."""
+        ...
+    def _player_states(
+        self,
+        directory: Path,
+        *,
+        ticks: Sequence[int] | None = None,
+        steam_ids: Sequence[int] | None = None,
+    ) -> pl.DataFrame: ...
+    def calculate_hero_stats(
+        self,
+        /,
+        *,
+        ticks: int | Sequence[int],
+        data_version: str,
+        stats: Sequence[HeroStat | str] = ...,
+        mode: StatMode | str = ...,
+        steam_ids: Sequence[int] | None = ...,
+        heroes: Sequence[int] | None = ...,
+        rulesets: Mapping[HeroStat | str, Rule] | None = ...,
+        explain: bool = ...,
+        strict: bool = ...,
+    ) -> StatResult: ...
+    def _calculate_hero_stats(
+        self,
+        directory: Path,
+        ticks: list[int],
+        *,
+        stats: list[str],
+        mode: str = ...,
+        steam_ids: list[int] | None = ...,
+        heroes: list[int] | None = ...,
+        explain: bool = ...,
+        strict: bool = ...,
+    ) -> str: ...
     def _player_positions(self, ticks: list[int]) -> pl.DataFrame: ...
     def in_combat(self, /) -> pl.DataFrame:
         """Whether each player is in combat, per tick.
@@ -502,13 +625,14 @@ class Demo:
         Returns a DataFrame with one row per player per tick, containing
         position, health, combat timers, kills, deaths, net worth, and more.
         Rows where the pawn is not found or ``hero_id == 0`` are skipped.
-        The stat_modifier_* columns are observed controller contributions.
-        They are not final or effective player stats.
 
 
         Columns:
             - **tick** (*int*) -- The game tick.
+            - **steam_id** (*int, nullable*) -- Steam account ID (UInt64).
             - **hero_id** (*int*) -- The player's hero ID.
+            - **ammo_fraction** (*float, nullable*) -- Recorded primary-gun ammo fraction.
+              Use snapshots(data_version=...) to calculate ammo and max_ammo.
             - **x** (*float*) -- Player X position.
             - **y** (*float*) -- Player Y position.
             - **z** (*float*) -- Player Z position.
@@ -525,16 +649,6 @@ class Demo:
               buffs), from the controller's ``m_iHealthMax``.
             - **barrier** (*float*) -- Current barrier remaining. Returns ``0.0`` when
               the demo does not contain a barrier tracker for this player.
-            - **stat_modifier_health** (*float*) -- Observed health modifier total.
-            - **stat_modifier_spirit_power** (*float*) -- Observed spirit-power modifier total.
-            - **stat_modifier_fire_rate** (*float*) -- Observed fire-rate modifier total.
-            - **stat_modifier_weapon_damage** (*float*) -- Observed weapon-damage modifier total.
-            - **stat_modifier_cooldown_reduction** (*float*) -- Observed cooldown-reduction modifier total.
-            - **stat_modifier_ammo** (*float*) -- Observed ammo modifier total.
-            - **stat_modifier_bullet_resist** (*float*) -- Observed bullet-resistance modifier total.
-            - **stat_modifier_spirit_resist** (*float*) -- Observed spirit-resistance modifier total.
-            - **stat_modifier_values_available** (*bool*) -- Whether the demo serializer contains the stat-viewer vector.
-            - **unknown_stat_modifier_count** (*int*) -- Number of vector entries with an unknown nonzero value type.
             - **lifestate** (*int*) -- Life state value (use ``lifestate_names()`` to resolve).
             - **souls** (*int*) -- Current souls (currency).
             - **spent_souls** (*int*) -- Total spent souls.
@@ -611,7 +725,7 @@ class Demo:
             - **tick** (*int*) -- The enclosing demo command tick.
             - **damage** (*int*) -- The damage dealt.
             - **pre_damage** (*float*) -- The damage before mitigation.
-            - **damage_absorbed** (*float | None*) -- Recorded absorption; falls back to the legacy integer field when needed.
+            - **damage_absorbed** (*float | None*) -- Recorded absorption; null when absent.
             - **victim_shield_new** (*int | None*) -- Remaining shield after the hit.
             - **victim_shield_max** (*int | None*) -- Shield capacity.
             - **server_tick** (*int | None*) -- Server tick recorded in the damage message.
@@ -675,15 +789,30 @@ class Demo:
     def item_purchases(self) -> pl.DataFrame:
         """Item shop transactions as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon loads this dataset on first access. Use the newest installed
+        boon-data version, or download latest if none is installed.
 
         Columns:
-            - **tick** (*int*) -- The game tick when the transaction occurred.
+            - **tick** (*int*) -- The tick of the transaction.
+            - **steam_id** (*int | None*) -- The player's Steam ID, if recorded.
             - **hero_id** (*int*) -- The hero ID of the player.
             - **ability_id** (*int*) -- The raw MurmurHash2 item/ability ID.
-            - **change** (*str*) -- Transaction type: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"failure"``.
+            - **change** (*str*) -- Recorded change: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"leveled_up"``, ``"failure"``, ``"unknown"``.
+            - **upgraded_from_ability_ids** (*list[int]*) -- Catalog components
+              sold by this player at this tick. Empty when no unique match exists.
         """
         ...
+
+    def get_item_purchases(self, /, *, data_version: str | None = None) -> pl.DataFrame:
+        """Read item changes with component links from the selected boon-data version.
+
+        Use the same columns as item_purchases. Download a missing version.
+        Omit data_version to use the property default.
+        """
+        ...
+
+    @property
+    def _item_purchases(self) -> pl.DataFrame: ...
 
     @property
     def chat(self) -> pl.DataFrame:
@@ -873,7 +1002,9 @@ class Demo:
 
         Not loaded by default. Access this property or call ``load("stat_modifier_events")`` explicitly.
 
-        Emits a row whenever a stat total changes (urn/breakable pickups).
+        Types come from the newest installed boon-data catalog. If no catalog is
+        installed, Boon downloads the latest version. Use data for the replay's client.
+        Emits a row whenever a recorded stat total changes.
 
         Columns:
             - **tick** (*int*) -- The game tick when the stat changed.

@@ -1,0 +1,23 @@
+{
+  "catalog": "abilities",
+  "client_version": "6712",
+  "source_commit": "8580b13d18d5d966430d2c41501f34bdb7c6243a",
+  "records": [
+    {
+      "ability_id": 1548066885,
+      "ability_name": "upgrade_clip_size",
+      "definition": {
+        "m_vecComponentItems": []
+      }
+    },
+    {
+      "ability_id": 2356412290,
+      "ability_name": "upgrade_titan_round",
+      "definition": {
+        "m_vecComponentItems": [
+          "upgrade_clip_size"
+        ]
+      }
+    }
+  ]
+}

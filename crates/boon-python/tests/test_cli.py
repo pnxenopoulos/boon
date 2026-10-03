@@ -6,23 +6,13 @@ no demo and always run.
 """
 
 import json
-from pathlib import Path
 
 import pytest
 from boon.cli import app
+from conftest import _require_demo_fixture
 from typer.testing import CliRunner
 
 runner = CliRunner()
-
-FIXTURES_DIR = Path(__file__).parent / "fixtures"
-
-
-def _fixture() -> Path:
-    """Return the first demo fixture, or skip if none is available."""
-    dems = sorted(FIXTURES_DIR.glob("*.dem")) if FIXTURES_DIR.is_dir() else []
-    if not dems:
-        pytest.skip("No demo fixtures available")
-    return dems[0]
 
 
 def test_version() -> None:
@@ -47,38 +37,40 @@ def test_datasets_lists_kills() -> None:
 
 
 def test_info() -> None:
-    result = runner.invoke(app, ["info", str(_fixture())])
+    result = runner.invoke(app, ["info", str(_require_demo_fixture())])
     assert result.exit_code == 0
     assert "match_id" in result.stdout
 
 
 def test_info_json() -> None:
-    result = runner.invoke(app, ["info", str(_fixture()), "--json"])
+    result = runner.invoke(app, ["info", str(_require_demo_fixture()), "--json"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert "match_id" in data and "map_name" in data
 
 
 def test_players() -> None:
-    result = runner.invoke(app, ["players", str(_fixture())])
+    result = runner.invoke(app, ["players", str(_require_demo_fixture())])
     assert result.exit_code == 0
     assert "hero" in result.stdout
 
 
 def test_show_dataset() -> None:
-    result = runner.invoke(app, ["show", str(_fixture()), "kills", "--limit", "5"])
+    result = runner.invoke(
+        app, ["show", str(_require_demo_fixture()), "kills", "--limit", "5"]
+    )
     assert result.exit_code == 0
     assert "cols" in result.output
 
 
 @pytest.mark.parametrize("dataset", ["not_a_dataset", "healing", "barriers"])
 def test_show_unknown_dataset(dataset: str) -> None:
-    result = runner.invoke(app, ["show", str(_fixture()), dataset])
+    result = runner.invoke(app, ["show", str(_require_demo_fixture()), dataset])
     assert result.exit_code == 1
 
 
 def test_verify() -> None:
-    result = runner.invoke(app, ["verify", str(_fixture())])
+    result = runner.invoke(app, ["verify", str(_require_demo_fixture())])
     assert result.exit_code == 0
 
 
@@ -89,7 +81,9 @@ def test_missing_file() -> None:
 
 @pytest.mark.parametrize("part", ["healing", "all"])
 def test_summary_healing_json(part: str) -> None:
-    result = runner.invoke(app, ["summary", str(_fixture()), "--part", part, "--json"])
+    result = runner.invoke(
+        app, ["summary", str(_require_demo_fixture()), "--part", part, "--json"]
+    )
     assert result.exit_code == 0, result.output
     frames = json.loads(result.stdout)
     assert "healing" in frames
@@ -99,8 +93,13 @@ def test_summary_healing_json(part: str) -> None:
 
 
 def test_summary_gold_sources_json() -> None:
-    result = runner.invoke(app, ["summary", str(_fixture()), "--part", "gold_sources", "--json"])
+    result = runner.invoke(
+        app,
+        ["summary", str(_require_demo_fixture()), "--part", "gold_sources", "--json"],
+    )
     assert result.exit_code == 0, result.output
     sources = json.loads(result.stdout)["gold_sources"]
     assert sources
-    assert {"snapshot_time_s", "player_slot", "source_id", "gold", "gold_orbs"} <= sources[0].keys()
+    assert {"snapshot_time_s", "steam_id", "source_id", "gold", "gold_orbs"} <= sources[
+        0
+    ].keys()

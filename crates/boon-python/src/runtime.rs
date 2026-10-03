@@ -6,6 +6,17 @@ impl Demo {
         use boon_proto::proto::{CCitadelUserMsgPostMatchDetails, CMsgMatchMetaDataContents};
 
         if self.cached_summary.is_none() {
+            // Metadata has 32-bit account IDs. Match the low 32 bits of recorded
+            // Steam IDs; summary slots need not equal controller entity slots.
+            let roster = self.players(py)?.0;
+            let steam_ids: HashMap<u32, u64> = roster
+                .column("steam_id")
+                .and_then(|column| column.u64())
+                .map_err(|error| DemoMessageError::new_err(error.to_string()))?
+                .into_no_null_iter()
+                .filter(|id| *id as u32 != 0)
+                .map(|id| (id as u32, id))
+                .collect();
             let frames = py.detach(|| {
                 let event_types = HashSet::from([Msg::KEUserMsgPostMatchDetails as u32]);
                 let events = self
@@ -37,15 +48,16 @@ impl Demo {
                 let to_df_err = |e: PolarsError| {
                     DemoMessageError::new_err(format!("failed to build summary: {e}"))
                 };
-                let damage = build_damage_frame(&match_info).map_err(to_df_err)?;
+                let damage = build_damage_frame(&match_info, &steam_ids).map_err(to_df_err)?;
                 let healing = build_healing_frame(&damage).map_err(to_df_err)?;
                 Ok::<SummaryFrames, PyErr>(SummaryFrames {
-                    snapshots: build_snapshots_frame(&match_info).map_err(to_df_err)?,
-                    last_hits: build_last_hits_frame(&match_info).map_err(to_df_err)?,
+                    snapshots: build_snapshots_frame(&match_info, &steam_ids).map_err(to_df_err)?,
+                    last_hits: build_last_hits_frame(&match_info, &steam_ids).map_err(to_df_err)?,
                     objectives: build_objectives_frame(&match_info).map_err(to_df_err)?,
                     damage,
                     healing,
-                    gold_sources: build_gold_sources_frame(&match_info).map_err(to_df_err)?,
+                    gold_sources: build_gold_sources_frame(&match_info, &steam_ids)
+                        .map_err(to_df_err)?,
                 })
             })?;
             self.cached_summary = Some(frames);
@@ -77,7 +89,7 @@ impl Demo {
         if self.paused_ticks.is_some() {
             return Ok(());
         }
-        if self.cached_world_ticks.is_none() {
+        if self.cached_datasets[Dataset::WorldTicks].is_none() {
             Python::attach(|py| self.load_datasets(py, &[Dataset::WorldTicks]))?;
         }
         let world_ticks = self.loaded_frame(Dataset::WorldTicks)?;
@@ -357,6 +369,17 @@ impl Demo {
         Ok(merged)
     }
 
+    fn barrier_timeline(&self, wants: SnapWants) -> PyResult<Option<&BarrierTimeline>> {
+        if !wants.player_ticks {
+            return Ok(None);
+        }
+        if self.cached_barriers.get().is_none() {
+            let timeline = BarrierTimeline::build(&self.parser).map_err(to_py_err)?;
+            let _ = self.cached_barriers.set(timeline);
+        }
+        Ok(self.cached_barriers.get())
+    }
+
     /// Decode requested snapshot datasets in one parallel pass.
     ///
     /// Each full packet contains a new keyframe for the required entity state.
@@ -369,6 +392,7 @@ impl Demo {
         wants: SnapWants,
         pred: &TickPredicate,
     ) -> PyResult<SnapshotFrames> {
+        let barriers = self.barrier_timeline(wants)?;
         let mut classes: Vec<&str> = Vec::new();
         if wants.player_ticks {
             classes.push("CCitadelPlayerPawn");
@@ -381,16 +405,21 @@ impl Demo {
             classes.push("CNPC_Trooper");
             classes.push("CNPC_TrooperBoss");
         }
-        let filter: std::collections::HashSet<&str> = classes.into_iter().collect();
-
         // Resolve all field keys once from the send-table serializers.
         let init = self.parser.parse_init().map_err(to_py_err)?;
         let keys = SnapKeys {
+            ammo: if wants.player_ticks {
+                AmmoKeys::resolve(&init)
+            } else {
+                AmmoKeys::default()
+            },
             pt: PtKeys::resolve(&init),
             wk: WkKeys::resolve(&init),
             tk: TkKeys::resolve(&init),
         };
         drop(init);
+        classes.extend(keys.ammo.classes());
+        let filter: HashSet<&str> = classes.into_iter().collect();
 
         let offsets = self.parser.full_packet_offsets().map_err(to_py_err)?;
         let n = parallel_segments().min(offsets.len().max(1));
@@ -398,9 +427,8 @@ impl Demo {
             let mut cols = SegSnap::default();
             self.parser
                 .decode_segment(None, i32::MAX, &filter, |ctx| {
-                    cols.update(ctx, wants);
                     if pred.matches(ctx.tick()) {
-                        cols.collect_tick(ctx, &keys, wants);
+                        cols.collect_tick(ctx, &keys, wants, barriers);
                     }
                 })
                 .map_err(to_py_err)?;
@@ -418,9 +446,8 @@ impl Demo {
                             let mut cols = SegSnap::default();
                             parser
                                 .decode_segment(start, end_tick, filter, |ctx| {
-                                    cols.update(ctx, wants);
                                     if pred.matches(ctx.tick()) {
-                                        cols.collect_tick(ctx, keys, wants);
+                                        cols.collect_tick(ctx, keys, wants, barriers);
                                     }
                                 })
                                 .map_err(to_py_err)?;
@@ -449,18 +476,21 @@ impl Demo {
     /// contains a new keyframe for these entities. Therefore, a direct seek
     /// produces the same state as a full decode at `tick`.
     pub(super) fn snapshot_at_tick(&self, tick: i32, wants: SnapWants) -> PyResult<SnapshotFrames> {
+        let barriers = self.barrier_timeline(wants)?;
         let ctx = self.parser.parse_to_tick(tick).map_err(to_py_err)?;
         let mut cols = SegSnap::default();
         if ctx.tick() == tick {
             let keys = SnapKeys {
+                ammo: if wants.player_ticks {
+                    AmmoKeys::resolve(&ctx)
+                } else {
+                    AmmoKeys::default()
+                },
                 pt: PtKeys::resolve(&ctx),
                 wk: WkKeys::resolve(&ctx),
                 tk: TkKeys::resolve(&ctx),
             };
-            if wants.player_ticks {
-                cols.barriers.rebuild(&ctx);
-            }
-            cols.collect_tick(&ctx, &keys, wants);
+            cols.collect_tick(&ctx, &keys, wants, barriers);
         }
         cols.into_frames(wants)
     }
@@ -491,13 +521,13 @@ impl Demo {
     /// Populate the caches for the requested snapshot datasets that aren't
     /// already loaded, using a single parallel decode pass over the demo.
     pub(super) fn ensure_snapshots(&mut self, mut wants: SnapWants) -> PyResult<()> {
-        if self.cached_player_ticks.is_some() {
+        if self.cached_datasets[Dataset::PlayerTicks].is_some() {
             wants.player_ticks = false;
         }
-        if self.cached_world_ticks.is_some() {
+        if self.cached_datasets[Dataset::WorldTicks].is_some() {
             wants.world_ticks = false;
         }
-        if self.cached_troopers.is_some() {
+        if self.cached_datasets[Dataset::Troopers].is_some() {
             wants.troopers = false;
         }
         if !wants.any() {
@@ -505,43 +535,20 @@ impl Demo {
         }
         let (pt, wt, tr) = self.build_snapshots_parallel(wants, &TickPredicate::All)?;
         if let Some(df) = pt {
-            self.cached_player_ticks = Some(df);
+            self.cached_datasets[Dataset::PlayerTicks] = Some(df);
         }
         if let Some(df) = wt {
-            self.cached_world_ticks = Some(df);
+            self.cached_datasets[Dataset::WorldTicks] = Some(df);
         }
         if let Some(df) = tr {
-            self.cached_troopers = Some(df);
+            self.cached_datasets[Dataset::Troopers] = Some(df);
         }
         Ok(())
     }
 
     /// Borrow a cached frame for a validated dataset.
     fn cached_frame(&self, dataset: Dataset) -> Option<&DataFrame> {
-        match dataset {
-            Dataset::Abilities => self.cached_abilities.as_ref(),
-            Dataset::AbilityUpgrades => self.cached_ability_upgrades.as_ref(),
-            Dataset::AbilityTicks => self.cached_ability_ticks.as_ref(),
-            Dataset::Chat => self.cached_chat.as_ref(),
-            Dataset::MidBoss => self.cached_mid_boss.as_ref(),
-            Dataset::Objectives => self.cached_objectives.as_ref(),
-            Dataset::PlayerTicks => self.cached_player_ticks.as_ref(),
-            Dataset::WorldTicks => self.cached_world_ticks.as_ref(),
-            Dataset::Kills => self.cached_kills.as_ref(),
-            Dataset::Damage => self.cached_damage.as_ref(),
-            Dataset::FlexSlots => self.cached_flex_slots.as_ref(),
-            Dataset::ItemPurchases => self.cached_item_purchases.as_ref(),
-            Dataset::Troopers => self.cached_troopers.as_ref(),
-            Dataset::Neutrals => self.cached_neutrals.as_ref(),
-            Dataset::Breakables => self.cached_breakables.as_ref(),
-            Dataset::SinnersSacrifice => self.cached_sinners_sacrifice.as_ref(),
-            Dataset::StatModifierEvents => self.cached_stat_modifier_events.as_ref(),
-            Dataset::ActiveModifiers => self.cached_active_modifiers.as_ref(),
-            Dataset::Urn => self.cached_urn.as_ref(),
-            Dataset::StreetBrawlTicks => self.cached_street_brawl_ticks.as_ref(),
-            Dataset::StreetBrawlRounds => self.cached_street_brawl_rounds.as_ref(),
-            Dataset::Rift => self.cached_rift.as_ref(),
-        }
+        self.cached_datasets[dataset].as_ref()
     }
 
     /// Union of the `tick` columns of the given event datasets (loading each if
