@@ -168,7 +168,7 @@ jobs:
         with:
           target: ${{ matrix.target }}
           manylinux: "2014"
-          args: --locked --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
+          args: --release --locked --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
 
       - name: Upload wheels
         uses: actions/upload-artifact@v6
@@ -247,7 +247,7 @@ jobs:
           uv run --no-sync python benchmarks/bench_parse.py \
             --demo tests/fixtures/108575009.dem \
             --case construct --case snapshot/single --case load/combat \
-            --repeat 1 --warmup 0 --build-profile debug \
+            --repeat 1 --warmup 0 --build-profile release \
             --output ../../target/benchmarks/ci-smoke.json
 
       - name: Upload benchmark smoke report

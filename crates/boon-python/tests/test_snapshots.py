@@ -14,11 +14,6 @@ from conftest import _require_demo_fixture
 from polars.testing import assert_frame_equal
 
 
-@pytest.fixture(scope="module")
-def demo() -> Demo:
-    return Demo(str(_require_demo_fixture()), preload=False)
-
-
 def test_specific_ticks_match_full_frame(demo: Demo) -> None:
     full = demo.player_ticks
     some = sorted(full["tick"].unique().to_list())[100:103]
@@ -46,12 +41,11 @@ def test_barriers_match_seeks_and_segmented_passes(demo: Demo, monkeypatch) -> N
             snapshot.sort(["steam_id", "hero_id"]),
             expected.filter(pl.col("tick") == tick),
         )
+    passes = Demo(str(_require_demo_fixture()), preload=False)
     for segments in (1, 4):
         monkeypatch.setenv("BOON_TICK_SEGMENTS", str(segments))
-        # A window selects the full-pass path, even for a short fixture.
-        sampled = Demo(str(_require_demo_fixture()), preload=False).snapshots(
-            start_tick=ticks[0], end_tick=ticks[-1]
-        )
+        # The window forces a full pass; collect only the compared ticks.
+        sampled = passes.snapshots(ticks=ticks, start_tick=ticks[0], end_tick=ticks[-1])
         assert isinstance(sampled, pl.DataFrame)
         assert_frame_equal(
             sampled.filter(pl.col("tick").is_in(ticks)).sort(
@@ -114,7 +108,7 @@ def test_multiple_events_align_to_union_of_event_ticks(demo: Demo) -> None:
     assert set(snap["tick"].unique().to_list()) <= event_ticks
 
 
-def test_message_only_event_ticks_match_loaded_datasets() -> None:
+def test_message_only_event_ticks_match_loaded_datasets(demo: Demo) -> None:
     events = [
         "kills",
         "damage",
@@ -127,13 +121,12 @@ def test_message_only_event_ticks_match_loaded_datasets() -> None:
     direct = direct_demo.snapshots(events=events)
     assert isinstance(direct, pl.DataFrame)
 
-    loaded_demo = Demo(str(_require_demo_fixture()), preload=False)
-    loaded_demo.load(*events)
-    loaded = loaded_demo.snapshots(events=events)
-    assert isinstance(loaded, pl.DataFrame)
-
+    ticks = set()
+    for name in events:
+        ticks.update(getattr(demo, name)["tick"])
+    expected = demo.player_ticks.filter(pl.col("tick").is_in(ticks))
     keys = ["tick", "hero_id"]
-    assert direct.sort(keys).equals(loaded.sort(keys))
+    assert direct.sort(keys).equals(expected.sort(keys))
 
 
 def test_single_dataset_returns_frame(demo: Demo) -> None:

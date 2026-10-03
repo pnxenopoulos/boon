@@ -102,7 +102,7 @@ a wheel. This prevents uv from replacing the build under test.
 
 CI builds Linux wheels for x86-64 and ARM64 with Python 3.11–3.14.
 ARM64 builds use `ubuntu-24.04-arm`. CI and releases use native manylinux2014
-containers for these builds. The Python test jobs use the x86-64 wheels.
+containers for these builds. The Python test jobs use the x86-64 release wheels.
 
 ## Writing Style
 
@@ -231,6 +231,8 @@ Tests that require a missing fixture are skipped automatically.
 Pytest manages the shared replay through a session fixture. Use shared replay
 and reference frames for read-only checks. Do not keep a separate global cache.
 Use a fresh `Demo` when a test checks parsing, caches, or decoder settings.
+The session fixture uses serial snapshot decoding. Seek and parallel tests compare
+independent parses with the same reference frames.
 
 Use function-scoped `monkeypatch` for temporary settings and `tmp_path` for mutable
 files. Use `tmp_path_factory` for catalog files shared by module or session fixtures.

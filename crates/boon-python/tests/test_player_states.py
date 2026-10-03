@@ -109,11 +109,15 @@ def test_native_full_query_matches_exact_ticks_and_preserves_unknown_bits(state_
     full = state_demo.player_states(steam_ids=[steam_id], data_version=VERSION)
     assert full.height > 0
     assert full["steam_id"].unique().to_list() == [steam_id]
-    ticks = full["tick"].gather([0, full.height // 2, full.height - 1]).to_list()
-    selected = state_demo.player_states(
-        ticks=[*reversed(ticks), ticks[0]], steam_ids=[steam_id], data_version=VERSION
-    )
-    assert_frame_equal(selected, full.filter(pl.col("tick").is_in(ticks)))
+    middle = full.height // 2
+    for indices in ([0], [middle, middle + 1], [full.height - 1]):
+        ticks = full["tick"].gather(indices).to_list()
+        selected = state_demo.player_states(
+            ticks=[*reversed(ticks), ticks[0]],
+            steam_ids=[steam_id],
+            data_version=VERSION,
+        )
+        assert_frame_equal(selected, full.filter(pl.col("tick").is_in(ticks)))
     assert full["unknown_states"].list.len().max() > 0
 
 

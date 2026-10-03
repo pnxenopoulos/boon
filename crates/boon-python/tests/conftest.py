@@ -50,7 +50,10 @@ def demo(request: pytest.FixtureRequest) -> Demo:
     Tests that check parsing, caches, or decoder settings use fresh Demo instances.
     """
     parsed = Demo(str(request.param), preload=False)
-    parsed.load(*ALL_DATASETS)
+    # Share one serial reference across seek and parallel comparisons.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("BOON_TICK_SEGMENTS", "1")
+        parsed.load(*ALL_DATASETS)
     return parsed
 
 

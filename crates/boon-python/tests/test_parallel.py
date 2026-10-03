@@ -17,13 +17,9 @@ SNAPSHOT_DATASETS = ["player_ticks", "world_ticks", "troopers"]
 
 
 @pytest.fixture(scope="module")
-def serial_frames() -> dict[str, pl.DataFrame]:
-    """Decode the serial reference once; parallel checks use fresh parsers."""
-    with pytest.MonkeyPatch.context() as patch:
-        patch.setenv("BOON_TICK_SEGMENTS", "1")
-        serial = Demo(str(_require_demo_fixture()), preload=False)
-        serial.load(*SNAPSHOT_DATASETS, "kills")
-    return {name: getattr(serial, name) for name in (*SNAPSHOT_DATASETS, "kills")}
+def serial_frames(demo: Demo) -> dict[str, pl.DataFrame]:
+    """Reuse the session's serial reference; parallel checks use fresh parsers."""
+    return {name: getattr(demo, name) for name in (*SNAPSHOT_DATASETS, "kills")}
 
 
 @pytest.mark.parametrize("dataset", SNAPSHOT_DATASETS)
