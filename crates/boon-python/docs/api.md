@@ -962,17 +962,28 @@ player upgrades one of their abilities. Boon loads this dataset on first access.
 
 ```python
 demo.item_purchases  # polars.DataFrame
+# Select the catalog version for this demo.
+demo.get_item_purchases(data_version="6712")
 ```
 
-Item and ability changes.
-Boon loads this dataset on first access.
+Item and ability changes. Boon loads this dataset on first access.
+The property uses the newest installed boon-data version. If none is installed,
+Boon downloads the latest version. A missing selected version is also downloaded.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `tick` | `int` | The game tick when the transaction occurred |
+| `tick` | `int` | The tick of the transaction |
+| `steam_id` | `UInt64` or null | The player's Steam ID, if recorded |
 | `hero_id` | `int` | The hero ID of the player |
-| `ability_id` | `int` | The raw MurmurHash2 item/ability ID (use `ability_names()` to resolve) |
-| `change` | `str` | Transaction type: `"purchased"`, `"upgraded"`, `"sold"`, `"swapped"`, `"leveled_up"`, `"failure"`, `"unknown"` |
+| `ability_id` | `int` | The raw MurmurHash2 item/ability ID (use `ability_names(version="6712")` to resolve) |
+| `change` | `str` | Recorded change: `"purchased"`, `"upgraded"`, `"sold"`, `"swapped"`, `"leveled_up"`, `"failure"`, `"unknown"` |
+| `upgraded_from_ability_ids` | `List[UInt32]` | IDs of matched component items |
+
+Boon reads component links from `abilities.json`. It matches each purchase to
+component sales by the same Steam ID at the same tick. No unique match gives an
+empty list. Event order does not affect the match. These links are inferred;
+`change` retains the recorded value. An item-path upgrade can have a `purchased`
+row with component IDs and a separate `sold` row.
 
 Boon uses the client version in the demo header to distinguish an old failure
 from a new level-up event. If that version is absent, this event is `"unknown"`.

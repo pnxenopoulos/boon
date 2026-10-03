@@ -6,6 +6,7 @@ from boon import (
     ability_stats,
     data,
     hero_stats,
+    item_purchases,
     player_states,
     rulesets,
     snapshots,
@@ -38,9 +39,10 @@ from boon.names import (
 
 __version__ = version("boon-deadlock")
 
-# Surface derived datasets as convenience methods on Demo. The implementations live in
-# ``boon.stats``; these are thin delegators so ``demo.teamfights()``
-# and ``boon.stats.teamfights(demo)`` are the same computation.
+# Expose Python dataset and analysis helpers on the native Demo type.
+Demo.get_item_purchases = item_purchases.get_item_purchases
+# The extension class is mutable; ty treats the stub property as read-only.
+Demo.item_purchases = property(item_purchases.get_item_purchases)  # ty: ignore[invalid-assignment]
 Demo.snapshots = snapshots.snapshots
 Demo.player_states = player_states.player_states
 Demo.imbues = ability_stats.imbues

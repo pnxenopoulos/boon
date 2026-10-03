@@ -17,6 +17,7 @@ Unreleased.
 - Add `player_states()` for recorded states and `imbues()` for item selections.
 - Use `steam_ids` for stat, imbue, and state queries. Add Steam IDs to summary tables. Remove player slots from results.
 - Add summary `barrier_absorption`. Keep healing separate.
+- Add item-purchase Steam IDs and `upgraded_from_ability_ids`. Match component sales with boon-data.
 - Correct modifier tracking after table changes and pauses. Exclude future state and ended effects.
 - Make barrier snapshots agree across direct seeks and full passes.
 - Add flat move-speed bonuses and penalties before the percentage adjustment.

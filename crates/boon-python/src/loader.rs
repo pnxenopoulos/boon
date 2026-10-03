@@ -349,6 +349,7 @@ impl Demo {
         // ── Column vectors for item_purchases ──
         let mut ip_ticks: Vec<i32> = Vec::new();
         let mut ip_hero_ids: Vec<i64> = Vec::new();
+        let mut ip_steam_ids: Vec<Option<u64>> = Vec::new();
         let mut ip_ability_ids: Vec<u32> = Vec::new();
         let mut ip_changes: Vec<String> = Vec::new();
 
@@ -599,6 +600,7 @@ impl Demo {
         let mut pk_cell_z: Option<u64> = None;
         // Controller hero_id key (for purchases/shop_events slot→hero mapping)
         let mut ck_hero_id: Option<u64> = None;
+        let mut ck_steam_id: Option<u64> = None;
 
         // Ability upgrade slot keys: (item_id_key, upgrade_bits_key) for indices 0..7
         let mut au_slot_keys: Vec<(Option<u64>, Option<u64>)> = Vec::new();
@@ -764,6 +766,7 @@ impl Demo {
                         if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
+                            ck_steam_id = s.resolve_field_key("m_steamID");
                         }
                     }
                     if load_ability_upgrades {
@@ -2067,8 +2070,25 @@ impl Demo {
                                     msg.change,
                                     game_directory.as_deref(),
                                 );
+                                let steam_id = msg
+                                    .purchaser_player_slot
+                                    .filter(|&slot| slot >= 0)
+                                    .and_then(|slot| slot.checked_add(1))
+                                    .and_then(|index| ctx.entities().get(index))
+                                    .filter(|entity| {
+                                        entity.class_name.as_ref() == "CCitadelPlayerController"
+                                    })
+                                    .and_then(|entity| {
+                                        ck_steam_id.and_then(|key| entity.fields.get(&key))
+                                    })
+                                    .and_then(|value| match value {
+                                        boon_parser::FieldValue::U64(id) => Some(*id),
+                                        _ => None,
+                                    })
+                                    .filter(|&id| id != 0);
                                 ip_ticks.push(event.tick);
                                 ip_hero_ids.push(hero_id);
+                                ip_steam_ids.push(steam_id);
                                 ip_ability_ids.push(ability_id);
                                 ip_changes.push(change.to_string());
                             }
@@ -2371,6 +2391,7 @@ impl Demo {
         if load_item_purchases {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), ip_ticks),
+                Column::new("steam_id".into(), ip_steam_ids),
                 Column::new("hero_id".into(), ip_hero_ids),
                 Column::new("ability_id".into(), ip_ability_ids),
                 Column::new("change".into(), ip_changes),

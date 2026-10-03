@@ -100,12 +100,12 @@ impl Demo {
         self.dataset_frame(py, Dataset::AbilityUpgrades)
     }
 
-    /// Item purchase/sell/upgrade events as a Polars DataFrame.
+    /// Recorded item changes before catalog component matching.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``change``.
+    /// Columns: ``tick``, ``steam_id``, ``hero_id``, ``ability_id``, ``change``.
     /// Boon loads this dataset on first access.
     #[getter]
-    pub(crate) fn item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+    pub(crate) fn _item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.dataset_frame(py, Dataset::ItemPurchases)
     }
 

@@ -789,15 +789,30 @@ class Demo:
     def item_purchases(self) -> pl.DataFrame:
         """Item shop transactions as a Polars DataFrame.
 
-        Boon loads this dataset on first access.
+        Boon loads this dataset on first access. Use the newest installed
+        boon-data version, or download latest if none is installed.
 
         Columns:
-            - **tick** (*int*) -- The game tick when the transaction occurred.
+            - **tick** (*int*) -- The tick of the transaction.
+            - **steam_id** (*int | None*) -- The player's Steam ID, if recorded.
             - **hero_id** (*int*) -- The hero ID of the player.
             - **ability_id** (*int*) -- The raw MurmurHash2 item/ability ID.
-            - **change** (*str*) -- Transaction type: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"leveled_up"``, ``"failure"``, ``"unknown"``.
+            - **change** (*str*) -- Recorded change: ``"purchased"``, ``"upgraded"``, ``"sold"``, ``"swapped"``, ``"leveled_up"``, ``"failure"``, ``"unknown"``.
+            - **upgraded_from_ability_ids** (*list[int]*) -- Catalog components
+              sold by this player at this tick. Empty when no unique match exists.
         """
         ...
+
+    def get_item_purchases(self, /, *, data_version: str | None = None) -> pl.DataFrame:
+        """Read item changes with component links from the selected boon-data version.
+
+        Use the same columns as item_purchases. Download a missing version.
+        Omit data_version to use the property default.
+        """
+        ...
+
+    @property
+    def _item_purchases(self) -> pl.DataFrame: ...
 
     @property
     def chat(self) -> pl.DataFrame:

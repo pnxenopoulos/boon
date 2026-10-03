@@ -65,7 +65,9 @@ ABILITIES_COLUMNS = {"tick", "hero_id", "ability"}
 
 ABILITY_UPGRADES_COLUMNS = {"tick", "hero_id", "ability_id", "tier"}
 
-ITEM_PURCHASES_COLUMNS = {"tick", "hero_id", "ability_id", "change"}
+ITEM_PURCHASES_COLUMNS = {
+    "tick", "steam_id", "hero_id", "ability_id", "change", "upgraded_from_ability_ids"
+}
 
 CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
 
