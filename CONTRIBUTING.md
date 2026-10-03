@@ -102,7 +102,8 @@ a wheel. This prevents uv from replacing the build under test.
 
 CI builds Linux wheels for x86-64 and ARM64 with Python 3.11–3.14.
 ARM64 builds use `ubuntu-24.04-arm`. CI and releases use native manylinux2014
-containers for these builds. The Python test jobs use the x86-64 release wheels.
+containers for these builds. The Python test jobs use the x86-64 debug wheels.
+The debug profile uses `opt-level = 1` for Boon and pbdems2.
 
 ## Writing Style
 

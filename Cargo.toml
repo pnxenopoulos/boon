@@ -46,6 +46,10 @@ incremental = false   # boon-proto is a 28k-line generated crate; incremental bo
 [profile.dev.package.boon-deadlock]
 opt-level = 1
 
+# Optimize replay decoding without a release build.
+[profile.dev.package.pbdems2]
+opt-level = 1
+
 [profile.dev.package.boon-proto]
 debug = false         # never step into prost-generated proto code; skip its debuginfo
 
