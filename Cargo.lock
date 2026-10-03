@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "boon-proto"
-version = "0.4.11070267+6731"
+version = "0.4.11078118+6745"
 dependencies = [
  "bytes",
  "prost",

@@ -16549,6 +16549,8 @@ pub struct CMsgGcToClientRankDataUpdate {
 pub struct CMsgClientToGcRequestHeroReleaseVoteTally {
     #[prost(uint32, repeated, tag = "1")]
     pub vote_rounds: ::prost::alloc::vec::Vec<u32>,
+    #[prost(bool, optional, tag = "2")]
+    pub is_initial_request: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]

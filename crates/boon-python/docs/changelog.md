@@ -7,7 +7,7 @@ Unreleased.
 - Support demos recorded with the City Never Sleeps update (September 29, 2026) or later. Use Boon 0.10.0 or earlier for demos recorded before that update.
 - Remove old demo-format fallbacks and the `stat_modifier_*` snapshot columns. Read stat bonus types from boon-data. Test the current format with `108575009.dem`.
 - Require pbdems2 0.3.3 to read `fixed8` fields in new demos.
-- Update protobufs to Deadlock 6731 (`boon-proto 0.4.11070267+6731`). The direct protobuf API has changed fields and types.
+- Update protobufs to Deadlock 6745 (`boon-proto 0.4.11078118+6745`). The direct protobuf API has changed fields and types.
 - Correct light and heavy melee labels in `damage`. Read new combat log and modifier fields.
 - Add hero and ability stat queries with `baseline` and `current` modes. Use data from boon-data.
 - Read source-specific bindings and normalized modifier counts. Use catalog scaling defaults and keep disabled scaling inactive.
