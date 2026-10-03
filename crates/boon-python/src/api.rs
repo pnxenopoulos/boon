@@ -83,35 +83,15 @@ impl Demo {
             match_id,
             game_mode,
             paused_ticks: None,
-            cached_player_ticks: None,
-            cached_world_ticks: None,
-            cached_kills: None,
-            cached_damage: None,
+            cached_datasets: DatasetCache::default(),
+            cached_barriers: std::sync::OnceLock::new(),
             cached_summary: None,
             game_over: None,
             game_over_match_clock: None,
             game_over_match_clock_scanned: false,
             banned_hero_ids: None,
             always_events_scanned: false,
-            cached_abilities: None,
-            cached_flex_slots: None,
-            cached_ability_upgrades: None,
-            cached_item_purchases: None,
-            cached_chat: None,
-            cached_objectives: None,
-            cached_mid_boss: None,
-            cached_troopers: None,
-            cached_neutrals: None,
-            cached_breakables: None,
-            cached_sinners_sacrifice: None,
-            cached_stat_modifier_events: None,
-            cached_active_modifiers: None,
-            cached_ability_ticks: None,
             cached_players: None,
-            cached_street_brawl_ticks: None,
-            cached_street_brawl_rounds: None,
-            cached_urn: None,
-            cached_rift: None,
         };
         if preload {
             demo.load_datasets(py, &[Dataset::Kills, Dataset::Damage, Dataset::Abilities])?;
@@ -201,8 +181,10 @@ impl Demo {
     /// Return six cached Polars DataFrames:
     ///
     /// - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
-    ///   Includes ``player_slot``, ``hero_id``, damage by target type, damage taken,
+    ///   Includes ``steam_id``, ``hero_id``, damage by target type, damage taken,
     ///   ``player_healing``, ``teammate_healing``, and ``self_healing``.
+    ///   ``barrier_absorption`` is damage stopped by barriers this player provided
+    ///   (recorded ``player_barriering``). Healing and barrier absorption are separate.
     ///   Added counters are null when absent.
     /// - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
     ///   for each player, snapshot, and source. Includes ``source_id`` and the protobuf
@@ -215,13 +197,13 @@ impl Demo {
     ///   healing, regeneration, or another recorded statistic. Category rows
     ///   (``is_category=True``) duplicate specific sources; do not add them together.
     /// - ``healing``: healing and regeneration rows without category duplicates.
-    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_player_slot``,
-    ///   ``healer_hero_id``, ``target_player_slot``, ``target_hero_id``, ``source_name``,
+    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_hero_id``,
+    ///   ``target_steam_id``, ``target_hero_id``, ``source_name``,
     ///   ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
     ///   ``total`` is the recorded cumulative amount. Zero changes remain in the table.
     ///
     /// Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
-    /// Do not sum cumulative totals across periods. Use player slots across hero changes;
+    /// Do not sum cumulative totals across periods. Use Steam IDs across hero changes;
     /// hero IDs come from the match roster. These tables do not contain individual heals.
     ///
     /// Raises ``DemoMessageError`` if the post-match message is absent or invalid.
@@ -270,7 +252,7 @@ impl Demo {
     ///     >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
     #[pyo3(signature = (datasets=None, *, ticks=None, every=None, seconds=None, events=None, start_tick=None, end_tick=None))]
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn snapshots(
+    pub(crate) fn _snapshots(
         &mut self,
         py: Python<'_>,
         datasets: Option<StrOrList>,

@@ -1,4 +1,4 @@
-import re
+import tomllib
 from pathlib import Path
 
 project = "Boon"
@@ -7,7 +7,7 @@ copyright = "2026, Peter Xenopoulos"
 
 # Read version from Cargo.toml (single source of truth)
 _cargo_toml = Path(__file__).resolve().parent.parent / "Cargo.toml"
-version = re.search(r'^version\s*=\s*"(.+?)"', _cargo_toml.read_text(), re.MULTILINE).group(1)
+version = tomllib.loads(_cargo_toml.read_text(encoding="utf-8"))["package"]["version"]
 
 extensions = [
     "myst_parser",

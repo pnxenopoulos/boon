@@ -1,13 +1,13 @@
 # Replay verification checklist
 
 Use this checklist with the demo open in the game viewer and the current Boon
-build installed. Record what you see in the viewer **before** inspecting Boon's
-answer. A successful parse alone does not establish that the data is correct.
+build installed. Record viewer values **before** you inspect Boon's results.
+Compare values as well as checking that the file can be read.
 
 ## Manual pass with the viewer open
 
 For each check, record **pass**, **fail**, **not observed**, or **not directly
-observable**. An event missing from this match is a coverage gap, not a pass.
+observable**. Record **not observed** for events absent from this match.
 Use this log for discrepancies:
 
 | Demo tick / match clock | Player / entity | Dataset and field | Viewer observation | Boon value | Outcome / notes |
@@ -31,7 +31,7 @@ Use this log for discrepancies:
 
 ### 2. Pause at three quiet moments
 
-Choose an early, middle and late tick. Do a check of **each player** at each tick with
+Choose an early, middle and late tick. Check **each player** at each tick with
 `demo.snapshots(ticks=[...])`:
 
 - [ ] Current/max health, level, alive/dead state and kills/deaths/assists match
@@ -100,30 +100,51 @@ with isolated actions; use a busy fight as an additional check.
   direct viewer readout; teamfights use a heuristic and have no official
   scoreboard answer. Do not count visual plausibility as exact verification.
 
-### 6. Record the limits of the check
+### 6. Verify stats, states, and imbues
+
+Use the matching boon-data client version. See [feature examples](examples.md#stats-states-and-ammo).
+
+- [ ] Record `data_version`, tick, Steam ID, query mode, and the viewer value.
+  Use the tick passed to `demo_gototick`; the pause message can show a server tick.
+- [ ] Compare each supported hero stat. Check units, `status`, and `diagnostic`.
+  `partial` can omit an effect; `unresolved` does not mean zero.
+- [ ] Compare `baseline` and `current` before and during a temporary effect.
+  Movement values remain nominal in both modes.
+- [ ] Compare `ammo_fraction`, `ammo`, and finite `max_ammo`. Check
+  `unlimited_ammo` during a slide or another unlimited-ammo effect.
+- [ ] Compare `player_states()` with visible combat, movement, and debuff states.
+  Check unknown bits and null masks before you interpret absent flags.
+- [ ] Compare `imbues().bindings` with each item selection. Check that ability
+  stat bonuses apply to the selected ability, including item cooldown rules.
+- [ ] Compare summary `player_healing` and `barrier_absorption` separately.
+  Some viewer screens show their combined total.
+
+### 7. Record the limits of the check
 
 - [ ] Leave unobservable IDs, exact timers and coordinates marked unverified
   unless you have an independent readout. Record HUD rounding or interpolation
   differences rather than silently shifting ticks to make values agree.
-- [ ] Do not expect `demo.healing`, `demo.barriers()` or calculated hero stats.
+- [ ] Do not expect `demo.healing` or `demo.barriers()`. Use the stat query
+  methods to calculate supported hero and ability values.
   Raw healing counters, `player_ticks.barrier` and damage shield fields remain;
   they do not reconstruct healing or barrier events.
-- [ ] Do not compare `stat_modifier_*` directly with final UI ammo, fire rate,
-  lifesteal or resistances. These columns omit base values and some effects.
+- [ ] Compare calculated stats with the viewer. Recorded bonus events are not final stats.
+
 - [ ] Record a second replay with features absent from the first. Examples include
   hero switching, pauses, Street Brawl, and optional map events.
 
 ## Inspect a tick while watching
 
-This uses the Python API directly. Neither `--cli` nor `--data-version` is
-required. Replace the filename and ticks with those you are viewing.
+This uses the Python API directly. No CLI flags are required. Raw snapshots
+do not require `data_version`; stats, states, imbues, and calculated ammo do.
+Replace the filename and ticks with those you are viewing.
 
 ```python
 import polars as pl
 from boon import Demo, hero_names
 
-demo = Demo("106996573.dem")
-ticks = [50707]
+demo = Demo("108575009.dem")
+ticks = [187554]
 names = hero_names()
 
 print(demo.players)
@@ -170,9 +191,9 @@ used to run it. It does not change the replay or parser.
 From the repository root, with the current Boon build installed:
 
 ```bash
-python scripts/check-demo.py 106996573.dem \
-  --out target/demo-checks/106996573 \
-  --ticks 50707
+python scripts/check-demo.py 108575009.dem \
+  --out target/demo-checks/108575009 \
+  --ticks 187554
 ```
 
 Use a new output directory for each run. On Windows, enter the command on one
@@ -180,7 +201,7 @@ line. If using this repository's WSL virtual environment, replace `python` with
 `crates/boon-python/.venv/bin/python`.
 
 Omit `--ticks` to select three ticks from the observed player history. You can
-supply several: `--ticks 30000 50707 70000`. Use **demo ticks**, not match seconds.
+supply several: `--ticks 30000 187554 70000`. Use **demo ticks**, not match seconds.
 The report includes both time conversions for the selected ticks.
 
 The full run loads and exports all datasets supported by the replay's mode,
@@ -192,9 +213,9 @@ troopers only; full trooper coverage will explicitly remain unverified.
 To also do checks of real data downloads and removal:
 
 ```bash
-python scripts/check-demo.py 106996573.dem \
-  --out target/demo-checks/106996573-with-data \
-  --ticks 50707 --cli --data-version 6698
+python scripts/check-demo.py 108575009.dem \
+  --out target/demo-checks/108575009-with-data \
+  --ticks 187554 --cli --data-version 6712
 ```
 
 Choose an available client version from `boon versions`. This option requires
@@ -290,9 +311,8 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
 - [ ] All 22 rows above have a recorded outcome or an explicit coverage gap.
 - [ ] The recorded `player_ticks.barrier`, healing counters, and damage-message
   shield fields are compared only with their documented raw observations. There is
-  no `demo.healing`, `demo.barriers()`, or calculated hero-attribute API.
-- [ ] Check `stat_modifier_values_available` and `unknown_stat_modifier_count`.
-  Never compare `stat_modifier_*` directly with final UI resistances/fire rate.
+  no `demo.healing` or `demo.barriers()`. Calculated stats use separate methods.
+- [ ] Use a boon-data catalog for the replay's client version when you check stat bonus events.
 - [ ] Do not require `health <= max_health` at every transitional tick without
   a comparison with the game; temporary health effects and replication can complicate it.
 
@@ -322,6 +342,25 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
 - [ ] `teamfights()`: inspect one fight and two simultaneous distant skirmishes.
   Review participants, time bounds, damage and kills. This is a heuristic:
   test `gap_seconds`, `radius`, and `min_players` against your intended definition.
+
+### Calculated stats, imbues, and state flags
+
+- [ ] Use the demo's client version for `data_version`.
+  Record the selected source commit from the result metadata.
+- [ ] Select stats with `HeroStat` or `AbilityStat` enum members.
+  Compare the reported units with the viewer. Check `partial` and `unresolved` rows.
+- [ ] Select a player with `steam_ids`, using an ID from `demo.players`.
+  Check that the selection follows the player through a hero change.
+- [ ] Use `explain=True` to inspect base values, active effects, upgrades, and recorded counters.
+  Do not add intermediate input rows to the final value.
+- [ ] Compare `imbues().bindings` with the viewer's item and ability selections.
+  Check that ability bonuses apply only to their recorded targets.
+- [ ] Inspect `player_states()` before, during, and after a slide or sprint.
+  Keep the three masks separate. Check unknown bit indices and null values.
+
+Calculated movement speeds exclude current firing, crouching, and slow states.
+State flags do not adjust those speeds. See {doc}`hero-stats`, {doc}`ability-stats`,
+and {doc}`player-states` for the full rules and limits.
 
 ### API paths, CLI and downloads
 
@@ -355,8 +394,8 @@ Use one clear event of each kind. Then do a check of a boundary or repeated even
 from pathlib import Path
 import polars as pl
 
-folder = Path("target/demo-checks/106996573")
-tick, hero = 50707, 66
+folder = Path("target/demo-checks/108575009")
+tick, hero = 187554, 66
 
 players = pl.scan_parquet(folder / "player_ticks.parquet")
 print(players.filter((pl.col("tick") == tick) & (pl.col("hero_id") == hero)).collect())
@@ -371,7 +410,8 @@ print(hits.filter(
 # Inspect a recorded summary statistic without double-counting categories.
 matrix = pl.read_parquet(folder / "summary_damage.parquet")
 print(matrix.filter((pl.col("stat_type") == "damage") & ~pl.col("is_category"))
-      .group_by("dealer_player_slot").agg(pl.col("damage").sum()))
+      .filter(pl.col("dealer_steam_id").is_not_null())
+      .group_by("dealer_steam_id").agg(pl.col("damage").sum()))
 ```
 
 Compare a fresh lazy load with the exported evidence from the bulk load:
@@ -380,21 +420,21 @@ Compare a fresh lazy load with the exported evidence from the bulk load:
 from boon import Demo
 from polars.testing import assert_frame_equal
 
-fresh = Demo("106996573.dem", preload=False)
+fresh = Demo("108575009.dem", preload=False)
 assert_frame_equal(fresh.damage, pl.read_parquet(folder / "damage.parquet"))
 ```
 
 ## Turn independent observations into repeatable assertions
 
 Transcribe a value from the replay UI, not from Boon's output. Suppose Victor has
-123 health at demo tick 50707. Save the following JSON in `observations.json`.
+123 health at demo tick 187554. Save the following JSON in `observations.json`.
 **123 is an example. Replace it with the value you observe.**
 
 ```json
 [
   {
     "dataset": "player_ticks",
-    "where": {"tick": 50707, "hero_id": 66},
+    "where": {"tick": 187554, "hero_id": 66},
     "expect": {"health": 123},
     "tolerance": 0
   }

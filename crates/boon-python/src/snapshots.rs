@@ -58,14 +58,6 @@ pub(super) fn resolve_stat_viewer_keys(
     })
 }
 
-// The vector is usable only when the serializer exposes its count and entry fields.
-pub(super) fn stat_viewer_values_available(
-    count: Option<u64>,
-    keys: &[StatViewerKeys; STAT_VIEWER_SLOTS],
-) -> bool {
-    count.is_some() && keys[0].value_type.is_some() && keys[0].value.is_some()
-}
-
 /// Split the full-packet offsets into `n` contiguous `(start_offset, end_tick)`
 /// segments: segment 0 starts from the signon baseline (`None`), the rest
 /// cold-restart at an evenly spaced full packet.
@@ -83,11 +75,90 @@ pub(super) fn segment_ranges(offsets: &[(usize, i32)], n: usize) -> Vec<(Option<
         .collect()
 }
 
+/// Primary-gun fields, discovered from the replay schema without a class-name list.
+#[derive(Default)]
+pub(super) struct AmmoKeys(HashMap<String, WeaponAmmoKeys>);
+
+struct WeaponAmmoKeys {
+    owner: u64,
+    slot: u64,
+    fraction: u64,
+}
+
+// EAbilitySlots_t::ESlot_Weapon_Primary, a protocol slot rather than a hero ID.
+const PRIMARY_WEAPON_SLOT: i64 = 21;
+
+fn is_primary_weapon(value: Option<&boon_parser::FieldValue>) -> bool {
+    use boon_parser::FieldValue;
+    let slot = match value {
+        // pbdems2's fallback decoder retains the unsigned wire varint for this
+        // enum. EAbilitySlots_t uses signed (zigzag) encoding, including -1.
+        Some(FieldValue::U64(value)) => (value >> 1) as i64 ^ -((value & 1) as i64),
+        Some(FieldValue::U32(value)) => i64::from(value >> 1) ^ -i64::from(value & 1),
+        Some(FieldValue::I64(value)) => *value,
+        Some(FieldValue::I32(value)) => i64::from(*value),
+        _ => return false,
+    };
+    slot == PRIMARY_WEAPON_SLOT
+}
+
+impl AmmoKeys {
+    pub(super) fn resolve(ctx: &boon_parser::Context) -> Self {
+        Self(
+            ctx.serializers()
+                .iter()
+                .filter_map(|(name, serializer)| {
+                    Some((
+                        name.to_string(),
+                        WeaponAmmoKeys {
+                            owner: serializer.resolve_field_key("m_hOwnerEntity")?,
+                            slot: serializer.resolve_field_key("m_eAbilitySlot")?,
+                            fraction: serializer.resolve_field_key("m_flAmmoFrac")?,
+                        },
+                    ))
+                })
+                .collect(),
+        )
+    }
+
+    pub(super) fn classes(&self) -> impl Iterator<Item = &str> {
+        self.0.keys().map(String::as_str)
+    }
+
+    fn collect(&self, ctx: &boon_parser::Context, by_owner: &mut HashMap<u32, Option<f32>>) {
+        by_owner.clear();
+        for (_, entity) in ctx.entities().iter() {
+            let Some(keys) = self.0.get(entity.class_name.as_ref()) else {
+                continue;
+            };
+            if !is_primary_weapon(entity.fields.get(&keys.slot)) {
+                continue;
+            }
+            let Some(owner) = entity.get_handle(Some(keys.owner)) else {
+                continue;
+            };
+            let fraction = match entity.fields.get(&keys.fraction) {
+                Some(boon_parser::FieldValue::F32(value)) if value.is_finite() && *value >= 0.0 => {
+                    Some(*value)
+                }
+                _ => None,
+            };
+            // Preserve the full owner handle (including its serial). Ambiguous
+            // primary weapons must not silently select an arbitrary fraction.
+            by_owner
+                .entry(owner)
+                .and_modify(|value| *value = None)
+                .or_insert(fraction);
+        }
+    }
+}
+
 /// Field keys for the `player_ticks` snapshot, resolved once from the send-table
 /// serializers. `p_*` fields live on `CCitadelPlayerPawn`, `c_*` on
 /// `CCitadelPlayerController`.
 #[derive(Clone, Copy, Default)]
 pub(super) struct PtKeys {
+    pub(super) steam_id: Option<u64>,
     pub(super) hero_id: Option<u64>,
     pub(super) vec_x: Option<u64>,
     pub(super) vec_y: Option<u64>,
@@ -139,8 +210,6 @@ pub(super) struct PtKeys {
     pub(super) kills: Option<u64>,
     pub(super) deaths: Option<u64>,
     pub(super) assists: Option<u64>,
-    pub(super) stat_viewer_count: Option<u64>,
-    pub(super) stat_viewer: [StatViewerKeys; STAT_VIEWER_SLOTS],
 }
 
 impl PtKeys {
@@ -149,8 +218,8 @@ impl PtKeys {
         let ctrl = ctx.serializers().get("CCitadelPlayerController");
         let p = |name: &str| pawn.and_then(|s| s.resolve_field_key(name));
         let c = |name: &str| ctrl.and_then(|s| s.resolve_field_key(name));
-        let stat_viewer = resolve_stat_viewer_keys(ctrl);
         Self {
+            steam_id: c("m_steamID"),
             hero_id: p("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"),
             vec_x: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX"),
             vec_y: p("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
@@ -202,8 +271,6 @@ impl PtKeys {
             kills: c("m_PlayerDataGlobal.m_iPlayerKills"),
             deaths: c("m_PlayerDataGlobal.m_iDeaths"),
             assists: c("m_PlayerDataGlobal.m_iPlayerAssists"),
-            stat_viewer_count: c("m_PlayerDataGlobal.m_vecStatViewerModifierValues"),
-            stat_viewer,
         }
     }
 }
@@ -261,116 +328,85 @@ impl PlayerPositionCols {
     }
 }
 
-/// Read the Source 2 simulation clock used by modifier timestamps.
-///
-/// Modifier entries store last_applied_time as GameTime_t. Player pawns expose
-/// the same clock through m_flSimulationTime. In observed Deadlock demos, all
-/// current pawns report the same value for a tick. Use the maximum finite value
-/// so a dormant or newly created pawn with a stale zero cannot move time
-/// backwards.
-///
-/// Return None when the serializer does not contain this field. This is an
-/// intentional compatibility path for old demos: callers keep explicit
-/// modifier removals but do not guess an expiry from an unrelated clock.
-pub(super) fn current_simulation_time(ctx: &boon_parser::Context, key: Option<u64>) -> Option<f32> {
-    let key = key?;
-    ctx.entities()
-        .iter()
-        .filter(|(_, entity)| entity.class_name.as_ref() == "CCitadelPlayerPawn")
-        .map(|(_, entity)| entity.get_f32(Some(key)))
-        .filter(|value| value.is_finite())
-        .max_by(f32::total_cmp)
-}
-
 /// Live barrier remaining, decoded from each pawn's persistent
 /// `modifier_barrier_tracker` entry in the `ActiveModifiers` string table.
 /// Deadlock stores barrier capacity in `float1` and the current amount in
 /// `float2`; demos without that tracker naturally stay at zero.
 pub(super) const BARRIER_TRACKER_MODIFIER_ID: u32 = 4_267_845_006; // modifier_barrier_tracker
 
+/// Recorded barrier changes, independent of entity seeking or segment boundaries.
 #[derive(Default)]
-pub(super) struct BarrierState {
-    pub(super) modifiers: boon_parser::ModifierState,
-    pub(super) remaining_by_pawn: HashMap<i32, f32>,
-    pub(super) serial_to_pawn: HashMap<u32, i32>,
-    pub(super) pawn_to_serial: HashMap<i32, u32>,
+pub(super) struct BarrierTimeline {
+    values: HashMap<u32, Vec<(i32, f32)>>,
 }
 
-impl BarrierState {
-    pub(super) fn remove_serial(&mut self, serial: u32) {
-        let Some(pawn) = self.serial_to_pawn.remove(&serial) else {
-            return;
-        };
-        if self.pawn_to_serial.get(&pawn) == Some(&serial) {
-            self.pawn_to_serial.remove(&pawn);
-            self.remaining_by_pawn.remove(&pawn);
-        }
+impl BarrierTimeline {
+    pub(super) fn build(parser: &boon_parser::Parser) -> boon_parser::Result<Self> {
+        let mut timeline = Self::default();
+        let mut serials = HashMap::new();
+        parser.visit_modifier_changes(|tick, change| timeline.apply(tick, change, &mut serials))?;
+        Ok(timeline)
     }
 
-    pub(super) fn apply_live_entry(
+    pub(super) fn apply(
         &mut self,
-        serial: u32,
-        entry: &boon_proto::proto::CModifierTableEntry,
+        tick: i32,
+        change: boon_parser::ModifierChange,
+        serials: &mut HashMap<u32, u32>,
     ) {
-        if entry.modifier_subclass != Some(BARRIER_TRACKER_MODIFIER_ID) {
-            self.remove_serial(serial);
+        let entry = &change.entry;
+        let parent = entry
+            .parent
+            .filter(|&h| boon_parser::protobuf_handle_index(Some(h)).is_some());
+        if change.kind == boon_parser::ModifierChangeKind::Removed
+            || entry.modifier_subclass != Some(BARRIER_TRACKER_MODIFIER_ID)
+            || parent.is_none()
+        {
+            if let Some(parent) = serials.remove(&change.serial) {
+                self.record(tick, parent, 0.0);
+            }
             return;
         }
-        let Some(pawn) = boon_parser::protobuf_handle_index(entry.parent) else {
-            return;
-        };
-        let remaining = entry.float2.unwrap_or(0.0);
-        let remaining = if remaining.is_finite() {
-            remaining.max(0.0)
-        } else {
-            0.0
-        };
-
-        if let Some(old_pawn) = self.serial_to_pawn.insert(serial, pawn)
-            && old_pawn != pawn
-            && self.pawn_to_serial.get(&old_pawn) == Some(&serial)
+        let parent = parent.expect("validated tracker parent");
+        if let Some(old_parent) = serials.insert(change.serial, parent)
+            && old_parent != parent
         {
-            self.pawn_to_serial.remove(&old_pawn);
-            self.remaining_by_pawn.remove(&old_pawn);
+            self.record(tick, old_parent, 0.0);
         }
-        if let Some(old_serial) = self.pawn_to_serial.insert(pawn, serial)
-            && old_serial != serial
-        {
-            self.serial_to_pawn.remove(&old_serial);
-        }
-        self.remaining_by_pawn.insert(pawn, remaining);
+        // One pool tracker per pawn. A late removal of a replaced serial must
+        // not erase the new tracker's value. Keep one active tracker per pawn.
+        serials.retain(|&serial, owner| serial == change.serial || *owner != parent);
+        let remaining = entry
+            .float2
+            .filter(|value| value.is_finite())
+            .unwrap_or_default()
+            .max(0.0);
+        self.record(tick, parent, remaining);
     }
 
-    pub(super) fn update(&mut self, ctx: &boon_parser::Context) {
-        for change in self.modifiers.update(ctx) {
-            match change.kind {
-                boon_parser::ModifierChangeKind::Removed => {
-                    self.remove_serial(change.serial);
-                }
-                boon_parser::ModifierChangeKind::Applied
-                | boon_parser::ModifierChangeKind::Changed => {
-                    self.apply_live_entry(change.serial, &change.entry);
-                }
+    fn record(&mut self, tick: i32, parent: u32, remaining: f32) {
+        let values = self.values.entry(parent).or_default();
+        if let Some(last) = values.last_mut() {
+            if last.0 == tick {
+                last.1 = remaining;
+                return;
+            }
+            if last.1 == remaining {
+                return;
             }
         }
+        values.push((tick, remaining));
     }
 
-    pub(super) fn rebuild(&mut self, ctx: &boon_parser::Context) {
-        let mut modifiers = std::mem::take(&mut self.modifiers);
-        modifiers.rebuild(ctx);
-        self.remaining_by_pawn.clear();
-        self.serial_to_pawn.clear();
-        self.pawn_to_serial.clear();
-        for (&serial, entry) in modifiers.entries() {
-            self.apply_live_entry(serial, entry);
-        }
-        self.modifiers = modifiers;
-    }
-
-    pub(super) fn remaining(&self, pawn_handle: u32) -> f32 {
-        boon_parser::protobuf_handle_index(Some(pawn_handle))
-            .and_then(|idx| self.remaining_by_pawn.get(&idx).copied())
-            .unwrap_or(0.0)
+    pub(super) fn remaining(&self, tick: i32, pawn_handle: u32) -> f32 {
+        // Keep the handle's generation: a reused entity index is a new pawn.
+        self.values
+            .get(&pawn_handle)
+            .and_then(|values| {
+                let end = values.partition_point(|&(at, _)| at <= tick);
+                end.checked_sub(1).map(|index| values[index].1)
+            })
+            .unwrap_or_default()
     }
 }
 
@@ -379,6 +415,8 @@ impl BarrierState {
 /// serial builder in `load()`.
 #[derive(Default)]
 pub(super) struct PtCols {
+    pub(super) steam_id: Vec<Option<u64>>,
+    pub(super) ammo_fraction: Vec<Option<f32>>,
     pub(super) tick: Vec<i32>,
     pub(super) hero_id: Vec<i64>,
     pub(super) x: Vec<f32>,
@@ -395,9 +433,6 @@ pub(super) struct PtCols {
     pub(super) health: Vec<i64>,
     pub(super) max_health: Vec<i64>,
     pub(super) barrier: Vec<f32>,
-    pub(super) stat_modifiers: [Vec<f32>; boon_parser::StatModifierKind::COUNT],
-    pub(super) stat_modifier_values_available: Vec<bool>,
-    pub(super) unknown_stat_modifier_count: Vec<u32>,
     pub(super) lifestate: Vec<i64>,
     pub(super) souls: Vec<i64>,
     pub(super) spent_souls: Vec<i64>,
@@ -441,7 +476,8 @@ impl PtCols {
         &mut self,
         ctx: &boon_parser::Context,
         k: &PtKeys,
-        barriers: &BarrierState,
+        barriers: &BarrierTimeline,
+        ammo: &HashMap<u32, Option<f32>>,
     ) {
         for (_, ctrl) in ctx
             .entities()
@@ -459,6 +495,12 @@ impl PtCols {
             if hid == 0 {
                 continue;
             }
+            self.steam_id.push(match ctrl.field_value(k.steam_id) {
+                Some(boon_parser::FieldValue::U64(id)) if *id != 0 => Some(*id),
+                _ => None,
+            });
+            self.ammo_fraction
+                .push(ammo.get(&pawn_handle).copied().flatten());
             self.tick.push(ctx.tick());
             self.hero_id.push(hid);
             let [x, y, z] =
@@ -482,24 +524,8 @@ impl PtCols {
             } else {
                 pawn.get_i64(k.max_health)
             });
-            self.barrier.push(barriers.remaining(pawn_handle));
-            let stat_modifier_values_available =
-                stat_viewer_values_available(k.stat_viewer_count, &k.stat_viewer);
-            let stat_modifier_count = ctrl
-                .get_i64(k.stat_viewer_count)
-                .clamp(0, STAT_VIEWER_SLOTS as i64) as usize;
-            let stat_modifier_totals = boon_parser::aggregate_stat_modifier_values(
-                k.stat_viewer[..stat_modifier_count]
-                    .iter()
-                    .map(|keys| (ctrl.get_u32(keys.value_type), ctrl.get_f32(keys.value))),
-            );
-            for kind in boon_parser::StatModifierKind::ALL {
-                self.stat_modifiers[kind.index()].push(stat_modifier_totals[kind]);
-            }
-            self.stat_modifier_values_available
-                .push(stat_modifier_values_available);
-            self.unknown_stat_modifier_count
-                .push(stat_modifier_totals.unknown_count);
+            self.barrier
+                .push(barriers.remaining(ctx.tick(), pawn_handle));
             let level = ctrl.get_i64(k.level);
             self.lifestate.push(pawn.get_i64(k.lifestate));
             self.souls.push(pawn.get_i64(k.souls));
@@ -542,18 +568,10 @@ impl PtCols {
 
     /// Build the `player_ticks` DataFrame. Column order/names must match `load()`.
     pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
-        let [
-            stat_modifier_health,
-            stat_modifier_spirit_power,
-            stat_modifier_fire_rate,
-            stat_modifier_weapon_damage,
-            stat_modifier_cooldown_reduction,
-            stat_modifier_ammo,
-            stat_modifier_bullet_resist,
-            stat_modifier_spirit_resist,
-        ] = self.stat_modifiers;
         df_from_columns(vec![
             numeric_column("tick", self.tick),
+            Column::new("steam_id".into(), self.steam_id),
+            Column::new("ammo_fraction".into(), self.ammo_fraction),
             numeric_column("hero_id", self.hero_id),
             numeric_column("x", self.x),
             numeric_column("y", self.y),
@@ -569,25 +587,6 @@ impl PtCols {
             numeric_column("health", self.health),
             numeric_column("max_health", self.max_health),
             numeric_column("barrier", self.barrier),
-            numeric_column("stat_modifier_health", stat_modifier_health),
-            numeric_column("stat_modifier_spirit_power", stat_modifier_spirit_power),
-            numeric_column("stat_modifier_fire_rate", stat_modifier_fire_rate),
-            numeric_column("stat_modifier_weapon_damage", stat_modifier_weapon_damage),
-            numeric_column(
-                "stat_modifier_cooldown_reduction",
-                stat_modifier_cooldown_reduction,
-            ),
-            numeric_column("stat_modifier_ammo", stat_modifier_ammo),
-            numeric_column("stat_modifier_bullet_resist", stat_modifier_bullet_resist),
-            numeric_column("stat_modifier_spirit_resist", stat_modifier_spirit_resist),
-            Column::new(
-                "stat_modifier_values_available".into(),
-                self.stat_modifier_values_available,
-            ),
-            numeric_column(
-                "unknown_stat_modifier_count",
-                self.unknown_stat_modifier_count,
-            ),
             numeric_column("lifestate", self.lifestate),
             numeric_column("souls", self.souls),
             numeric_column("spent_souls", self.spent_souls),
@@ -796,6 +795,7 @@ impl SnapWants {
 
 /// All snapshot field keys, resolved once from the send tables.
 pub(super) struct SnapKeys {
+    pub(super) ammo: AmmoKeys,
     pub(super) pt: PtKeys,
     pub(super) wk: WkKeys,
     pub(super) tk: TkKeys,
@@ -806,10 +806,10 @@ pub(super) type SnapshotFrames = (Option<DataFrame>, Option<DataFrame>, Option<D
 /// One segment's accumulated snapshot columns.
 #[derive(Default)]
 pub(super) struct SegSnap {
+    ammo_by_owner: HashMap<u32, Option<f32>>,
     pub(super) pt: PtCols,
     pub(super) wt: WtCols,
     pub(super) tr: TrCols,
-    pub(super) barriers: BarrierState,
 }
 
 impl SegSnap {
@@ -830,20 +830,21 @@ impl SegSnap {
         ))
     }
 
-    pub(super) fn update(&mut self, ctx: &boon_parser::Context, wants: SnapWants) {
-        if wants.player_ticks {
-            self.barriers.update(ctx);
-        }
-    }
-
     pub(super) fn collect_tick(
         &mut self,
         ctx: &boon_parser::Context,
         keys: &SnapKeys,
         wants: SnapWants,
+        barriers: Option<&BarrierTimeline>,
     ) {
         if wants.player_ticks {
-            self.pt.collect_tick(ctx, &keys.pt, &self.barriers);
+            keys.ammo.collect(ctx, &mut self.ammo_by_owner);
+            self.pt.collect_tick(
+                ctx,
+                &keys.pt,
+                barriers.expect("player snapshots have a barrier timeline"),
+                &self.ammo_by_owner,
+            );
         }
         if wants.world_ticks {
             self.wt.collect_tick(ctx, &keys.wk);

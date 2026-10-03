@@ -240,7 +240,9 @@ pub fn catalog_dir(version: Option<&str>) -> Result<PathBuf> {
         #[cfg(target_family = "wasm")]
         {
             let _ = (url, limit);
-            Err(invalid("boon-data downloads are unavailable on WebAssembly"))
+            Err(invalid(
+                "boon-data downloads are unavailable on WebAssembly",
+            ))
         }
     })
 }

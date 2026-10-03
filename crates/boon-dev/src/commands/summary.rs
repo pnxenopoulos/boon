@@ -152,8 +152,7 @@ fn print_players(info: &MatchInfo) {
     }
 
     let header = format!(
-        "  {:<4} {:<6} {:<5} {:<4} {:<4} {:<4} {:<9} {:<5} {:<4} {:<4} {:<5} {:<7} {:<6} {:<9}",
-        "Slot",
+        "  {:<6} {:<5} {:<4} {:<4} {:<4} {:<9} {:<5} {:<4} {:<4} {:<5} {:<7} {:<6} {:<9}",
         "Team",
         "Hero",
         "K",
@@ -175,8 +174,7 @@ fn print_players(info: &MatchInfo) {
     for p in &info.players {
         let s = p.stats.last();
         println!(
-            "  {:<4} {:<6} {:<5} {:<4} {:<4} {:<4} {:<9} {:<5} {:<4} {:<4} {:<5} {:<7} {:<6} {:<9}",
-            p.player_slot.unwrap_or(0),
+            "  {:<6} {:<5} {:<4} {:<4} {:<4} {:<9} {:<5} {:<4} {:<4} {:<5} {:<7} {:<6} {:<9}",
             team_name(p.team.unwrap_or(0)),
             p.hero_id.unwrap_or(0),
             s.map(|x| x.kills()).unwrap_or(0),

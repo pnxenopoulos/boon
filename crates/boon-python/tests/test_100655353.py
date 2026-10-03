@@ -1,4 +1,4 @@
-"""Regression tests for hero swaps and lethal damage in match 100655353."""
+"""Hero-swap regression tests for match 100655353."""
 
 import polars as pl
 import pytest
@@ -12,7 +12,7 @@ FIXTURE_PATH = FIXTURES_DIR / "100655353.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("100655353.dem fixture not available")
-    replay = Demo(str(FIXTURE_PATH))
+    replay = Demo(str(FIXTURE_PATH), preload=False)
     replay.load("chat", "item_purchases")
     return replay
 
@@ -40,76 +40,3 @@ def test_item_purchases_use_victor_after_silver_swap(demo: Demo) -> None:
     assert victor["tick"].min() == 7224
     assert victor["tick"].max() == 155515
     assert purchases.filter(pl.col("hero_id") == 80).is_empty()
-
-
-def test_overkill_remains_damage(demo: Demo) -> None:
-    hits = demo.damage.filter(
-        (pl.col("tick") == 35323) & (pl.col("victim_hero_id") == 66)
-    )
-    assert hits.select("damage", "victim_health_new").rows() == [
-        (54, -11),
-        (10, -21),
-    ]
-
-
-def test_summary_healing_uses_recorded_statistics(demo: Demo) -> None:
-    summary = demo.summary()
-    healing = summary["healing"]
-    assert set(healing.columns) == {
-        "interval_start_s", "interval_end_s", "healer_player_slot", "healer_hero_id",
-        "target_player_slot", "target_hero_id", "source_name", "stat_type", "amount", "total",
-    }
-    assert (healing["interval_start_s"] < healing["interval_end_s"]).all()
-    assert healing["amount"].ge(0).all()
-    assert healing["amount"].eq(0).any()
-    assert set(healing["stat_type"]) == {"healing", "regen"}
-    for stat_type in ("healing", "regen"):
-        recorded = summary["damage"].filter(
-            (pl.col("stat_type") == stat_type) & ~pl.col("is_category")
-        )
-        assert healing.filter(pl.col("stat_type") == stat_type)["amount"].sum() == recorded["damage"].sum()
-    heals = healing.filter(pl.col("stat_type") == "healing")
-    assert heals.filter(pl.col("amount") > 0).height == 394
-    assert heals.height == 607
-    assert heals["amount"].sum() == 226267
-
-
-def test_summary_snapshot_healing_and_soul_sources(demo: Demo) -> None:
-    summary = demo.summary()
-    player = summary["snapshots"].filter(
-        (pl.col("player_slot") == 2) & (pl.col("snapshot_time_s") == 2338)
-    ).row(0, named=True)
-    assert player["hero_id"] == 3
-    assert player["player_healing"] == player["self_healing"] == 4192
-    assert player["teammate_healing"] == 0
-    assert player["player_damage_taken"] == 20302
-    assert player["creep_damage"] == 36345
-    assert player["neutral_damage"] == 5481
-    assert player["self_damage"] == 6730
-    sources = summary["gold_sources"].filter(
-        (pl.col("player_slot") == 2) & (pl.col("snapshot_time_s") == 2338)
-    )
-    players = sources.filter(pl.col("source_id") == 1).row(0, named=True)
-    assert players["source_name"] == "k_ePlayers"
-    assert (players["gold"], players["gold_orbs"], players["damage"]) == (8842, 0, 53473)
-    assists = sources.filter(pl.col("source_id") == 6).row(0, named=True)
-    assert assists["source_name"] == "k_eAssists"
-    assert assists["gold"] == 908
-    assert assists["gold_orbs"] is None
-
-
-def test_summary_cumulative_healing_matches_player_counters(demo: Demo) -> None:
-    summary = demo.summary()
-    healing = summary["healing"]
-    for snapshot in summary["snapshots"].iter_rows(named=True):
-        time = snapshot["snapshot_time_s"]
-        if time not in healing["interval_end_s"]:
-            continue
-        rows = healing.filter(
-            (pl.col("interval_end_s") == time)
-            & (pl.col("healer_player_slot") == snapshot["player_slot"])
-            & (pl.col("stat_type") == "healing")
-        )
-        assert rows["total"].sum() == snapshot["player_healing"]
-        self_healing = rows.filter(pl.col("target_player_slot") == snapshot["player_slot"])
-        assert self_healing["total"].sum() == snapshot["self_healing"]

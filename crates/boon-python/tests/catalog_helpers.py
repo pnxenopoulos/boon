@@ -1,11 +1,16 @@
 """Small, deterministic boon-data releases for offline tests."""
 
 import copy
+import gzip
 import hashlib
 import json
 from pathlib import Path
 
 from boon import data
+
+MODIFIER_VALUE_TYPES = json.loads(gzip.decompress(
+    (Path(__file__).parent / "catalogs/108575009/abilities.json.gz").read_bytes()
+))["modifier_value_types"]
 
 VERSION = "6698"
 PUBLISHED = "2026-09-22T00:31:49Z"
@@ -34,6 +39,7 @@ def release(version=VERSION, records=None):
     files = {
         name: json.dumps(
             {
+                "modifier_value_types": MODIFIER_VALUE_TYPES,
                 "catalog": Path(name).stem,
                 "client_version": version,
                 "source_commit": source["commit"],

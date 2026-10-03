@@ -11,6 +11,7 @@ name = "_boon"
 crate-type = ["cdylib"]
 
 [dependencies]
+serde_json.workspace = true
 boon_parser = { path = "../boon", package = "boon-deadlock" }
 boon-proto = { workspace = true }
 prost.workspace = true

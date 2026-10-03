@@ -121,6 +121,24 @@ impl Dataset {
     }
 }
 
+/// Fixed-size storage keeps dataset lookup allocation-free.
+#[derive(Default)]
+pub(super) struct DatasetCache([Option<DataFrame>; Dataset::ALL.len()]);
+
+impl std::ops::Index<Dataset> for DatasetCache {
+    type Output = Option<DataFrame>;
+
+    fn index(&self, dataset: Dataset) -> &Self::Output {
+        &self.0[dataset as usize]
+    }
+}
+
+impl std::ops::IndexMut<Dataset> for DatasetCache {
+    fn index_mut(&mut self, dataset: Dataset) -> &mut Self::Output {
+        &mut self.0[dataset as usize]
+    }
+}
+
 impl std::str::FromStr for Dataset {
     type Err = PyErr;
 
@@ -155,8 +173,8 @@ pub(super) const MELEE_CITADEL_TYPE: i32 = 3;
 /// Valve damage flags that distinguish a light or heavy melee hit.
 /// These are the network values of ``DFLAG_LIGHT_MELEE`` and
 /// ``DFLAG_HEAVY_MELEE`` respectively.
-pub(super) const DAMAGE_FLAG_LIGHT_MELEE: u64 = 1 << 33;
-pub(super) const DAMAGE_FLAG_HEAVY_MELEE: u64 = 1 << 34;
+pub(super) const DAMAGE_FLAG_LIGHT_MELEE: u64 = 1 << 34;
+pub(super) const DAMAGE_FLAG_HEAVY_MELEE: u64 = 1 << 33;
 
 /// Return the melee flag and nullable melee subtype for a damage event.
 /// Non-melee damage has no subtype. Valve's explicit flags identify light and
@@ -186,29 +204,18 @@ mod damage_classification_tests {
 
     #[test]
     pub(super) fn separates_light_heavy_other_and_non_melee() {
-        assert_eq!(
-            classify_melee_damage(MELEE_CITADEL_TYPE, DAMAGE_FLAG_LIGHT_MELEE),
-            (true, Some("light"))
-        );
-        assert_eq!(
-            classify_melee_damage(MELEE_CITADEL_TYPE, DAMAGE_FLAG_HEAVY_MELEE),
-            (true, Some("heavy"))
-        );
-        assert_eq!(
-            classify_melee_damage(
-                MELEE_CITADEL_TYPE,
-                DAMAGE_FLAG_LIGHT_MELEE | DAMAGE_FLAG_HEAVY_MELEE
-            ),
-            (true, Some("other"))
-        );
-        assert_eq!(
-            classify_melee_damage(MELEE_CITADEL_TYPE, 0),
-            (true, Some("other"))
-        );
-        assert_eq!(
-            classify_melee_damage(1, DAMAGE_FLAG_LIGHT_MELEE),
-            (false, None)
-        );
+        // Capture fixtures use raw flags, independent of the constants under test.
+        // TakeDamageFlags_t agrees in both older and current source schemas:
+        // DFLAG_HEAVY_MELEE = 8589934592; DFLAG_LIGHT_MELEE = 17179869184.
+        for (citadel_type, flags, expected) in [
+            (3, 17_179_869_186, (true, Some("light"))),
+            (3, 77_577_846_786, (true, Some("heavy"))),
+            (3, 25_769_803_776, (true, Some("other"))),
+            (3, 0, (true, Some("other"))),
+            (1, 17_179_869_186, (false, None)),
+        ] {
+            assert_eq!(classify_melee_damage(citadel_type, flags), expected);
+        }
     }
 }
 
@@ -261,6 +268,7 @@ pub(super) fn gold_source_totals(
 /// scoreboard last-hit total is not per-snapshot; see ``build_last_hits_frame``.)
 pub(super) fn build_snapshots_frame(
     match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+    steam_ids: &HashMap<u32, u64>,
 ) -> PolarsResult<DataFrame> {
     use boon_proto::proto::c_msg_match_meta_data_contents::EGoldSource;
     use std::collections::BTreeSet;
@@ -275,14 +283,15 @@ pub(super) fn build_snapshots_frame(
     }
 
     let mut snapshot_time_s = Vec::new();
+    let mut steam_id = Vec::new();
     let mut hero_id = Vec::new();
-    let mut player_slot = Vec::new();
     let mut creep_damage = Vec::new();
     let mut neutral_damage = Vec::new();
     let mut boss_damage = Vec::new();
     let mut self_damage = Vec::new();
     let mut player_damage_taken = Vec::new();
     let mut player_healing = Vec::new();
+    let mut barrier_absorption = Vec::new();
     let mut teammate_healing = Vec::new();
     let mut self_healing = Vec::new();
     let mut damage_mitigated = Vec::new();
@@ -334,14 +343,15 @@ pub(super) fn build_snapshots_frame(
                 continue;
             };
             snapshot_time_s.push(time);
+            steam_id.push(player.account_id.and_then(|id| steam_ids.get(&id).copied()));
             hero_id.push(player.hero_id());
-            player_slot.push(player.player_slot);
             creep_damage.push(stats.creep_damage);
             neutral_damage.push(stats.neutral_damage);
             boss_damage.push(stats.boss_damage);
             self_damage.push(stats.self_damage);
             player_damage_taken.push(stats.player_damage_taken);
             player_healing.push(stats.player_healing);
+            barrier_absorption.push(stats.player_barriering);
             teammate_healing.push(stats.teammate_healing);
             self_healing.push(stats.self_healing);
             damage_mitigated.push(stats.damage_mitigated);
@@ -406,14 +416,15 @@ pub(super) fn build_snapshots_frame(
 
     df_from_columns(vec![
         Column::new("snapshot_time_s".into(), snapshot_time_s),
+        Column::new("steam_id".into(), steam_id),
         Column::new("hero_id".into(), hero_id),
-        Column::new("player_slot".into(), player_slot),
         Column::new("creep_damage".into(), creep_damage),
         Column::new("neutral_damage".into(), neutral_damage),
         Column::new("boss_damage".into(), boss_damage),
         Column::new("self_damage".into(), self_damage),
         Column::new("player_damage_taken".into(), player_damage_taken),
         Column::new("player_healing".into(), player_healing),
+        Column::new("barrier_absorption".into(), barrier_absorption),
         Column::new("teammate_healing".into(), teammate_healing),
         Column::new("self_healing".into(), self_healing),
         Column::new("damage_mitigated".into(), damage_mitigated),
@@ -466,14 +477,18 @@ pub(super) fn build_snapshots_frame(
 /// match, so it is returned separately from the time-series snapshots.
 pub(super) fn build_last_hits_frame(
     match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+    steam_ids: &HashMap<u32, u64>,
 ) -> PolarsResult<DataFrame> {
+    let mut steam_id = Vec::new();
     let mut hero_id = Vec::new();
     let mut last_hits = Vec::new();
     for player in &match_info.players {
+        steam_id.push(player.account_id.and_then(|id| steam_ids.get(&id).copied()));
         hero_id.push(player.hero_id());
         last_hits.push(player.last_hits());
     }
     df_from_columns(vec![
+        Column::new("steam_id".into(), steam_id),
         Column::new("hero_id".into(), hero_id),
         Column::new("last_hits".into(), last_hits),
     ])
@@ -554,10 +569,11 @@ pub(super) fn is_category_source(name: &str) -> bool {
 /// ``is_category == False`` to get the per-source values without duplicates.
 pub(super) fn build_damage_frame(
     match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+    steam_ids: &HashMap<u32, u64>,
 ) -> PolarsResult<DataFrame> {
-    let mut dealer_player_slot = Vec::new();
+    let mut dealer_steam_id = Vec::new();
+    let mut target_steam_id = Vec::new();
     let mut dealer_hero_id: Vec<Option<u32>> = Vec::new();
-    let mut target_player_slot = Vec::new();
     let mut target_hero_id: Vec<Option<u32>> = Vec::new();
     let mut source_name = Vec::new();
     let mut is_category = Vec::new();
@@ -573,6 +589,12 @@ pub(super) fn build_damage_frame(
         .players
         .iter()
         .filter_map(|p| p.player_slot.map(|slot| (slot, p.hero_id())))
+        .collect();
+
+    let slot_to_steam: HashMap<u32, u64> = match_info
+        .players
+        .iter()
+        .filter_map(|player| Some((player.player_slot?, *steam_ids.get(&player.account_id?)?)))
         .collect();
 
     if let Some(matrix) = match_info.damage_matrix.as_ref() {
@@ -614,9 +636,9 @@ pub(super) fn build_damage_frame(
                         total.push(cumulative);
                         let delta = cumulative.saturating_sub(prev);
                         prev = cumulative;
-                        dealer_player_slot.push(dslot);
+                        dealer_steam_id.push(slot_to_steam.get(&dslot).copied());
+                        target_steam_id.push(slot_to_steam.get(&tslot).copied());
                         dealer_hero_id.push(dhero);
-                        target_player_slot.push(tslot);
                         target_hero_id.push(thero);
                         source_name.push(name.clone());
                         is_category.push(category);
@@ -630,9 +652,9 @@ pub(super) fn build_damage_frame(
     }
 
     df_from_columns(vec![
-        Column::new("dealer_player_slot".into(), dealer_player_slot),
+        Column::new("dealer_steam_id".into(), dealer_steam_id),
+        Column::new("target_steam_id".into(), target_steam_id),
         Column::new("dealer_hero_id".into(), dealer_hero_id),
-        Column::new("target_player_slot".into(), target_player_slot),
         Column::new("target_hero_id".into(), target_hero_id),
         Column::new("source_name".into(), source_name),
         Column::new("is_category".into(), is_category),
@@ -654,7 +676,7 @@ pub(super) fn build_healing_frame(damage: &DataFrame) -> PolarsResult<DataFrame>
     let mut healing = damage.filter(&mask)?;
     for (old, new) in [
         ("sample_time_s", "interval_end_s"),
-        ("dealer_player_slot", "healer_player_slot"),
+        ("dealer_steam_id", "healer_steam_id"),
         ("dealer_hero_id", "healer_hero_id"),
         ("damage", "amount"),
     ] {
@@ -664,9 +686,9 @@ pub(super) fn build_healing_frame(damage: &DataFrame) -> PolarsResult<DataFrame>
         .select([
             "interval_start_s",
             "interval_end_s",
-            "healer_player_slot",
+            "healer_steam_id",
             "healer_hero_id",
-            "target_player_slot",
+            "target_steam_id",
             "target_hero_id",
             "source_name",
             "stat_type",
@@ -676,8 +698,8 @@ pub(super) fn build_healing_frame(damage: &DataFrame) -> PolarsResult<DataFrame>
         .sort(
             [
                 "interval_end_s",
-                "healer_player_slot",
-                "target_player_slot",
+                "healer_steam_id",
+                "target_steam_id",
                 "source_name",
                 "stat_type",
             ],
@@ -689,11 +711,12 @@ pub(super) fn build_healing_frame(damage: &DataFrame) -> PolarsResult<DataFrame>
 /// Keep unknown source IDs and absent counters instead of inventing values.
 pub(super) fn build_gold_sources_frame(
     match_info: &boon_proto::proto::c_msg_match_meta_data_contents::MatchInfo,
+    steam_ids: &HashMap<u32, u64>,
 ) -> PolarsResult<DataFrame> {
     use boon_proto::proto::c_msg_match_meta_data_contents::EGoldSource;
 
     let mut snapshot_time_s = Vec::new();
-    let mut player_slot = Vec::new();
+    let mut steam_id = Vec::new();
     let mut hero_id = Vec::new();
     let mut source_id = Vec::new();
     let mut source_name = Vec::new();
@@ -705,7 +728,7 @@ pub(super) fn build_gold_sources_frame(
         for stats in &player.stats {
             for source in &stats.gold_sources {
                 snapshot_time_s.push(stats.time_stamp_s());
-                player_slot.push(player.player_slot);
+                steam_id.push(player.account_id.and_then(|id| steam_ids.get(&id).copied()));
                 hero_id.push(player.hero_id());
                 source_id.push(source.source);
                 source_name.push(source.source.map(|id| {
@@ -723,7 +746,7 @@ pub(super) fn build_gold_sources_frame(
     }
     df_from_columns(vec![
         Column::new("snapshot_time_s".into(), snapshot_time_s),
-        Column::new("player_slot".into(), player_slot),
+        Column::new("steam_id".into(), steam_id),
         Column::new("hero_id".into(), hero_id),
         Column::new("source_id".into(), source_id),
         Column::new("source_name".into(), source_name),
@@ -733,7 +756,7 @@ pub(super) fn build_gold_sources_frame(
         Column::new("damage".into(), damage),
     ])?
     .sort(
-        ["snapshot_time_s", "player_slot", "source_id"],
+        ["snapshot_time_s", "steam_id", "hero_id", "source_id"],
         SortMultipleOptions::default(),
     )
 }
@@ -782,8 +805,53 @@ mod summary_tests {
     }
 
     #[test]
+    fn summary_identity_uses_accounts_not_slots_and_preserves_unknown_players() -> PolarsResult<()>
+    {
+        let id = 76_561_197_999_389_679_u64;
+        let account_id = id as u32;
+        let mut info = matrix_info();
+        info.players = vec![
+            Players {
+                account_id: Some(account_id),
+                player_slot: Some(2),
+                hero_id: Some(66),
+                stats: vec![PlayerStats {
+                    gold_sources: vec![GoldSource::default()],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Players {
+                player_slot: Some(3),
+                hero_id: Some(13),
+                ..Default::default()
+            },
+        ];
+        let steam_ids = HashMap::from([(account_id, id)]);
+        for frame in [
+            build_snapshots_frame(&info, &steam_ids)?,
+            build_gold_sources_frame(&info, &steam_ids)?,
+            build_last_hits_frame(&info, &steam_ids)?,
+        ] {
+            assert_eq!(frame.column("steam_id")?.u64()?.get(0), Some(id));
+            assert!(frame.column("player_slot").is_err());
+        }
+        let damage = build_damage_frame(&info, &steam_ids)?;
+        assert_eq!(damage.column("dealer_steam_id")?.u64()?.get(0), Some(id));
+        assert_eq!(damage.column("target_steam_id")?.u64()?.get(0), None);
+        assert!(damage.column("target_player_slot").is_err());
+        assert_eq!(damage.column("target_hero_id")?.u32()?.get(0), Some(13));
+        assert_eq!(damage.column("target_steam_id")?.u64()?.get(2), Some(id));
+        let healing = build_healing_frame(&damage)?;
+        assert_eq!(healing.column("healer_steam_id")?.u64()?.get(0), Some(id));
+        let unknown = build_last_hits_frame(&info, &HashMap::new())?;
+        assert_eq!(unknown.column("steam_id")?.null_count(), 2);
+        Ok(())
+    }
+
+    #[test]
     fn cumulative_samples_keep_sparse_alignment_and_zero_changes() -> PolarsResult<()> {
-        let damage = build_damage_frame(&matrix_info())?;
+        let damage = build_damage_frame(&matrix_info(), &HashMap::new())?;
         assert_eq!(
             damage
                 .column("sample_time_s")?
@@ -824,13 +892,16 @@ mod summary_tests {
 
     #[test]
     fn missing_matrix_has_typed_empty_frames() -> PolarsResult<()> {
-        let damage = build_damage_frame(&MatchInfo::default())?;
+        let damage = build_damage_frame(&MatchInfo::default(), &HashMap::new())?;
         let healing = build_healing_frame(&damage)?;
         assert_eq!(damage.height(), 0);
         assert_eq!(healing.height(), 0);
         assert_eq!(damage.column("total")?.dtype(), &DataType::UInt32);
         assert_eq!(healing.column("total")?.dtype(), &DataType::UInt32);
-        assert_eq!(build_gold_sources_frame(&MatchInfo::default())?.height(), 0);
+        assert_eq!(
+            build_gold_sources_frame(&MatchInfo::default(), &HashMap::new())?.height(),
+            0
+        );
         Ok(())
     }
 
@@ -839,12 +910,46 @@ mod summary_tests {
         let mut info = matrix_info();
         let matrix = info.damage_matrix.as_mut().expect("test matrix");
         matrix.sample_time_s = vec![180, 180, 540];
-        assert!(build_damage_frame(&info).is_err());
+        assert!(build_damage_frame(&info, &HashMap::new()).is_err());
         info.damage_matrix
             .as_mut()
             .expect("test matrix")
             .sample_time_s = vec![180];
-        assert!(build_damage_frame(&info).is_err());
+        assert!(build_damage_frame(&info, &HashMap::new()).is_err());
+    }
+
+    #[test]
+    fn summary_separates_healing_and_provided_barrier_absorption() -> PolarsResult<()> {
+        let info = MatchInfo {
+            players: vec![Players {
+                stats: vec![
+                    PlayerStats {
+                        time_stamp_s: Some(180),
+                        player_healing: Some(7),
+                        player_barriering: Some(11),
+                        damage_absorbed: Some(5),
+                        ..Default::default()
+                    },
+                    PlayerStats {
+                        time_stamp_s: Some(360),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let snapshots = build_snapshots_frame(&info, &HashMap::new())?;
+        for (column, expected) in [
+            ("player_healing", 7),
+            ("barrier_absorption", 11),
+            ("damage_absorbed", 5),
+        ] {
+            let values = snapshots.column(column)?.u32()?;
+            assert_eq!(values.get(0), Some(expected));
+            assert_eq!(values.get(1), None);
+        }
+        Ok(())
     }
 
     #[test]
@@ -867,7 +972,7 @@ mod summary_tests {
             }],
             ..Default::default()
         };
-        let sources = build_gold_sources_frame(&info)?;
+        let sources = build_gold_sources_frame(&info, &HashMap::new())?;
         assert_eq!(sources.column("source_id")?.i32()?.get(0), Some(2048));
         assert_eq!(
             sources.column("source_name")?.str()?.get(0),
@@ -875,7 +980,7 @@ mod summary_tests {
         );
         assert_eq!(sources.column("gold")?.u32()?.get(0), Some(17));
         assert_eq!(sources.column("gold_orbs")?.u32()?.get(0), None);
-        let snapshots = build_snapshots_frame(&info)?;
+        let snapshots = build_snapshots_frame(&info, &HashMap::new())?;
         assert_eq!(snapshots.column("player_healing")?.u32()?.get(0), Some(0));
         assert_eq!(snapshots.column("self_healing")?.u32()?.get(0), None);
         Ok(())

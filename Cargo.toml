@@ -14,8 +14,8 @@ rust-version = "1.88.0"
 
 [workspace.dependencies]
 boon = { path = "crates/boon", package = "boon-deadlock", version = "0.11.0" }
-boon-proto = { path = "crates/boon-proto", version = "0.3" }
-pbdems2 = "0.3"
+boon-proto = { path = "crates/boon-proto", version = "0.4" }
+pbdems2 = "0.3.3"
 anyhow = "1.0"
 criterion = "0.5"
 prost = "0.14"
@@ -44,6 +44,10 @@ incremental = false   # boon-proto is a 28k-line generated crate; incremental bo
                       # (dep-graph + query-cache) ballooned target/ to tens of GB for little gain
 
 [profile.dev.package.boon-deadlock]
+opt-level = 1
+
+# Optimize replay decoding without a release build.
+[profile.dev.package.pbdems2]
 opt-level = 1
 
 [profile.dev.package.boon-proto]

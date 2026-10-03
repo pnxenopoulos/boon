@@ -4,7 +4,7 @@ use crate::*;
 impl Demo {
     /// Per-tick, per-player state as a Polars DataFrame.
     ///
-    /// Records position, health, barrier, observed stat modifiers, combat timers,
+    /// Records position, health, barrier, combat timers,
     /// kills, deaths, and net worth for each recorded player and tick.
     /// Boon loads this dataset on first access.
     #[getter]
@@ -42,8 +42,7 @@ impl Demo {
     /// - tick: The enclosing demo command tick
     /// - damage: The damage dealt
     /// - pre_damage: The damage before mitigation
-    /// - damage_absorbed: Recorded barrier absorption, null when absent. Uses the
-    ///   legacy integer field when the float field is absent.
+    /// - damage_absorbed: Recorded barrier absorption, null when absent.
     /// - victim_shield_new: Remaining shield after this hit, null when absent
     /// - victim_shield_max: Shield capacity, null when absent
     /// - server_tick: Server tick recorded in the damage message; null when absent
@@ -63,8 +62,8 @@ impl Demo {
     /// - citadel_type: Deadlock damage category (3 is melee-typed damage)
     /// - damage_flags: Raw Valve damage flags used for detailed classification
     /// - is_melee: True for any melee-typed damage (``citadel_type == 3``)
-    /// - melee_type: ``"light"`` or ``"heavy"`` for basic melee, ``"other"``
-    ///   for another melee-typed source, otherwise null
+    /// - melee_type: ``"light"`` or ``"heavy"`` from the recorded flags,
+    ///   ``"other"`` for neither or both flags on melee damage, otherwise null
     ///
     /// Boon preloads this dataset unless ``preload=False``.
     /// With preloading disabled, the first access loads and caches the data.
@@ -101,12 +100,12 @@ impl Demo {
         self.dataset_frame(py, Dataset::AbilityUpgrades)
     }
 
-    /// Item purchase/sell/upgrade events as a Polars DataFrame.
+    /// Recorded item changes before catalog component matching.
     ///
-    /// Columns: ``tick``, ``hero_id``, ``ability_id``, ``change``.
+    /// Columns: ``tick``, ``steam_id``, ``hero_id``, ``ability_id``, ``change``.
     /// Boon loads this dataset on first access.
     #[getter]
-    pub(crate) fn item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
+    pub(crate) fn _item_purchases(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         self.dataset_frame(py, Dataset::ItemPurchases)
     }
 
@@ -240,7 +239,9 @@ impl Demo {
     /// ``"bullet_resist"``, or ``"spirit_resist"``.
     /// ``amount`` is the signed change from this event.
     ///
-    /// Emits a row whenever a stat total changes (idol/breakable pickups).
+    /// Uses enum IDs from the newest installed boon-data catalog. Downloads the
+    /// latest version if no local catalog is available.
+    /// Emits a row whenever a recorded stat total changes.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn stat_modifier_events(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {

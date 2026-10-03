@@ -177,9 +177,9 @@ def test_breakable_dataset_uses_catalog_and_retries_failed_download(
 ):
     import polars as pl
 
-    path = Path(__file__).parent / "fixtures" / "103129247.dem"
+    path = Path(__file__).parent / "fixtures" / "108575009.dem"
     if not path.exists():
-        pytest.skip("103129247.dem fixture not available")
+        pytest.skip("108575009.dem fixture not available")
     # A changed label and an absent ID prove the dataset has no embedded fallback.
     records = upstream["records"]
     records["misc"] = [
@@ -190,7 +190,7 @@ def test_breakable_dataset_uses_catalog_and_retries_failed_download(
         }
     ]
     upstream["index"], upstream["files"] = release(records=records)
-    demo = Demo(str(path))
+    demo = Demo(str(path), preload=False)
 
     def offline(url):
         raise urllib.error.URLError("offline")
@@ -207,8 +207,9 @@ def test_breakable_dataset_uses_catalog_and_retries_failed_download(
         for row in frame.group_by("subclass_id", "subclass_name").len().to_dicts()
     }
     assert counts == {
-        (3719077267, "BREAKABLE_NOT_FOUND"): 109,
-        (3986897915, "catalog_crate"): 340,
+        (202631964, "BREAKABLE_NOT_FOUND"): 58,
+        (3719077267, "BREAKABLE_NOT_FOUND"): 142,
+        (3986897915, "catalog_crate"): 355,
     }
     assert frame.schema["subclass_id"] == pl.UInt32
     requests = len(upstream["requests"])

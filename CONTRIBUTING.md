@@ -102,7 +102,8 @@ a wheel. This prevents uv from replacing the build under test.
 
 CI builds Linux wheels for x86-64 and ARM64 with Python 3.11–3.14.
 ARM64 builds use `ubuntu-24.04-arm`. CI and releases use native manylinux2014
-containers for these builds. The Python test jobs use the x86-64 wheels.
+containers for these builds. The Python test jobs use the x86-64 debug wheels.
+The debug profile uses `opt-level = 1` for Boon and pbdems2.
 
 ## Writing Style
 
@@ -220,24 +221,23 @@ The repository does not contain demo files (`.dem`). Download them from the
 Each fixture is a named release whose tag is the match ID:
 
 ```bash
-gh release download 70555151 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 70537442 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 103129247 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 100655353 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
+for match in 108575009 109108139 100655353; do
+  gh release download "$match" --repo pnxenopoulos/boon-fixtures \
+    --dir crates/boon-python/tests/fixtures/
+done
 ```
 
 Tests that require a missing fixture are skipped automatically.
+
+Pytest manages the shared replay through a session fixture. Use shared replay
+and reference frames for read-only checks. Do not keep a separate global cache.
+Use a fresh `Demo` when a test checks parsing, caches, or decoder settings.
+The session fixture uses serial snapshot decoding. Seek and parallel tests compare
+independent parses with the same reference frames.
+
+Use function-scoped `monkeypatch` for temporary settings and `tmp_path` for mutable
+files. Use `tmp_path_factory` for catalog files shared by module or session fixtures.
+Keep fixture dependencies explicit. Do not call fixture functions directly.
 
 ### Adding a new fixture
 
@@ -261,7 +261,9 @@ FIXTURE_PATH = FIXTURES_DIR / "<match_id>.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("<match_id>.dem fixture not available")
-    return get_demo(FIXTURE_PATH)
+    replay = Demo(str(FIXTURE_PATH), preload=False)
+    replay.load("chat", "item_purchases")  # Load only the datasets these tests need.
+    return replay
 ```
 
 4. Update CI to download the new fixture.
@@ -270,10 +272,13 @@ def demo() -> Demo:
 
 | Match ID | Game Mode | Description |
 |----------|-----------|-------------|
-| 70555151 | 6v6 | Standard 6v6 match |
-| 70537442 | Street Brawl | Street brawl (game_mode=4) match |
-| 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
-| 100655353 | 6v6 | Silver-to-Victor hero swap and post-match summary totals |
+| 108575009 | 6v6 | Current-format API tests, scoreboard and fight-state checks |
+| 109108139 | Street Brawl | Mode-specific regression checks only |
+| 100655353 | 6v6 | Silver-to-Victor hero-swap regression only |
+
+General tests use `108575009.dem`. Use `109108139.dem` for Street Brawl.
+The older hero-swap fixture tests one regression; it does not establish support
+for old formats.
 
 ## Submitting Changes
 

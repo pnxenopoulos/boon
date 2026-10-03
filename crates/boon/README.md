@@ -13,6 +13,10 @@ A fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo fil
 
 Part of the [Boon](https://github.com/pnxenopoulos/boon) project.
 
+**Demo compatibility:** Use Boon **0.10.0 or earlier** for demos recorded before
+the **City Never Sleeps** update (**September 29, 2026**).
+Use Boon **0.11.0 or later** for demos recorded with that update or later.
+
 ## Features
 
 - Memory-mapped, zero-copy parsing for maximum throughput
@@ -105,7 +109,7 @@ let x = entity.get_by_name(
 - `CatalogNames::ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
 - `CatalogNames::breakable_name(id)` &mdash; resolve a breakable subclass hash to its name
 - `CatalogNames::modifier_name(id)` &mdash; resolve a modifier hash to its name
-- `decode_stat_modifier_value_type(value_type)` &mdash; normalize observed cross-build stat-modifier enum values
+- `StatModifierTypes::load(version)` &mdash; resolve recorded stat types from boon-data enum definitions
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload
 
 ## Examples

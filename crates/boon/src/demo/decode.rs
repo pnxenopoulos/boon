@@ -11,6 +11,36 @@ macro_rules! decode_match {
     }
 }
 
+/// Name an ability-change event using the client version in the demo's game path.
+/// Value 4 is ambiguous when the path does not identify a version.
+pub fn ability_change_name(change: Option<i32>, game_directory: Option<&str>) -> &'static str {
+    use boon_proto::proto::c_citadel_user_msg_abilities_changed::Change;
+    let Ok(change) = Change::try_from(change.unwrap_or(-1)) else {
+        return "unknown";
+    };
+    match change {
+        Change::EPurchased => "purchased",
+        Change::EUpgraded => "upgraded",
+        Change::ESold => "sold",
+        Change::ESwappedActivatedAbility => "swapped",
+        Change::ELeveledUp => {
+            let version = game_directory.and_then(|path| {
+                path.rsplit(['/', '\\'])
+                    .find_map(|part| part.strip_prefix("citadel_v")?.parse::<u32>().ok())
+            });
+            // Upstream 58b3529c (client 6711) reassigned value 4 from failure
+            // to level-up. This is a wire-format boundary, not a gameplay rule.
+            match version {
+                Some(version) if version < 6711 => "failure",
+                Some(_) => "leveled_up",
+                None => "unknown",
+            }
+        }
+        Change::EFailure => "failure",
+        Change::EInvalid => "unknown",
+    }
+}
+
 /// Attempt to decode raw protobuf bytes for a known event message type.
 ///
 /// Returns `Some(pretty-printed string)` if the type is recognized and the
@@ -19,7 +49,7 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
     use boon_proto::proto::*;
 
     decode_match!(msg_type, data,
-        // CitadelUserMessageIds (300–366)
+        // CitadelUserMessageIds (300–373)
         300 => CCitadelUserMessageDamage,
         303 => CCitadelUserMsgMapPing,
         304 => CCitadelUserMsgTeamRewards,
@@ -51,14 +81,14 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         334 => CCitadelUserMsgPlayerLifetimeStatInfo,
         336 => CCitadelUserMsgForceShopClosed,
         337 => CCitadelUserMsgStaminaConsumed,
-        338 => CCitadelUserMessageAbilityNotify,
+        338 => CCitadelUserMsgAbilityNotify,
         339 => CCitadelUserMsgGetDamageStatsResponse,
         340 => CCitadelUserMsgParticipantStartSoundEvent,
         341 => CCitadelUserMsgParticipantStopSoundEvent,
         342 => CCitadelUserMsgParticipantStopSoundEventHash,
         343 => CCitadelUserMsgParticipantSetSoundEventParams,
         344 => CCitadelUserMsgParticipantSetLibraryStackFields,
-        345 => CCitadelUserMessageCurrencyChanged,
+        345 => CCitadelUserMsgCurrencyChanged,
         346 => CCitadelUserMessageGameOver,
         347 => CCitadelUserMsgBossKilled,
         348 => CCitadelUserMsgBossDamaged,
@@ -71,7 +101,7 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         355 => CCitadelUserMessageMeleeHit,
         356 => CCitadelUserMsgFlexSlotUnlocked,
         357 => CCitadelUserMsgSeasonalKill,
-        359 => CCitadelUserMsgAg2ParamTrigger,
+        358 => CCitadelUserMsgMusicQueue,
         360 => CCitadelUserMessageItemPurchaseNotification,
         361 => CCitadelUserMsgEntityPortalled,
         362 => CCitadelUserMsgStreetBrawlScoring,
@@ -79,6 +109,13 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         364 => CCitadelUserMsgItemDraftReaction,
         365 => CCitadelUserMessageImportantAbilityUsed,
         366 => CCitadelUserMsgBannedHeroes,
+        367 => CMsgCitadelCombatLogEntry,
+        368 => CCitadelUserMsgCombatLogBulkData,
+        369 => CCitadelUserMsgPlayerTyping,
+        370 => CCitadelUserMsgChangeHeroStatus,
+        371 => CCitadelUserMsgLocalLobby,
+        372 => CCitadelUserMsgSoulBagPickup,
+        373 => CCitadelUserMsgHeroReleaseVote,
 
         // ECitadelGameEvents (450–466)
         450 => CMsgFireBullets,
@@ -92,10 +129,8 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         465 => CMsgRemoveSatVolumeEvent,
         466 => CMsgRemoveBullet,
 
-        // EBaseUserMessages (101-166)
+        // EBaseUserMessages (101–170)
         101 => CUserMessageAchievementEvent,
-        102 => CUserMessageCloseCaption,
-        103 => CUserMessageCloseCaptionDirect,
         104 => CUserMessageCurrentTimescale,
         105 => CUserMessageDesiredTimescale,
         106 => CUserMessageFade,
@@ -143,12 +178,56 @@ pub fn decode_event_payload(msg_type: u32, data: &[u8]) -> Option<String> {
         164 => CUserMessageExtraUserData,
         165 => CUserMessageNotifyResponseFound,
         166 => CUserMessagePlayResponseConditional,
+        167 => CUserMessageUserSentBugBug,
+        168 => CUserMessageUsageReport,
+        169 => CUserMessageRemoteServerCommand,
+        170 => CUserMessageRemoteServerResponse,
     )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ability_change_labels_respect_the_protocol_boundary() {
+        for (directory, expected) in [
+            (Some("/opt/srcds/citadel_v6710/citadel"), "failure"),
+            (Some("/opt/srcds/citadel_v6711/citadel"), "leveled_up"),
+            (Some(r"C:\games\citadel_v6712\citadel"), "leveled_up"),
+            (Some("/games/citadel"), "unknown"),
+            (Some("/games/citadel_vinvalid/citadel"), "unknown"),
+            (None, "unknown"),
+        ] {
+            assert_eq!(ability_change_name(Some(4), directory), expected);
+        }
+        for (value, expected) in [
+            (0, "purchased"),
+            (1, "upgraded"),
+            (2, "sold"),
+            (3, "swapped"),
+            (5, "failure"),
+            (-1, "unknown"),
+            (100, "unknown"),
+        ] {
+            assert_eq!(ability_change_name(Some(value), None), expected);
+        }
+        assert_eq!(ability_change_name(None, None), "unknown");
+    }
+
+    #[test]
+    fn new_user_messages_decode_with_their_upstream_ids() {
+        use boon_proto::proto::CitadelUserMessageIds as Msg;
+        for message in [
+            Msg::KEUserMsgCombatLogEntry,
+            Msg::KEUserMsgCombatLogBulkData,
+            Msg::KEUserMsgMusicQueue,
+            Msg::KEUserMsgSoulBagPickup,
+            Msg::KEUserMsgHeroReleaseVote,
+        ] {
+            assert!(decode_event_payload(message as u32, &[]).is_some());
+        }
+    }
 
     #[test]
     fn unknown_msg_type_returns_none() {

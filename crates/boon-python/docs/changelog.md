@@ -4,6 +4,38 @@
 
 Unreleased.
 
+- Support demos recorded with the City Never Sleeps update (September 29, 2026) or later. Use Boon 0.10.0 or earlier for demos recorded before that update.
+- Remove old demo-format fallbacks and the `stat_modifier_*` snapshot columns. Read stat bonus types from boon-data. Test the current format with `108575009.dem`.
+- Require pbdems2 0.3.3 to read `fixed8` fields in new demos.
+- Update protobufs to Deadlock 6745 (`boon-proto 0.4.11078118+6745`). The direct protobuf API has changed fields and types.
+- Correct light and heavy melee labels in `damage`. Read new combat log and modifier fields.
+- Add hero and ability stat queries with `baseline` and `current` modes. Use data from boon-data.
+- Read source-specific bindings and normalized modifier counts. Use catalog scaling defaults and keep disabled scaling inactive.
+- Read both weapon formats and shop bonus tables. Use controller ticks when pawn time is absent.
+- Use recorded stat types for permanent bonuses and corruption penalties. Mark missing corruption bonuses as partial.
+- Add snapshot Steam IDs and `ammo_fraction`. With `data_version`, add `ammo`, `max_ammo`, and `unlimited_ammo`.
+- Add `player_states()` for recorded states and `imbues()` for item selections.
+- Use `steam_ids` for stat, imbue, and state queries. Add Steam IDs to summary tables. Remove player slots from results.
+- Add summary `barrier_absorption`. Keep healing separate.
+- Add item-purchase Steam IDs and `upgraded_from_ability_ids`. Match component sales with boon-data.
+- Correct modifier tracking after table changes and pauses. Exclude future state and ended effects.
+- Make barrier snapshots agree across direct seeks and full passes.
+- Add flat move-speed bonuses and penalties before the percentage adjustment.
+- Keep ability-only bonuses out of global stats. Apply spirit multipliers and catalog-declared post-multiplier bonuses.
+- Share dataset caches and stat checks. Remove repeated code and temporary lookup allocations.
+- Add feature examples and lists of accepted stat names, modes, and dataset names.
+
+Hero stat strings:
+
+- Weapon: `clip_size`, `bullet_velocity`, `weapon_damage`, `fire_rate`, `reload_time`, `falloff_start`, `falloff_end`, `light_melee_damage`, `heavy_melee_damage`, `melee_distance`.
+- Movement: `move_speed`, `sprint_speed`, `slide_distance`, `gravity_scale`, `stamina`, `stamina_cooldown`, `dash_speed`, `dash_duration`, `air_dash_speed`, `air_dash_duration`.
+- Resistance and evasion: `bullet_resist`, `spirit_resist`, `melee_resist`, `debuff_resist`, `bullet_evasion`.
+- Lifesteal: `bullet_lifesteal`, `spirit_lifesteal`, `melee_lifesteal`.
+
+Ability stat strings: `cooldown_reduction`, `item_cooldown_reduction`, `duration_bonus`, `range_bonus`, `radius_bonus`.
+
+See [Known Issues](known-issues.md) for calculation limits.
+
 ## 0.10.0
 
 - **API change:** Boon no longer provides `demo.healing`, `load("healing")`,
@@ -18,7 +50,6 @@ Unreleased.
 - `Demo(path)` loads kills, damage, and abilities together during construction.
   Use `preload=False` to load datasets on first access.
   Demo construction can report errors from these datasets.
-
 - Boon reads hero, ability, item, modifier, and breakable names from boon-data JSON
   catalogs. These catalogs replace the tables in the code.
   Without a valid local version, Python, Rust, and `boon-dev` automatically
@@ -33,7 +64,6 @@ Unreleased.
 - `boon versions` shows client versions, source dates and times, and local
   installation status. Use `--local` to list installed versions without network
   access. Installation records also contain the source revision.
-
 - Hero IDs in chat, damage, and item purchases match the hero at the event
   tick. A test for `100655353.dem` verifies that `demo.players` shows Victor after
   the player changes from Silver.
@@ -61,7 +91,6 @@ Unreleased.
   version-aware decoder and aggregator for stat-modifier values recorded in a
   demo. The name-table generator no longer downloads `heroes.vdata` or
   generates gameplay values.
-
 - New `EffectiveModifierState` separates replicated `ActiveModifiers` rows
   from modifiers that still have a gameplay effect. It ends a positive,
   finite-duration modifier at its `GameTime_t` deadline and retains the raw
@@ -79,7 +108,6 @@ Unreleased.
   `stat_modifier_values_available` and `unknown_stat_modifier_count`
   columns report source availability and unrecognized value types. These values
   are observed modifier contributions, not complete player stats.
-
 - New `demo.barriers()` derived dataset reports each barrier a hero gained and
   how much of it stopped damage. Rows include `tick`, `hero_id`, `granted`,
   `absorbed`, `expired`, and `hits`. It reads the `barrier` pool in
@@ -92,7 +120,6 @@ Unreleased.
   an entity-keyed dataset such as `neutrals` or `sinners_sacrifice` and
   identify the exact non-hero unit that `victim_class` (a coarse enum) cannot
   distinguish.
-
 - New opt-in `demo.healing` dataset surfaces per-event healing from
   `CCitadelUserMessage_Damage`. A heal is a damage message with a negative
   `health_lost`; the dataset keeps those rows and reports `amount` as the
@@ -134,18 +161,15 @@ Unreleased.
   English in-game names. The generated table joins current VData keys to
   Valve's localization catalogs; unlocalized
   hidden/test/retired entries are omitted instead of receiving guessed names.
-
 - `demo.damage` now includes raw `ability_id`, `damage_type`, `citadel_type`,
   and `damage_flags`, plus `is_melee` and nullable `melee_type`. `is_melee`
   covers every melee-typed hit; Valve's explicit damage flags classify `light`
   and `heavy`, while abilities, NPC attacks, and ambiguous flags remain `other`.
-
 - New opt-in `demo.sinners_sacrifice` dataset combines pbdems2 entity
   lifecycle/state with Damage messages to report Sinner's Sacrifice machine
   spawns, resets, and exact hits. Rows include stable index+serial identity,
   resolved attacker hero, incoming damage, tick-final health, team, and world
   position; unmatched health decreases are retained as unattributed hits.
-
 - New opt-in `demo.breakables` dataset reports destruction of
   `CCitadel_BreakableProp` map props with tick, stable entity identity, raw
   subclass ID, resolved subclass name, team, and last-known world position.
@@ -154,7 +178,6 @@ Unreleased.
   identity reactivates, and ignore full-packet delete/create replacements.
   This avoids a scan of every tracked prop for each tick. It also does not add
   a false health-zero or dead state that the server did not send.
-
 - New `demo.stat_ticks(...)` selectively tracks native, persistent baseline,
   and tick-effective player stats for bullet/spirit resistance, spirit power,
   fire rate, weapon damage, cooldown reduction, status resistance, and both
@@ -169,7 +192,6 @@ Unreleased.
   now consume one shared full-protobuf modifier state. Partial string-table
   updates preserve omitted fields, while removals, slot reuse, serial changes,
   aura range, and keyframe rebuilds are handled consistently.
-
 - New `barrier` column in `demo.player_ticks` and sampled player snapshots. It
   reports the player's current barrier remaining from the
   `modifier_barrier_tracker` entry; older demos without that tracker return
@@ -295,9 +317,7 @@ Unreleased.
   Note: `expire_tick` is wired to the uncaptured path (the Rift clearing with no scoring team, per `m_timeKothGiveUp`) but is **untested against a real expiry** — every Rift in the demos on hand was captured.
 
 - New `banned_heroes` property (`demo.banned_heroes`) — the heroes banned from a match, as `hero_id` (joins to `players.hero_id`) and resolved `hero_name`. Read from the one-shot `BannedHeroes` user message, which the server sends early in the demo and only when the match has bans. The message carries nothing but the hero IDs — no team, no banning player, and no pick/ban ordering — so it cannot be used to reconstruct a draft. An empty frame means no bans were recorded, which is indistinguishable from a build that never emits the message. Like `players` and `winning_team_num`, this is not a `load()` dataset: it shares the lightweight events-only scan with those properties, so it is free once any of them has been touched.
-
 - New `rank` column in `demo.players`, sourced from the player controller's packed competitive display rank. It matches the post-match `initial_display_rank` when rank metadata is present; `0` means unranked, calibrating, or unavailable.
-
 - **Faster:** event-backed datasets now tell the parser exactly which final
   message types they consume. Unrelated particle, sound, and combat messages
   are skipped before their payloads are copied or allocated; lightweight
