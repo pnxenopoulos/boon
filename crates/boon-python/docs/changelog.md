@@ -13,7 +13,7 @@
 - Use catalog weapon data, shop thresholds, scaling defaults, effect bindings, and recorded bonus types.
 - Correct spirit scope and multiplier order, movement bonus addition, and light/heavy melee labels.
 - Remove old-format fallbacks and `stat_modifier_*` snapshot columns. Share dataset caches and test inputs.
-- Use pbdems2 0.3.3. Update protobufs to Deadlock 6745 (`boon-proto 0.4.11078118+6745`). The direct protobuf API has changed fields and types, including map fields.
+- Use pbdems2 0.3.3. Update protobufs to Deadlock 6746 (`boon-proto 0.4.11080740+6746`). The direct protobuf API has changed fields and types, including map fields.
 - Include MIT license files in packages. Do not include Python caches. Use `--locked` for all release wheel builds.
 
 Hero stat strings:
