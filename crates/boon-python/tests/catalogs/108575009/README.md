@@ -9,6 +9,6 @@ and the active modifiers and their owners at tick `187554`. They also retain
 the stat and state enums and all misc records and generic data.
 The misc records identify permanent pickups, so their recorded totals do not
 get counted again through the active pickup modifiers. Record definitions and stat changes
-are copied without changing their values. Unrelated records and indexes are omitted.
+are copied without changing their values. Unrelated records and indexes are not included.
 The JSON files use gzip to reduce their size.
 The subset keeps the ammo regression independent of downloads and user caches.

@@ -1,8 +1,8 @@
 # Calculate hero stats
 
-`demo.calculate_hero_stats()` calculates values from replay state and a selected
-boon-data version. The table lists every accepted stat string and enum member.
-Use these strings for `stats` and for keys in `rulesets`. Names are case-sensitive.
+Use `demo.calculate_hero_stats()` for values at selected demo ticks.
+Boon uses replay state, a boon-data catalog, and a calculation rule.
+Select stats with these strings or enum members. Names are case-sensitive.
 
 | String | Python enum | Rust enum | Unit |
 | --- | --- | --- | --- |
@@ -35,16 +35,11 @@ Use these strings for `stats` and for keys in `rulesets`. Names are case-sensiti
 | `spirit_lifesteal` | `HeroStat.SPIRIT_LIFESTEAL` | `HeroStat::SpiritLifesteal` | `%` |
 | `melee_lifesteal` | `HeroStat.MELEE_LIFESTEAL` | `HeroStat::MeleeLifesteal` | `%` |
 
-Ammo capacity does not return rounds left in the gun. It stays finite during a
-slide or another unlimited-ammo effect.
 
-Use the tick passed to `demo_gototick` for `ticks`. The pause message can show a
-server tick instead. Do not use the pause message's number as the query tick.
-
-Modifier calculations replay packet changes from the start. Relay keyframes can
-contain future modifier state. A multi-tick query shares this replay pass.
-Intrinsic effects end when the owning ability entity is removed. Other effects
-can continue after their source ability is removed.
+`HeroStat.AMMO` is an alias for `HeroStat.CLIP_SIZE`. The string `"ammo"` is not accepted.
+Without `stats`, the query selects capacity. Use `stats=list(HeroStat)` to select all supported stats.
+Percentage values use percentage points: `20` means 20%.
+Capacity stays finite during unlimited ammo. Use [ammo snapshots](examples.md#remaining-rounds-and-unlimited-ammo) for remaining rounds.
 
 ## Select the game data
 
@@ -53,34 +48,24 @@ boon versions
 boon get GAME_VERSION
 ```
 
-Set `data_version` to a Deadlock client version from this list.
-Boon verifies the local files or downloads that exact version.
-Boon does not select a client version from the demo header.
-
-The catalogs must contain `record_key`, `definition_path`, and `stat_changes`.
-Old catalogs can supply names but lack stat inputs.
-Use `boon get VERSION --force` after new files are published for that version.
-
-For complete query examples, see [stats, states, and ammo](examples.md#stats-states-and-ammo).
+Set `data_version` to the replay's Deadlock client version.
+Boon does integrity checks of installed files or downloads that exact version.
+Boon does not select the version from the demo header.
+Catalogs must include `record_key`, `definition_path`, and `stat_changes`.
+After a catalog release changes, use `boon get VERSION --force` to replace local files.
 
 ## Python
-
-Use `HeroStat` enum members to select hero stats. An enum gives each stat a named
-constant, such as `HeroStat.CLIP_SIZE`. Python also accepts the matching string
-values and rejects unknown names. The `stat` column contains strings.
-Use `AbilityStat` with [ability stat queries](ability-stats.md).
 
 ```python
 from boon import Demo, HeroStat, StatMode
 
-version = "6712"  # Select the client version for your demo.
 demo = Demo("108575009.dem", preload=False)
 result = demo.calculate_hero_stats(
     ticks=[187554, 187600],
     steam_ids=[76561198037652386],  # McGinnis in this demo.
-    data_version=version,
+    data_version="6712",
     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
-    mode=StatMode.CURRENT,  # Default; use BASELINE for passive and permanent inputs.
+    mode=StatMode.CURRENT,
     explain=True,
     strict=False,
 )
@@ -89,14 +74,8 @@ print(result.contributions)
 print(result.metadata)
 ```
 
-`HeroStat.AMMO` is an alias for `HeroStat.CLIP_SIZE`; both have value `"clip_size"`.
-The string `"ammo"` is not accepted. Percent values use percentage points:
-`20` means 20%, not 0.20.
-If you omit `stats`, Boon selects ammo capacity. Use `stats=list(HeroStat)` to
-select all supported hero stats.
-
-If you omit `rulesets`, Boon selects the supported `v1` rule for each stat.
-To select rules, supply one rule per requested stat:
+Without `rulesets`, each stat uses its supported `v1` rule.
+An explicit mapping must contain one supported rule for each requested stat:
 
 ```python
 from boon import rulesets
@@ -105,168 +84,112 @@ selected_rules = {
     HeroStat.CLIP_SIZE: rulesets.clip_size.v1,
     HeroStat.FIRE_RATE: rulesets.fire_rate.v1,
 }
-# Pass rulesets=selected_rules with these two stats.
+# Use rulesets=selected_rules with these two stats.
 ```
+
+Each rule has a name, version, and documentation date. The date is not a game patch date.
 
 ## Select baseline or current effects
 
-These are the only accepted `mode` values. Both stat query methods use them.
+The two hero and ability queries accept these modes:
 
 | String | Python enum | Rust enum | Inputs |
 | --- | --- | --- | --- |
-| `current` | `StatMode.CURRENT` | `StatMode::Current` | Supported effects active at the selected tick. Default. |
-| `baseline` | `StatMode.BASELINE` | `StatMode::Baseline` | Hero values, passive effects, and permanent changes at that tick. |
+| `current` | `StatMode.CURRENT` | `StatMode::Current` | Supported active effects, including temporary buffs and debuffs. Default. |
+| `baseline` | `StatMode.BASELINE` | `StatMode::Baseline` | Hero values, owned passive effects, and permanent changes. |
 
-Both modes use the requested tick. Items sold before that tick do not contribute.
-Permanent penalties remain in both modes. The mode also applies to dependent
-inputs, such as spirit power used for ammo scaling. Each mode runs the equation
-from its selected inputs. Do not subtract temporary bonuses from the final value.
+The two modes use the selected tick and keep permanent penalties.
+They also apply to dependent inputs, such as spirit power for ammo.
+Items sold before that tick do not contribute.
+Unknown effect roles give partial baseline values with diagnostics.
+An untimed modifier does not prove a passive effect.
 
-Catalog roles identify passive effects. An untimed modifier is not automatically
-passive. Unknown roles are excluded from baseline and reported as partial values.
-Missing intrinsic modifiers also retain their diagnostics.
-
-The mode does not change units. For example, ammo is capacity and fire rate is a
-bonus percentage. To compare the two results, join on `tick`, `steam_id`, and
-`stat`. Keep the `mode` column when you combine reports.
-
-The existing rules still apply. Movement values do not simulate firing, crouching,
-slows, speed limits, or sprint acceleration. `gravity_scale` has only a recorded
-current value. Baseline gravity scale raises an error; with `strict=False`, its
-value is null and its status is `unresolved`.
+Movement values do not simulate firing, crouching, bullet-hit slows, or sprint acceleration.
+`gravity_scale` has only a recorded current value.
+A baseline gravity query raises an error, or returns null with `strict=False`.
 
 ## Select ticks and players
 
-`ticks` accepts one integer or a list of nonnegative integers below 2147483647.
-Boon removes duplicate ticks and reads state after each tick. Missing ticks cause an error.
-The selected stats use the same player inputs in one parser pass.
+`ticks` accepts an integer or a sequence of integers from 0 through 2147483646.
+Boon removes duplicate ticks and reads state after each tick.
+Missing ticks cause an error. Multiple ticks share a parser pass.
+Use the tick passed to `demo_gototick`; the viewer's pause message can show a different server tick.
 
-Use `steam_ids` to select Steam accounts. Get IDs from `demo.players`.
-Use `heroes` to select the hero played at each tick. Both filters apply when set.
-Omit both filters to include all players with a hero.
-An empty filter selects no players. A requested Steam ID without a selected hero
-causes an error at that tick. The old `players` slot filter is not supported.
+Use `steam_ids` for Steam accounts or `heroes` for hero IDs at each tick.
+Get Steam IDs from `demo.players`. The two filters apply when set.
+Without filters, the query selects all players with a hero. An empty filter selects no players.
+A requested Steam ID without a selected hero causes an error at that tick.
 
 ## Results
 
-`result.values` has these columns:
-
-| Column | Contents |
+| `result.values` column | Contents |
 | --- | --- |
-| `mode` | `current` or `baseline` (String) |
-| `tick` | Requested demo tick (Int32) |
-| `steam_id` | Steam account ID (UInt64), or null if missing |
-| `hero_id` | Hero at this tick (Int64) |
-| `stat` | Stat name, such as `clip_size` (String) |
-| `value` | Calculated value (Float64), or null |
-| `unit` | `rounds`, `m/s`, `%`, `s`, `m`, `points`, `damage`, or `multiplier` |
+| `mode` | `current` or `baseline` |
+| `tick` | Demo tick (Int32) |
+| `steam_id` | Steam ID (UInt64), or null |
+| `hero_id` | Hero ID at this tick (Int64) |
+| `stat` | Stat string |
+| `value` | Result (Float64), or null |
+| `unit` | Unit from the stat table |
 | `ruleset` | Equation ID, such as `clip_size.v1` |
 | `status` | `calculated`, `partial`, or `unresolved` |
-| `diagnostic` | Missing inputs or assumed links; null when none are reported |
+| `diagnostic` | Missing inputs or assumed links; null when none apply |
 
-`explain=True` adds input rows to `result.contributions`.
-Each row gives the mode, input, value, source, property path, and modifier serial when present.
-Intermediate rows, such as `input="spirit_power"`, explain other inputs.
-Spirit rows separate flat and percentage bonuses. `post_multiplier_flat` rows
-are added after the multipliers. Ability-only bonuses do not enter global spirit.
-Do not add intermediate rows to the final stat.
+`explain=True` adds source rows to `result.contributions`.
+Rows identify inputs, catalog paths, values, and modifier serials.
+Intermediate inputs, such as `spirit_power`, are not extra stat bonuses.
+Purchase-cost rows use souls, not percentage points.
+`metadata` records the mode, selected client version, source commit, catalog snapshot, and rules.
 
-Global spirit power uses this equation:
+Join player results with `steam_id`. Include `tick` for sampled rows and `stat` for stat rows.
+Do not join null Steam IDs as one player.
+
+## Shared inputs
+
+Hero bases, growth, scaling, item prices, and effect values come from boon-data.
+Bound properties contribute once through their effective modifier.
+Boon uses source-ability upgrades; recipient upgrades do not replace missing caster state.
+Recorded stat totals count once. Pickup amounts do not multiply those totals.
+
+Shop bonuses use item costs and the highest reached `m_MapModCostBonuses` threshold.
+Prices come from `misc.json` and `generic_data.m_nItemPricePerTier`.
+The old tier table applies only when the cost table is missing.
+Catalog counter bindings can use recorded ability fields, such as Trophy Collector's `m_iTrophyCount`.
+Missing counts are not zero.
+
+Modifier state follows packet changes from the start; relay keyframes can contain future modifier state.
+Timers use recorded game time and do not include pauses.
+An intrinsic effect ends when its ability entity disappears. Other effects can continue.
+State masks can end effects, but shared or missing states leave some expiry times unknown.
+See [Known Issues](known-issues.md#stat-calculations).
+
+Global spirit inputs use:
 
 ```text
 (base + sum(flat bonuses)) * product(1 + each percentage bonus / 100)
     + sum(post-multiplier flat bonuses)
 ```
 
-Each percentage bonus applies to the ordinary flat total. Current mode includes
-supported temporary sources. Baseline mode excludes them. For 100 flat spirit
-and bonuses of 20% and 30%, the result is 156. The catalog supplies the values,
-upgrades, effect bindings, and calculation stage.
-
-New catalogs bind Ice Path's spirit bonuses to the active caster modifier.
-Its `BonusSpiritPct` multiplies ordinary spirit. Its `BonusSpirit` has
-`calculation_stage="post_multiplier"`, so Boundless Spirit does not multiply
-that flat bonus. This curated link stays in diagnostics. The friendly movement
-aura does not activate it. Linger effects still need verification.
-A missing binding can leave a value unresolved.
-
-Use `steam_id` to join results to `demo.players`. Use `tick` and `steam_id` to
-join state rows to stat rows. A Steam ID stays constant through hero changes.
-Rows without a Steam ID retain a null ID. Do not join null Steam IDs.
-
-`metadata` records the mode, client version, catalog snapshot, source commit, and rules.
-Each rule has a name, version, and documentation date. The date is not a game
-patch date. Catalog updates change inputs; rule versions identify equations.
+Ability-only spirit does not enter the global total.
+The catalog supplies calculation stages and activation links.
+For Ice Path, the caster's flat spirit bonus applies after percentage multipliers.
+Spirit Snatch uses different caster and victim bindings with normalized recorded counts.
+These supplied links stay in diagnostics.
+Active property scaling functions still have [limits](known-issues.md#spirit-power-and-modifier-bindings).
 
 ## Weapon damage
-
-`weapon_damage.v1` returns the global weapon-damage bonus in percentage points.
-A value of `45` means +45%; no bonuses gives `0`. Signed bonuses add together.
-The result is not rounded.
 
 ```text
 weapon_damage = sum(weapon damage percentage bonuses)
 ```
 
-Boon reads `MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE` from effective modifiers and
-recorded permanent stat totals. Shop bonuses use each category's total item cost
-and the highest reached threshold in `m_MapModCostBonuses`. Item prices come from
-`misc.json` → `generic_data.m_nItemPricePerTier`. Boon uses the old tier table only
-when the hero has no cost-based table. Missing prices produce an unresolved value.
-If the old table is absent, the calculation rules link the weapon category to
-weapon damage and the spirit category to spirit power. The catalog supplies all
-prices, thresholds, and bonus values.
-Catalog-defined weapon-percentage boon growth also applies. No balance amounts
-are fixed in code.
-Contribution rows with `kind="purchase_cost"` show item prices in souls. Do not
-add these prices to percentage bonuses.
-Bound properties count through their modifier once. Recorded totals are already
-accumulated; Boon does not multiply them by a pickup value.
+The result is a global bonus percentage, before rounding.
+Inputs include shop bonuses, boon growth, recorded totals, and mapped effects.
+Counter bindings can add earned rewards, such as Bloodscent's kills and assists.
+Markers on another player do not transfer the owner's reward.
 
-This stat is separate from damage per projectile. Base bullet damage, its boon
-and spirit growth, and flat post-scale damage belong to the bullet-damage equation.
-Critical hits, falloff, target resistance, and target- or range-specific bonuses
-are outside this global percentage.
-
-```python
-result = demo.calculate_hero_stats(
-    ticks=187554,
-    data_version="6712",  # Select the catalog version for your replay.
-    stats=[HeroStat.WEAPON_DAMAGE],
-    explain=True,
-    strict=False,
-)
-print(result.values)
-print(result.contributions)
-```
-
-The Rust query selects `HeroStat::WeaponDamage`. Its rule is
-`boon::rulesets::weapon_damage::V1`; Python exposes `rulesets.weapon_damage.v1`.
-
-A catalog `runtime_counts` binding can link an owned ability property to recorded
-ability counters. Each term names a field and can include a catalog percentage
-property as its weight. Boon sums the weighted counts and multiplies the result
-by the effect value, with ability upgrades. Missing, negative, or fractional
-counts are errors; a missing field is not zero. The trace includes each count
-and percentage weight.
-
-New boon-data catalogs use this for Bloodscent's earned kills and assists.
-The property-to-counter relationship is curated, as with Trophy Collector;
-it is not an explicit VData registration. Boon contains no Bloodscent ID, counter
-name, damage amount, or assist weight. Existing catalogs without this binding
-still return a partial Bloodscent result.
-
-Unbound owner rewards do not transfer through markers on other players.
-Explicit effects on those modifiers still apply. A property with the explicit
-`#EnemyAboveHealthThreshold_conditional` label is excluded from this global stat.
-Boon does not evaluate that enemy health condition or identify the item by name.
-
-An unbound property can describe a per-kill reward or conditional bonus, even
-when its usage flag says `IntrinsicallyProvidedInAbility`. Boon does not apply
-such a value once from ownership. It returns the known subtotal as `partial`
-and names the missing input. Unsupported bound scaling or stack rules still
-produce an error, or an `unresolved` row with `strict=False`.
-See [known weapon-damage limits](known-issues.md#weapon-damage-coverage).
+The result does not include flat bullet damage, critical hits, falloff, and target-specific bonuses.
+See [weapon limits](known-issues.md#weapon-damage-coverage).
 
 ## Ammo equation
 
@@ -274,43 +197,15 @@ See [known weapon-damage limits](known-issues.md#weapon-damage-coverage).
 ceil((base ammo + flat bonuses) * (1 + sum(percent bonuses) / 100))
 ```
 
-Percent inputs use percentage points: `19` means +19%. For base ammo 20,
-flat ammo 10, and bonuses of 15% and 4%, the result is 36 rounds.
+For base 20, flat bonus 10, and percentage bonuses 15 and 4, capacity is 36 rounds.
+Weapon values come from the hero's primary weapon record, including `m_mapWeaponInfos.primary`.
+Hero spirit scaling comes from `m_mapScalingStats.EClipSize`.
+Boon does not substitute an alternate weapon for a missing primary definition.
 
-Boon uses the hero's primary weapon reference to read its ability record.
-Weapon fields come from `m_mapWeaponInfos.primary`. Contribution paths show the source used. Boon does not select an
-alternate weapon when the primary definition is absent. It resolves
-owned item and ability properties, upgrades, and effective modifier instances.
-It counts bound properties through their modifier and does not add them again
-from the item. Expired modifiers and modifiers outside their aura do not apply.
-Modifier timers use `m_nTickBase` from player controllers with hero pawns. It multiplies ticks by the replay's tick interval, then subtracts
-accumulated pause time. Spectator controllers do not supply this clock.
-
-Permanent bonuses and corruption penalties come from the replay's stat-viewer
-vector. Boon maps each recorded `m_eValType` through the selected catalog's
-`modifier_value_types`. One modifier can supply several stats. Each recorded
-value counts once; Boon does not multiply it by a catalog pickup amount.
-If enum data is absent, the source must identify one stat.
-
-Corrupted property bonuses are not yet applied. Affected values are partial
-subtotals with a diagnostic. Recorded penalties still apply.
-
-Hero ammo scaling comes from `m_mapScalingStats.EClipSize`. The supported spirit
-input includes catalog base values, standard level upgrades, shop
-bonuses, recorded permanent bonuses, and resolved item/modifier contributions.
-No hero IDs, base ammo values, pickup amounts, or scaling coefficients are
-embedded in the calculator.
-
-New catalogs bind Spirit Snatch's flat spirit gain and loss to separate recorded
-modifiers. The upgraded value is multiplied by the count and divided by the
-catalog divisor. Each application uses its own count and lifetime. Explanations
-show the normalized count and mark this curated link as inferred. Rebuild and
-install the matching boon-data release to use the binding.
-
-Time-ranged powerup values use their catalog minimum, maximum, and time bounds.
-The current resolver interpolates using match minutes at application. Treat
-these calculated values as a model to verify against the demo viewer, not as
-networked final stats.
+Permanent bonuses and corruption penalties use recorded stat types.
+Corrupted property bonuses are incomplete and can give partial values.
+Powerup values use catalog ranges and match time at application.
+See [ammo limits](known-issues.md#ammo-and-barrier-snapshots).
 
 ## Bullet velocity equation
 
@@ -318,66 +213,31 @@ networked final stats.
 base speed in Source units/s * (1 + sum(percent bonuses) / 100) * 0.0254
 ```
 
-`bullet_velocity.v1` adds percentage bonuses and returns metres per second
-without rounding. One Source distance unit is one inch; `0.0254` converts inches
-to metres. This conversion is part of the rule, not a hero or item balance value.
+Boon reads `m_flBulletSpeed` and `MODIFIER_VALUE_BONUS_BULLET_SPEED_PERCENT`.
+Results use m/s. The conversion factor changes inches to meters.
+For base 8000 and bonuses 60% and 25%, the result is 375.92 m/s.
 
-Boon reads `m_flBulletSpeed` from the primary weapon block and
-`MODIFIER_VALUE_BONUS_BULLET_SPEED_PERCENT` from catalog effects. Item ownership,
-active modifiers, and ability upgrades use the same resolver as ammo. Bound
-properties count only through active modifiers. Ability-projectile speed is a
-separate stat and does not count as bullet velocity.
-
-In contribution rows, `input="bullet_velocity"` and `kind="base"` use m/s;
-`kind="percent"` uses percentage points. For example, 8000 Source units/s with
-60% and 25% bonuses gives 375.92 m/s.
-
-This is nominal primary-weapon speed. It does not simulate projectile flight,
-beam travel, speed curves, random variation, or alternate fire. Nonzero
-`MODIFIER_VALUE_BASE_BULLET_SPEED_OVERRIDE` effects produce an unresolved result
-because their priority rules are not yet supported. Conditional effects use
-explicit bindings or the ownership inference described below. Other activation
-conditions remain unresolved.
+The result describes the primary gun, without flight curves, beam behavior, or alternate fire.
+A nonzero base-speed override stays unresolved because its priority rule is unknown.
 
 ## Falloff range
 
 ```text
 multiplier = 1 + percent_bonus / 100
-start_metres = base_start_source_units * 0.0254 * multiplier
-end_metres = base_end_source_units * 0.0254 * multiplier
+start_meters = base_start_source_units * 0.0254 * multiplier
+end_meters = base_end_source_units * 0.0254 * multiplier
 ```
 
-`falloff_start.v1` and `falloff_end.v1` use the same equation. Start is the distance
-where weapon damage begins to decrease. End is the distance where the falloff
-penalty reaches its maximum. End is not maximum bullet travel distance.
-For example, 20-50 metres with a +20% bonus becomes 24-60 metres. Results are not rounded.
+Bases use `m_flDamageFalloffStartRange` and `m_flDamageFalloffEndRange`.
+Bonuses use `MODIFIER_VALUE_BONUS_ATTACK_RANGE_PERCENT`.
+V1 supports at most one nonzero bonus. Multiple bonuses stay unresolved.
+Missing, negative, or reversed base ranges also stay unresolved.
 
-Boon reads `m_flDamageFalloffStartRange` and `m_flDamageFalloffEndRange`
-from the primary weapon block in
-boon-data. Range bonuses use `MODIFIER_VALUE_BONUS_ATTACK_RANGE_PERCENT` and the
-shared item, modifier, and upgrade resolver. Bound bonuses count once, only while
-their modifier is effective. No hero distances or item bonus values are stored in code.
-
-Boon calculates these endpoints from the catalog and replay state. The equal scaling of both endpoints is a model to verify in the demo viewer;
-VData does not supply the engine equation. V1 accepts no bonus or one nonzero bonus.
-Multiple nonzero bonuses remain unresolved until their stacking rule is verified.
-
-Missing, negative, or reversed base distances remain unresolved. Boon does not
-use a `-1` sentinel as a distance. These stats describe the nominal primary
-weapon. Beam weapons can use engine-specific range behavior; their catalog
-endpoints still need in-game verification. These stats do not calculate alternate
-weapon modes, damage along the falloff curve, or changes to the curve's bias and
-damage scales. They do not use ability
-range, maximum bullet travel, or an item's distance condition for extra damage.
-
-Contribution rows use `input="falloff_start"` or `input="falloff_end"`. Base rows
-use metres; percentage rows use percentage points. In Rust, select
-`rulesets::falloff_range::START_V1` and `rulesets::falloff_range::END_V1`.
+Start is where damage begins to decrease. End is where the falloff penalty reaches its maximum.
+End is not maximum bullet travel. Ability range does not change these endpoints.
+Compare the equal scaling model with viewer values, particularly for beams.
 
 ## Melee damage
-
-`light_melee_damage.v1` and `heavy_melee_damage.v1` return nominal damage before
-resistance and effects that occur on a hit. Results are not rounded.
 
 ```text
 boon_growth = standard_boon_count * light_melee_gain_per_boon
@@ -387,60 +247,21 @@ final_damage = (base_with_growth + spirit_bonus)
              * (1 + (weapon_bonus_percent / 2 + melee_bonus_percent) / 100)
 ```
 
-For light melee, `base_damage / base_light_damage` is 1. For heavy melee,
-Boon uses the ratio of the two catalog base values. It does not use a fixed
-heavy-melee multiplier. Spirit scaling is zero when the hero has no scaling
-entry for that attack.
+Bases use `ELightMeleeDamage` and `EHeavyMeleeDamage`.
+Growth uses `m_mapLevelInfo` and `MODIFIER_VALUE_BASE_MELEE_DAMAGE_FROM_LEVEL`.
+Spirit coefficients come from the matching `m_mapScalingStats` entries.
+Heavy melee uses the catalog's heavy/light base ratio.
+For light melee, that ratio is 1.
 
-The inputs come from these catalog fields:
+The weapon-damage inputs also apply at half strength.
+Melee bonuses use `MODIFIER_VALUE_MELEE_DAMAGE_INCREASE`.
+Results do not include target resistance, immunity, and effects that occur on a hit.
+Nonzero melee or all-damage multipliers stay unresolved.
 
-- `m_mapStartingStats.ELightMeleeDamage` and `EHeavyMeleeDamage`: base damage.
-- `m_mapLevelInfo`: the levels that grant a standard boon, up to the replay level.
-- `m_mapStandardLevelUpUpgrades.MODIFIER_VALUE_BASE_MELEE_DAMAGE_FROM_LEVEL`:
-  light-melee damage per boon.
-- `m_mapScalingStats.ELightMeleeDamage` or `EHeavyMeleeDamage`: spirit coefficient.
-- `m_MapModCostBonuses`: shop bonus at each cost threshold.
-- `misc.json` → `generic_data.m_nItemPricePerTier`: item prices.
-- `MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE` and `MODIFIER_VALUE_MELEE_DAMAGE_INCREASE`:
-  resolved item, ability, modifier, and permanent pickup bonuses.
-
-Paige's heavy-melee spirit coefficient comes from her hero record. The same
-code supports another hero with the same type of catalog scaling entry.
-Bound properties count once, through their effective modifier.
-
-The equation includes engine rules that VData does not encode. The half-strength
-weapon bonus follows a [reported in-game calculation](https://forums.playdeadlock.com/threads/misleading-calculation-for-melee-damage-in-the-shop-stats-breakdown-the-actual-damage-has-no-bug.80970/).
-The heavy/light boon ratio follows a [reported comparison of hero growth](https://forums.playdeadlock.com/threads/characters-with-higher-base-light-melee-damage-apollo-bebop-calico-rem-have-decreased-heavy-melee-boon-scaling.126781/).
-These are player observations, not an engine specification. Check the model in
-the demo viewer, including the order of spirit scaling and percentage bonuses.
-No final melee-damage field was found in the inspected replay serializers.
-
-Melee uses the same weapon-damage resolver as `weapon_damage`, including catalog
-purchase bonuses, recorded stat totals, and owned ability counters. Bloodscent's
-kill and assist bonus therefore contributes at half strength. Unbound rewards
-from another player's target marker do not affect the result. Opening Rounds'
-enemy-health bonus is outside the nominal stat; its ordinary bonus is included.
-
-V1 excludes target resistance, effects triggered on a hit, and bonuses that
-require a target's distance or type. Melee Charge's next-heavy-attack proc is
-separate from its ordinary melee bonus. A target's Metal Skin immunity is also
-outside this offensive stat. Boon does not add an item-name exception for it.
-
-Missing global weapon inputs cause partial melee values. Examples
-are Battle Vest's health condition and Intensifying Magazine's firing ramp.
-Nonzero registered melee-damage or all-damage multipliers remain unresolved;
-the rule does not guess their interaction. Unsupported scaling also remains
-unresolved. Effects absent from the catalog can still be missing.
-Use `strict=False` to see other players' values and the reasons for null rows.
-
-Contribution rows use the requested melee stat as `input`. `boon_flat` is
-light-melee growth before the heavy/light ratio; `base_light_reference` supplies
-the denominator for heavy melee. `weapon_percent` is the full weapon bonus,
-which the rule halves. Counter and counter-weight rows explain that weapon
-input; do not add them as percentage bonuses. `percent` is a melee bonus, and
-`flat` is resolved hero spirit scaling. Intermediate `spirit_power` rows are
-not extra melee bonuses.
-In Rust, select `rulesets::melee_damage::LIGHT_V1` and `HEAVY_V1`.
+The equation follows player observations of [weapon scaling](https://forums.playdeadlock.com/threads/misleading-calculation-for-melee-damage-in-the-shop-stats-breakdown-the-actual-damage-has-no-bug.80970/)
+and [boon growth](https://forums.playdeadlock.com/threads/characters-with-higher-base-light-melee-damage-apollo-bebop-calico-rem-have-decreased-heavy-melee-boon-scaling.126781/).
+The engine equation and scaling order still have unverified assumptions.
+Rust uses `rulesets::melee_damage::LIGHT_V1` and `HEAVY_V1`.
 
 ## Melee distance bonus
 
@@ -448,18 +269,9 @@ In Rust, select `rulesets::melee_damage::LIGHT_V1` and `HEAVY_V1`.
 sum(heavy-melee travel percentage bonuses)
 ```
 
-`melee_distance.v1` returns a bonus in percentage points: `50` means +50%, and
-`0` means no bonus. It does not return metres or melee hitbox reach. Actual
-travel depends on the attack, movement curves, and collisions.
-
-Boon reads `MODIFIER_VALUE_MELEE_TRAVEL_DISTANCE_PERCENTAGE` effects from
-boon-data. Item values and modifier bindings come from the selected catalog.
-The rule adds resolved bonuses without rounding or clamping. Bound item
-properties count once, through their effective modifier. The rule uses no
-hero-specific distances or item values from code.
-
-Contribution rows use `input="melee_distance"` and `kind="percent"`. The same
-strict mode and unresolved-input checks apply as for the other stats.
+Inputs use `MODIFIER_VALUE_MELEE_TRAVEL_DISTANCE_PERCENTAGE`.
+The result is a percentage bonus, not meters or hitbox reach.
+Travel also depends on the attack, movement curves, and collisions.
 
 ## Reload time
 
@@ -467,25 +279,14 @@ strict mode and unresolved-input checks apply as for the other stats.
 base reload seconds * (1 + percent adjustment / 100)
 ```
 
-`reload_time.v1` reads `m_reloadDuration` from the primary weapon block
-and `MODIFIER_VALUE_RELOAD_SPEED` from catalog effects. A negative adjustment
-reduces time: 2 seconds with -10% gives 1.8 seconds. The result is not rounded.
-V1 supports no adjustment or one nonzero adjustment. The catalogs do not specify
-how several adjustments combine. V1 reports such combinations as unresolved.
+Bases use `m_reloadDuration`; adjustments use `MODIFIER_VALUE_RELOAD_SPEED`.
+A negative adjustment reduces time. For base 2 seconds and -10%, the result is 1.8 seconds.
+V1 supports at most one nonzero adjustment.
+Multiple adjustments, dynamic overrides, and hero reload scaling stay unresolved.
 
-For weapons with `m_bReloadSingleBullets=true`, this is the time to load one
-round. It excludes `m_flReloadSingleBulletsInitialDelay`; it does not multiply
-by magazine capacity or rounds missing. For other weapons, it is the time to
-reload the magazine. All base values and reload modes come from boon-data.
-
-This is nominal duration at the selected tick. It does not predict remaining
-reload time, interruptions, active-reload timing, or instant ammo refills.
-A property that restores ammo on a hit or cast does not change this stat.
-Dynamic weapon-duration overrides and hero reload scaling are not yet supported.
-
-Contribution rows use `input="reload_time"`. Base rows use seconds; percentage
-rows use signed percentage points. Bound effects count once and only while their
-modifier is effective. The same partial-result and strict-mode rules apply.
+With `m_bReloadSingleBullets=true`, the result is seconds for each round.
+It does not include the initial delay. Other weapons return a magazine's reload duration.
+This value is not remaining reload time or instant ammo restoration.
 
 ## Fire-rate increase or decrease
 
@@ -494,77 +295,22 @@ remaining = product(1 - each_slow_percent / 100)
 modifier_percent = max(-50, sum(bonus_percent) - 100 * (1 - remaining))
 ```
 
-`fire_rate.v1` returns the UI modifier in percentage points: `20` means +20%,
-`-10` means -10%, and no effects give `0`. It does not return shots per second.
-Values are not rounded to the UI's whole-number display.
+Positive `MODIFIER_VALUE_FIRE_RATE` values add.
+Negative values and `MODIFIER_VALUE_FIRE_RATE_SLOW` supply individual slow factors.
+No effects gives 0. The result is the modifier percentage, not shots for each second.
+For +18%, +20%, -20%, and -30%, the result is -6%.
 
-An unbound ability property needs an intrinsic usage flag or a supported
-activation link. Ownership alone does not apply a temporary bonus. Boon reports
-unsupported nonzero properties in the diagnostic.
+A positive modifier multiplies base rate by `1 + modifier_percent / 100`.
+A negative modifier divides base rate by `1 + abs(modifier_percent) / 100`.
+Rust provides `rulesets::fire_rate::rate_multiplier` for this conversion.
+Hero spirit scaling uses `m_mapScalingStats.EFireRate`.
 
-Positive `MODIFIER_VALUE_FIRE_RATE` values add together. Each
-`MODIFIER_VALUE_FIRE_RATE_SLOW` value is a positive slow percentage and retains
-its own factor. Negative `MODIFIER_VALUE_FIRE_RATE` values also count as slows
-under this rule. For example, +18%, +20%, -20%, and -30% give -6%. Apply the -50%
-minimum after combining both groups. Positive bonuses have no matching cap.
-
-The increase or decrease is not always the change in shots per second. For a
-positive modifier, multiply base fire rate by `1 + modifier_percent / 100`.
-For a negative modifier, divide base fire rate by `1 + abs(modifier_percent) / 100`.
-Thus -10% gives 90.9% of base fire rate, and -50% gives two thirds of base rate.
-The Rust rule exposes this conversion as `rulesets::fire_rate::rate_multiplier`.
-
-Hero spirit scaling comes from `m_mapScalingStats.EFireRate`. Boon multiplies
-resolved spirit power by the catalog's `flScale` when `eScalingStat` is
-`ETechPower`. No hero ID or coefficient is embedded in code. Permanent pickup
-bonuses use recorded totals; gun powerups use their catalog range and application
-time. The same item, ability-upgrade, modifier-expiry, and binding checks apply.
-
-Before it applies modifier effects, Boon checks the state flags declared in the
-catalog. It excludes a modifier when all its declared states are absent from the
-pawn's recorded masks. Missing masks or state names do not establish inactivity.
-A disabled state also prevents this exclusion. Raw modifier rows remain available.
-Stat queries also check these masks throughout the replay. After an observed
-present-to-absent transition, the same application stays ended. A new application
-timestamp can restore it. Later stack changes or another cast's state flags cannot.
-Shared states can still hide an expiry while another source supplies the same flag.
-
-Boon uses explicit catalog property bindings first. If a conditional property
-has no binding, Boon looks for one non-intrinsic modifier nested in its owning
-ability. It assumes that this modifier activates the owner's conditional bonuses.
-The modifier must have a finite positive duration when active. Multiple candidate
-modifiers remain unresolved. The earlier stat resolvers use this rule. Slide
-distance, stamina, recovery, and dash effects require explicit bindings.
-Bullet evasion also uses the exact-property rule below. Gravity scale reads the pawn field directly.
-
-This ownership rule is an assumption, not a confirmed engine rule. Affected
-values have `status="partial"`, and `diagnostic` names the property, owning ability,
-and modifier. When the modifier is absent, its contribution is zero, and the
-result still reports the assumption. With `explain=True`, active contributions
-include the modifier serial and property path. No ability names, IDs, or bonus
-values are embedded in this rule. Upgrades come from the source ability and caster.
-
-For example, Full Auto's temporary modifier now activates its catalog fire-rate
-bonus, including upgrades. Battle Vest's intrinsic modifier does not establish
-its health condition, so its unbound fire-rate bonus remains unresolved.
-See [Known Issues](known-issues.md#battle-vest-health-condition) for the result
-behavior and available data.
-
-Contribution rows use `input="fire_rate"`. `kind="percent"` contains signed
-fire-rate inputs; `kind="slow"` contains positive slow magnitudes. Intermediate
-`spirit_power` rows explain hero scaling. Do not sum slow rows: their remaining
-fractions multiply. Unknown nonzero ability-property scaling and scale upgrades
-remain unresolved. A known linear scale with an explicit zero coefficient does
-not require a spirit input.
+Boon prefers explicit bindings. A unique timed modifier can activate an owner's unbound conditional property.
+This assumed link gives partial values with a diagnostic, including Full Auto's bonus and upgrades.
+Battle Vest's intrinsic modifier does not prove its health condition.
+See [Battle Vest](known-issues.md#battle-vest-health-condition).
 
 ## Slide distance, bullet evasion, and gravity scale
-
-Slide distance and bullet evasion use catalog stat bindings, effective modifiers,
-and ability upgrades. Ownership alone does not assign an ability's effects to a player.
-An unbound property is included only if the catalog explicitly marks it as
-`IntrinsicallyProvidedInAbility`. Other unbound contributions are omitted and
-reported in the diagnostic. These rows have `status="partial"` in both strict
-modes. A partial zero is the total of known inputs; it does not prove no effect.
 
 ### Slide distance
 
@@ -572,102 +318,48 @@ modes. A partial zero is the total of known inputs; it does not prove no effect.
 slide_distance = 100 * (product(1 + each_bonus_percent / 100) - 1)
 ```
 
-`slide_distance.v1` reads `MODIFIER_VALUE_MOVEMENT_SLIDE_DISTANCE_SCALE`.
-It returns the bonus in percentage points: 35 means +35%, and 0 means no known
-bonus. V1 multiplies the factors, without rounding: +35% and +50% give +102.5%.
-It does not calculate travel in metres, slide speed, terrain effects,
-or friction. `MODIFIER_VALUE_MOVEMENT_SLIDE_TURN_SCALE` is a separate stat.
-
-Item amounts, modifier bindings, and upgrade values come from the selected
-catalog. Bound effects count once, through the effective modifier. A buff
-received from another hero can contribute if its binding is explicit.
+Inputs use `MODIFIER_VALUE_MOVEMENT_SLIDE_DISTANCE_SCALE`.
+For +35% and +50%, the result is +102.5%.
+The result does not describe travel in meters, friction, or slide-turn effects.
 
 ### Bullet evasion
 
-`bullet_evasion.v1` reads `MODIFIER_VALUE_BULLET_EVASION` and returns a percentage.
-A value of 30 means 30%, not 0.3. V1 supports zero or one nonzero chance between
-0% and 100%. Multiple nonzero chances remain unresolved.
+Inputs use `MODIFIER_VALUE_BULLET_EVASION`.
+V1 supports one nonzero chance from 0% through 100%.
+Multiple chances stay unresolved.
 
-Explicit catalog declarations and modifier bindings take priority.
-The modifier must be active. Upgrades use the owning ability's catalog and the
-caster's recorded tiers.
-
-If the catalog has no declaration for the exact property `EvasionPercent`, V1
-uses that property for bullet evasion. It assumes that the owner's unique effect
-modifier activates it. Intrinsic and cast-delay modifiers do not qualify.
-Active results are `partial`; the diagnostic identifies this assumption.
-The trace gives the modifier serial and property path.
-
-This rule supports Haze's Bullet Dance without storing hero IDs or balance values
-in code. An absent modifier gives zero. Multiple candidate modifiers leave the
-property unbound. Other undeclared properties remain unsupported.
-See [evasion limits](known-issues.md#movement-and-evasion-stat-coverage).
+The exact `EvasionPercent` property can use an owner's unique timed effect modifier.
+That activation link is an assumption and gives partial values.
+Other unbound evasion properties stay unsupported.
 
 ### Gravity scale
 
-```text
-gravity_scale = player_pawn.m_flGravityScale
-```
-
-`gravity_scale.v1` returns the recorded pawn multiplier unchanged: 1 means
-normal gravity. It does not apply ability or modifier gravity adjustments.
-The field alone need not describe the player's effective falling acceleration.
-A missing or invalid pawn field produces an error; Boon does not assume 1.
-
-Gravity scale does not require hero, weapon, or modifier stat definitions.
-The query still takes an explicit boon-data version through the same API.
-
-Contribution rows use `percent` for slide/evasion values. Gravity has one `base`
-row with source `replay/player_pawn` and definition path `m_flGravityScale`.
+The result is the pawn's recorded `m_flGravityScale` multiplier.
+Boon does not add modifier adjustments or assume 1 for a missing field.
+Only current mode has this value; it can lack effective gravity changes.
 
 ## Stamina and ordinary dashes
 
-```python
-result = demo.calculate_hero_stats(
-    ticks=[187554, 187800],
-    data_version="6712",  # Select the catalog for your demo.
-    stats=[
-        HeroStat.STAMINA, HeroStat.STAMINA_COOLDOWN,
-        HeroStat.DASH_SPEED, HeroStat.DASH_DURATION,
-        HeroStat.AIR_DASH_SPEED, HeroStat.AIR_DASH_DURATION,
-    ],
-    explain=True,
-    strict=False,
-)
-print(result.values)
-```
-
-Each stat has a `boon.rulesets.<stat>.v1` rule. Rust uses the same module names
-with `V1`, for example `rulesets::stamina::V1` and `rulesets::dash_speed::V1`.
-The rule date is 2026-09-28. It is a documentation date, not a game patch date.
-
 ### Stamina
 
-`stamina` returns maximum capacity: base `EStamina` plus flat bonuses from
-`MODIFIER_VALUE_STAMINA`. It does not return the current fractional resource.
-Free air dashes do not make capacity infinite. Values are not rounded.
-
-`stamina_cooldown` returns seconds to recover one point. The base rate is
-`EStaminaRegenPerSecond`. V1 supports flat rate changes from
-`MODIFIER_VALUE_STAMINA_REGEN_PER_SECOND_ADDITIVE`, or one nonzero percentage
-from `MODIFIER_VALUE_STAMINA_REGEN_PER_SECOND_PERCENTAGE`:
-
 ```text
-flat adjustment:       seconds = 1 / (base_rate + flat_rate)
-percentage adjustment: seconds = 1 / (base_rate * (1 + percent / 100))
+capacity = base EStamina + sum(MODIFIER_VALUE_STAMINA)
+flat recovery:    seconds = 1 / (base_rate + flat_rate)
+percent recovery: seconds = 1 / (base_rate * (1 + percent / 100))
 ```
 
-A +25% recovery bonus changes a 5-second refill to 4 seconds. It does not
-subtract 25% from the time. This is not the remaining time on the current refill.
-Multiple nonzero recovery percentages, or mixed flat and percentage adjustments,
-remain unresolved until their combination rule is verified. Paused recovery and
-nonpositive recovery rates also produce unresolved rows, not a finite refill time.
+`stamina` is capacity, not remaining resource. Free dashes do not make capacity infinite.
+`stamina_cooldown` is seconds to recover one point, not remaining refill time.
+Its base is `EStaminaRegenPerSecond`.
+Rate effects use `MODIFIER_VALUE_STAMINA_REGEN_PER_SECOND_ADDITIVE` or `MODIFIER_VALUE_STAMINA_REGEN_PER_SECOND_PERCENTAGE`.
+
+V1 supports flat recovery changes or one nonzero percentage change.
+Mixed adjustments, multiple percentages, paused recovery, and nonpositive rates stay unresolved.
+A +25% recovery bonus changes a five-second refill to four seconds.
 
 ### Dash speed and duration
 
-Base inputs come from `m_mapStartingStats` in the selected hero record:
-
-| Movement | Distance | Duration |
+| Movement | Base distance | Base duration |
 | --- | --- | --- |
 | Ground | `EGroundDashDistanceInMeters` | `EGroundDashDuration` |
 | Air | `EAirDashDistanceInMeters` | `EAirDashDuration` |
@@ -676,171 +368,61 @@ Base inputs come from `m_mapStartingStats` in the selected hero record:
 speed = base_distance * (1 + distance_percent / 100) / duration
 ```
 
-The speed is the nominal average in m/s. It is not instantaneous speed during
-the movement curve. The durations remain the catalog values. Distance bonuses
-change speed in this model. Replay checks support unchanged ordinary air-dash
-duration after a distance bonus; this is not a rule for every movement ability.
+Speed is a nominal average. Duration stays at the catalog value.
+Ground distance uses `MODIFIER_VALUE_MOVEMENT_GROUND_DASH_INCREASE_PERCENT` and `MODIFIER_VALUE_MOVEMENT_GROUND_DASH_REDUCTION_PERCENT`.
+Air distance uses `MODIFIER_VALUE_AIR_MOVE_DISTANCE_INCREASE_PERCENT`.
+Reductions have negative values.
 
-Ground dash uses `MODIFIER_VALUE_MOVEMENT_GROUND_DASH_INCREASE_PERCENT` and
-`MODIFIER_VALUE_MOVEMENT_GROUND_DASH_REDUCTION_PERCENT`. Reductions are signed
-negative values. Air dash uses `MODIFIER_VALUE_AIR_MOVE_DISTANCE_INCREASE_PERCENT`.
-V1 supports one nonzero distance adjustment per movement type. It does not
-assume how overlapping distance effects combine. These combinations make speed
-unresolved; they do not prevent the nominal duration result.
-
-Item amounts, upgrades, hero scaling, and time-dependent powerups come from the
-catalog and replay. No hero bucket, item ID, or balance amount is stored in these
-rules. Intrinsic properties apply to their owner. Bound effects apply through
-an effective modifier and use the caster's upgrades. Unbound effects are omitted
-with a partial diagnostic. An owned item's missing intrinsic modifier also produces
-a partial diagnostic. Boon does not assume its value from ownership alone.
-Known permanent pickup totals use the same resolver.
-
-These stats describe ordinary dashes. They do not model flight, attack movement,
-wall jumps, downward dashes, interruptions, terrain, or air-control acceleration.
-For example, an ability's own dash range does not change ordinary dash speed
-without a stat binding. See [Known Issues](known-issues.md#stamina-and-dash-stat-coverage).
-
-Contribution rows record capacity as `base` and `flat`, recovery as
-`base_per_second`, `flat_per_second`, and `percent`, and dash inputs as
-`distance_metres`, `duration_seconds`, and `distance_percent`. Each row includes
-the source path. Active effects also include their modifier serial.
+V1 supports one nonzero distance adjustment for each movement type.
+Multiple adjustments make speed unresolved but do not prevent a duration result.
+Flight, movement curves, interrupts, and ability-specific dashes are outside this model.
+These stats use only explicit effect bindings.
 
 ## Move speed and sprint speed
-
-```python
-result = demo.calculate_hero_stats(
-    ticks=187554,
-    data_version="6712",  # Select the catalog for your demo.
-    stats=[HeroStat.MOVE_SPEED, HeroStat.SPRINT_SPEED],
-    explain=True,
-    strict=False,
-)
-print(result.values)
-print(result.contributions)
-```
-
-The Python rules are `rulesets.move_speed.v1` and `rulesets.sprint_speed.v1`.
-Rust uses `HeroStat::MoveSpeed`, `HeroStat::SprintSpeed`, and the corresponding
-`rulesets::move_speed::V1` and `rulesets::sprint_speed::V1` constants.
-
-Both values are nominal stats in m/s. Nominal values do not include the current movement state. `move_speed` is the movement component.
-`sprint_speed` is the additional sprint component, including base sprint speed.
-Their sum gives full sprint speed. It is not the player's measured velocity.
-Firing, crouching, slows, speed limits, sprint eligibility, acceleration and
-sprint ramp-up do not change these nominal values.
 
 ### Equations
 
 ```text
-move_bonus = sum(flat_move_adjustments)
-move_speed = (base_move_speed + move_bonus) * (1 + move_percent / 100)
+move_speed = (base_move_speed + sum(flat_move_adjustments)) * (1 + move_percent / 100)
 sprint_speed = base_sprint_speed + sum(sprint_bonuses)
 full_sprint_speed = move_speed + sprint_speed
 ```
 
-Flat movement bonuses and penalties add. For example, +2 and +3 m/s give
-+5 m/s. Sprint bonuses also add. Each source remains in the contribution table.
+Flat movement bonuses and penalties add. Sprint bonuses also add.
+For base movement 6.4 m/s and bonuses +2 and +3, movement is 11.4 m/s.
+For base sprint 1.6 m/s and bonuses +2 and +1.5, the additional sprint component is 5.1 m/s.
+Their sum is 16.5 m/s, not measured velocity.
 
-For example, a hero has base movement of 6.4 m/s and base sprint of 1.6 m/s.
-Movement bonuses of +2 and +3 give 11.4 m/s movement speed.
-Sprint bonuses of +2 and +1.5 give 5.1 m/s additional sprint speed.
-The full sprint speed is 16.5 m/s. Values are not rounded.
-
-V1 accepts at most one nonzero movement percentage. It applies to the movement
-component, including flat adjustments, and does not multiply the sprint component.
-Multiple movement percentages, nonfinite inputs, overflow, and negative final
-values remain unresolved. Boon does not clamp these values.
+V1 supports at most one nonzero movement percentage.
+That percentage affects movement, including flat adjustments, but not the sprint component.
+Multiple percentages or negative final speeds stay unresolved.
+Values do not simulate movement states; [state queries](player-states.md) report those states in another query.
 
 ### Catalog inputs and coverage
 
-Hero bases come from `m_mapStartingStats.EMaxMoveSpeed` and `ESprintSpeed`.
-These values are already in m/s. When `m_mapScalingStats` declares spirit scaling
-for either field, Boon adds that scaled amount to the corresponding hero base.
-The coefficient comes from the selected catalog; no hero names are required.
-Intermediate spirit inputs appear in the contribution table.
+Bases use `EMaxMoveSpeed` and `ESprintSpeed`, with catalog hero spirit scaling.
+Flat effects use `MODIFIER_VALUE_MOVEMENT_SPEED_MAX` and `MODIFIER_VALUE_SPRINT_SPEED_BONUS`.
+Percentages use `MODIFIER_VALUE_MOVEMENT_SPEED_MAX_PERCENT`.
+Bare numeric modifier amounts use Source units/s; metric properties use m/s.
+Boon converts upgrade amounts to the same units.
 
-Flat effects use `MODIFIER_VALUE_MOVEMENT_SPEED_MAX` and
-`MODIFIER_VALUE_SPRINT_SPEED_BONUS`. Movement percentages use
-`MODIFIER_VALUE_MOVEMENT_SPEED_MAX_PERCENT`. Boon uses explicit stat bindings,
-effective modifiers, intrinsic properties, and the caster's recorded upgrades.
-
-Bare numeric movement modifier values use Source units per second. Property
-values such as `2.0m` use metres per second. Boon applies the same unit conversion
-to upgrade amounts. All movement contribution rows use m/s, except rows marked
-`percent`. Time-dependent movement powerups use their catalog ranges and the
-recorded application time. A teleporter's bound speed bonus uses the same path.
-
-Boon reports missing intrinsic modifiers and unbound conditional properties as
-partial inputs. It ignores passive property declarations that have no modifier
-registration or intrinsic usage flag. For example, an unused `BonusSprintSpeed`
-declaration does not add speed when the item's modifier registers other stats.
-
-A catalog effect can specify `runtime_count`, the field name on its owning
-ability entity. Boon multiplies the property value, including recorded upgrades,
-by that count while the linked modifier is effective. The contribution trace
-includes the count and its field name. A missing, negative, or noninteger count
-makes the affected stat unresolved; it is not treated as zero.
-
-New boon-data catalogs use this binding for Trophy Collector's
-`StackingBonusSprintSpeed` and `m_iTrophyCount`, through `m_GoldModifier`.
-The binding is curated engine knowledge (`binding_source: "curated"`), not a
-VData registration. The selected catalog supplies the amount. Boon contains no
-Trophy Collector ID or bonus value. Older catalogs without the binding still
-report the per-stack property as a partial input. Install a catalog built with
-the binding to use it.
-
-Other multi-stack effects and unsupported property scaling remain unresolved.
-Effects with no catalog stat declaration or binding can be missing.
-See [Known Issues](known-issues.md#move-and-sprint-speed-coverage).
+Trophy Collector uses a supplied catalog binding to `m_iTrophyCount`.
+Missing bindings, intrinsic modifiers, counts, or scaling can prevent a complete value.
+See [movement limits](known-issues.md#move-and-sprint-speed-coverage).
 
 ## Debuff resistance
-
-Use `HeroStat.DEBUFF_RESIST` (Python) or `HeroStat::DebuffResist` (Rust).
-The V1 rules are `rulesets.debuff_resist.v1` and `rulesets::debuff_resist::V1`.
-The result is a percentage, without display rounding.
-
-V1 multiplies the duration left after each resistance source:
 
 ```text
 debuff_resist = 100 * (1 - product(1 - source_percent / 100))
 affected_duration = original_duration * (1 - debuff_resist / 100)
 ```
 
-Thus, two 25% sources give 43.75% resistance. A 30% result reduces a 10-second
-debuff to seven seconds. Negative resistance increases duration: -8% gives
-10.8 seconds. V1 does not clamp negative results to zero. This is a selected
-stacking rule; the catalog supplies values, not the engine's equation.
-
-Boon reads innate `EDebuffResist` from `heroes.json`. An omitted innate value
-contributes zero. An explicit invalid value is an error. This includes negative
-innate values without a hero-name or ID check.
-
-Effective modifiers contribute their catalog `MODIFIER_VALUE_STATUS_RESISTANCE`
-values. Explicit property bindings, recorded ability upgrades, and recorded
-permanent values use the shared resolver. Bound item properties are counted
-once through their modifier. A conditional property without a modifier binding
-is skipped with a partial diagnostic. Unknown modifiers follow the same policy.
-
-This stat does not identify which debuffs ignore resistance, grant immunity,
-remove a debuff, or recalculate the end time of an existing debuff. Modifier
-stacks and unsupported property scaling remain unresolved. No item-specific or
-hero-specific bindings are added for this stat.
-
-```python
-result = demo.calculate_hero_stats(
-    ticks=187554,
-    data_version="6712",  # Select an installed version from boon versions.
-    stats=[HeroStat.DEBUFF_RESIST],
-    explain=True,
-)
-print(result.values)
-```
+The base uses `EDebuffResist`; effects use `MODIFIER_VALUE_STATUS_RESISTANCE`.
+A missing base contributes zero. Negative resistance increases duration.
+Two 25% sources give 43.75%. A 30% result reduces ten seconds to seven seconds.
+The result does not identify immunity, cleansing, or debuffs that ignore resistance.
 
 ## Damage resistance
-
-`bullet_resist.v1`, `spirit_resist.v1`, and `melee_resist.v1` return percentages.
-They retain negative values and do not round to the in-game display.
 
 ```text
 innate = base + boon growth + spirit scaling
@@ -849,138 +431,53 @@ reduction = 100 * (1 - product(1 - reduction_source / 100))
 result = resistance - reduction
 ```
 
-For example, 40% and 20% resistance give 52%. Reductions of 25% and 20% give
-40% reduction. The result is 12% resistance. If reduction exceeds resistance,
-the result is negative. V1 rejects nonfinite inputs, individual sources above
-100%, and arithmetic overflow. Negative resistance sources are allowed.
-
-| Stat | Hero starting stat | Resistance modifier | Reduction modifier |
+| Stat | Hero base | Resistance modifier | Reduction modifier |
 | --- | --- | --- | --- |
 | `bullet_resist` | `EBulletArmorDamageReduction` | `MODIFIER_VALUE_BULLET_ARMOR_DAMAGE_RESIST` | `MODIFIER_VALUE_BULLET_AND_MELEE_RESIST_REDUCTION` |
 | `spirit_resist` | `ETechArmorDamageReduction` | `MODIFIER_VALUE_TECH_RESIST` | `MODIFIER_VALUE_TECH_RESIST_REDUCTION` |
 | `melee_resist` | `EMeleeResist` | `MODIFIER_VALUE_MELEE_RESIST` | `MODIFIER_VALUE_MELEE_RESIST_REDUCTION` |
 
-The resolver reads starting stats, `m_mapStandardLevelUpUpgrades`, and
-`m_mapScalingStats` from the selected hero record. An absent base is zero; it
-does not suppress explicit spirit scaling. Boon growth counts the reached
-levels that use standard upgrades. No hero values or scaling coefficients are
-embedded in the calculation.
-
-Resistance bonuses use explicit modifier bindings or intrinsic usage flags.
-Reductions use effective modifiers on the recipient. Owning a shred item does
-not apply its debuff to the owner. When a reduction property has upgrades, Boon
-requires the caster's state; it does not use the victim's upgrade tier as a
-substitute. Catalog reductions use negative values, which Boon converts to
-positive magnitudes for the reduction equation. Contribution rows retain the
-catalog sign. Unsupported positive reduction values produce an error.
-
-`melee_resist` is the separate melee component. It excludes bullet resistance
-and shared weapon shred, which are reported by `bullet_resist`. It is not total
-protection against a melee hit. Do not combine these final values to calculate damage taken.
-Engine exceptions and the order of shared reductions require a separate calculation. Boon contains no hero-specific exception for this.
-
-NPC-only resistance, immunity, critical-hit protection, and general incoming
-damage multipliers are outside these stats. Unbound properties produce partial
-values. Empty declarations with no value, binding, activation flag, or upgrade
-are ignored. They do not describe a stat change. Unsupported stacking, property
-scaling, or caster state remains unresolved.
-
-```python
-result = demo.calculate_hero_stats(
-    ticks=187554,
-    data_version="6712",  # Select the version for the replay.
-    stats=[HeroStat.BULLET_RESIST, HeroStat.SPIRIT_RESIST, HeroStat.MELEE_RESIST],
-    strict=False,
-    explain=True,
-)
-print(result.values)
-print(result.contributions)
-```
+For resistance sources 40% and 20%, the result before reductions is 52%.
+Reductions of 25% and 20% combine to 40%, which leaves 12% resistance.
+A missing base is zero. Negative final values stay negative.
+Reductions apply to the recipient. Property upgrades use the caster's state.
+Catalog reductions use negative values; unsupported positive reductions stay unresolved.
+`melee_resist` reports only the melee component. Shared bullet/melee resistance stays in `bullet_resist`.
 
 ## Lifesteal
-
-`bullet_lifesteal.v1`, `spirit_lifesteal.v1`, and `melee_lifesteal.v1` return
-nominal percentages. Each damage type is separate. Independent sources combine as:
 
 ```text
 lifesteal = 100 * (1 - product(1 - source_percent / 100))
 ```
 
-For example, 22% and 30% give 45.4%. Boon does not round to the in-game display.
-V1 requires finite source percentages from 0 through 100.
+Each damage type has its own calculation. Source percentages must be finite and between 0 and 100.
+For 22% and 30%, the result is 45.4%.
+Bullet bases use `EBulletLifesteal`; spirit bases use `ETechLifesteal`.
+Effects use `MODIFIER_VALUE_BULLET_LIFESTEAL` and `MODIFIER_VALUE_TECH_LIFESTEAL`.
+A missing base is zero.
 
-Bullet and spirit lifesteal use these catalog fields:
-
-| Stat | Hero starting stat | Modifier value |
-| --- | --- | --- |
-| Bullet lifesteal | `EBulletLifesteal` | `MODIFIER_VALUE_BULLET_LIFESTEAL` |
-| Spirit lifesteal | `ETechLifesteal` | `MODIFIER_VALUE_TECH_LIFESTEAL` |
-
-An absent innate value is zero. An invalid explicit value is an error.
-Graves' innate bullet lifesteal comes from his selected hero record. Boon has
-no hero-specific innate values. Item amounts, ability upgrades, and active
-modifier bindings also come from the selected catalog. Bound effects apply only
-while their modifiers are effective. Explicit intrinsic properties can apply
-from ability ownership. Missing activation bindings produce partial values,
-including declarations that have no usage flags.
-
-The values exclude healing boosts, healing reduction, target-specific effects,
-and creep effectiveness. The resolver does not apply `EHealingOutput` scaling
-to these nominal percentages. Other property scaling remains unsupported; it
-is not silently discarded. These stats do not predict health gained.
-
-The catalog has no melee-lifesteal modifier-value symbol. V1 recognizes the exact
-`MeleeLifesteal` property on an owned passive ability. This is an explicit property
-rule, not a name or hero-ID match. It reads the property and its upgrades from
-VData. Nonzero contributions have `status="partial"`; the diagnostic states the
-assumed link, and `explain=True` shows the property path. This supports Infernal
-Resilience without embedding its amounts or upgrade tiers in Boon.
-
-`TargetLifesteal` requires target and damage-type context. A nonzero value remains
-unresolved for melee queries. Cooldown-based healing, such as Melee Lifesteal and
-Lifestrike item procs, is excluded. Their healing amounts are not continuous
-melee lifesteal, even when the item name includes that term.
-
-```python
-result = demo.calculate_hero_stats(
-    ticks=187554,
-    data_version="6712",  # Select the version for the replay.
-    stats=[
-        HeroStat.BULLET_LIFESTEAL,
-        HeroStat.SPIRIT_LIFESTEAL,
-        HeroStat.MELEE_LIFESTEAL,
-    ],
-    explain=True,
-    strict=False,  # Keep null values and diagnostics for unsupported inputs.
-)
-print(result.values)
-print(result.contributions)
-```
+Melee uses the exact `MeleeLifesteal` property on an owned passive ability, with its upgrades.
+This assumed property link gives a partial value.
+Target-dependent `TargetLifesteal` stays unresolved.
+Cooldown-based melee healing items are not included.
+Results do not include healing adjustments and creep effectiveness; they do not predict health gained.
 
 ## Unresolved inputs
 
 | Status | Meaning |
 | --- | --- |
-| `calculated` | The rule calculated a value from the supported inputs. |
-| `partial` | The value uses known inputs but has missing effects or an assumed link. |
-| `unresolved` | Boon cannot calculate the value; `value` is null. |
+| `calculated` | The rule calculated a value from supported inputs. |
+| `partial` | The value has missing effects or an assumed link. |
+| `unresolved` | The value is null because the rule cannot calculate it. |
 
-Boon reports unknown modifiers and unclear catalog matches as `partial`.
-The diagnostic lists the skipped IDs. Assumed activation links also produce
-partial values. These rules apply with either `strict` setting.
-A calculated value can still lack effects that the catalog does not describe.
+Unknown modifiers and assumed activation links give partial values with either `strict` setting.
+Other missing inputs raise `CalculationError` with `strict=True`.
+With `strict=False`, those rows have null values and diagnostics.
+Invalid queries, missing ticks, and download failures still cause errors.
+Even a calculated value cannot include effects missing from the catalog.
 
-For other unsupported inputs, `strict=True` raises `CalculationError`.
-Use `strict=False` to keep those rows with null values and diagnostics.
-Invalid queries, missing ticks, and failed catalog downloads still cause errors.
-
-Boon excludes `modifier_player_pinged` and `modifier_entity_pinged` from stat
-calculations. These two ID exceptions apply to all heroes.
-The ping markers remain in the modifier datasets.
-
-Catalog counter bindings support some effects with stacks, such as Trophy
-Collector and Bloodscent. Other stack rules and property scaling can remain
-unsupported. See [Known Issues](known-issues.md) before you interpret a result.
+Boon ignores the two known ping markers for stat calculations. They stay in modifier datasets.
+See [Known Issues](known-issues.md) for binding, scaling, and lifetime limits.
 
 ## Rust
 

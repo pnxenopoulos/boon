@@ -63,7 +63,7 @@ Or use pip:
 pip install boon-deadlock
 ```
 
-Requires Python 3.11–3.14.
+Use Python 3.11–3.14.
 
 ### CLI
 
@@ -86,10 +86,10 @@ from boon import Demo
 demo = Demo("match.dem")
 
 # Match metadata
-print(demo.match_id)         # 70555151
-print(demo.map_name)         # "start"
-print(demo.total_clock_time) # "37:38"
-print(demo.winning_team_num) # 3
+print(demo.match_id)
+print(demo.map_name)
+print(demo.total_clock_time)
+print(demo.winning_team_num)
 
 # Combat datasets are preloaded; other Polars DataFrames load on first access
 kills = demo.kills
@@ -109,6 +109,7 @@ demo.kill_participation()    # (kills + assists) / team kills, per player
 Use `calculate_hero_stats()` for hero values, `calculate_ability_stats()` for
 ability bonuses, `imbues()` for item selections, and `player_states()` for state
 names. Select a boon-data version from `boon versions`.
+Use `get_item_purchases(data_version=...)` for catalog-specific item upgrade links.
 See the [feature examples](crates/boon-python/docs/examples.md#stats-states-and-ammo),
 [hero stat names](crates/boon-python/docs/hero-stats.md), and
 [ability stat names](crates/boon-python/docs/ability-stats.md#percentage-rules).
@@ -140,23 +141,23 @@ The `boon-dev` tool adds low-level commands such as `entities`, `events`, and `s
 
 ## Available Datasets
 
-Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataFrame. `Demo(path)` preloads kills, damage, and abilities together. Other datasets load on first access. Use `Demo(path, preload=False)` for lightweight construction, then `load()` to request several datasets together. Call `Demo.available_datasets()` to get the full list.
+Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataFrame. `Demo(path)` preloads kills, damage, and abilities together. Other datasets load on first access. Use `Demo(path, preload=False)` for metadata-only construction, then `load()` to request several datasets together. Call `Demo.available_datasets()` to get the full list.
 
 | Dataset | Description |
 |---------|-------------|
-| `player_ticks` | Per-player state every tick (position, health, souls, net worth, kills, deaths, assists, 40+ fields) |
+| `player_ticks` | State for each player at each tick (position, health, souls, net worth, kills, deaths, assists, 40+ fields) |
 | `world_ticks` | World state every tick (pause state, next mid boss spawn) |
 | `kills` | Hero kill events with attacker, victim, and assisters |
 | `damage` | Damage events with mitigation, hitgroups, source metadata, and light/heavy/other melee classification |
-| `item_purchases` | Item shop transactions (purchased, upgraded, sold, swapped, failed) |
+| `item_purchases` | Recorded item changes and matched upgrade components |
 | `ability_upgrades` | Hero ability point spending (tier 1-3) |
 | `ability_ticks` | Ability cooldown, charge, and slot state changes |
 | `abilities` | Important ability usage events |
-| `flex_slots` | Flex slot unlock events per team |
+| `flex_slots` | Flex slot unlock events for each team |
 | `chat` | In-game chat messages (all chat and team chat) |
 | `objectives` | Objective health state changes (walkers, barracks, shrines, patron, mid boss) with position and phase tracking |
 | `mid_boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire) |
-| `troopers` | Per-tick alive lane trooper state with position *(opt-in, large)* |
+| `troopers` | Alive lane trooper state for each tick with position *(opt-in, large)* |
 | `neutrals` | Neutral creep state changes with change detection *(opt-in)* |
 | `breakables` | Breakable map-prop destruction events with resolved subclass and last-known position *(opt-in)* |
 | `sinners_sacrifice` | Sinner's Sacrifice machine lifecycle and exact hit attribution *(opt-in)* |
@@ -164,7 +165,7 @@ Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataF
 | `active_modifiers` | Active buff/debuff modifier events *(opt-in)* |
 | `urn` | Urn lifecycle and delivery point events *(opt-in)* |
 | `rift` | Rift (Koth) lifecycle, capture/expiry, winner, lane, and position *(opt-in)* |
-| `street_brawl_ticks` | Per-tick street brawl state *(street brawl only)* |
+| `street_brawl_ticks` | Street Brawl state for each tick *(street brawl only)* |
 | `street_brawl_rounds` | Street brawl round scoring events *(street brawl only)* |
 
 ## Project Structure

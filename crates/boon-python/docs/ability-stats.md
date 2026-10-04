@@ -2,7 +2,7 @@
 
 Use `demo.imbues()` to read which items imbue each ability.
 Use `demo.calculate_ability_stats()` to calculate each ability's bonus percentages.
-Both methods read replay state and a selected boon-data version.
+The two methods read replay state and a selected boon-data version.
 
 ## Python
 
@@ -36,8 +36,8 @@ unknown names cause an error. The result's `stat` column contains strings.
 Use `HeroStat` with [hero stat queries](hero-stats.md).
 
 List versions with `boon versions`. Install a version with `boon get VERSION`.
-A query downloads and verifies a missing version. It does not select another version.
-Recorded dynamic values require the catalog's `modifier_value_types` map.
+A query downloads a missing version and does integrity checks. It does not select another version.
+The catalog's `modifier_value_types` map identifies recorded dynamic values.
 Use `boon get VERSION --force` after a release adds that map.
 
 ## Select ticks, players, and abilities
@@ -47,7 +47,7 @@ Results describe state after each tick. Multiple ticks use one parser pass.
 Missing ticks cause an error.
 
 Use `steam_ids` to select Steam accounts. Get IDs from `demo.players`.
-Omit the filter to include all players. An empty filter selects no players.
+Do not set the filter to include all players. An empty filter selects no players.
 A requested Steam ID without a hero at a selected tick causes an error.
 
 Stat queries select the hero's signature abilities by default.
@@ -61,13 +61,13 @@ Use `mode="current"` (default) for supported active effects. Use
 `mode="baseline"` for owned passive bonuses, permanent recorded changes,
 and persistent imbues. `StatMode.CURRENT` and `StatMode.BASELINE` also work.
 
-Both modes use the selected tick and retain targeting filters. Baseline excludes
+The two modes use the selected tick and retain targeting filters. Baseline does not include
 temporary buffs, powerups, conditional effects, and next-cast bonuses.
 An untimed modifier or a recorded target alone does not prove a passive effect.
 Unknown source roles produce partial values with diagnostics.
 
-Recorded dynamic values need a passive catalog binding for baseline. Ambiguous
-values do not enter its subtotal or silently fall back to catalog defaults.
+Baseline uses recorded dynamic values only with a passive catalog binding. Ambiguous
+values do not enter its subtotal or fall back to catalog defaults.
 Current mode can use recorded maximum charges for charge filters. Baseline uses
 catalog charges and upgrades, without temporary changes to the recorded maximum.
 The mode does not change units or equations.
@@ -83,21 +83,21 @@ For examples that select an imbued ability or include items, see
 
 | Table | Contents |
 | --- | --- |
-| `imbues.bindings` | One row per tick, player, source item, and imbued ability; includes IDs and names. |
+| `imbues.bindings` | One row for each tick, player, source item, and imbued ability; includes IDs and names. |
 | `imbues.effects` | Catalog properties, values, stat symbols, and targeting filters for each binding. No stacking rule is applied. |
-| `result.values` | One row per tick, player, ability, and stat; includes the value, unit, rule, status, and diagnostic. |
-| `result.contributions` | Input sources, properties, scope, activation state, and whether each input was included. Requires `explain=True`. |
+| `result.values` | One row for each tick, player, ability, and stat; includes the value, unit, rule, status, and diagnostic. |
+| `result.contributions` | Input sources, properties, scope, activation state, and whether each input was included. Set `explain=True`. |
 
 Stat-row statuses are `calculated`, `partial`, `unresolved`, and `not_applicable`.
 Binding statuses are `recorded` and `unresolved`. An effect whose value cannot be
-resolved also has `unresolved` status. Check `diagnostic` for the reason.
+resolved also has `unresolved` status. Read `diagnostic` for the reason.
 
 Stat values and contributions also contain `mode` (`current` or `baseline`).
 Their metadata records the same mode.
 
 Each table includes `tick`, `steam_id`, and `hero_id`.
 Steam IDs use UInt64. Join to `demo.players` with `steam_id`.
-A missing Steam ID is null. Keep these rows separate; do not join null Steam IDs.
+A missing Steam ID is null. Do not combine these rows; do not join null Steam IDs.
 
 Missing catalog records do not remove recorded imbue bindings.
 A binding can have no effect rows when the catalog has no mapped stat changes.
@@ -113,9 +113,9 @@ A binding can have no effect rows when the catalog has no mapped stat changes.
 | `range_bonus` | `AbilityStat.RANGE_BONUS` | `AbilityStat::RangeBonus` | `rulesets.range_bonus.v1` |
 | `radius_bonus` | `AbilityStat.RADIUS_BONUS` | `AbilityStat::RadiusBonus` | `rulesets.radius_bonus.v1` |
 
-Omit `stats` to select all except item cooldown reduction.
+Without `stats`, the query selects all except item cooldown reduction.
 Use `stats=list(AbilityStat)` to include all five stats.
-Omit `rulesets` to use the supported `v1` rules.
+Without `rulesets`, the query uses the supported `v1` rules.
 A `rulesets` mapping must supply one rule for each requested stat.
 
 V1 applies this equation to each stat:
@@ -126,15 +126,15 @@ combined = 100 * (1 - product(1 - source_percent / 100))
 
 For example, 10% and 20% give 28%. Values use percentage points and are not rounded.
 Negative inputs are permitted. Inputs above 100%, nonfinite values, and overflow cause errors.
-These results are bonuses, not seconds, metres, or remaining cooldown times.
+These results are bonuses, not seconds, meters, or remaining cooldown times.
 
 Ability cooldown reduction applies to hero abilities. Item cooldown reduction applies to items.
 An item that disables cooldown scaling has status `not_applicable` and a null value.
-Range and duration bonuses can apply to items. Range and radius remain separate stats.
+Range and duration bonuses can apply to items. Range and radius are different stats.
 
 For charged abilities, current-mode filters use recorded maximum charges or catalog charges with upgrades.
 Ultimate-only filters select the fourth signature slot.
-Charge recovery time and the delay between casts are separate properties.
+Charge recovery time and the delay between casts are different properties.
 An event that reduces a running cooldown does not become a permanent stat bonus.
 
 ## Sources and limits
@@ -147,12 +147,12 @@ A recorded dynamic value replaces its matching catalog contribution, including w
 A bonus for one ability does not replace a bonus on another ability.
 
 Contributions can have state `ready`, `active`, `inactive`, or `unresolved`.
-A ready next-cast bonus requires a recorded target before Boon applies it to an ability.
+Boon applies a ready next-cast bonus only to a recorded target.
 The resolver assumes next-cast roles from catalog surge-window and ability-watcher fields.
 A diagnostic identifies this assumption.
 
 An Arcane Surge watcher can lack a recorded bonus target.
-Boon omits that bonus and marks the known range, radius, and duration values as `partial`.
+Boon does not include that bonus and marks the known range, radius, and duration values as `partial`.
 It does not apply the bonus to all abilities.
 
 Unknown modifiers and unsupported activation produce `partial` values with diagnostics.

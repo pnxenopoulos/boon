@@ -12,17 +12,17 @@ print(states.select("tick", "steam_id", "hero_id", "states"))
 ```
 
 Use `boon versions` to list catalog versions and `boon get VERSION` to install
-one. The method downloads and verifies a missing version. The catalog must
-include `modifier_states`; older releases need a new build with this mapping.
-If the mapping is absent, Boon reports an error with the install commands.
+one. The method downloads a missing version and does integrity checks. The catalog must
+include `modifier_states`; rebuild older releases that lack this mapping.
+If the mapping is missing, Boon reports an error with the install commands.
 Choose a catalog from the same game build as the replay. Boon does not select
 that version from the demo header.
 
 ## Select ticks and players
 
-Omit `ticks` to read every recorded tick. An integer selects one tick; a list
+Without `ticks`, the query reads every recorded tick. An integer selects one tick; a list
 selects several. Boon sorts the selection and removes duplicate ticks. Negative
-or absent ticks cause an error. An empty tick or Steam ID list returns no rows.
+or missing ticks cause an error. An empty tick or Steam ID list returns no rows.
 
 ```python
 mcginnis = demo.player_states(
@@ -55,20 +55,20 @@ respawn, even when the controller selects a spectator pawn.
 | `unknown_enabled_states` | List(UInt32) | Unknown bit indices in the enabled mask. |
 | `unknown_disabled_states` | List(UInt32) | Unknown bit indices in the disabled mask. |
 
-Names omit the `MODIFIER_STATE_` prefix and are sorted by name. Unknown indices
-are sorted by number. Each mask is read separately. Boon does not combine masks
+Names have no `MODIFIER_STATE_` prefix and are sorted by name. Unknown indices
+are sorted by number. Each mask is read independently. Boon does not combine masks
 or decide which mask has priority.
 
 The predicted-state mask is recorded game data. Boon does not predict these
-states. It includes combat and movement states that can be absent from the
+states. It includes combat and movement states that can be missing from the
 enabled-state mask.
 
-An empty list means no matching entries. Check the corresponding `unknown_*`
-list before you conclude that no bits are set. Null in both columns means that
-the pawn, mask, or a required mask word is unavailable. A player without a Steam
+An empty list means no matching entries. Read the corresponding `unknown_*`
+list before you conclude that no bits are set. Null in the two columns means that
+the pawn, mask, or a necessary mask word is unavailable. A player without a Steam
 ID retains a row with a null ID. A Steam ID filter selects
 only rows with a matching recorded ID. An unknown Steam ID returns no rows.
-Stat and imbue queries instead report an error for an absent requested player.
+Stat and imbue queries instead report an error for an missing requested player.
 
 Use `steam_id` to join these rows to `demo.players`.
 Use `tick` and `steam_id` to join state rows to stat results.
@@ -93,7 +93,7 @@ print(state_names)
 ```
 
 This lists defined states, including states never set in your replay.
-The `unknown_*` columns retain bits absent from that catalog.
+The `unknown_*` columns retain bits missing from that catalog.
 
 ## Use state lists
 

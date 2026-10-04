@@ -12,8 +12,7 @@ Install with `uv add boon-deadlock` or `pip install boon-deadlock`.
 Read {doc}`getting-started` for dataset queries and {doc}`examples` for complete examples.
 
 Use {doc}`hero-stats` for hero values, {doc}`ability-stats` for ability bonuses and
-imbues, and {doc}`player-states` for recorded states. These queries require a
-boon-data version; see {doc}`data`. The guides list accepted strings and enum members.
+imbues, and {doc}`player-states` for recorded states. Set a boon-data version for these queries; see {doc}`data`. The guides list accepted strings and enum members.
 
 Read {doc}`known-issues` for calculation limits.
 Report errors on [GitHub](https://github.com/pnxenopoulos/boon/issues)

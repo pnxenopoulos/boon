@@ -1,23 +1,25 @@
 # Team Numbers
 
-Team numbers appear in the `team_num` column of `Demo.players` and correspond to
-the `m_iTeamNum` field on entity classes.
+`team_num` uses the recorded entity field `m_iTeamNum`.
 
-| team_num | Team Name | Description |
-|----------|-----------|-------------|
-| 0 | Unassigned | No team assigned |
-| 1 | Spectator | Spectating the match |
-| 2 | Hidden King | One of the two competing teams (typically shown at the bottom of the map) |
-| 3 | Archmother | One of the two competing teams (typically shown at the top of the map) |
+| Value | Name |
+| --- | --- |
+| 0 | Unassigned |
+| 1 | Spectator |
+| 2 | Hidden King |
+| 3 | Archmother |
 
 ## Lane Assignments
 
-The `start_lane` column in `Demo.players` indicates each player's original lane
-assignment at the start of the match. Lanes are relative to the team's side of the
-map.
+`start_lane` records the player's original lane assignment.
+The protobuf `CMsgLaneColor` defines these values:
 
-| start_lane | Lane |
-|------------|------|
-| 1 | York (Yellow) |
-| 4 | Broadway (Blue) |
-| 6 | Park (Green) |
+| Value | Color |
+| --- | --- |
+| 0 | None |
+| 1 | Yellow |
+| 3 | Green |
+| 4 | Blue |
+| 6 | Purple |
+
+Map names and layouts can change. Do not infer a street name from the color alone.

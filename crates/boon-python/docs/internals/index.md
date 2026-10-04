@@ -25,13 +25,13 @@ name-tables
 
 - `crates/boon/src/hero_stats/`: Read catalog definitions and resolve stat inputs.
   `inputs/tests.rs` contains the resolver tests.
-- `crates/boon/src/rulesets/`: Keep equations separate from catalog balance values.
+- `crates/boon/src/rulesets/`: Keep equations different of catalog balance values.
   `percentage.rs` supplies the shared remaining-factor equation.
 - `crates/boon-python/src/`: Build Polars columns and cache datasets.
   `DatasetCache` uses the dataset enum for direct lookups.
 - `crates/boon-python/python/boon/`: Supply public queries and typed result tables.
-  `_selection.py` checks ticks, catalog versions, and Steam IDs before native calls.
+  `_selection.py` rejects incorrect ticks, catalog versions, and Steam IDs before native calls.
 
-Keep observed replay values separate from calculated values. Read balance values
+Keep observed replay values in different fields from calculated values. Read balance values
 and effect bindings from boon-data. Keep assumptions in result diagnostics and
 {doc}`../known-issues`.

@@ -13,7 +13,7 @@ Pre-generated Rust types for the Deadlock protobuf definitions. The [Boon](https
 ## Overview
 
 [`prost`](https://github.com/tokio-rs/prost) generates this Rust code from Valve's
-`.proto` files. The repository contains `src/proto.rs`. Users do not need `protoc`.
+`.proto` files. The repository contains `src/proto.rs`. Use these types without `protoc`.
 
 ## Installation
 
@@ -58,7 +58,7 @@ This command compares the files in `proto/allowlist.txt` with
 It reports changed or missing files and returns a nonzero exit code on a mismatch
 or download error. It does not change local files or package versions.
 Line endings and changes to `steam.inf` alone do not cause a mismatch.
-Set `DEADLOCK_REF` to check a specific upstream commit, branch, or tag.
+Set `DEADLOCK_REF` to compare a specific upstream commit, branch, or tag.
 
 CI runs this check on pull requests and pushes to `main`. The job summary shows
 the result. A failed check adds a warning but does not block `CI Check` or releases.

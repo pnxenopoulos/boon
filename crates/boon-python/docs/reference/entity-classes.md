@@ -1,8 +1,7 @@
 # Entity Classes
 
-Deadlock demos contain hundreds of entity classes. This page documents the most
-important ones for data analysis. Use the low-level `boon-dev` CLI (built from
-source, see {doc}`../cli`) to discover all classes in a specific demo:
+Use `boon-dev` to list the entity classes in a demo.
+Build the tool from source; see {doc}`../cli`.
 
 ```bash
 boon-dev classes match.dem --filter Citadel
@@ -14,8 +13,7 @@ Player data is split across two entity types linked by an entity handle.
 
 ### `CCitadelPlayerController`
 
-The player's **controller** — holds identity, stats, and game-level data. There is
-one per player in the match.
+The controller supplies player identity, counters, and match state.
 
 **Key fields:**
 
@@ -26,6 +24,7 @@ one per player in the match.
 | `m_iTeamNum` | U64 | Team number (see [Teams](teams.md)) |
 | `m_nOriginalLaneAssignment` | I64 | Starting lane |
 | `m_hPawn` | U32 | Entity handle to the player's pawn |
+| `m_hHeroPawn` | U32 | Entity handle to the hero pawn when recorded |
 | `m_PlayerDataGlobal.m_nHeroID` | U64 | Hero ID (see [Heroes](heroes.md)) |
 | `m_PlayerDataGlobal.m_bAlive` | Bool | Alive status |
 | `m_PlayerDataGlobal.m_iPlayerKills` | I64 | Kill count |
@@ -50,23 +49,22 @@ one per player in the match.
 
 ### `CCitadelPlayerPawn`
 
-The player's **pawn** — represents the physical character in the game world. Holds
-position, health, and combat state.
+The hero pawn supplies position, health, and combat state.
 
 **Key fields:**
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX` | F32 | X position |
-| `CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY` | F32 | Y position |
-| `CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ` | F32 | Z position |
+| `CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX` | F32 | X cell offset |
+| `CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY` | F32 | Y cell offset |
+| `CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ` | F32 | Z cell offset |
 | `m_angClientCamera` | QAngle | Camera angles (pitch, yaw, roll) |
 | `m_iHealth` | I64 | Current health |
 | `m_iMaxHealth` | I64 | Maximum health |
 | `m_lifeState` | I64 | Life state (0 = alive, 1 = dying, 2 = dead, 3 = respawnable, 4 = respawning); resolve with `lifestate_names()` |
 | `m_flDeathTime` | F32 | Time of death |
 | `m_flLastSpawnTime` | F32 | Time of last spawn |
-| `m_flRespawnTime` | F32 | Respawn timer |
+| `m_flRespawnTime` | F32 | Recorded respawn time |
 | `m_bInRegenerationZone` | Bool | In a regen zone |
 | `m_nCurrencies.m_nCurrencies` | I64 | Current souls |
 | `m_nSpentCurrencies.m_nSpentCurrencies` | I64 | Spent souls |
@@ -81,23 +79,28 @@ position, health, and combat state.
 | `m_sPlayerDamageTaken.m_flEndTime` | F32 | Player damage taken end |
 | `m_timeRevealedOnMinimapByNPC` | F32 | Minimap reveal time |
 
+Origin components are cell offsets. Combine them with cell indices for full world positions.
+Boon snapshot positions use full world coordinates.
+
 ### Controller-to-Pawn Link
 
-The controller's `m_hPawn` field is an **entity handle**. To find the corresponding
-pawn, mask the lower 15 bits to get the entity index:
+Controller pawn fields contain entity handles.
+Mask the lower 15 bits to get the entity index:
 
 ```
 pawn_entity_index = m_hPawn & 0x7FFF
 ```
 
-This is how the `player_ticks` property joins data from both entity types into a single
-DataFrame row.
+For a hero handle, use `m_hHeroPawn` when available.
+During death, `m_hPawn` can identify a spectator pawn.
+Stat and state queries prefer the hero pawn.
+Handle serials also matter when entity indices are reused.
 
 ## World State
 
 ### `CCitadelGameRulesProxy`
 
-The **game rules** entity — tracks global match state. There is exactly one per demo.
+The **game rules** entity — tracks global match state. There is exactly one for each demo.
 
 **Key fields:**
 
@@ -109,17 +112,17 @@ The **game rules** entity — tracks global match state. There is exactly one pe
 
 ## Other Entity Classes
 
-These are commonly present in demos but not currently exposed through the Python API:
+Some class data has Python datasets; inspect raw entities for other fields.
 
 | Class | Description |
 |-------|-------------|
-| `CCitadel_BreakableProp` | Destructible environment objects (crates, boxes) |
+| `CCitadel_BreakableProp` | Destruction events in `demo.breakables` |
 | `CCitadelMinimapComponent` | Minimap state and visibility |
 | `CCitadelTeam` | Team-level aggregated data |
-| `CCitadel_Ability_*` | Individual hero abilities |
+| `CCitadel_Ability_*` | Ability state in `demo.ability_ticks`; selected inputs in stat queries |
 | `CCitadel_Item_*` | Purchasable items |
 | `CCitadelProjectile` | In-flight projectiles |
-| `CNPC_*` | Non-player characters (creeps, bosses) |
+| `CNPC_*` | Selected state in `demo.troopers`, `demo.neutrals`, and objective datasets |
 | `CWorld` | World root entity |
 
 Use the CLI's `entities` and `send-tables` commands to explore the full set of

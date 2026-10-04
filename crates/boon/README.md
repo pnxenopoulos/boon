@@ -19,13 +19,14 @@ Use Boon **0.11.0 or later** for demos recorded with that update or later.
 
 ## Features
 
-- Memory-mapped, zero-copy parsing for maximum throughput
+- Memory-mapped input and selected entity decoding
 - Match metadata (map, players, duration, build number)
 - Full entity state at any tick with snapshot seeking
 - Stable entity identities and typed update/PVS-leave/delete lifecycle events
 - Game event extraction with protobuf decoding
-- Filtered tick streaming for efficient per-entity-class analysis
-- Ability/modifier token, English ability/item, and breakable subclass lookups
+- Filtered tick streaming for efficient analysis by entity class
+- Versioned hero, ability/item, modifier, and breakable names from boon-data
+- Hero and ability stat queries, recorded states, and item imbues
 
 ## Installation
 
@@ -36,7 +37,7 @@ Add to your `Cargo.toml`:
 boon-deadlock = "0.11"
 ```
 
-Requires Rust 1.88+ (edition 2024).
+Use Rust 1.88 or later (edition 2024).
 
 ## Quick Start
 
@@ -68,25 +69,29 @@ The main entry point. Owns the demo file data (memory-mapped or in-memory).
 |--------|-------------|
 | `Parser::from_file(path)` | Open and memory-map a `.dem` file |
 | `Parser::from_bytes(bytes)` | Parse from an in-memory buffer |
-| `verify()` | Check magic bytes |
+| `verify()` | Compare magic bytes |
 | `file_header()` | Decode `CDemoFileHeader` (map, server, build) |
 | `file_info()` | Decode `CDemoFileInfo` (duration, players) |
 | `messages()` | List all command headers in the file |
 | `events(max_tick)` | Extract game events (legacy + Citadel user messages) |
 | `parse_to_tick(tick)` | Parse to a specific tick, returning full entity state |
 | `run_to_end(callback)` | Stream every tick with a callback |
-| `run_to_end_filtered(filter, callback)` | Stream with an entity class filter (much faster) |
+| `run_to_end_filtered(filter, callback)` | Stream with an entity class filter |
+| `calculate_hero_stats(query, catalog, rules)` | Calculate selected hero stats |
+| `calculate_ability_stats(query, catalog, rules)` | Calculate ability bonus percentages |
+| `player_states(query, catalog)` | Read named player states and unknown bits |
+| `imbues(query, catalog)` | Read item selections and catalog effects |
 
 ### `Context`
 
 Returned by `parse_init`, `parse_to_tick`, and passed to tick callbacks. Contains:
 
 - `entities()` &mdash; all active entities (`EntityContainer`)
-- `serializers()` &mdash; field definitions per class
+- `serializers()` &mdash; field definitions for each class
 - `class_info()` &mdash; class ID to name mappings
 - `string_tables()` &mdash; key-value tables (models, baselines, etc.)
 - `tick()` &mdash; current tick
-- `tick_interval()` &mdash; seconds per tick
+- `tick_interval()` &mdash; seconds for each tick
 
 ### `Entity`
 
@@ -112,6 +117,18 @@ let x = entity.get_by_name(
 - `StatModifierTypes::load(version)` &mdash; resolve recorded stat types from boon-data enum definitions
 - `decode_event_payload(msg_type, data)` &mdash; decode a game event's protobuf payload
 
+## Stat and state queries
+
+Load the matching client version with `StatCatalog::load("VERSION")` or `StateCatalog::load("VERSION")`.
+These loaders use the cache from `boon get` and download missing versions.
+Reuse loaded catalogs across queries. Select players with Steam IDs from the replay.
+Use `StatMode::Current` for supported active effects or `StatMode::Baseline` for passive and permanent inputs.
+
+See the [hero stat guide](https://boon.readthedocs.io/en/latest/hero-stats.html#rust),
+[ability stat guide](https://boon.readthedocs.io/en/latest/ability-stats.html#rust), and
+[player state guide](https://boon.readthedocs.io/en/latest/player-states.html#rust) for complete Rust examples.
+The guides list enum members, units, equations, and calculation limits.
+
 ## Examples
 
 Runnable examples are in [`examples/`](examples/). Each accepts a demo file path as a CLI argument.
@@ -135,11 +152,11 @@ cargo run -p boon-deadlock --example player_ticks -- match.dem
 | [`info`](examples/info.rs) | `file_header()`, `file_info()`, match metadata and player list |
 | [`events`](examples/events.rs) | `events()`, event filtering, `decode_event_payload()` |
 | [`entities`](examples/entities.rs) | `parse_to_tick()`, entity iteration, `get_by_name()`, `CatalogNames::ability_name()` |
-| [`player_ticks`](examples/player_ticks.rs) | `run_to_end_filtered()`, `resolve_field_key()`, per-tick streaming |
+| [`player_ticks`](examples/player_ticks.rs) | `run_to_end_filtered()`, `resolve_field_key()`, streaming at each tick |
 
 ## Performance
 
-Use `run_to_end_filtered` with a class filter when you need specific entity
+Use `run_to_end_filtered` with a class filter to select specific entity
 types. Boon does not decode fields for entities outside the filter.
 
 ```rust,no_run

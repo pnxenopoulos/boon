@@ -1,5 +1,7 @@
 # Initial performance findings
 
+Historical Boon 0.10.0 measurements. These reports do not describe current-format demos or the current release.
+
 These measurements precede snapshot buffer and preload changes. See
 [the snapshot comparison](SNAPSHOT_RESULTS.md) for the subsequent experiment.
 

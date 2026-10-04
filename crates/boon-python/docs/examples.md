@@ -16,11 +16,11 @@ ID lookups return `dict[int, str]`. `ability_display_names()` returns
 ```python
 from boon import hero_names, team_names, ability_names, modifier_names, game_mode_names
 
-hero_names()       # {1: "Infernus", 2: "Seven", 3: "Vindicta", ...}
-team_names()       # {1: "Spectator", 2: "Hidden King", 3: "Archmother"}
-ability_names().get(2521299219)   # "ability_golden_idol"
-modifier_names().get(3388847715)  # "modifier_citadel_idol_return"
-game_mode_names()                # {1: "6v6", 4: "street_brawl"}
+print(hero_names(version="6712"))
+print(team_names())
+print(ability_names(version="6712"))
+print(modifier_names(version="6712"))
+print(game_mode_names())
 ```
 
 Use these with Polars `replace_strict` to add name columns, or with `dict.get` when iterating rows:
@@ -47,9 +47,9 @@ for row in demo.players.iter_rows(named=True):
 These examples use `108575009.dem` at demo tick `187554`. Replace the filename,
 tick, and client version for another replay. List versions with `boon versions`.
 Install the matching version with `boon get VERSION`. A query downloads a missing
-version automatically; it does not choose a version from the demo header.
+version; it does not choose a version from the demo header.
 
-Run this setup, then the example you need:
+Run this setup, then your selected example:
 
 ```python
 import polars as pl
@@ -80,7 +80,7 @@ print(report.contributions)
 print(report.metadata)
 ```
 
-Omit `steam_ids` to query all players. Add `steam_ids=[steam_id]` to select one
+Without `steam_ids`, the query selects all players. Add `steam_ids=[steam_id]` to select one
 account. `heroes=[hero_id]` selects the hero at each tick; an account can change
 heroes. `list(HeroStat)` includes each stat once, despite the `AMMO` alias.
 
@@ -91,7 +91,7 @@ Use enum members or matching strings, such as
 finite capacity. `sprint_speed` is the additional sprint component; add it to
 `move_speed` for nominal full sprint speed.
 
-`strict=False` preserves unresolved rows with null values. A partial value is a
+`strict=False` keeps unresolved rows with null values. A partial value is a
 known subtotal, not a verified final value. Always retain `status` and
 `diagnostic` when you export a report. Do not sum contribution rows: they can
 include intermediate inputs, such as spirit power.
@@ -123,9 +123,9 @@ comparison = current.join(
 print(comparison)
 ```
 
-The [mode table](hero-stats.md#select-baseline-or-current-effects) lists both
-strings and enum members. Both modes use the selected tick. Each calculation
-applies its equation to the selected inputs. Current movement values still omit
+The [mode table](hero-stats.md#select-baseline-or-current-effects) lists the two
+strings and enum members. The two modes use the selected tick. Each calculation
+applies its equation to the selected inputs. Current movement values do not include
 crouching, sprint acceleration, and bullet-hit slows.
 
 ### Join recorded states to stat rows
@@ -145,7 +145,7 @@ print(states.filter(pl.col("states").list.contains("IN_COMBAT")))
 ```
 
 Run the hero-stat example first to create `values`. Use `steam_id` for roster
-joins, and `tick` plus `steam_id` for sampled results. Keep null IDs separate;
+joins, and `tick` plus `steam_id` for sampled results. Do not combine null IDs;
 never match them as one account. Use each row's `hero_id` for its hero at that tick.
 The roster's hero ID describes the final hero.
 
@@ -212,8 +212,8 @@ numbers. Read recorded IDs from `imbues.bindings` or `demo.ability_ticks`.
 See the [ability stat table](ability-stats.md#percentage-rules) for all strings,
 enum members, and rules.
 
-Ability results are percentages, not final seconds, metres, or running timers.
-`item_cooldown_reduction` is separate from hero `cooldown_reduction`.
+Ability results are percentages, not final seconds, meters, or running timers.
+`item_cooldown_reduction` applies to items; `cooldown_reduction` applies to hero abilities.
 `not_applicable` means that a rule does not apply, such as cooldown scaling on a
 disabled item. Imbue effects are individual catalog values; they are not combined
 bonuses. `included=False` contribution rows explain skipped effects.
@@ -236,7 +236,7 @@ result = demo.calculate_hero_stats(
 print(result.metadata)
 ```
 
-Omit `rulesets` to use the supported V1 rules. A mapping must contain one rule
+Without `rulesets`, the query uses the supported V1 rules. A mapping must contain one rule
 for each requested stat. Rule objects have `stat`, `id`, `version`, and
 `documented_on`. Rule versions identify equations; `data_version` selects game
 data. Custom equations and other rule versions are not accepted.
@@ -262,8 +262,7 @@ print(final.select(
 Run the setup above first. `player_healing` is recorded healing.
 `barrier_absorption` is damage stopped by barriers that the player provided.
 `damage_absorbed` is damage stopped by barriers on that player. Some viewer
-screens combine healing and provided barrier absorption; these columns keep
-them separate. Do not add cumulative counters from different reporting periods.
+screens combine healing and provided barrier absorption. The summary reports each amount in its own column. Do not add cumulative counters from different reporting periods.
 
 Use `summary["healing"]` for healing and regeneration by source and period,
 `summary["gold_sources"]` for soul sources, and `summary["damage"]` for the
@@ -317,29 +316,22 @@ for row in kills.iter_rows(named=True):
 
 ## Net worth over time
 
-Extract per-player net worth at regular intervals.
+Read net worth for each player at regular intervals.
 
 ```python
 import polars as pl
-from boon import Demo, hero_names
+from boon import Demo
 
 demo = Demo("match.dem")
-heroes = hero_names()
 
-pt = demo.player_ticks
+sampled = demo.snapshots(seconds=60.0)
 
-# Sample every 60 seconds (tick_rate * 60)
-interval = demo.tick_rate * 60
-sampled = pt.filter(pl.col("tick") % interval == 0)
-
-# Pivot to wide format: one column per hero
+# One column per Steam account.
 nw = (
     sampled
-    .select("tick", "hero_id", "gold_net_worth")
-    .with_columns(
-        pl.col("hero_id").replace_strict(heroes, default="Unknown").alias("hero")
-    )
-    .pivot(on="hero", index="tick", values="gold_net_worth")
+    .filter(pl.col("steam_id").is_not_null())
+    .select("tick", "steam_id", "gold_net_worth")
+    .pivot(on="steam_id", index="tick", values="gold_net_worth")
     .sort("tick")
 )
 print(nw)
@@ -347,9 +339,9 @@ print(nw)
 
 ## Damage breakdown
 
-The `damage` dataset includes all damage events in the game — hero vs hero, hero vs objectives, troopers, neutrals, and more. Filtering by `attacker_hero_id` or `victim_hero_id` is usually a good idea to focus on what you care about.
-
-This example summarizes total damage dealt by each hero, split by attacker class.
+The damage dataset includes recorded hits on heroes, objectives, troopers, and neutrals.
+Filter attacker or victim IDs to select events.
+This example groups damage by hero and attacker class.
 
 ```python
 import polars as pl
@@ -398,6 +390,32 @@ for row in purchases.iter_rows(named=True):
     item = items.get(row["ability_id"], "Unknown")
     print(f"[{time}] {hero:<16} bought {item}")
 ```
+
+## Item upgrades
+
+Use the replay's catalog version to read component links.
+Keep recorded purchases and sales; an item-path upgrade can still have `change="purchased"`.
+
+```python
+import polars as pl
+from boon import Demo, ability_names
+
+demo = Demo("108575009.dem", preload=False)
+version = "6712"
+names = ability_names(version=version)
+purchases = demo.get_item_purchases(data_version=version)
+upgrades = purchases.filter(pl.col("upgraded_from_ability_ids").list.len() > 0)
+
+for row in upgrades.iter_rows(named=True):
+    item = names.get(row["ability_id"], str(row["ability_id"]))
+    components = [names.get(item_id, str(item_id)) for item_id in row["upgraded_from_ability_ids"]]
+    print(row["tick"], row["steam_id"], components, "->", item)
+```
+
+At tick 23567, Haze upgrades Extended Magazine to Titanic Magazine.
+The purchase has `upgraded_from_ability_ids=[1548066885]`.
+Missing IDs, catalog links, or unique matches give `[]`.
+Match players with `steam_id`; use `tick` for the transaction time.
 
 ## Objective timeline
 
@@ -482,7 +500,8 @@ print(top)
 
 ## Street brawl scores
 
-Street brawl is a separate game mode with its own round-based scoring system. Boon exposes two street-brawl-specific datasets: `street_brawl_ticks` (per-tick state) and `street_brawl_rounds` (round scoring events). These properties only exist on street brawl demos (`game_mode == 4`) — accessing them on a standard match will raise `NotStreetBrawlError`.
+Street Brawl is game mode 4. Use `street_brawl_ticks` for state and `street_brawl_rounds` for scores.
+Other modes raise `NotStreetBrawlError` when you access these datasets.
 
 ```python
 from boon import Demo

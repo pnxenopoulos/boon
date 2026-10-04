@@ -123,16 +123,22 @@ final_tick.select("hero_id", "gold_net_worth", "ap_net_worth", "kills", "deaths"
 
 ## Stats, states, and imbues
 
-Use `calculate_hero_stats()` for supported hero values, `calculate_ability_stats()`
-for ability bonus percentages, `imbues()` for item-to-ability selections, and
-`player_states()` for recorded state names. Each method needs a boon-data client
+Use `calculate_hero_stats()` for supported hero values and `calculate_ability_stats()` for ability bonus percentages.
+Use `imbues()` for item selections and `player_states()` for recorded state names. Each method uses a selected boon-data client
 version. List versions with `boon versions` and install one with `boon get VERSION`.
-A query downloads a missing version automatically.
+A query downloads a missing version.
 
 Start with the [feature examples](examples.md#stats-states-and-ammo).
 The [hero stat table](hero-stats.md) and [ability stat table](ability-stats.md#percentage-rules)
 list all accepted strings and enum members. Join player rows with `steam_id`;
 include `tick` when you join sampled results.
+
+## Item upgrade links
+
+`demo.item_purchases` uses the newest installed catalog, or downloads latest if none is installed.
+Use `demo.get_item_purchases(data_version="6712")` to select an exact version.
+The `upgraded_from_ability_ids` column lists matched component sales. Recorded `change` values do not change.
+See [item upgrades](examples.md#item-upgrades) for a complete query.
 
 ## Error Handling
 

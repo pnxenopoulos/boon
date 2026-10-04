@@ -1,5 +1,7 @@
 # Snapshot allocation and preload experiment
 
+Historical Boon 0.10.0 measurements. These reports do not describe current-format demos or the current release.
+
 This experiment follows [the initial baseline](RESULTS.md). It uses the same
 standard and Street Brawl demos, four segments/threads, one warmup and three
 measured repetitions. Both revisions use the same updated harness and output
