@@ -626,9 +626,10 @@ pub struct CMsgSteamLearnInferenceMetadataResponse {
     pub kmeans: ::prost::alloc::vec::Vec<
         c_msg_steam_learn_inference_metadata_response::KMeans,
     >,
-    #[prost(message, repeated, tag = "8")]
-    pub app_info: ::prost::alloc::vec::Vec<
-        c_msg_steam_learn_inference_metadata_response::AppInfoEntry,
+    #[prost(map = "uint32, message", tag = "8")]
+    pub app_info: ::std::collections::HashMap<
+        u32,
+        c_msg_steam_learn_inference_metadata_response::AppInfo,
     >,
     #[prost(message, optional, tag = "7")]
     pub snapshot_histogram: ::core::option::Option<
@@ -670,10 +671,10 @@ pub mod c_msg_steam_learn_inference_metadata_response {
     pub struct CompactTable {
         #[prost(string, optional, tag = "1")]
         pub name: ::core::option::Option<::prost::alloc::string::String>,
-        #[prost(message, repeated, tag = "2")]
-        pub map_values: ::prost::alloc::vec::Vec<compact_table::MapValuesEntry>,
-        #[prost(message, repeated, tag = "3")]
-        pub map_mappings: ::prost::alloc::vec::Vec<compact_table::MapMappingsEntry>,
+        #[prost(map = "uint32, message", tag = "2")]
+        pub map_values: ::std::collections::HashMap<u32, compact_table::Entry>,
+        #[prost(map = "uint32, message", tag = "3")]
+        pub map_mappings: ::std::collections::HashMap<u32, compact_table::Entry>,
     }
     /// Nested message and enum types in `CompactTable`.
     pub mod compact_table {
@@ -687,32 +688,19 @@ pub mod c_msg_steam_learn_inference_metadata_response {
             #[prost(uint64, optional, tag = "3")]
             pub count: ::core::option::Option<u64>,
         }
-        #[derive(serde::Serialize, serde::Deserialize)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-        pub struct MapValuesEntry {
-            #[prost(uint32, optional, tag = "1")]
-            pub key: ::core::option::Option<u32>,
-            #[prost(message, optional, tag = "2")]
-            pub value: ::core::option::Option<Entry>,
-        }
-        #[derive(serde::Serialize, serde::Deserialize)]
-        #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
-        pub struct MapMappingsEntry {
-            #[prost(uint32, optional, tag = "1")]
-            pub key: ::core::option::Option<u32>,
-            #[prost(message, optional, tag = "2")]
-            pub value: ::core::option::Option<Entry>,
-        }
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
     pub struct SequenceTable {
         #[prost(string, optional, tag = "1")]
         pub name: ::core::option::Option<::prost::alloc::string::String>,
-        #[prost(message, repeated, tag = "2")]
-        pub map_values: ::prost::alloc::vec::Vec<sequence_table::MapValuesEntry>,
-        #[prost(message, repeated, tag = "3")]
-        pub map_mappings: ::prost::alloc::vec::Vec<sequence_table::MapMappingsEntry>,
+        #[prost(map = "uint32, message", tag = "2")]
+        pub map_values: ::std::collections::HashMap<u32, sequence_table::Entry>,
+        #[prost(map = "string, message", tag = "3")]
+        pub map_mappings: ::std::collections::HashMap<
+            ::prost::alloc::string::String,
+            sequence_table::Entry,
+        >,
         #[prost(uint64, optional, tag = "4")]
         pub total_count: ::core::option::Option<u64>,
     }
@@ -727,22 +715,6 @@ pub mod c_msg_steam_learn_inference_metadata_response {
             pub crc: ::core::option::Option<u32>,
             #[prost(uint32, optional, tag = "3")]
             pub count: ::core::option::Option<u32>,
-        }
-        #[derive(serde::Serialize, serde::Deserialize)]
-        #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-        pub struct MapValuesEntry {
-            #[prost(uint32, optional, tag = "1")]
-            pub key: ::core::option::Option<u32>,
-            #[prost(message, optional, tag = "2")]
-            pub value: ::core::option::Option<Entry>,
-        }
-        #[derive(serde::Serialize, serde::Deserialize)]
-        #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-        pub struct MapMappingsEntry {
-            #[prost(string, optional, tag = "1")]
-            pub key: ::core::option::Option<::prost::alloc::string::String>,
-            #[prost(message, optional, tag = "2")]
-            pub value: ::core::option::Option<Entry>,
         }
     }
     #[derive(serde::Serialize, serde::Deserialize)]
@@ -801,14 +773,6 @@ pub mod c_msg_steam_learn_inference_metadata_response {
         pub adult_violence: ::core::option::Option<bool>,
         #[prost(bool, optional, tag = "7")]
         pub adult_sex: ::core::option::Option<bool>,
-    }
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-    pub struct AppInfoEntry {
-        #[prost(uint32, optional, tag = "1")]
-        pub key: ::core::option::Option<u32>,
-        #[prost(message, optional, tag = "2")]
-        pub value: ::core::option::Option<AppInfo>,
     }
 }
 #[derive(serde::Serialize, serde::Deserialize)]
@@ -10425,21 +10389,8 @@ pub struct CCitadelClientMsgPlayerStatsUpdated {}
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CCitadelClientMsgHideoutUpdateHeroReleaseVoteTally {
-    #[prost(message, repeated, tag = "1")]
-    pub vote_round_to_tally: ::prost::alloc::vec::Vec<
-        c_citadel_client_msg_hideout_update_hero_release_vote_tally::VoteRoundToTallyEntry,
-    >,
-}
-/// Nested message and enum types in `CCitadelClientMsg_HideoutUpdateHeroReleaseVoteTally`.
-pub mod c_citadel_client_msg_hideout_update_hero_release_vote_tally {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-    pub struct VoteRoundToTallyEntry {
-        #[prost(uint32, optional, tag = "1")]
-        pub key: ::core::option::Option<u32>,
-        #[prost(message, optional, tag = "2")]
-        pub value: ::core::option::Option<super::CMsgHeroReleaseVoteTally>,
-    }
+    #[prost(map = "uint32, message", tag = "1")]
+    pub vote_round_to_tally: ::std::collections::HashMap<u32, CMsgHeroReleaseVoteTally>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
@@ -16555,21 +16506,8 @@ pub struct CMsgClientToGcRequestHeroReleaseVoteTally {
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CMsgGcToClientUpdateHeroReleaseVoteTally {
-    #[prost(message, repeated, tag = "1")]
-    pub vote_round_to_tally: ::prost::alloc::vec::Vec<
-        c_msg_gc_to_client_update_hero_release_vote_tally::VoteRoundToTallyEntry,
-    >,
-}
-/// Nested message and enum types in `CMsgGCToClientUpdateHeroReleaseVoteTally`.
-pub mod c_msg_gc_to_client_update_hero_release_vote_tally {
-    #[derive(serde::Serialize, serde::Deserialize)]
-    #[derive(Clone, PartialEq, Eq, Hash, ::prost::Message)]
-    pub struct VoteRoundToTallyEntry {
-        #[prost(uint32, optional, tag = "1")]
-        pub key: ::core::option::Option<u32>,
-        #[prost(message, optional, tag = "2")]
-        pub value: ::core::option::Option<super::CMsgHeroReleaseVoteTally>,
-    }
+    #[prost(map = "uint32, message", tag = "1")]
+    pub vote_round_to_tally: ::std::collections::HashMap<u32, CMsgHeroReleaseVoteTally>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]

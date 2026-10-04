@@ -45,6 +45,9 @@ when an upstream `.proto` file changes:
 cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-protos
 ```
 
+The generator uses a bundled `protoc`. It removes unsupported C++ annotations
+from temporary inputs. The source `.proto` files stay unchanged.
+
 ## Check for upstream changes
 
 From the repository root, run:

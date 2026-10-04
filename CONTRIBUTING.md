@@ -140,7 +140,7 @@ to change the writing style.
 When Valve updates Deadlock's protobuf definitions, sync and regenerate:
 
 ```bash
-# 1. Fetch the latest .proto files from SteamDB
+# 1. Fetch the latest .proto files from SteamTracking
 ./scripts/sync-protos.sh
 
 # 2. Regenerate Rust code from the .proto files
@@ -148,7 +148,10 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 ```
 
 The first command updates `crates/boon-proto/proto/`.
-The second command generates `crates/boon-proto/src/proto.rs`.
+The second command generates `crates/boon-proto/src/proto.rs` with a bundled
+`protoc`. It removes unsupported C++ annotations from temporary inputs. The
+source `.proto` files stay unchanged. If field types change, update the
+`boon-proto` compatibility version and workspace dependency.
 
 ## Updating Name Data
 

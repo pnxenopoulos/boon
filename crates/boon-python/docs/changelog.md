@@ -15,7 +15,7 @@ Unreleased.
 - Use catalog weapon data, shop thresholds, scaling defaults, effect bindings, and recorded bonus types.
 - Correct spirit scope and multiplier order, movement bonus addition, and light/heavy melee labels.
 - Remove old-format fallbacks and `stat_modifier_*` snapshot columns. Share dataset caches and test inputs.
-- Use pbdems2 0.3.3. Update protobufs to Deadlock 6745 (`boon-proto 0.4.11078118+6745`). The direct protobuf API has changed fields and types.
+- Use pbdems2 0.3.3. Update protobufs to Deadlock 6745 (`boon-proto 0.4.11078118+6745`). The direct protobuf API has changed fields and types, including map fields.
 
 Hero stat strings:
 
@@ -77,7 +77,7 @@ Past entries describe APIs at each release. Some APIs below are no longer availa
 
 - Add Python `rift` and the Rust CLI `rift` command, with capture/expiry, winner, lane, and position.
 - Read the Rift winner from game-rule scoring. Unobserved expiry behavior stays unverified.
-- Restore `banned_heroes`; an missing message gives an empty frame.
+- Restore `banned_heroes`; a missing message gives an empty frame.
 - Add player `rank`, with zero for missing rank metadata.
 - Filter event messages before payload allocation. Release the Python interpreter during parsing and snapshots.
 - Add `Entity::get_vector3` for whole-coordinate fields.
