@@ -2,8 +2,6 @@
 
 ## 0.11.0
 
-Unreleased.
-
 - Support City Never Sleeps demos (September 29, 2026) and later. Use Boon 0.10.0 or earlier for older demos.
 - Add hero and ability stat queries with `current` and `baseline` modes, boon-data inputs, and source explanations.
 - Add `player_states()` and `imbues()` for recorded states and item selections.
@@ -16,6 +14,7 @@ Unreleased.
 - Correct spirit scope and multiplier order, movement bonus addition, and light/heavy melee labels.
 - Remove old-format fallbacks and `stat_modifier_*` snapshot columns. Share dataset caches and test inputs.
 - Use pbdems2 0.3.3. Update protobufs to Deadlock 6745 (`boon-proto 0.4.11078118+6745`). The direct protobuf API has changed fields and types, including map fields.
+- Include MIT license files in packages. Do not include Python caches. Use `--locked` for all release wheel builds.
 
 Hero stat strings:
 

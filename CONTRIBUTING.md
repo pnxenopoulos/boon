@@ -150,7 +150,7 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 The first command updates `crates/boon-proto/proto/`.
 The second command generates `crates/boon-proto/src/proto.rs` with a bundled
 `protoc`. It removes unsupported C++ annotations from temporary inputs. The
-source `.proto` files stay unchanged. If field types change, update the
+source `.proto` files stay unchanged. If a published API changes, update the
 `boon-proto` compatibility version and workspace dependency.
 
 ## Updating Name Data
@@ -188,6 +188,8 @@ order:
 The workflow enforces this order. Wait until each upload is visible before you
 start the next release. Publish the exact `boon-proto` dependency on crates.io before a `boon` release.
 Publish the exact `boon-deadlock` dependency on crates.io before a `boon-python` release.
+
+Each published package contains a copy of the root `LICENSE`. Keep these files identical.
 
 Before dispatching a release:
 

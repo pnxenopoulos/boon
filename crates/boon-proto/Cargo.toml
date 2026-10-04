@@ -2,9 +2,8 @@
 name = "boon-proto"
 # boon-proto is versioned independently from the workspace release version. The
 # PATCH is the game's monotonic SourceRevision and the +ServerVersion suffix
-# records the game build (ClientVersion has always equalled ServerVersion), so
-# every proto sync yields a higher, publishable version. MAJOR.MINOR is the
-# compatibility epoch (bump it for breaking changes to this crate's API).
+# records the game build. MAJOR.MINOR is the compatibility epoch.
+# Increase MAJOR.MINOR for breaking changes to a published API.
 # scripts/sync-protos.sh refreshes this on each sync.
 version = "0.4.11078118+6745"
 rust-version.workspace = true
