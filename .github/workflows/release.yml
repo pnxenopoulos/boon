@@ -224,7 +224,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.target }}
-          args: --release --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
+          args: --release --locked --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
 
       - name: Upload wheels
         uses: actions/upload-artifact@v6
@@ -248,7 +248,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           target: x86_64
-          args: --release --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
+          args: --release --locked --out dist -m crates/boon-python/Cargo.toml --interpreter 3.11 3.12 3.13 3.14
 
       - name: Upload wheels
         uses: actions/upload-artifact@v6

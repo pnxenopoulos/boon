@@ -9,7 +9,7 @@ Boon includes two CLI tools.
   string tables, and raw messages. Build it from the repository. See
   [boon-dev](#boon-dev).
 
-Both tools support `--help` for each command.
+The two tools support `--help` for each command.
 
 ## Python CLI
 
@@ -20,7 +20,7 @@ pip install boon-deadlock   # or: uv add boon-deadlock
 ```
 
 Run `boon --help` for the full list, or `boon <command> --help` for one command.
-Pass `--json` (where available) for machine-readable output.
+Pass `--json` (where available) for JSON output.
 
 ### `info`
 
@@ -31,7 +31,6 @@ boon info match.dem
 boon info match.dem --json
 ```
 
----
 
 ### `players`
 
@@ -41,7 +40,6 @@ The player roster (name, Steam ID, hero, team, start lane), with hero names reso
 boon players match.dem
 ```
 
----
 
 ### `datasets`
 
@@ -51,7 +49,6 @@ List every dataset that `show` can display.
 boon datasets
 ```
 
----
 
 ### `show`
 
@@ -62,17 +59,21 @@ Load and print any dataset as a table (or JSON). Dataset names come from
 boon show match.dem kills --limit 20
 boon show match.dem player_ticks --tail --limit 5
 boon show match.dem objectives --json
+boon show match.dem item_purchases --limit 10
 ```
 
 **Options:**
 
 | Flag | Description |
 |------|-------------|
-| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
+| `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
 | `--tail` | Show the last rows instead of the first |
-| `--json` | Emit row-oriented JSON |
+| `--json` | Return JSON rows |
 
----
+
+Item purchases include catalog-based `upgraded_from_ability_ids`.
+The CLI uses the newest installed catalog, or downloads latest if none is installed.
+Use Python `get_item_purchases(data_version=...)` to select a catalog explicitly.
 
 ### `summary`
 
@@ -88,14 +89,14 @@ boon summary match.dem --part objectives
 | Flag | Description |
 |------|-------------|
 | `--part <PART>` | `snapshots`, `last_hits`, `objectives`, `damage`, `healing`, `gold_sources`, or `all` (default: `last_hits`) |
-| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
-| `--json` | Emit JSON |
+| `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
+| `--json` | Return JSON |
 
----
 
 ### `stats`
 
-Derived metrics from [`boon.stats`](api.md).
+Derived metrics from [`boon.stats`](api.md). Use the Python stat query methods
+for hero values and ability bonuses; this command does not calculate them.
 
 ```bash
 boon stats match.dem --metric kill-participation
@@ -107,14 +108,13 @@ boon stats match.dem -m time-dead
 | Flag | Description |
 |------|-------------|
 | `--metric <M>` / `-m <M>` | `kill-participation`, `time-dead`, or `in-combat` |
-| `--limit <N>` / `-n <N>` | Max rows to show (`0` = all) |
-| `--json` | Emit JSON |
+| `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
+| `--json` | Return JSON |
 
----
 
 ### `verify`
 
-Check that a file is a valid Deadlock demo.
+Make sure the file has the correct Deadlock demo format.
 
 ```bash
 boon verify match.dem
@@ -128,22 +128,20 @@ build times, and local installation status:
 ```bash
 boon get                         # latest client version in versions.json
 boon versions                    # client version, build date/time, installed status
-boon get 6698                     # a specific Deadlock client version
+boon get 6712                     # a specific Deadlock client version
 boon versions --local             # offline installation listing
-boon remove 6698                  # remove a local version offline
+boon remove 6712                  # remove a local version offline
 ```
 
 All three commands support `--json`. Files are stored under `~/.boon/<client-version>/`.
-`get --force` replaces an installation only after verifying the new download.
-`remove VERSION` requires an explicit version and also works on corrupt caches.
+`get --force` replaces an installation only after integrity checks of the new download.
+Set a version for `remove VERSION`. It also removes corrupt caches.
 See {doc}`data` for the Python API, integrity checks, cache configuration, and
 how client versions differ from replay build numbers.
 
 ## boon-dev
 
-`boon-dev` is a low-level debugging CLI, built from the `boon-dev` crate. It is
-**not shipped** — there are no release binaries and no crates.io package. Build
-it from source:
+`boon-dev` reads raw demo data. Build it from the repository:
 
 ```bash
 cargo build --release -p boon-dev
@@ -159,11 +157,11 @@ Most commands support `--filter`, `--summary`, `--limit`, `--min-tick`, and
 
 | Command | Description |
 |---------|-------------|
-| `verify` | Check that a file is a valid demo. |
+| `verify` | Make sure the file has the correct demo format. |
 | `info` | File header and game info (build, map, playback time, match ID, mode, winner, players). |
 | `messages` | List every command/packet in the demo with metadata. |
 | `classes` | The class-id → network-name mapping. |
-| `send-tables` | Serializer (send table) field schemas per entity class. |
+| `send-tables` | Serializer (send table) field schemas for each entity class. |
 | `string-tables` | String tables from demo initialization. |
 | `events` | Decoded game events (user messages); `--inspect` for full payloads. |
 | `summary` | Post-match summary from the last-tick event. |
@@ -173,9 +171,9 @@ Most commands support `--filter`, `--summary`, `--limit`, `--min-tick`, and
 | `ability-ticks` | Ability cooldown / charge state changes (change-only). |
 | `shop-events` | Item shop transactions (purchase, upgrade, sell, swap). |
 | `chat` | In-game chat messages. |
-| `objectives` | Per-tick objective health (walkers, barracks, shrines, patron, mid boss). |
+| `objectives` | Objective health for each tick (walkers, barracks, shrines, patron, mid boss). |
 | `mid-boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire). |
-| `troopers` | Alive lane trooper position/state per tick. |
+| `troopers` | Alive lane trooper position/state for each tick. |
 | `neutrals` | Neutral creep state changes (change-only). |
 | `stat-modifiers` | Permanent stat-bonus change events (urn / breakable pickups). |
 | `active-modifiers` | Active buff/debuff modifier events (applied/removed). |

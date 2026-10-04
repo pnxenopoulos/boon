@@ -39,10 +39,10 @@ Add analysis functions that return calculated statistics:
 - **Win probability over time** — Add an interface for a model. Put its
   `win_prob` values in `world_ticks`.
 
-## Performance and ergonomics
+## Performance and batch queries
 
 - **Streaming / incremental parsing** for partial or in-progress demos.
-- **Bulk-match utilities** for analysing many demos at once (parallel parse).
+- **Bulk-match utilities** for analysis of many demos at once (parallel parse).
 
 ## Have an idea?
 

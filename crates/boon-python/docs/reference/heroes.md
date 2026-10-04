@@ -7,14 +7,14 @@ Resolve them with the selected boon-data catalog instead of a fixed table:
 from boon import hero_names
 
 names = hero_names()                 # newest local catalog, or automatic download
-historical = hero_names("6698")      # explicit Deadlock client version
+historical = hero_names("6712")      # explicit Deadlock client version
 for hero_id, name in sorted(names.items()):
     print(hero_id, name)
 ```
 
 The catalog's `hero_id` comes from the hero definition's `m_HeroID`.
 Names use English localization when available and internal names otherwise.
-Templates without a hero ID are omitted. Unreleased and test heroes can appear.
+Templates without a hero ID are not included. Some catalog heroes are not available in the game.
 Unknown IDs have no mapping in that snapshot.
 
 Names and available heroes can change between client versions. See {doc}`../data`

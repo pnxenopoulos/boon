@@ -24,17 +24,6 @@ struct ShopEventSummaryOutput {
     count: usize,
 }
 
-fn change_name(change: i32) -> &'static str {
-    match change {
-        0 => "purchased",
-        1 => "upgraded",
-        2 => "sold",
-        3 => "swapped",
-        4 => "failure",
-        _ => "unknown",
-    }
-}
-
 pub fn run(
     file: &Path,
     filter: Option<String>,
@@ -47,6 +36,7 @@ pub fn run(
     let parser = boon::Parser::from_file(file)
         .with_context(|| format!("failed to open {}", file.display()))?;
     let names = boon::CatalogNames::load(None)?;
+    let header = parser.file_header()?;
 
     let class_filter: HashSet<&str> = ["CCitadelPlayerController"].into_iter().collect();
 
@@ -77,14 +67,17 @@ pub fn run(
                         ck_hero_id,
                     );
                     let ability_id = msg.ability_id.unwrap_or(0);
-                    let change = msg.change.unwrap_or(-1);
+                    let change = boon::demo::ability_change_name(
+                        msg.change,
+                        header.game_directory.as_deref(),
+                    );
 
                     events_out.push(ShopEventOutput {
                         tick: event.tick,
                         hero_id,
                         ability_id,
                         ability: names.ability_name(ability_id).to_string(),
-                        change: change_name(change).to_string(),
+                        change: change.to_string(),
                     });
                 }
             }

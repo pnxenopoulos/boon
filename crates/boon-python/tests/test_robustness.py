@@ -8,33 +8,32 @@ present.
 
 import random
 
-import pytest
 from boon import Demo
-
-from conftest import FIXTURES_DIR
-
-
-def _fixture_bytes() -> bytes:
-    dems = sorted(FIXTURES_DIR.glob("*.dem")) if FIXTURES_DIR.is_dir() else []
-    if not dems:
-        pytest.skip("No demo fixtures available")
-    return dems[0].read_bytes()
+from conftest import _require_demo_fixture
 
 
 def test_corrupt_and_truncated_demos_never_panic(tmp_path) -> None:
-    data = _fixture_bytes()
-    path = tmp_path / "corrupt.dem"
+    data = _require_demo_fixture().read_bytes()
+    truncated = tmp_path / "truncated.dem"
+    corrupted = tmp_path / "corrupt.dem"
+    corrupted.write_bytes(data)
     rng = random.Random(0)
 
     for i in range(40):
-        if i % 2 == 0:  # random truncation
-            blob = data[: rng.randint(16, len(data))]
-        else:  # random byte corruption
-            b = bytearray(data)
+        changes = {}
+        if i % 2 == 0:
+            path = truncated
+            path.write_bytes(memoryview(data)[: rng.randint(16, len(data))])
+        else:
+            path = corrupted
             for _ in range(rng.randint(1, 250)):
-                b[rng.randrange(len(b))] = rng.randrange(256)
-            blob = bytes(b)
-        path.write_bytes(blob)
+                value = rng.randrange(256)
+                changes[rng.randrange(len(data))] = value
+            with path.open("r+b") as file:
+                for offset, value in changes.items():
+                    file.seek(offset)
+                    file.write(bytes([value]))
+        demo = None
         try:
             demo = Demo(str(path))
             _ = demo.players
@@ -42,6 +41,14 @@ def test_corrupt_and_truncated_demos_never_panic(tmp_path) -> None:
             _ = demo.player_ticks
             _ = demo.damage
         except Exception as e:  # noqa: BLE001 - any *clean* error is acceptable
-            assert (
-                type(e).__name__ != "PanicException"
-            ), f"case {i} panicked instead of erroring cleanly: {e}"
+            assert type(e).__name__ != "PanicException", (
+                f"case {i} panicked instead of erroring cleanly: {e}"
+            )
+        finally:
+            # Release the file mapping before restoring the original bytes.
+            demo = None
+            if changes:
+                with path.open("r+b") as file:
+                    for offset in changes:
+                        file.seek(offset)
+                        file.write(data[offset : offset + 1])

@@ -37,36 +37,31 @@ impl Demo {
             || requested(Dataset::ItemPurchases)
             || requested(Dataset::Chat);
 
-        // Determine what to load (skip already cached)
-        let load_abilities = kill_cohort && self.cached_abilities.is_none();
-        let load_player_ticks =
-            requested(Dataset::PlayerTicks) && self.cached_player_ticks.is_none();
-        let load_world_ticks = requested(Dataset::WorldTicks) && self.cached_world_ticks.is_none();
-        let load_kills = kill_cohort && self.cached_kills.is_none();
-        let load_damage = requested(Dataset::Damage) && self.cached_damage.is_none();
-        let load_flex_slots = requested(Dataset::FlexSlots) && self.cached_flex_slots.is_none();
-        let load_ability_upgrades = controller_cohort && self.cached_ability_upgrades.is_none();
-        let load_item_purchases = controller_cohort && self.cached_item_purchases.is_none();
-        let load_chat = controller_cohort && self.cached_chat.is_none();
-        let load_objectives = requested(Dataset::Objectives) && self.cached_objectives.is_none();
-        let load_mid_boss = requested(Dataset::MidBoss) && self.cached_mid_boss.is_none();
-        let load_troopers = requested(Dataset::Troopers) && self.cached_troopers.is_none();
-        let load_neutrals = requested(Dataset::Neutrals) && self.cached_neutrals.is_none();
-        let load_breakables = requested(Dataset::Breakables) && self.cached_breakables.is_none();
-        let load_sinners_sacrifice =
-            requested(Dataset::SinnersSacrifice) && self.cached_sinners_sacrifice.is_none();
-        let load_stat_modifier_events =
-            requested(Dataset::StatModifierEvents) && self.cached_stat_modifier_events.is_none();
-        let load_active_modifiers =
-            requested(Dataset::ActiveModifiers) && self.cached_active_modifiers.is_none();
-        let load_ability_ticks =
-            requested(Dataset::AbilityTicks) && self.cached_ability_ticks.is_none();
-        let load_urn = requested(Dataset::Urn) && self.cached_urn.is_none();
-        let load_street_brawl_ticks =
-            requested(Dataset::StreetBrawlTicks) && self.cached_street_brawl_ticks.is_none();
-        let load_street_brawl_rounds =
-            requested(Dataset::StreetBrawlRounds) && self.cached_street_brawl_rounds.is_none();
-        let load_rift = requested(Dataset::Rift) && self.cached_rift.is_none();
+        let needs = |dataset| requested(dataset) && self.cached_datasets[dataset].is_none();
+        let load_abilities = kill_cohort && self.cached_datasets[Dataset::Abilities].is_none();
+        let load_player_ticks = needs(Dataset::PlayerTicks);
+        let load_world_ticks = needs(Dataset::WorldTicks);
+        let load_kills = kill_cohort && self.cached_datasets[Dataset::Kills].is_none();
+        let load_damage = needs(Dataset::Damage);
+        let load_flex_slots = needs(Dataset::FlexSlots);
+        let load_ability_upgrades =
+            controller_cohort && self.cached_datasets[Dataset::AbilityUpgrades].is_none();
+        let load_item_purchases =
+            controller_cohort && self.cached_datasets[Dataset::ItemPurchases].is_none();
+        let load_chat = controller_cohort && self.cached_datasets[Dataset::Chat].is_none();
+        let load_objectives = needs(Dataset::Objectives);
+        let load_mid_boss = needs(Dataset::MidBoss);
+        let load_troopers = needs(Dataset::Troopers);
+        let load_neutrals = needs(Dataset::Neutrals);
+        let load_breakables = needs(Dataset::Breakables);
+        let load_sinners_sacrifice = needs(Dataset::SinnersSacrifice);
+        let load_stat_modifier_events = needs(Dataset::StatModifierEvents);
+        let load_active_modifiers = needs(Dataset::ActiveModifiers);
+        let load_ability_ticks = needs(Dataset::AbilityTicks);
+        let load_urn = needs(Dataset::Urn);
+        let load_street_brawl_ticks = needs(Dataset::StreetBrawlTicks);
+        let load_street_brawl_rounds = needs(Dataset::StreetBrawlRounds);
+        let load_rift = needs(Dataset::Rift);
 
         if !load_abilities
             && !load_player_ticks
@@ -102,6 +97,20 @@ impl Demo {
                 .extract()?
         } else {
             HashMap::new()
+        };
+
+        let modifier_types = if load_stat_modifier_events {
+            let directory: PathBuf = py
+                .import("boon.data")?
+                .getattr("update")?
+                .call0()?
+                .extract()?;
+            Some(
+                boon_parser::StatModifierTypes::from_directory(&directory)
+                    .map_err(|error| pyo3::exceptions::PyValueError::new_err(error.to_string()))?,
+            )
+        } else {
+            None
         };
 
         // One-pass fast path: if everything still to load is a parallel-safe
@@ -150,6 +159,12 @@ impl Demo {
                 })
             })?;
         }
+
+        let game_directory = if load_item_purchases {
+            self.parser.file_header().map_err(to_py_err)?.game_directory
+        } else {
+            None
+        };
 
         let need_events = load_abilities
             || load_kills
@@ -218,7 +233,7 @@ impl Demo {
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
-        if load_street_brawl_ticks || load_rift {
+        if load_street_brawl_ticks || load_rift || load_active_modifiers {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
@@ -231,7 +246,12 @@ impl Demo {
         {
             class_names.push("CCitadelPlayerPawn");
         }
-        if load_ability_upgrades || load_item_purchases || load_chat || load_stat_modifier_events {
+        if load_ability_upgrades
+            || load_item_purchases
+            || load_chat
+            || load_stat_modifier_events
+            || load_active_modifiers
+        {
             class_names.push("CCitadelPlayerController");
         }
         if load_objectives {
@@ -329,6 +349,7 @@ impl Demo {
         // ── Column vectors for item_purchases ──
         let mut ip_ticks: Vec<i32> = Vec::new();
         let mut ip_hero_ids: Vec<i64> = Vec::new();
+        let mut ip_steam_ids: Vec<Option<u64>> = Vec::new();
         let mut ip_ability_ids: Vec<u32> = Vec::new();
         let mut ip_changes: Vec<String> = Vec::new();
 
@@ -570,7 +591,7 @@ impl Demo {
 
         // Pawn keys for hero resolution and urn positions
         let mut pk_hero_id: Option<u64> = None;
-        let mut pk_simulation_time: Option<u64> = None;
+        let mut modifier_clock = boon_parser::ModifierClock::default();
         let mut pk_vec_x: Option<u64> = None;
         let mut pk_vec_y: Option<u64> = None;
         let mut pk_vec_z: Option<u64> = None;
@@ -579,6 +600,7 @@ impl Demo {
         let mut pk_cell_z: Option<u64> = None;
         // Controller hero_id key (for purchases/shop_events slot→hero mapping)
         let mut ck_hero_id: Option<u64> = None;
+        let mut ck_steam_id: Option<u64> = None;
 
         // Ability upgrade slot keys: (item_id_key, upgrade_bits_key) for indices 0..7
         let mut au_slot_keys: Vec<(Option<u64>, Option<u64>)> = Vec::new();
@@ -718,7 +740,6 @@ impl Demo {
                             pk_hero_id = s.resolve_field_key(
                                 "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
                             );
-                            pk_simulation_time = s.resolve_field_key("m_flSimulationTime");
                             if load_urn {
                                 pk_vec_x = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
@@ -745,6 +766,7 @@ impl Demo {
                         if let Some(s) = $ctx.serializers().get("CCitadelPlayerController") {
                             ck_hero_id =
                                 s.resolve_field_key("m_PlayerDataGlobal.m_nHeroID");
+                            ck_steam_id = s.resolve_field_key("m_steamID");
                         }
                     }
                     if load_ability_upgrades {
@@ -939,6 +961,9 @@ impl Demo {
                             rk_location =
                                 s.resolve_field_key("m_pGameRules.m_vKothCashInCurrentLocation");
                         }
+                    }
+                    if load_active_modifiers {
+                        modifier_clock = boon_parser::ModifierClock::resolve($ctx);
                     }
                     keys_resolved = true;
                 }
@@ -1201,7 +1226,7 @@ impl Demo {
                         // Emit events for changed stat types
                         for (vt_val, total) in &by_type {
                             let Some(decoded) =
-                                boon_parser::decode_stat_modifier_value_type(*vt_val)
+                                modifier_types.as_ref().expect("stat types loaded").decode(*vt_val)
                             else {
                                 continue;
                             };
@@ -1220,7 +1245,7 @@ impl Demo {
 
                 // ── Collect active_modifiers (effective, duration-aware state) ──
                 if load_active_modifiers {
-                    let game_time = current_simulation_time($ctx, pk_simulation_time);
+                    let game_time = modifier_clock.game_time($ctx);
                     let changes = am_state.update($ctx, game_time);
 
                     // Flag a re-stamp tick: many heroes get a modifier they already have
@@ -1325,7 +1350,9 @@ impl Demo {
                                 } else {
                                     caster_hero_id
                                 };
-                                let changed = modifier_id != cached.modifier_id
+                                let hero_changed = hero_id != cached.hero_id;
+                                let changed = hero_changed
+                                    || modifier_id != cached.modifier_id
                                     || ability_id != cached.ability_id
                                     || stacks != cached.stacks
                                     || caster_hero_id != cached.caster_hero_id
@@ -1333,9 +1360,23 @@ impl Demo {
                                     || last_applied_time.to_bits()
                                         != cached.last_applied_time.to_bits();
                                 if changed {
+                                    // A retained serial can follow a hero swap. Close the
+                                    // old hero's lifetime before opening the new one.
+                                    if hero_changed {
+                                        am_tick.push($ctx.tick());
+                                        am_hero_id.push(cached.hero_id);
+                                        am_event.push("removed".to_string());
+                                        am_serial.push(serial);
+                                        am_modifier_id.push(cached.modifier_id);
+                                        am_ability_id.push(cached.ability_id);
+                                        am_duration.push(cached.duration);
+                                        am_caster_hero_id.push(cached.caster_hero_id);
+                                        am_stacks.push(cached.stacks);
+                                        am_logical_seen.insert((hero_id, modifier_id));
+                                    }
                                     am_tick.push($ctx.tick());
                                     am_hero_id.push(hero_id);
-                                    am_event.push("changed".to_string());
+                                    am_event.push(if hero_changed { "applied" } else { "changed" }.to_string());
                                     am_serial.push(serial);
                                     am_modifier_id.push(modifier_id);
                                     am_ability_id.push(ability_id);
@@ -2025,16 +2066,29 @@ impl Demo {
                                     ck_hero_id,
                                 );
                                 let ability_id = msg.ability_id.unwrap_or(0);
-                                let change = match msg.change.unwrap_or(-1) {
-                                    0 => "purchased",
-                                    1 => "upgraded",
-                                    2 => "sold",
-                                    3 => "swapped",
-                                    4 => "failure",
-                                    _ => "unknown",
-                                };
+                                let change = boon_parser::demo::ability_change_name(
+                                    msg.change,
+                                    game_directory.as_deref(),
+                                );
+                                let steam_id = msg
+                                    .purchaser_player_slot
+                                    .filter(|&slot| slot >= 0)
+                                    .and_then(|slot| slot.checked_add(1))
+                                    .and_then(|index| ctx.entities().get(index))
+                                    .filter(|entity| {
+                                        entity.class_name.as_ref() == "CCitadelPlayerController"
+                                    })
+                                    .and_then(|entity| {
+                                        ck_steam_id.and_then(|key| entity.fields.get(&key))
+                                    })
+                                    .and_then(|value| match value {
+                                        boon_parser::FieldValue::U64(id) => Some(*id),
+                                        _ => None,
+                                    })
+                                    .filter(|&id| id != 0);
                                 ip_ticks.push(event.tick);
                                 ip_hero_ids.push(hero_id);
+                                ip_steam_ids.push(steam_id);
                                 ip_ability_ids.push(ability_id);
                                 ip_changes.push(change.to_string());
                             }
@@ -2217,7 +2271,7 @@ impl Demo {
                 assister_series,
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_kills = Some(df);
+            self.cached_datasets[Dataset::Kills] = Some(df);
         }
 
         if load_damage {
@@ -2271,10 +2325,7 @@ impl Demo {
                 dmg_flags.push(damage_flags);
                 dmg_is_melee.push(is_melee);
                 dmg_melee_type.push(melee_type);
-                dmg_absorbed.push(
-                    msg.damage_absorbed
-                        .or_else(|| msg.damage_absorbed_deprecated.map(|amount| amount as f32)),
-                );
+                dmg_absorbed.push(msg.damage_absorbed);
                 dmg_shield_new.push(msg.victim_shield_new);
                 dmg_shield_max.push(msg.victim_shield_max);
                 dmg_server_tick.push(msg.server_tick);
@@ -2304,7 +2355,7 @@ impl Demo {
                 Column::new("server_tick".into(), dmg_server_tick),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_damage = Some(df);
+            self.cached_datasets[Dataset::Damage] = Some(df);
         }
 
         if load_abilities {
@@ -2314,7 +2365,7 @@ impl Demo {
                 Column::new("ability".into(), ability_names),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_abilities = Some(df);
+            self.cached_datasets[Dataset::Abilities] = Some(df);
         }
 
         if load_flex_slots {
@@ -2323,7 +2374,7 @@ impl Demo {
                 Column::new("team_num".into(), flex_team_nums),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_flex_slots = Some(df);
+            self.cached_datasets[Dataset::FlexSlots] = Some(df);
         }
 
         if load_ability_upgrades {
@@ -2334,18 +2385,19 @@ impl Demo {
                 Column::new("tier".into(), au_tier),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_ability_upgrades = Some(df);
+            self.cached_datasets[Dataset::AbilityUpgrades] = Some(df);
         }
 
         if load_item_purchases {
             let df = df_from_columns(vec![
                 Column::new("tick".into(), ip_ticks),
+                Column::new("steam_id".into(), ip_steam_ids),
                 Column::new("hero_id".into(), ip_hero_ids),
                 Column::new("ability_id".into(), ip_ability_ids),
                 Column::new("change".into(), ip_changes),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_item_purchases = Some(df);
+            self.cached_datasets[Dataset::ItemPurchases] = Some(df);
         }
 
         if load_chat {
@@ -2356,7 +2408,7 @@ impl Demo {
                 Column::new("chat_type".into(), chat_types),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_chat = Some(df);
+            self.cached_datasets[Dataset::Chat] = Some(df);
         }
 
         if load_objectives {
@@ -2374,7 +2426,7 @@ impl Demo {
                 Column::new("entity_id".into(), obj_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_objectives = Some(df);
+            self.cached_datasets[Dataset::Objectives] = Some(df);
         }
 
         if load_mid_boss {
@@ -2384,7 +2436,7 @@ impl Demo {
                 Column::new("event".into(), mb_events),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_mid_boss = Some(df);
+            self.cached_datasets[Dataset::MidBoss] = Some(df);
         }
 
         if load_neutrals {
@@ -2399,7 +2451,7 @@ impl Demo {
                 Column::new("entity_id".into(), nt_entity_id),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_neutrals = Some(df);
+            self.cached_datasets[Dataset::Neutrals] = Some(df);
         }
 
         if load_breakables {
@@ -2416,7 +2468,7 @@ impl Demo {
                 Column::new("z".into(), bk_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_breakables = Some(df);
+            self.cached_datasets[Dataset::Breakables] = Some(df);
         }
 
         if load_sinners_sacrifice {
@@ -2435,7 +2487,7 @@ impl Demo {
                 Column::new("z".into(), sn_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_sinners_sacrifice = Some(df);
+            self.cached_datasets[Dataset::SinnersSacrifice] = Some(df);
         }
 
         if load_stat_modifier_events {
@@ -2446,7 +2498,7 @@ impl Demo {
                 Column::new("amount".into(), sm_amount),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_stat_modifier_events = Some(df);
+            self.cached_datasets[Dataset::StatModifierEvents] = Some(df);
         }
 
         if load_active_modifiers {
@@ -2462,7 +2514,7 @@ impl Demo {
                 Column::new("stacks".into(), am_stacks),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_active_modifiers = Some(df);
+            self.cached_datasets[Dataset::ActiveModifiers] = Some(df);
         }
 
         if load_ability_ticks {
@@ -2478,7 +2530,7 @@ impl Demo {
                 Column::new("charge_recharge_end".into(), at_charge_recharge_end),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_ability_ticks = Some(df);
+            self.cached_datasets[Dataset::AbilityTicks] = Some(df);
         }
 
         if load_urn {
@@ -2492,7 +2544,7 @@ impl Demo {
                 Column::new("z".into(), urn_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_urn = Some(df);
+            self.cached_datasets[Dataset::Urn] = Some(df);
         }
 
         if load_street_brawl_ticks {
@@ -2508,7 +2560,7 @@ impl Demo {
                 Column::new("non_combat_time".into(), sbt_non_combat_time),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_street_brawl_ticks = Some(df);
+            self.cached_datasets[Dataset::StreetBrawlTicks] = Some(df);
         }
 
         if load_street_brawl_rounds {
@@ -2520,7 +2572,7 @@ impl Demo {
                 Column::new("sapphire_score".into(), sbr_sapphire_score),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_street_brawl_rounds = Some(df);
+            self.cached_datasets[Dataset::StreetBrawlRounds] = Some(df);
         }
 
         if load_rift {
@@ -2537,7 +2589,7 @@ impl Demo {
                 Column::new("z".into(), rift_z),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
-            self.cached_rift = Some(df);
+            self.cached_datasets[Dataset::Rift] = Some(df);
         }
 
         Ok(())

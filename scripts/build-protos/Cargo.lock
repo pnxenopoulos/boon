@@ -29,6 +29,7 @@ version = "0.1.0"
 dependencies = [
  "prost-build",
  "protoc-bin-vendored",
+ "regex",
  "tempfile",
 ]
 

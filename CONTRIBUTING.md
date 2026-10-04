@@ -1,6 +1,6 @@
 # Contributing to Boon
 
-Thank you for your interest in Boon. This guide explains how to set up the project, test changes, and submit changes.
+Use this guide to set up Boon, do tests, and submit changes.
 
 ## Prerequisites
 
@@ -47,11 +47,11 @@ cd crates/boon-python
 
 # Using pip + maturin
 pip install maturin
-maturin develop --release
+maturin develop --locked
 
 # Using uv
 uv sync
-uv run maturin develop --release
+uv run maturin develop --locked
 ```
 
 ## Code Quality
@@ -78,9 +78,8 @@ this codebase. Do not enable all pedantic or nursery lints at once.
 - Parse public string inputs into typed values before internal dispatch.
 - Return errors for failed input or data operations. Reserve `expect` for
   documented invariants that indicate a programming error.
-- Borrow data used only for inspection or serialization. Clone when independent ownership is necessary
-  for the caller.
-- Preserve absent fields when applying partial replay updates.
+- Borrow data used only for inspection or serialization. Clone when the caller must own the data.
+- Keep missing fields when applying partial replay updates.
 - Document unsafe operations and keep their scope small.
 - Keep examples fallible with `?`, and test behavior that a refactor could change.
 
@@ -97,19 +96,19 @@ uv run --no-sync sphinx-build -W -b html docs docs/_build/html
 
 CI uses Ruff and ty for checks of the Python package. The quality dependency group
 pins their versions. Update these pins together after a review of new diagnostics.
-Use `uv run --no-sync pytest tests/` after building the extension or installing
+Use `uv run --no-sync pytest tests/ --durations=10` after building the extension or installing
 a wheel. This prevents uv from replacing the build under test.
 
 CI builds Linux wheels for x86-64 and ARM64 with Python 3.11–3.14.
 ARM64 builds use `ubuntu-24.04-arm`. CI and releases use native manylinux2014
-containers for these builds. The Python test jobs use the x86-64 wheels.
+containers for these builds. The Python test jobs use the x86-64 debug wheels.
+The debug profile uses `opt-level = 1` for Boon and pbdems2.
 
 ## Writing Style
 
-Use [ASD-STE100](https://www.asd-ste100.org/) as the writing target for maintained documentation, API text,
-command help, and code comments. A plain-language review alone does not establish
-full compliance. Do a check of approved words, meanings, and technical terms before
-claiming compliance with the standard.
+Use [ASD-STE100](https://www.asd-ste100.org/) for documentation, API text, command help, and code comments. A plain-language review alone does not establish
+full compliance. Review approved words, meanings, and technical terms before
+you claim compliance with the standard.
 
 - Use active voice.
 - Put one idea in each sentence.
@@ -117,7 +116,7 @@ claiming compliance with the standard.
 - Use the same term for the same thing.
 - Do not use contractions.
 - Do not use a vague word such as "this" without a clear noun.
-- Put behavior and its reason in separate sentences.
+- Put behavior and its reason in different sentences.
 - Keep exact API names, game field names, and Source 2 terms.
 
 Use these technical terms consistently:
@@ -129,8 +128,8 @@ Use these technical terms consistently:
 | tick | A numbered step in a demo |
 | snapshot | Recorded state at a selected tick or post-match sample |
 | catalog | A boon-data JSON file with names and game definitions |
-| client version | The Deadlock `ClientVersion`, separate from Boon's package version |
-| display name | A localized label, separate from an internal game name |
+| client version | The Deadlock `ClientVersion`, different from Boon's package version |
+| display name | A localized label, different from an internal game name |
 
 Keep exact API identifiers and technical names. Do not replace them with
 ordinary words. Do not edit generated files or upstream protobuf text solely
@@ -141,15 +140,18 @@ to change the writing style.
 When Valve updates Deadlock's protobuf definitions, sync and regenerate:
 
 ```bash
-# 1. Fetch the latest .proto files from SteamDB
+# 1. Fetch the latest .proto files from SteamTracking
 ./scripts/sync-protos.sh
 
 # 2. Regenerate Rust code from the .proto files
 cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-protos
 ```
 
-The command updates the files in `crates/boon-proto/proto/`. It also regenerates
-`crates/boon-proto/src/proto.rs`.
+The first command updates `crates/boon-proto/proto/`.
+The second command generates `crates/boon-proto/src/proto.rs` with a bundled
+`protoc`. It removes unsupported C++ annotations from temporary inputs. The
+source `.proto` files stay unchanged. If a published API changes, update the
+`boon-proto` compatibility version and workspace dependency.
 
 ## Updating Name Data
 
@@ -165,9 +167,9 @@ generator or embedded breakable table.
 
 ## Release Strategy
 
-Boon has three independent release tracks. Start each release manually from the
+Boon has three different release tracks. Start each release manually from the
 **Release Boon** workflow on the `main` branch. Do not create or push a release
-tag. The workflow verifies the selected version and uploads the package. After
+tag. The workflow compares the requested and local package versions, then uploads the package. After
 the upload succeeds, the workflow creates the tag and GitHub Release.
 
 | Workflow selection | Package index | Tag |
@@ -184,9 +186,10 @@ order:
 3. `boon-python`
 
 The workflow enforces this order. Wait until each upload is visible before you
-start the next release. A `boon` release requires the exact `boon-proto` version
-on crates.io. A `boon-python` release requires the exact `boon-deadlock` version
-on crates.io.
+start the next release. Publish the exact `boon-proto` dependency on crates.io before a `boon` release.
+Publish the exact `boon-deadlock` dependency on crates.io before a `boon-python` release.
+
+Each published package contains a copy of the root `LICENSE`. Keep these files identical.
 
 Before dispatching a release:
 
@@ -196,11 +199,11 @@ Before dispatching a release:
    - `boon` uses `[workspace.package].version` and the `boon` entry under
      `[workspace.dependencies]` in the root `Cargo.toml`.
    - `boon-python` uses `crates/boon-python/Cargo.toml`; the documentation
-     reads this value automatically.
+     reads this value.
 2. Merge the version bump into `main` and wait for **CI Check** to pass on that
    exact commit.
-3. Open **Actions > Release Boon > Run workflow**, select the component, enter
-   its version without a leading `v`, and dispatch it from `main`.
+3. Open **Actions > Release Boon > Run workflow**.
+   Select the component and enter its version without a leading `v`. Dispatch from `main`.
 
 You can run a partially completed release again. The workflow skips an identical
 version that is already on crates.io or PyPI. It also keeps a tag that points to
@@ -220,24 +223,23 @@ The repository does not contain demo files (`.dem`). Download them from the
 Each fixture is a named release whose tag is the match ID:
 
 ```bash
-gh release download 70555151 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 70537442 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 103129247 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
-
-gh release download 100655353 \
-  --repo pnxenopoulos/boon-fixtures \
-  --dir crates/boon-python/tests/fixtures/
+for match in 108575009 109108139 100655353; do
+  gh release download "$match" --repo pnxenopoulos/boon-fixtures \
+    --dir crates/boon-python/tests/fixtures/
+done
 ```
 
-Tests that require a missing fixture are skipped automatically.
+Tests skip when a necessary fixture is missing.
+
+Pytest manages the shared replay through a session fixture. Use shared replay
+and reference frames for read-only checks. Do not add another global cache.
+Use a fresh `Demo` for tests of parsing, caches, or decoder settings.
+The session fixture uses serial snapshot decoding. Seek and parallel tests compare
+different parses with the same reference frames.
+
+Use function-scoped `monkeypatch` for temporary settings and `tmp_path` for mutable
+files. Use `tmp_path_factory` for catalog files shared by module or session fixtures.
+Keep fixture dependencies explicit. Do not call fixture functions directly.
 
 ### Adding a new fixture
 
@@ -261,7 +263,9 @@ FIXTURE_PATH = FIXTURES_DIR / "<match_id>.dem"
 def demo() -> Demo:
     if not FIXTURE_PATH.exists():
         pytest.skip("<match_id>.dem fixture not available")
-    return get_demo(FIXTURE_PATH)
+    replay = Demo(str(FIXTURE_PATH), preload=False)
+    replay.load("chat", "item_purchases")  # Load only necessary datasets.
+    return replay
 ```
 
 4. Update CI to download the new fixture.
@@ -270,10 +274,13 @@ def demo() -> Demo:
 
 | Match ID | Game Mode | Description |
 |----------|-----------|-------------|
-| 70555151 | 6v6 | Standard 6v6 match |
-| 70537442 | Street Brawl | Street brawl (game_mode=4) match |
-| 103129247 | 6v6 | Build 10854 regression coverage for 0.8.0 features |
-| 100655353 | 6v6 | Silver-to-Victor hero swap and post-match summary totals |
+| 108575009 | 6v6 | Current-format API tests, scoreboard and fight-state checks |
+| 109108139 | Street Brawl | Mode-specific regression checks only |
+| 100655353 | 6v6 | Silver-to-Victor hero-swap regression only |
+
+General tests use `108575009.dem`. Use `109108139.dem` for Street Brawl.
+The older hero-swap fixture tests one regression; it does not establish support
+for old formats.
 
 ## Submitting Changes
 

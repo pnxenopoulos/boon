@@ -1,6 +1,10 @@
-//! Compatibility decoding for permanent stat-viewer modifier values.
+//! Catalog-backed decoding for recorded stat-viewer modifier values.
 
-use std::ops::Index;
+use std::{collections::HashMap, fs, path::Path};
+
+use serde::Deserialize;
+
+use crate::data::{DataError, Result};
 
 /// Canonical stat represented by a player controller's stat-viewer vector.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
@@ -57,184 +61,117 @@ pub struct DecodedStatModifierValue {
     pub value_scale: f32,
 }
 
-/// Observed totals from one controller stat-viewer vector.
-///
-/// These values are modifier contributions. They are not complete player
-/// stats. For example, they do not include base hero values or all dynamic
-/// ability effects.
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct StatModifierTotals {
-    values: [f32; StatModifierKind::COUNT],
-    /// Number of vector entries with an unknown nonzero value type.
-    pub unknown_count: u32,
-}
+/// Stat-viewer enum IDs from one boon-data version. Reuse across ticks.
+#[derive(Debug)]
+pub struct StatModifierTypes(HashMap<u32, DecodedStatModifierValue>);
 
-impl StatModifierTotals {
-    pub const fn values(&self) -> &[f32; StatModifierKind::COUNT] {
-        &self.values
+impl StatModifierTypes {
+    /// Read an installed catalog, downloading it if needed.
+    ///
+    /// # Errors
+    /// Returns an error for unavailable versions or invalid catalogs.
+    pub fn load(version: Option<&str>) -> Result<Self> {
+        Self::from_directory(&crate::data::catalog_dir(version)?)
     }
-}
 
-impl Index<StatModifierKind> for StatModifierTotals {
-    type Output = f32;
-
-    fn index(&self, kind: StatModifierKind) -> &Self::Output {
-        &self.values[kind.index()]
-    }
-}
-
-/// Decode the numeric `EModifierValue` stored in
-/// `m_PlayerDataGlobal.m_vecStatViewerModifierValues[*].m_eValType`.
-///
-/// Demo send tables keep the numeric enum value. They do not keep the member
-/// name. These values are not stable wire IDs. Valve changed
-/// `EModifierValue` between captured builds 10725 and 10854.
-///
-/// The first value in each pair is from build 10725.
-/// The second value is from build 10854:
-///
-/// | Canonical stat       | 10725 | 10854 |
-/// |----------------------|------:|------:|
-/// | health               |    31 |    43 |
-/// | spirit power         |    51 | 158/159 |
-/// | fire rate            |    79 |    91 |
-/// | weapon damage        |    18 |    19 |
-/// | cooldown reduction   |   109 |    98 |
-/// | ammo                 |   172 |    63 |
-///
-/// Build 10854 clients 6683/6684 use 158 for permanent spirit pickups,
-/// whereas client 6698 uses 159 (`MODIFIER_VALUE_TECH_POWER` in GameTracking
-/// revision a1139b2e4533, `DumpSource2/schemas/client/EModifierValue.h`).
-/// These aliases apply to this permanent stat-viewer vector only; 158 means
-/// `MODIFIER_VALUE_ARMOR_POWER` in the newer general modifier enum.
-///
-/// These aliases cover the permanent pickups observed in the captured clients;
-/// they are not a general modifier-enum decoder. Build 10854 also uses values
-/// 32-35 for signed spirit and bullet resistance. Captured build-10725 vectors
-/// do not use those values.
-///
-/// For each new client, verify the observed `m_eValType` values. If an alias
-/// acquires a conflicting meaning in this vector, select the layout from the
-/// client version; the engine build number alone is not sufficient.
-pub const fn decode_stat_modifier_value_type(value_type: u32) -> Option<DecodedStatModifierValue> {
-    let (kind, value_scale) = match value_type {
-        31 | 43 => (StatModifierKind::Health, 1.0),
-        51 | 158 | 159 => (StatModifierKind::SpiritPower, 1.0),
-        79 | 91 => (StatModifierKind::FireRate, 1.0),
-        18 | 19 => (StatModifierKind::WeaponDamage, 1.0),
-        109 | 98 => (StatModifierKind::CooldownReduction, 1.0),
-        172 | 63 => (StatModifierKind::Ammo, 1.0),
-        32 => (StatModifierKind::SpiritResist, 1.0),
-        33 => (StatModifierKind::SpiritResist, -1.0),
-        34 => (StatModifierKind::BulletResist, 1.0),
-        35 => (StatModifierKind::BulletResist, -1.0),
-        _ => return None,
-    };
-    Some(DecodedStatModifierValue { kind, value_scale })
-}
-
-/// Sum the known entries in one controller stat-viewer vector.
-///
-/// Unknown nonzero value types increase `unknown_count`. Non-finite values do
-/// not contribute to a total.
-pub fn aggregate_stat_modifier_values(
-    values: impl IntoIterator<Item = (u32, f32)>,
-) -> StatModifierTotals {
-    let mut totals = StatModifierTotals::default();
-    for (value_type, value) in values {
-        if value_type == 0 {
-            continue;
+    /// Read enum definitions from a local abilities.json.
+    ///
+    /// # Errors
+    /// Returns an error if the file or its enum definitions are missing or invalid.
+    pub fn from_directory(directory: &Path) -> Result<Self> {
+        #[derive(Deserialize)]
+        struct Catalog {
+            modifier_value_types: HashMap<u32, String>,
         }
-        let Some(decoded) = decode_stat_modifier_value_type(value_type) else {
-            totals.unknown_count += 1;
-            continue;
-        };
-        if value.is_finite() {
-            totals.values[decoded.kind.index()] += value * decoded.value_scale;
+        let catalog: Catalog = serde_json::from_slice(&fs::read(directory.join("abilities.json"))?)
+            .map_err(|error| DataError::Invalid(format!(
+                "abilities.json lacks modifier enum definitions: {error}; use `boon get VERSION --force`"
+            )))?;
+        if catalog.modifier_value_types.is_empty() {
+            return Err(DataError::Invalid(
+                "abilities.json has no modifier enum definitions; use `boon get VERSION --force`"
+                    .into(),
+            ));
         }
+        Ok(Self(
+            catalog
+                .modifier_value_types
+                .iter()
+                .filter_map(|(&id, name)| {
+                    let (kind, value_scale) = match name.as_str() {
+                        "MODIFIER_VALUE_HEALTH_MAX" => (StatModifierKind::Health, 1.0),
+                        "MODIFIER_VALUE_TECH_POWER" => (StatModifierKind::SpiritPower, 1.0),
+                        "MODIFIER_VALUE_FIRE_RATE" => (StatModifierKind::FireRate, 1.0),
+                        "MODIFIER_VALUE_WEAPON_DAMAGE_INCREASE" => {
+                            (StatModifierKind::WeaponDamage, 1.0)
+                        }
+                        "MODIFIER_VALUE_COOLDOWN_REDUCTION_PERCENTAGE" => {
+                            (StatModifierKind::CooldownReduction, 1.0)
+                        }
+                        "MODIFIER_VALUE_AMMO_CLIP_SIZE" => (StatModifierKind::Ammo, 1.0),
+                        "MODIFIER_VALUE_TECH_RESIST" => (StatModifierKind::SpiritResist, 1.0),
+                        "MODIFIER_VALUE_TECH_RESIST_REDUCTION" => {
+                            (StatModifierKind::SpiritResist, -1.0)
+                        }
+                        "MODIFIER_VALUE_BULLET_ARMOR_DAMAGE_RESIST" => {
+                            (StatModifierKind::BulletResist, 1.0)
+                        }
+                        "MODIFIER_VALUE_BULLET_AND_MELEE_RESIST_REDUCTION" => {
+                            (StatModifierKind::BulletResist, -1.0)
+                        }
+                        _ => return None,
+                    };
+                    Some((id, DecodedStatModifierValue { kind, value_scale }))
+                })
+                .collect(),
+        ))
     }
-    totals
+
+    /// Resolve one recorded numeric type using this catalog's enum definitions.
+    pub fn decode(&self, value_type: u32) -> Option<DecodedStatModifierValue> {
+        self.0.get(&value_type).copied()
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
-    use super::{
-        StatModifierKind, aggregate_stat_modifier_values, decode_stat_modifier_value_type,
-    };
-
-    const OBSERVED_ALIASES: &[(u32, StatModifierKind)] = &[
-        (31, StatModifierKind::Health),
-        (43, StatModifierKind::Health),
-        (51, StatModifierKind::SpiritPower),
-        (158, StatModifierKind::SpiritPower),
-        (159, StatModifierKind::SpiritPower),
-        (79, StatModifierKind::FireRate),
-        (91, StatModifierKind::FireRate),
-        (18, StatModifierKind::WeaponDamage),
-        (19, StatModifierKind::WeaponDamage),
-        (109, StatModifierKind::CooldownReduction),
-        (98, StatModifierKind::CooldownReduction),
-        (172, StatModifierKind::Ammo),
-        (63, StatModifierKind::Ammo),
-    ];
+    use super::*;
 
     #[test]
-    fn maps_observed_10725_and_10854_aliases() {
-        for &(value_type, expected) in OBSERVED_ALIASES {
-            let decoded = decode_stat_modifier_value_type(value_type).unwrap();
-            assert_eq!(decoded.kind, expected, "value type {value_type}");
-            assert_eq!(decoded.value_scale, 1.0, "value type {value_type}");
+    fn uses_catalog_ids_and_does_not_guess_unknown_types() {
+        let folder = tempfile::tempdir().unwrap();
+        fs::write(
+            folder.path().join("abilities.json"),
+            r#"{
+            "modifier_value_types": {
+                "900": "MODIFIER_VALUE_TECH_POWER",
+                "51": "MODIFIER_VALUE_HEALTH_REGEN_PER_SECOND",
+                "901": "MODIFIER_VALUE_BULLET_AND_MELEE_RESIST_REDUCTION"
+            }
+        }"#,
+        )
+        .unwrap();
+        let types = StatModifierTypes::from_directory(folder.path()).unwrap();
+        assert_eq!(
+            types.decode(900).unwrap().kind,
+            StatModifierKind::SpiritPower
+        );
+        assert_eq!(types.decode(901).unwrap().value_scale, -1.0);
+        assert_eq!(types.decode(51), None);
+        assert_eq!(types.decode(158), None);
+    }
+
+    #[test]
+    fn requires_enum_definitions() {
+        let folder = tempfile::tempdir().unwrap();
+        for content in [r#"{}"#, r#"{"modifier_value_types":{}}"#] {
+            fs::write(folder.path().join("abilities.json"), content).unwrap();
+            assert!(
+                StatModifierTypes::from_directory(folder.path())
+                    .unwrap_err()
+                    .to_string()
+                    .contains("boon get")
+            );
         }
-    }
-
-    #[test]
-    fn observed_value_types_do_not_collide() {
-        let all_values = OBSERVED_ALIASES
-            .iter()
-            .map(|&(value_type, _)| value_type)
-            .chain([32, 33, 34, 35]);
-        let values: Vec<_> = all_values.collect();
-        let unique: HashSet<_> = values.iter().copied().collect();
-        assert_eq!(unique.len(), values.len());
-    }
-
-    #[test]
-    fn maps_signed_resistance_entries() {
-        for (value_type, kind, value_scale) in [
-            (32, StatModifierKind::SpiritResist, 1.0),
-            (33, StatModifierKind::SpiritResist, -1.0),
-            (34, StatModifierKind::BulletResist, 1.0),
-            (35, StatModifierKind::BulletResist, -1.0),
-        ] {
-            let decoded = decode_stat_modifier_value_type(value_type).unwrap();
-            assert_eq!(decoded.kind, kind);
-            assert_eq!(decoded.value_scale, value_scale);
-        }
-    }
-
-    #[test]
-    fn ignores_unknown_value_types() {
-        for value_type in [0, 1, 255, u32::MAX] {
-            assert_eq!(decode_stat_modifier_value_type(value_type), None);
-        }
-    }
-
-    #[test]
-    fn aggregates_aliases_and_signed_values() {
-        let totals = aggregate_stat_modifier_values([
-            (51, 6.0),
-            (158, 9.0),
-            (159, 3.0),
-            (34, 10.0),
-            (35, 2.0),
-            (999, 5.0),
-            (0, 3.0),
-        ]);
-
-        assert_eq!(totals[StatModifierKind::SpiritPower], 18.0);
-        assert_eq!(totals[StatModifierKind::BulletResist], 8.0);
-        assert_eq!(totals.unknown_count, 1);
     }
 }

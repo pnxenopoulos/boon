@@ -118,6 +118,42 @@ impl Parser {
         Ok(())
     }
 
+    /// Read modifier changes from the packet stream, without keyframe snapshots.
+    pub(crate) fn decode_stat_ticks<F>(
+        &self,
+        end_tick: i32,
+        classes: &std::collections::HashSet<&str>,
+        on_tick: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Context),
+    {
+        let mut session = self.prepared()?.session(self.demo_parser()?)?;
+        // Relay keyframes can contain server-side modifier state ahead of the
+        // recorded entities. Replay deltas from signon to keep both at one time.
+        session.adapter_mut().skip_modifier_snapshots();
+        session.decode_segment(None, end_tick, classes, on_tick)?;
+        Ok(())
+    }
+
+    /// Visit merged modifier changes at each recorded tick.
+    ///
+    /// Relay keyframe tables can have a different capture time from entities.
+    /// This reads packet deltas from signon and does not decode entities.
+    /// # Errors
+    /// Returns an error if the replay or a packet cannot be decoded.
+    pub fn visit_modifier_changes(
+        &self,
+        mut visit: impl FnMut(i32, crate::ModifierChange),
+    ) -> Result<()> {
+        let mut state = crate::ModifierState::default();
+        self.decode_stat_ticks(i32::MAX, &std::collections::HashSet::new(), |ctx| {
+            for change in state.update(ctx) {
+                visit(ctx.tick(), change);
+            }
+        })
+    }
+
     /// Parse entities and only selected final event message types in one pass.
     pub fn run_to_end_with_event_types_filtered<F>(
         &self,
@@ -155,5 +191,136 @@ impl Parser {
             adapter.clear_tick_events();
         })?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exact_queries_skip_modifier_snapshots_but_keep_other_tables() {
+        use boon_proto::proto::{
+            CDemoFullPacket, CDemoPacket, CDemoSendTables, CDemoStringTables,
+            CsvcMsgCreateStringTable, EDemoCommands, SvcMessages,
+            c_demo_string_tables::{ItemsT, TableT},
+        };
+        use prost::Message;
+
+        let mut bits = Vec::new();
+        let mut write_bits = |value: u64, count: u32| {
+            bits.extend((0..count).map(|bit| value & (1 << bit) != 0));
+        };
+        let message_type = SvcMessages::SvcCreateStringTable as u64;
+        assert!((16..256).contains(&message_type));
+        for name in ["ActiveModifiers", "test_table"] {
+            let body = CsvcMsgCreateStringTable {
+                name: Some(name.into()),
+                ..Default::default()
+            }
+            .encode_to_vec();
+            // Source 2 frames use a UBitVar type followed by a varint length.
+            write_bits((message_type & 15) | 16, 6);
+            write_bits(message_type >> 4, 4);
+            let mut length = Vec::new();
+            prost::encoding::encode_varint(body.len() as u64, &mut length);
+            for byte in length.into_iter().chain(body) {
+                write_bits(u64::from(byte), 8);
+            }
+        }
+        let signon = CDemoPacket {
+            data: Some(
+                bits.chunks(8)
+                    .map(|chunk| {
+                        chunk
+                            .iter()
+                            .enumerate()
+                            .fold(0, |byte, (bit, &set)| byte | (u8::from(set) << bit))
+                    })
+                    .collect(),
+            ),
+        };
+        let tables = CDemoStringTables {
+            tables: ["ActiveModifiers", "test_table"]
+                .into_iter()
+                .map(|name| TableT {
+                    table_name: Some(name.into()),
+                    items: vec![ItemsT {
+                        str: Some("entry".into()),
+                        data: Some(vec![1]),
+                    }],
+                    ..Default::default()
+                })
+                .collect(),
+        };
+        let packet = CDemoFullPacket {
+            string_table: Some(tables),
+            ..Default::default()
+        };
+        let mut bytes = b"PBDEMS2\0".to_vec();
+        bytes.extend([0; 8]);
+        for (command, tick, body) in [
+            (
+                EDemoCommands::DemSendTables as i32,
+                0,
+                CDemoSendTables {
+                    data: Some(vec![0]),
+                }
+                .encode_to_vec(),
+            ),
+            (EDemoCommands::DemClassInfo as i32, 0, Vec::new()),
+            (
+                EDemoCommands::DemSignonPacket as i32,
+                0,
+                signon.encode_to_vec(),
+            ),
+            (EDemoCommands::DemSyncTick as i32, 0, Vec::new()),
+            (
+                super::super::command::dem::FULL_PACKET,
+                10,
+                packet.encode_to_vec(),
+            ),
+            (super::super::command::dem::STOP, 11, Vec::new()),
+        ] {
+            for value in [command as u64, tick, body.len() as u64] {
+                prost::encoding::encode_varint(value, &mut bytes);
+            }
+            bytes.extend(body);
+        }
+        let parser = Parser::from_bytes(bytes);
+        let snapshot = parser.parse_to_tick(10).unwrap();
+        assert_eq!(
+            snapshot
+                .string_tables()
+                .find_table("ActiveModifiers")
+                .unwrap()
+                .entries()
+                .len(),
+            1
+        );
+        let mut checked = false;
+        parser
+            .decode_stat_ticks(11, &Default::default(), |ctx| {
+                if ctx.tick() == 10 {
+                    assert!(
+                        ctx.string_tables()
+                            .find_table("ActiveModifiers")
+                            .unwrap()
+                            .entries()
+                            .is_empty()
+                    );
+                    assert_eq!(
+                        ctx.string_tables()
+                            .find_table("test_table")
+                            .unwrap()
+                            .entries()
+                            .len(),
+                        1
+                    );
+                    checked = true;
+                }
+            })
+            .unwrap();
+        assert!(checked);
     }
 }

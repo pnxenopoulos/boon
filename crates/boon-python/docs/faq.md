@@ -3,7 +3,7 @@
 ## Where do I get demo files?
 
 Deadlock demo files (`.dem`) are GOTV match recordings. Download them from the in-game match history or from a replay service.
-The file name usually contains the match ID. For example, `70555151.dem` contains match 70555151.
+The file name usually contains the match ID. For example, `108575009.dem` contains match 108575009.
 
 ## Why does boon return Polars DataFrames instead of pandas?
 
@@ -25,16 +25,18 @@ Call `Demo.available_datasets()` to get all dataset names. You can pass these na
 Use `Demo(path, preload=False)` to disable preloading.
 
 `load("kills", "damage", "player_ticks")` requests several datasets together.
-Kills and damage share an event pass. Player snapshots use a separate parallel pass.
-Both property access and `load()` cache their results.
+Kills and damage share an event pass. Player snapshots use another parallel pass.
+Property access and `load()` cache their results.
 
 ## Why is `player_ticks` missing some heroes?
 
 GOTV recordings do not always include all player pawns. Boon can return data only for pawns that are in the demo.
 
-## Why is `ability_upgrades` empty?
+## Are old demos supported?
 
-Valve renamed `m_nUpgradeBits` to `m_nUpgradeInfo` and changed its encoding. Boon uses the current field name. Older demos return an empty DataFrame. See {doc}`known-issues`.
+Use Boon **0.10.0 or earlier** for demos recorded before
+the **City Never Sleeps** update (**September 29, 2026**).
+Use Boon **0.11.0 or later** for demos recorded with that update or later.
 
 ## What is `trooper_boss`?
 
@@ -42,20 +44,22 @@ In the `troopers` dataset, `trooper_type` is `"trooper"` for a regular lane cree
 
 ## How do I work with street brawl demos?
 
-Street brawl is game mode 4. Check the mode with `demo.game_mode`. Street brawl demos have `street_brawl_ticks` and `street_brawl_rounds`. Other modes raise `NotStreetBrawlError` when you access these datasets.
+Street brawl is game mode 4. Read the mode with `demo.game_mode`. Street brawl demos have `street_brawl_ticks` and `street_brawl_rounds`. Other modes raise `NotStreetBrawlError` when you access these datasets.
 
 ## How do I convert a tick to a timestamp?
 
-Use `demo.tick_to_seconds(tick)` or `demo.tick_to_clock_time(tick)`. Both methods exclude paused time. They load `world_ticks` on the first call.
+Use `demo.tick_to_match_clock(tick)` for the viewer's match clock.
+Use `tick_to_seconds()` or `tick_to_clock_time()` for elapsed demo time.
+These methods do not include pauses. The first call loads pause data from `world_ticks`.
 
 ## What does `damage` include?
 
-The `damage` dataset includes all recorded damage events. It includes damage to heroes, objectives, troopers, and neutral units. Filter `attacker_hero_id` or `victim_hero_id` to select the required events.
+The `damage` dataset includes all recorded damage events. It includes damage to heroes, objectives, troopers, and neutral units. Filter `attacker_hero_id` or `victim_hero_id` to select events for analysis.
 
 ## Can I use boon without Python?
 
 Yes. The core parser is the `boon-deadlock` Rust crate on [crates.io](https://crates.io/crates/boon-deadlock).
-The repository also contains the low-level `boon-dev` debug tool. Build it with `cargo build --release -p boon-dev`. See {doc}`cli`. The `boon` command in the Python package requires Python.
+The repository also contains the low-level `boon-dev` debug tool. Build it with `cargo build --release -p boon-dev`. See {doc}`cli`. Use Python to run the package's `boon` command.
 
 ## Something is not working. Where do I report it?
 

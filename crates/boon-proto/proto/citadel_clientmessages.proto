@@ -1,5 +1,6 @@
 import "networkbasetypes.proto";
 import "citadel_gcmessages_common.proto";
+import "google/protobuf/descriptor.proto";
 
 enum ECitadelClientMessages {
 	CITADEL_CM_MapPing = 1002;
@@ -24,6 +25,11 @@ enum ECitadelClientMessages {
 	CITADEL_CM_PlayerStatsUpdated = 1021;
 	CITADEL_CM_HideoutUpdateHeroReleaseVoteTally = 1022;
 	CITADEL_CM_ExecuteMapPositionAbility = 1023;
+	CITADEL_CM_HeroEconChanged = 1024;
+	CITADEL_CM_RequestBulkCombatLog = 1025;
+	CITADEL_CM_PlayerTyping = 1026;
+	CITADEL_CM_HideoutInteract = 1027;
+	CITADEL_CM_HeroReleaseVote = 1028;
 }
 
 message CCitadelClientMsg_Pause {
@@ -32,23 +38,32 @@ message CCitadelClientMsg_Pause {
 message CCitadelClientMsg_MapPing {
 	optional .CMsgVector ping_location = 1;
 	optional int32 event_type = 2;
-	optional int32 entity_index = 3 [default = -1];
+	optional int32 entity_index = 3 [default = -1, boxed_type = "CEntityIndex", synthetic_default = "-1"];
 	optional bool is_aggressive_ping = 4;
 	optional bool is_minimap_ping = 5;
 	optional bool is_blind_ping = 6;
+	optional bool zipline_toward_own_base = 7;
+	optional int32 nearby_visible_enemies = 8;
+	optional int32 consecutive_pings = 9;
 }
 
 message CCitadelClientMsg_PingWheel {
-	optional uint32 ping_wheel_option_id = 1;
-	optional uint32 subnav_message_id = 2;
+	optional uint32 ping_wheel_option_id = 1 [boxed_type = "PingWheelOptionID_t"];
+	optional uint32 subnav_message_id = 2 [boxed_type = "PingMessageID_t"];
 	optional .CMsgVector ping_location = 3;
-	optional int32 entity_index = 4 [default = -1];
+	optional int32 entity_index = 4 [default = -1, boxed_type = "CEntityIndex", synthetic_default = "-1"];
+	optional int32 ping_anim_type = 5;
+	optional bool pinged_enemy_entity = 6;
+	optional bool is_blind_ping = 7;
+	optional uint32 pinged_ability_id = 8;
+	optional int32 nearby_visible_enemies = 9;
+	optional bool pinged_item_corrupted = 10;
 }
 
 message CCitadelClientMsg_AbilityPing {
-	optional int32 entity_index = 1 [default = -1];
+	optional int32 entity_index = 1 [default = -1, boxed_type = "CEntityIndex", synthetic_default = "-1"];
 	optional uint32 pinged_ability_id = 2;
-	optional int32 pinged_player_slot = 3 [default = -1];
+	optional int32 pinged_player_slot = 3 [default = -1, boxed_type = "CPlayerSlot", synthetic_default = "-1"];
 }
 
 message CCitadelClientMsg_MapLine {
@@ -56,9 +71,9 @@ message CCitadelClientMsg_MapLine {
 }
 
 message CCitadelClientMsg_QuickResponse {
-	optional uint32 ping_wheel_message_id = 1;
-	optional uint32 responding_to_ping_message_id = 2;
-	optional int32 responding_to_player_slot = 3 [default = -1];
+	optional uint32 ping_wheel_message_id = 1 [boxed_type = "PingWheelOptionID_t"];
+	optional uint32 responding_to_ping_message_id = 2 [boxed_type = "PingMessageID_t"];
+	optional int32 responding_to_player_slot = 3 [default = -1, boxed_type = "CPlayerSlot", synthetic_default = "-1"];
 }
 
 message CCitadelClientMsg_PerformanceStats {
@@ -129,31 +144,23 @@ message CCitadelClientMsg_MutePlayers {
 }
 
 message CCitadelClientMsg_HitMismatch {
-	optional int32 client_hit_entity_index = 1 [default = -1];
-	optional int32 server_hit_entity_index = 2 [default = -1];
+	optional int32 client_hit_entity_index = 1 [default = -1, boxed_type = "CEntityIndex", synthetic_default = "-1"];
+	optional int32 server_hit_entity_index = 2 [default = -1, boxed_type = "CEntityIndex", synthetic_default = "-1"];
 }
 
 message CCitadelClientMsg_HideoutStart {
+	optional .CMsgVector intro_lineup_origin = 1;
 }
 
 message CCitadelClientMsg_HeroBuild {
 	option (maximum_size_bytes) = 16384;
 
 	optional .CMsgHeroBuild hero_build = 1;
-}
-
-message CCitadelClientMsg_HideoutMenuState {
-	enum MenuState {
-		k_eNone = 0;
-		k_eEscapeMenu = 1;
-		k_eDashboard = 2;
-	}
-
-	optional .CCitadelClientMsg_HideoutMenuState.MenuState menu_state = 1 [default = k_eNone];
+	optional bool allow_autoqueue = 2;
 }
 
 message CCitadelClientMsg_HideoutSpawn {
-	optional uint32 hero_id = 1;
+	optional uint32 hero_id = 1 [boxed_type = "HeroID_t"];
 	optional bool show_intro = 2;
 }
 
@@ -167,12 +174,7 @@ message CCitadelClientMsg_PlayerStatsUpdated {
 }
 
 message CCitadelClientMsg_HideoutUpdateHeroReleaseVoteTally {
-	message VoteRoundToTallyEntry {
-		optional uint32 key = 1;
-		optional .CMsgHeroReleaseVoteTally value = 2;
-	}
-
-	repeated .CCitadelClientMsg_HideoutUpdateHeroReleaseVoteTally.VoteRoundToTallyEntry vote_round_to_tally = 1;
+	map<uint32, .CMsgHeroReleaseVoteTally> vote_round_to_tally = 1;
 }
 
 message CCitadelClientMsg_ExecuteMapPositionAbility {
@@ -180,4 +182,29 @@ message CCitadelClientMsg_ExecuteMapPositionAbility {
 	optional float pos_x = 2;
 	optional float pos_y = 3;
 	optional float pos_z = 4;
+}
+
+message CCitadelClientMsg_HeroEconChanged {
+	optional uint32 hero_id = 1 [boxed_type = "HeroID_t"];
+}
+
+message CCitadelClientMsg_RequestBulkCombatLog {
+	optional float game_time = 1 [boxed_type = "GameTime_t"];
+	optional float duration = 2;
+	optional bool recent_player_death = 3;
+	optional int32 player_slot = 4 [default = -1, boxed_type = "CPlayerSlot", synthetic_default = "-1"];
+}
+
+message CCitadelClientMsg_PlayerTyping {
+	optional float game_time = 1 [boxed_type = "GameTime_t"];
+	optional bool all_chat = 2;
+	optional bool typing = 3;
+}
+
+message CCitadelClientMsg_HideoutInteract {
+	optional uint32 interactable_entity = 1 [default = 16777215, boxed_type = "CEHandleNetworkableInt", synthetic_default = "16777215"];
+}
+
+message CCitadelClientMsg_HeroReleaseVote {
+	optional uint32 voted_hero_id = 1 [boxed_type = "HeroID_t"];
 }
