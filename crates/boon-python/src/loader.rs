@@ -1,4 +1,5 @@
 use boon_parser::rift::{RIFT_COORD_SANITY, rift_lane_for};
+use boon_parser::world_position;
 
 use crate::*;
 
@@ -1186,7 +1187,7 @@ impl Demo {
                             obj_health.push(hp);
                             obj_max_health.push(max_hp);
                             obj_phase.push(phase);
-                            let [ox, oy, oz] = entity.world_position(cell_keys, offset_keys);
+                            let [ox, oy, oz] = world_position(entity, cell_keys, offset_keys);
                             obj_x.push(ox);
                             obj_y.push(oy);
                             obj_z.push(oz);
@@ -1532,7 +1533,8 @@ impl Demo {
                                             .and_then(|(idx, _)| $ctx.entities().get(*idx));
                                         let [drop_x, drop_y, drop_z] = pawn.map_or(
                                             [0.0, 0.0, 0.0],
-                                            |e| e.world_position(
+                                            |e| world_position(
+                                                e,
                                                 [pk_cell_x, pk_cell_y, pk_cell_z],
                                                 [pk_vec_x, pk_vec_y, pk_vec_z],
                                             ),
@@ -1574,7 +1576,8 @@ impl Demo {
                             let pawn = $ctx.entities().get(parent_idx);
                             let [hero_x, hero_y, hero_z] = pawn.map_or(
                                 [0.0, 0.0, 0.0],
-                                |e| e.world_position(
+                                |e| world_position(
+                                    e,
                                     [pk_cell_x, pk_cell_y, pk_cell_z],
                                     [pk_vec_x, pk_vec_y, pk_vec_z],
                                 ),
@@ -1631,7 +1634,8 @@ impl Demo {
                                         .and_then(|(idx, _)| $ctx.entities().get(*idx));
                                     let [drop_x, drop_y, drop_z] = pawn.map_or(
                                         [0.0, 0.0, 0.0],
-                                        |e| e.world_position(
+                                        |e| world_position(
+                                            e,
                                             [pk_cell_x, pk_cell_y, pk_cell_z],
                                             [pk_vec_x, pk_vec_y, pk_vec_z],
                                         ),
@@ -1668,7 +1672,8 @@ impl Demo {
                         };
                         if changed {
                             urn_trigger_prev.insert(idx, cur);
-                            let [trig_x, trig_y, trig_z] = entity.world_position(
+                            let [trig_x, trig_y, trig_z] = world_position(
+                                entity,
                                 [urnk_cell_x, urnk_cell_y, urnk_cell_z],
                                 [urnk_vec_x, urnk_vec_y, urnk_vec_z],
                             );
@@ -1713,7 +1718,8 @@ impl Demo {
                         }
                         let lifestate = entity.get_i64(ntk_lifestate);
                         let alive = lifestate == 0;
-                        let [x, y, z] = entity.world_position(
+                        let [x, y, z] = world_position(
+                            entity,
                             [ntk_cell_x, ntk_cell_y, ntk_cell_z],
                             [ntk_vec_x, ntk_vec_y, ntk_vec_z],
                         );
@@ -1771,7 +1777,8 @@ impl Demo {
                         if bk_pending.contains_key(&id) {
                             continue;
                         }
-                        let [x, y, z] = entity.world_position(
+                        let [x, y, z] = world_position(
+                            entity,
                             [bkk_cell_x, bkk_cell_y, bkk_cell_z],
                             [bkk_vec_x, bkk_vec_y, bkk_vec_z],
                         );
@@ -1863,7 +1870,8 @@ impl Demo {
                         }
 
                         let id = boon_parser::entity::EntityId::new(idx, entity.serial);
-                        let [x, y, z] = entity.world_position(
+                        let [x, y, z] = world_position(
+                            entity,
                             [snk_cell_x, snk_cell_y, snk_cell_z],
                             [snk_vec_x, snk_vec_y, snk_vec_z],
                         );

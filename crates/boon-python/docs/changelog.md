@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.0
+
+- Fix world coordinates for current Deadlock demos.
+- Use pbdems2 0.3.4.
+
 ## 0.11.0
 
 - Support City Never Sleeps demos (September 29, 2026) and later. Use Boon 0.10.0 or earlier for older demos.

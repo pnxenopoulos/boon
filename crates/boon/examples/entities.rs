@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let team = entity.get_by_name("m_iTeamNum", ser);
 
         // Get the position from CBodyComponent. Source 2 splits the position
-        // into a cell index and an offset in the cell. `Entity::world_position`
+        // into a cell index and an offset in the cell. `boon::world_position`
         // combines m_cellX/Y/Z with m_vecOrigin.m_vec{X,Y,Z}. The result uses
         // Hammer units.
         let cell_keys = [
@@ -59,7 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecY"),
             ser.resolve_field_key("CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecZ"),
         ];
-        let [x, y, z] = entity.world_position(cell_keys, offset_keys);
+        let [x, y, z] = boon::world_position(entity, cell_keys, offset_keys);
 
         println!(
             "  Entity #{:<5} team={:<4} health={}/{}  pos=({:.1}, {:.1}, {:.1})",
