@@ -106,6 +106,6 @@ pub use modifier_state::{
     modifier_is_effective_at,
 };
 pub use patron_phases::{all_patron_phases, patron_phase_name};
-pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world};
+pub use position::{CELL_BITS, CELL_SIZE, WORLD_HALF, cell_to_world, world_position};
 pub use stat_modifiers::{DecodedStatModifierValue, StatModifierKind, StatModifierTypes};
 pub use teams::{all_teams, team_name};

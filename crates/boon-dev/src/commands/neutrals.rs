@@ -106,7 +106,8 @@ pub fn run(
                 let lifestate = entity.get_i64(nk_lifestate);
                 let alive = lifestate == 0;
 
-                let [x, y, z] = entity.world_position(
+                let [x, y, z] = boon::world_position(
+                    entity,
                     [nk_cell_x, nk_cell_y, nk_cell_z],
                     [nk_vec_x, nk_vec_y, nk_vec_z],
                 );

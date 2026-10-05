@@ -1,3 +1,5 @@
+use boon_parser::world_position;
+
 use crate::*;
 
 /// Transfer primitive buffers into Polars without copying their values.
@@ -304,7 +306,8 @@ impl PlayerPositionCols {
             if hero_id == 0 {
                 continue;
             }
-            let [x, y, _] = pawn.world_position(
+            let [x, y, _] = world_position(
+                pawn,
                 [keys.cell_x, keys.cell_y, keys.cell_z],
                 [keys.vec_x, keys.vec_y, keys.vec_z],
             );
@@ -503,8 +506,11 @@ impl PtCols {
                 .push(ammo.get(&pawn_handle).copied().flatten());
             self.tick.push(ctx.tick());
             self.hero_id.push(hid);
-            let [x, y, z] =
-                pawn.world_position([k.cell_x, k.cell_y, k.cell_z], [k.vec_x, k.vec_y, k.vec_z]);
+            let [x, y, z] = world_position(
+                pawn,
+                [k.cell_x, k.cell_y, k.cell_z],
+                [k.vec_x, k.vec_y, k.vec_z],
+            );
             self.x.push(x);
             self.y.push(y);
             self.z.push(z);
@@ -753,8 +759,11 @@ impl TrCols {
             self.lane.push(e.get_i64(k.lane));
             self.health.push(e.get_i64(k.health));
             self.max_health.push(max_hp);
-            let [x, y, z] =
-                e.world_position([k.cell_x, k.cell_y, k.cell_z], [k.vec_x, k.vec_y, k.vec_z]);
+            let [x, y, z] = world_position(
+                e,
+                [k.cell_x, k.cell_y, k.cell_z],
+                [k.vec_x, k.vec_y, k.vec_z],
+            );
             self.x.push(x);
             self.y.push(y);
             self.z.push(z);

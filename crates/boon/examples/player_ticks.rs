@@ -63,7 +63,8 @@ fn main() {
                 // Combine the networked cell + in-cell offset into world coords
                 // (Hammer units). Reading the offset alone gives a sawtooth that
                 // resets every CELL_SIZE; see `boon::position` for the math.
-                let [x, y, z] = entity.world_position(
+                let [x, y, z] = boon::world_position(
+                    entity,
                     [nk_cell_x, nk_cell_y, nk_cell_z],
                     [nk_vec_x, nk_vec_y, nk_vec_z],
                 );
