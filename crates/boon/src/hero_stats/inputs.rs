@@ -220,6 +220,7 @@ pub(super) fn collect(
             ignored_modifiers: BTreeMap::new(),
             inferred_bindings: BTreeSet::new(),
             unmapped_inputs: BTreeSet::new(),
+            stat: query.stats[0],
         };
         let mut inputs = PlayerInputs::collect(ctx, catalog, controller, hero_id, modifiers);
         let mode_diagnostics = inputs.as_mut().map_or_else(
@@ -227,6 +228,7 @@ pub(super) fn collect(
             |inputs| inputs.select_mode(catalog, query.mode),
         );
         for &stat in &query.stats {
+            resolver.stat = stat;
             resolver.ignored_modifiers.clear();
             resolver.inferred_bindings.clear();
             resolver.unmapped_inputs.clone_from(&mode_diagnostics);
@@ -560,6 +562,7 @@ struct Resolver<'a, 'b> {
     controller: &'a Entity,
     hero_id: i64,
     steam_id: Option<u64>,
+    stat: HeroStat,
     game_time: Option<f64>,
     game_start: Option<f64>,
     explain: bool,
@@ -648,6 +651,7 @@ impl<'a> Resolver<'a, '_> {
                 tick: self.ctx.tick(),
                 steam_id: self.steam_id,
                 hero_id: self.hero_id,
+                stat: self.stat,
                 input: input.into(),
                 kind,
                 value,
@@ -1316,6 +1320,7 @@ impl<'a> Resolver<'a, '_> {
                 tick: self.ctx.tick(),
                 steam_id: self.steam_id,
                 hero_id: self.hero_id,
+                stat: self.stat,
                 input: "gravity_scale".into(),
                 kind: "base",
                 value: base,
@@ -2029,6 +2034,7 @@ impl<'a> Resolver<'a, '_> {
                     tick: self.ctx.tick(),
                     steam_id: self.steam_id,
                     hero_id: self.hero_id,
+                    stat: self.stat,
                     input: input.into(),
                     kind,
                     value,

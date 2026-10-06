@@ -180,6 +180,7 @@ def calculate_hero_stats(
             "tick": pl.Int32,
             "steam_id": pl.UInt64,
             "hero_id": pl.Int64,
+            "stat": pl.String,
             "input": pl.String,
             "kind": pl.String,
             "value": pl.Float64,

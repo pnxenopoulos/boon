@@ -73,8 +73,15 @@ Use Python 3.11–3.14.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.11"
+boon-deadlock = "0.13"
 ```
+
+Rust callers can load stat and state catalogs from JSON bytes with
+`StatCatalog::from_json_bytes` and `StateCatalog::from_json_bytes`.
+These constructors validate the catalogs without filesystem or network access.
+Use `Parser::calculate_stats` with a `StatBatch` to query hero stats, ability
+stats and imbues in one replay pass. Each query keeps its own selections.
+See [the Rust example](crates/boon/examples/stat_batch.rs).
 
 ## Quick Start
 

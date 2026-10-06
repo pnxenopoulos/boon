@@ -128,9 +128,29 @@ impl StatCatalog {
     /// Read local catalogs. No network or checksum validation is performed.
     /// All four files must come from the same snapshot and contain stat lookups.
     pub fn from_directory(directory: &Path) -> Result<Self> {
-        let read = |name: &str| -> Result<CatalogFile> {
-            let bytes = fs::read(directory.join(format!("{name}.json")))?;
-            let file: CatalogFile = serde_json::from_slice(&bytes).map_err(|e| CalculationError::Invalid(format!(
+        let heroes = fs::read(directory.join("heroes.json"))?;
+        let abilities = fs::read(directory.join("abilities.json"))?;
+        let modifiers = fs::read(directory.join("modifiers.json"))?;
+        let misc = fs::read(directory.join("misc.json"))?;
+        Self::from_json_bytes(&heroes, &abilities, &modifiers, &misc)
+    }
+
+    /// Read the four boon-data catalogs from JSON bytes.
+    ///
+    /// This is the filesystem-free counterpart to [`Self::from_directory`].
+    /// No network or checksum validation is performed. All four files must
+    /// come from the same snapshot and contain stat lookups.
+    ///
+    /// # Errors
+    /// Returns an error for invalid JSON, catalog definitions or mixed snapshots.
+    pub fn from_json_bytes(
+        heroes: &[u8],
+        abilities: &[u8],
+        modifiers: &[u8],
+        misc: &[u8],
+    ) -> Result<Self> {
+        let read = |name: &str, bytes: &[u8]| -> Result<CatalogFile> {
+            let file: CatalogFile = serde_json::from_slice(bytes).map_err(|e| CalculationError::Invalid(format!(
                 "{name}.json lacks usable stat definitions: {e}; check `boon versions` and install a catalog with `boon get VERSION --force`"
             )))?;
             if file.catalog != name {
@@ -140,10 +160,10 @@ impl StatCatalog {
             }
             Ok(file)
         };
-        let heroes = read("heroes")?;
-        let abilities = read("abilities")?;
-        let mut modifiers = read("modifiers")?;
-        let misc = read("misc")?;
+        let heroes = read("heroes", heroes)?;
+        let abilities = read("abilities", abilities)?;
+        let mut modifiers = read("modifiers", modifiers)?;
+        let misc = read("misc", misc)?;
         for file in [&abilities, &modifiers, &misc] {
             if file.client_version != heroes.client_version
                 || file.source_commit != heroes.source_commit
@@ -396,6 +416,48 @@ pub(super) mod tests {
             fs::write(folder.path().join(format!("{name}.json")), serde_json::to_vec(&json!({"catalog":name,"client_version":"12345","source_commit":"test-commit","records":records})).unwrap()).unwrap();
         }
         folder
+    }
+
+    #[test]
+    fn byte_loader_matches_directory_and_preserves_validation() {
+        let folder = fixture();
+        let names = ["heroes", "abilities", "modifiers", "misc"];
+        let files = names.map(|name| fs::read(folder.path().join(format!("{name}.json"))).unwrap());
+        let load = |files: &[Vec<u8>; 4]| {
+            StatCatalog::from_json_bytes(&files[0], &files[1], &files[2], &files[3])
+        };
+        let bytes = load(&files).unwrap();
+        let directory = StatCatalog::from_directory(folder.path()).unwrap();
+        assert_eq!(bytes.data_version, directory.data_version);
+        assert_eq!(bytes.snapshot_version, directory.snapshot_version);
+        assert_eq!(bytes.source_commit, directory.source_commit);
+        assert_eq!(
+            bytes.weapon(&bytes.heroes[&999]).unwrap().definition,
+            directory
+                .weapon(&directory.heroes[&999])
+                .unwrap()
+                .definition
+        );
+        assert_eq!(
+            bytes.modifier(10, None).unwrap().stat_changes,
+            directory.modifier(10, None).unwrap().stat_changes
+        );
+        for index in 0..4 {
+            let mut broken = files.clone();
+            broken[index] = b"not json".to_vec();
+            assert!(load(&broken).is_err());
+            let file: Value = serde_json::from_slice(&files[index]).unwrap();
+            for (key, value) in [
+                ("catalog", json!("wrong")),
+                ("client_version", json!("other")),
+                ("source_commit", json!("other")),
+            ] {
+                let mut changed = file.clone();
+                changed[key] = value;
+                broken[index] = serde_json::to_vec(&changed).unwrap();
+                assert!(load(&broken).is_err(), "{index} {key}");
+            }
+        }
     }
 
     #[test]

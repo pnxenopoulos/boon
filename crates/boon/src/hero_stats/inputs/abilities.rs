@@ -99,7 +99,7 @@ impl AbilityRuleset {
 /// Select replay state after each requested tick. Select players by Steam ID.
 #[derive(Clone, Debug)]
 pub struct ImbueQuery {
-    ticks: Vec<i32>,
+    pub(in crate::hero_stats) ticks: Vec<i32>,
     steam_ids: Option<Vec<u64>>,
 }
 impl ImbueQuery {
@@ -114,11 +114,75 @@ impl ImbueQuery {
         self.steam_ids = Some(ids.into_iter().collect());
         self
     }
+    pub(in crate::hero_stats) fn validate(&self) -> Result<()> {
+        crate::hero_stats::validate_ticks(&self.ticks)
+    }
+
+    pub(in crate::hero_stats) fn collect(
+        &self,
+        ctx: &Context,
+        catalog: &StatCatalog,
+        result: &mut ImbueResult,
+    ) -> Result<()> {
+        for (hero, controller) in players(ctx, self.steam_ids.as_deref())? {
+            let mut scratch = Vec::new();
+            let resolver = resolver(ctx, catalog, controller, hero, &mut scratch);
+            for (item_id, ability_id) in bindings(ctx, controller)? {
+                let item = catalog.abilities.get(&item_id);
+                let ability = catalog.abilities.get(&ability_id);
+                let missing = item.is_none() || ability.is_none();
+                let binding = ImbueBinding {
+                    tick: ctx.tick(),
+                    steam_id: resolver.steam_id,
+                    hero_id: hero,
+                    item_id,
+                    item_name: item.and_then(display),
+                    ability_id,
+                    ability_name: ability.and_then(display),
+                    status: if missing { "unresolved" } else { "recorded" },
+                    diagnostic: missing
+                        .then(|| "imbue is recorded; catalog source or target is missing".into()),
+                };
+                result.bindings.push(binding.clone());
+                if let Some(item) = item {
+                    for effect in &item.stat_changes {
+                        let filter = apply_filter(catalog, item, effect);
+                        if scope(filter) != EffectScope::Imbued {
+                            continue;
+                        }
+                        let resolved = resolver.effect(effect, item, None);
+                        let mut binding = binding.clone();
+                        if let Err(error) = &resolved {
+                            binding.status = "unresolved";
+                            binding.diagnostic = Some(error.to_string());
+                        }
+                        result.effects.push(ImbueEffect {
+                            binding,
+                            stat: effect["stat"].as_str().map(str::to_owned),
+                            property_name: effect["property_name"].as_str().map(str::to_owned),
+                            value: resolved.ok(),
+                            unit: effect["stat"]
+                                .as_str()
+                                .and_then(AbilityStat::from_symbol)
+                                .map(|_| "%"),
+                            apply_filter: filter.unwrap_or_default().into(),
+                            source: item.record_key.clone(),
+                            definition_path: effect["definition_path"]
+                                .as_str()
+                                .unwrap_or(&item.definition_path)
+                                .into(),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 /// Defaults to the current hero's signature abilities. Explicit IDs can select items.
 #[derive(Clone, Debug)]
 pub struct AbilityStatQuery {
-    selection: ImbueQuery,
+    pub(in crate::hero_stats) selection: ImbueQuery,
     stats: Vec<AbilityStat>,
     mode: StatMode,
     abilities: Option<Vec<u32>>,
@@ -175,6 +239,18 @@ impl AbilityStatQuery {
         self.strict = strict;
         self
     }
+    pub(in crate::hero_stats) fn collect(
+        &self,
+        ctx: &Context,
+        catalog: &StatCatalog,
+        modifiers: &EffectiveModifierState,
+        result: &mut AbilityStatResult,
+    ) -> Result<()> {
+        for (hero, controller) in players(ctx, self.selection.steam_ids.as_deref())? {
+            calculate_player(ctx, catalog, modifiers, controller, hero, self, result)?;
+        }
+        Ok(())
+    }
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct AbilityMetadata {
@@ -229,6 +305,16 @@ pub struct ImbueResult {
     pub effects: Vec<ImbueEffect>,
     pub metadata: AbilityMetadata,
 }
+impl ImbueResult {
+    pub(in crate::hero_stats) fn new(catalog: &StatCatalog) -> Self {
+        Self {
+            bindings: Vec::new(),
+            effects: Vec::new(),
+            metadata: AbilityMetadata::new(catalog, &[], None),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EffectScope {
@@ -288,6 +374,42 @@ pub struct AbilityStatResult {
     pub values: Vec<AbilityStatRow>,
     pub contributions: Vec<AbilityContribution>,
     pub metadata: AbilityMetadata,
+}
+
+impl AbilityStatResult {
+    pub(in crate::hero_stats) fn prepare(
+        query: &AbilityStatQuery,
+        catalog: &StatCatalog,
+        rules: &AbilityRuleset,
+    ) -> Result<Self> {
+        query.selection.validate()?;
+        if query.stats.is_empty() {
+            return Err(invalid("provide at least one ability stat"));
+        }
+        for stat in &query.stats {
+            if rules.0.get(stat) != Some(&stat.rule()) {
+                return Err(invalid(format!("select {}", stat.rule().id)));
+            }
+        }
+        Ok(Self {
+            values: Vec::new(),
+            contributions: Vec::new(),
+            metadata: AbilityMetadata::new(catalog, &query.stats, Some(query.mode)),
+        })
+    }
+
+    pub(in crate::hero_stats) fn finish(&self, query: &AbilityStatQuery) -> Result<()> {
+        if let Some(ids) = &query.abilities {
+            for id in ids {
+                if !self.values.iter().any(|row| row.ability_id == *id) {
+                    return Err(invalid(format!(
+                        "ability {id} is not owned by a selected player"
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 fn display(record: &Record) -> Option<String> {
@@ -379,66 +501,10 @@ impl Parser {
     /// # Errors
     /// Invalid ticks, players, or missing imbue fields return an error.
     pub fn imbues(&self, query: &ImbueQuery, catalog: &StatCatalog) -> Result<ImbueResult> {
-        let mut result = ImbueResult {
-            bindings: Vec::new(),
-            effects: Vec::new(),
-            metadata: AbilityMetadata::new(catalog, &[], None),
-        };
+        query.validate()?;
+        let mut result = ImbueResult::new(catalog);
         self.visit_stat_ticks(&query.ticks, catalog, |ctx, _| {
-            for (hero, controller) in players(ctx, query.steam_ids.as_deref())? {
-                let mut scratch = Vec::new();
-                let resolver = resolver(ctx, catalog, controller, hero, &mut scratch);
-                for (item_id, ability_id) in bindings(ctx, controller)? {
-                    let item = catalog.abilities.get(&item_id);
-                    let ability = catalog.abilities.get(&ability_id);
-                    let missing = item.is_none() || ability.is_none();
-                    let binding = ImbueBinding {
-                        tick: ctx.tick(),
-                        steam_id: resolver.steam_id,
-                        hero_id: hero,
-                        item_id,
-                        item_name: item.and_then(display),
-                        ability_id,
-                        ability_name: ability.and_then(display),
-                        status: if missing { "unresolved" } else { "recorded" },
-                        diagnostic: missing.then(|| {
-                            "imbue is recorded; catalog source or target is missing".into()
-                        }),
-                    };
-                    result.bindings.push(binding.clone());
-                    if let Some(item) = item {
-                        for effect in &item.stat_changes {
-                            let filter = apply_filter(catalog, item, effect);
-                            if scope(filter) != EffectScope::Imbued {
-                                continue;
-                            }
-                            let resolved = resolver.effect(effect, item, None);
-                            let mut binding = binding.clone();
-                            if let Err(error) = &resolved {
-                                binding.status = "unresolved";
-                                binding.diagnostic = Some(error.to_string());
-                            }
-                            result.effects.push(ImbueEffect {
-                                binding,
-                                stat: effect["stat"].as_str().map(str::to_owned),
-                                property_name: effect["property_name"].as_str().map(str::to_owned),
-                                value: resolved.ok(),
-                                unit: effect["stat"]
-                                    .as_str()
-                                    .and_then(AbilityStat::from_symbol)
-                                    .map(|_| "%"),
-                                apply_filter: filter.unwrap_or_default().into(),
-                                source: item.record_key.clone(),
-                                definition_path: effect["definition_path"]
-                                    .as_str()
-                                    .unwrap_or(&item.definition_path)
-                                    .into(),
-                            });
-                        }
-                    }
-                }
-            }
-            Ok(())
+            query.collect(ctx, catalog, &mut result)
         })?;
         Ok(result)
     }
@@ -452,42 +518,11 @@ impl Parser {
         catalog: &StatCatalog,
         rules: &AbilityRuleset,
     ) -> Result<AbilityStatResult> {
-        if query.stats.is_empty() {
-            return Err(invalid("provide at least one ability stat"));
-        }
-        for stat in &query.stats {
-            if rules.0.get(stat) != Some(&stat.rule()) {
-                return Err(invalid(format!("select {}", stat.rule().id)));
-            }
-        }
-        let mut result = AbilityStatResult {
-            values: Vec::new(),
-            contributions: Vec::new(),
-            metadata: AbilityMetadata::new(catalog, &query.stats, Some(query.mode)),
-        };
+        let mut result = AbilityStatResult::prepare(query, catalog, rules)?;
         self.visit_stat_ticks(&query.selection.ticks, catalog, |ctx, modifiers| {
-            for (hero, controller) in players(ctx, query.selection.steam_ids.as_deref())? {
-                calculate_player(
-                    ctx,
-                    catalog,
-                    modifiers,
-                    controller,
-                    hero,
-                    query,
-                    &mut result,
-                )?;
-            }
-            Ok(())
+            query.collect(ctx, catalog, modifiers, &mut result)
         })?;
-        if let Some(ids) = &query.abilities {
-            for id in ids {
-                if !result.values.iter().any(|row| row.ability_id == *id) {
-                    return Err(invalid(format!(
-                        "ability {id} is not owned by a selected player"
-                    )));
-                }
-            }
-        }
+        result.finish(query)?;
         Ok(result)
     }
 }
@@ -505,6 +540,7 @@ fn resolver<'a, 'b>(
         controller,
         steam_id: steam_id(ctx, controller),
         hero_id,
+        stat: HeroStat::ClipSize,
         game_time: ModifierClock::resolve(ctx).game_time(ctx).map(f64::from),
         game_start: ctx
             .entities()
