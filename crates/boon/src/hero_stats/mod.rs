@@ -1,6 +1,7 @@
 //! Calculated hero stats from replay state, boon-data and explicit equations.
 //!
 //! Clip size is magazine capacity, not remaining rounds or unlimited-ammo state.
+mod batch;
 mod catalog;
 mod inputs;
 mod lifetimes;
@@ -8,6 +9,7 @@ use crate::{
     Parser,
     rulesets::{self, Rule},
 };
+pub use batch::{StatBatch, StatBatchResult};
 pub use catalog::StatCatalog;
 pub use inputs::abilities as ability_stats;
 use serde::Serialize;
@@ -325,6 +327,8 @@ pub struct Contribution {
     /// Recorded Steam account ID; absent for players without an account.
     pub steam_id: Option<u64>,
     pub hero_id: i64,
+    /// Calculated stat this input contributes to, including intermediate inputs.
+    pub stat: HeroStat,
     pub input: String,
     pub kind: &'static str,
     pub value: f64,
@@ -350,6 +354,55 @@ pub struct StatResult {
     pub metadata: CalculationMetadata,
 }
 
+impl StatResult {
+    fn prepare(
+        query: &HeroStatQuery,
+        catalog: &StatCatalog,
+        rules: &Ruleset,
+    ) -> Result<Self, CalculationError> {
+        validate_ticks(&query.ticks)?;
+        if query.stats.is_empty() {
+            return Err(CalculationError::Invalid(
+                "provide at least one stat".into(),
+            ));
+        }
+        for stat in &query.stats {
+            if rules.rules.get(stat) != Some(&stat.rule()) {
+                return Err(CalculationError::Invalid(format!(
+                    "select {} for {}",
+                    stat.rule().id,
+                    stat.as_str()
+                )));
+            }
+        }
+        Ok(Self {
+            values: Vec::new(),
+            contributions: Vec::new(),
+            metadata: CalculationMetadata {
+                mode: query.mode,
+                data_version: catalog.data_version.clone(),
+                snapshot_version: catalog.snapshot_version.clone(),
+                source_commit: catalog.source_commit.clone(),
+                rulesets: query.stats.iter().map(|stat| stat.rule()).collect(),
+            },
+        })
+    }
+
+    fn finish(&mut self) {
+        self.values
+            .sort_by_key(|row| (row.tick, row.steam_id, row.hero_id, row.stat));
+    }
+}
+
+fn validate_ticks(ticks: &[i32]) -> Result<(), CalculationError> {
+    if ticks.is_empty() || ticks.iter().any(|tick| *tick < 0) {
+        return Err(CalculationError::Invalid(
+            "provide nonnegative ticks".into(),
+        ));
+    }
+    Ok(())
+}
+
 impl Parser {
     /// Calculate selected hero stats after each requested demo tick.
     ///
@@ -363,37 +416,11 @@ impl Parser {
         catalog: &StatCatalog,
         rules: &Ruleset,
     ) -> Result<StatResult, CalculationError> {
-        if query.ticks.is_empty() || query.ticks.iter().any(|t| *t < 0) || query.stats.is_empty() {
-            return Err(CalculationError::Invalid(
-                "provide nonnegative ticks and at least one stat".into(),
-            ));
-        }
-        for stat in &query.stats {
-            if rules.rules.get(stat) != Some(&stat.rule()) {
-                return Err(CalculationError::Invalid(format!(
-                    "select {} for {}",
-                    stat.rule().id,
-                    stat.as_str()
-                )));
-            }
-        }
-        let mut result = StatResult {
-            values: Vec::new(),
-            contributions: Vec::new(),
-            metadata: CalculationMetadata {
-                mode: query.mode,
-                data_version: catalog.data_version.clone(),
-                snapshot_version: catalog.snapshot_version.clone(),
-                source_commit: catalog.source_commit.clone(),
-                rulesets: query.stats.iter().map(|stat| stat.rule()).collect(),
-            },
-        };
+        let mut result = StatResult::prepare(query, catalog, rules)?;
         self.visit_stat_ticks(&query.ticks, catalog, |ctx, modifiers| {
             inputs::collect(ctx, query, catalog, modifiers, &mut result)
         })?;
-        result
-            .values
-            .sort_by_key(|r| (r.tick, r.steam_id, r.hero_id, r.stat));
+        result.finish();
         Ok(result)
     }
     pub(crate) fn visit_stat_ticks(
@@ -405,11 +432,7 @@ impl Parser {
             &crate::EffectiveModifierState,
         ) -> Result<(), CalculationError>,
     ) -> Result<(), CalculationError> {
-        if requested.is_empty() || requested.iter().any(|tick| *tick < 0) {
-            return Err(CalculationError::Invalid(
-                "provide nonnegative ticks".into(),
-            ));
-        }
+        validate_ticks(requested)?;
         let mut ticks = requested.to_vec();
         ticks.sort_unstable();
         ticks.dedup();

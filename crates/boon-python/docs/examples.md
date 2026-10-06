@@ -76,7 +76,7 @@ report = demo.calculate_hero_stats(
 values = report.values.join(roster, on="steam_id", how="left", validate="m:1")
 print(values.sort("tick", "player_name", "stat"))
 print(values.filter(pl.col("status") != "calculated"))
-print(report.contributions)
+print(report.contributions.filter(pl.col("stat") == "clip_size"))
 print(report.metadata)
 ```
 

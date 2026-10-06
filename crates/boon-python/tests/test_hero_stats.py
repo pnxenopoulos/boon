@@ -47,6 +47,41 @@ class RecordedResult:
         )
 
 
+def test_contributions_retain_target_stats_for_shared_inputs(monkeypatch, tmp_path):
+    class Contributions(RecordedResult):
+        def _calculate_hero_stats(self, directory, ticks, **kwargs):
+            payload = json.loads(super()._calculate_hero_stats(directory, ticks, **kwargs))
+            payload["contributions"] = [
+                {
+                    "mode": kwargs["mode"],
+                    "tick": ticks[0],
+                    "steam_id": 76561197999389679,
+                    "hero_id": 999,
+                    "stat": stat,
+                    "input": "spirit_power",
+                    "kind": "flat",
+                    "value": 10.0,
+                    "source": "test",
+                    "definition_path": "/test",
+                    "modifier_serial": None,
+                }
+                for stat in ("clip_size", "weapon_damage")
+            ]
+            return json.dumps(payload)
+
+    monkeypatch.setattr(data, "update", lambda version: tmp_path)
+    report = calculate_hero_stats(
+        cast(Demo, Contributions()),
+        ticks=50,
+        stats=[HeroStat.CLIP_SIZE, HeroStat.WEAPON_DAMAGE],
+        data_version=VERSION,
+        explain=True,
+    )
+    assert report.contributions["stat"].to_list() == ["clip_size", "weapon_damage"]
+    assert report.contributions.filter(pl.col("stat") == "weapon_damage").height == 1
+    assert report.contributions["input"].to_list() == ["spirit_power", "spirit_power"]
+
+
 def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_path):
     index, files = release()
     requests = []
@@ -73,6 +108,7 @@ def test_query_uses_verified_download_and_reuses_local_catalog(monkeypatch, tmp_
     assert result.values.schema["value"] == pl.Float64
     assert result.metadata["data_version"] == VERSION
     assert result.contributions.schema["modifier_serial"] == pl.UInt32
+    assert result.contributions.schema["stat"] == pl.String
     assert demo.calls[0] == (
         tmp_path / VERSION,
         [50],

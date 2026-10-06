@@ -47,10 +47,17 @@ impl StateCatalog {
     /// # Errors
     /// Returns an error for unreadable data or a missing or invalid state mapping.
     pub fn from_directory(directory: &Path) -> Result<Self> {
-        Self::from_bytes(&fs::read(directory.join("modifiers.json"))?)
+        Self::from_json_bytes(&fs::read(directory.join("modifiers.json"))?)
     }
 
-    fn from_bytes(bytes: &[u8]) -> Result<Self> {
+    /// Read the state-name mapping from `modifiers.json` bytes.
+    ///
+    /// This is the filesystem-free counterpart to [`Self::from_directory`].
+    /// No network or checksum validation is performed.
+    ///
+    /// # Errors
+    /// Returns an error for invalid JSON or a missing or invalid state mapping.
+    pub fn from_json_bytes(bytes: &[u8]) -> Result<Self> {
         #[derive(Deserialize)]
         struct File {
             catalog: String,
@@ -424,7 +431,7 @@ mod tests {
     use serde_json::json;
 
     fn catalog(mapping: serde_json::Value) -> Result<StateCatalog> {
-        StateCatalog::from_bytes(
+        StateCatalog::from_json_bytes(
             &serde_json::to_vec(&json!({
                 "catalog":"modifiers", "client_version":"test", "source_commit":"test",
                 "modifier_states":mapping,
@@ -443,6 +450,26 @@ mod tests {
             DecodeProfile::new(BareCharEncoding::UnsignedVarint, PreciseQAngleMode::Raw),
         )
         .unwrap()
+    }
+
+    #[test]
+    fn byte_loader_matches_directory_and_rejects_invalid_catalogs() {
+        let bytes = serde_json::to_vec(&json!({
+            "catalog":"modifiers", "client_version":"12345", "source_commit":"test",
+            "modifier_states":{"2":"MODIFIER_STATE_STUNNED"},
+        }))
+        .unwrap();
+        let folder = tempfile::tempdir().unwrap();
+        fs::write(folder.path().join("modifiers.json"), &bytes).unwrap();
+        let direct = StateCatalog::from_json_bytes(&bytes).unwrap();
+        let directory = StateCatalog::from_directory(folder.path()).unwrap();
+        assert_eq!(direct.client_version, directory.client_version);
+        assert_eq!(direct.source_commit, directory.source_commit);
+        assert_eq!(direct.decode(&[4, 1]), directory.decode(&[4, 1]));
+        assert!(StateCatalog::from_json_bytes(b"not json").is_err());
+        let mut wrong: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        wrong["catalog"] = json!("abilities");
+        assert!(StateCatalog::from_json_bytes(&serde_json::to_vec(&wrong).unwrap()).is_err());
     }
 
     #[test]

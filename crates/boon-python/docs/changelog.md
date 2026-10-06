@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.13.0
+
+- Add Rust catalog loading from JSON bytes and single-pass stat batches.
+- Add the target stat to hero-stat contributions.
+
 ## 0.12.0
 
 - Fix world coordinates for current Deadlock demos.
