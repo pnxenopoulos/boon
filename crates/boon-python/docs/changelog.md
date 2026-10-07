@@ -8,6 +8,7 @@
 - Validate full entity handles. Use pbdems2 0.3.5.
 - Correct Urn carrier events. Confirm returns from channel completion and delivery-point closure.
 - Remove corruption-specific stat detection.
+- Update protobufs to Deadlock 6759 (`boon-proto 0.4.11094174+6759`).
 
 ## 0.13.0
 
