@@ -85,6 +85,7 @@ pub mod rift;
 pub mod rulesets;
 pub mod stat_modifiers;
 pub mod teams;
+pub mod urn;
 
 // Re-export commonly used types at the crate root for convenience
 pub use catalog_names::CatalogNames;

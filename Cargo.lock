@@ -263,7 +263,7 @@ dependencies = [
 
 [[package]]
 name = "boon-deadlock"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "boon-proto",
  "criterion",
@@ -281,7 +281,7 @@ dependencies = [
 
 [[package]]
 name = "boon-dev"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "anyhow",
  "boon-deadlock",
@@ -296,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "boon-proto"
-version = "0.4.11080740+6746"
+version = "0.4.11094174+6759"
 dependencies = [
  "bytes",
  "prost",
@@ -306,7 +306,7 @@ dependencies = [
 
 [[package]]
 name = "boon-python"
-version = "0.13.0"
+version = "0.14.0"
 dependencies = [
  "boon-deadlock",
  "boon-proto",
@@ -1666,9 +1666,9 @@ dependencies = [
 
 [[package]]
 name = "pbdems2"
-version = "0.3.4"
+version = "0.3.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8e24db84434d6755ebdf3cea0001c669141e888528c9ec709ebf5ae59f684aff"
+checksum = "a86d329c00ab31ea424f17d08b2eb82205ba855fe7e71c873be7bba6a40aa2b0"
 dependencies = [
  "rustc-hash",
  "serde",

@@ -373,6 +373,9 @@ fn create_string_table(message: CsvcMsgCreateStringTable) -> CreateStringTable {
         message.string_data.unwrap_or_default(),
     )
     .with_flags(message.flags.unwrap_or_default());
+    if table.name == "ActiveModifiers" {
+        table = table.with_change_tracking();
+    }
     if message.user_data_fixed_size.unwrap_or_default() {
         table = table.with_fixed_user_data(
             message.user_data_size.unwrap_or_default(),

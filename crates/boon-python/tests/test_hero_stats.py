@@ -184,9 +184,15 @@ def test_native_error_is_exposed_as_calculation_error(monkeypatch, tmp_path):
         calculate_hero_stats(cast(Demo, Unresolved()), ticks=50, data_version=VERSION)
 
 
-def test_old_catalog_has_actionable_native_error(demo_paths):
+def test_old_catalog_has_actionable_native_error(demo_paths, tmp_path, monkeypatch):
     if not demo_paths:
         pytest.skip("no demo fixtures")
+    for name in ("heroes", "abilities", "modifiers", "misc"):
+        records = [{"hero_id": 1, "hero_name": "Infernus"}] if name == "heroes" else []
+        (tmp_path / f"{name}.json").write_text(
+            json.dumps({"catalog": name, "client_version": VERSION, "source_commit": "a" * 40, "records": records})
+        )
+    monkeypatch.setattr(data, "update", lambda _: tmp_path)
     demo = Demo(str(demo_paths[0]), preload=False)
     with pytest.raises(CalculationError, match="boon versions.*boon get"):
         demo.calculate_hero_stats(ticks=1000, data_version=VERSION)

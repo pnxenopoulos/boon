@@ -1317,9 +1317,12 @@ Not loaded by default. Access this property or call `load("ability_ticks")` expl
 demo.urn  # polars.DataFrame
 ```
 
-Urn lifecycle events. Boon finds urn pickup, drop, and return events in the
-`ActiveModifiers` string table. It finds delivery point activation and
-deactivation in `CCitadelIdolReturnTrigger` entities.
+Urn lifecycle events use the shared effective modifier tracker and boon-data IDs.
+The carrier modifier gives pickup and drop events. A return requires carrier loss,
+a completed channel, and delivery-point closure on the same tick.
+Entry into the delivery area does not give a return event.
+Boon reads delivery-point changes from `CCitadelIdolReturnTrigger` entities.
+Missing return evidence gives a drop event. See [Urn limits](known-issues.md#urn-returns).
 
 Not loaded by default. Access this property or call `load("urn")` explicitly.
 
@@ -1651,3 +1654,12 @@ Invalid selections and missing ticks still cause errors.
 A catalog download, metadata check, or file-integrity check failed.
 Read the error message for repair commands.
 See {doc}`data` for installation and `boon get VERSION --force`.
+
+## Modifier events
+
+`demo.active_modifiers` returns `applied`, `changed`, and `removed` events.
+It uses the shared lifetime rules for durations, aura range, observed catalog
+states, and deletion of an observed source ability for intrinsic effects.
+A table snapshot is not a new event. New applications can affect multiple players
+on the same tick. Missing evidence does not end an effect.
+The query uses local game data and downloads the latest data if none is installed.

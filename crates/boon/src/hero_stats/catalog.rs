@@ -1,7 +1,11 @@
 use super::CalculationError;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::{collections::HashMap, fs, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    fs,
+    path::Path,
+};
 
 type Result<T> = std::result::Result<T, CalculationError>;
 
@@ -114,6 +118,34 @@ pub struct StatCatalog {
 }
 
 impl StatCatalog {
+    pub(crate) fn ability_modifier_ids(
+        &self,
+        ability_name: &str,
+        field: &str,
+    ) -> Result<(u32, HashSet<u32>)> {
+        if let Some(&id) = self.ability_names.get(ability_name)
+            && let Some(ability) = self.abilities.get(&id)
+        {
+            let path = format!("{}/{field}", ability.definition_path);
+            let ids: HashSet<_> = self
+                .modifiers
+                .iter()
+                .filter(|record| record.ability_id == Some(id) && record.definition_path == path)
+                .flat_map(|record| {
+                    [record.modifier_id, record.qualified_modifier_id]
+                        .into_iter()
+                        .flatten()
+                })
+                .collect();
+            if !ids.is_empty() {
+                return Ok((id, ids));
+            }
+        }
+        Err(CalculationError::Invalid(format!(
+            "catalog lacks {ability_name}.{field}; refresh boon-data with `boon get VERSION --force`"
+        )))
+    }
+
     /// Read a verified version installed by `boon get`, downloading it if missing.
     ///
     /// # Errors
@@ -269,6 +301,45 @@ impl StatCatalog {
             .copied()
             .flatten()?;
         Some(&self.modifiers[index])
+    }
+
+    pub(crate) fn modifier_state_definitions(
+        &self,
+    ) -> HashMap<u32, Vec<crate::modifier_state::lifetimes::StateDefinition>> {
+        self.modifier_ids
+            .iter()
+            .map(|(&id, indices)| {
+                let definitions = indices
+                    .iter()
+                    .map(|&index| {
+                        let record = &self.modifiers[index];
+                        let mask = record.definition["m_nEnabledStateMask"]
+                            .as_str()
+                            .and_then(|names| {
+                                names
+                                    .split('|')
+                                    .map(str::trim)
+                                    .filter(|name| !name.is_empty())
+                                    .map(|name| {
+                                        let index = *self.modifier_states.get(name)?;
+                                        Some((index as usize / 32, 1 << (index % 32)))
+                                    })
+                                    .collect::<Option<Vec<_>>>()
+                            })
+                            .unwrap_or_default();
+                        crate::modifier_state::lifetimes::StateDefinition {
+                            ability: record.ability_id,
+                            mask,
+                            intrinsic: record
+                                .ability_id
+                                .and_then(|id| self.abilities.get(&id))
+                                .is_some_and(|ability| record.is_intrinsic_modifier_of(ability)),
+                        }
+                    })
+                    .collect();
+                (id, definitions)
+            })
+            .collect()
     }
 
     pub(super) fn modifier(&self, id: u32, ability: Option<u32>) -> Result<&Record> {

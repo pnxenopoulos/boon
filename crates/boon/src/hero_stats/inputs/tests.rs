@@ -241,36 +241,6 @@ fn bound_spirit_bonuses_use_catalog_stages_and_require_activation() {
     }
 }
 
-#[test]
-fn absent_catalog_states_exclude_old_modifiers_but_missing_evidence_does_not() {
-    let folder = super::super::catalog::tests::fixture();
-    let path = folder.path().join("modifiers.json");
-    let mut file: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    file["modifier_states"] = json!({"35":"MODIFIER_STATE_TEST", "70":"MODIFIER_STATE_OTHER"});
-    file["records"][2]["definition"]["m_nEnabledStateMask"] =
-        json!("MODIFIER_STATE_TEST | MODIFIER_STATE_OTHER");
-    std::fs::write(path, serde_json::to_vec(&file).unwrap()).unwrap();
-    let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
-    let source = catalog.modifier(12, None).unwrap();
-    assert!(modifier_states_absent(source, &catalog, &[0, 0, 0]));
-    for evidence in [&[0, 8, 0][..], &[0, 0, 64], &[0], &[]] {
-        assert!(!modifier_states_absent(source, &catalog, evidence));
-    }
-    // A new or unavailable enum mapping cannot establish inactivity.
-    catalog.modifier_states.remove("MODIFIER_STATE_OTHER");
-    assert!(!modifier_states_absent(
-        catalog.modifier(12, None).unwrap(),
-        &catalog,
-        &[0, 0, 0]
-    ));
-    // Ordinary modifiers without declared states keep their normal lifetime.
-    assert!(!modifier_states_absent(
-        catalog.modifier(10, None).unwrap(),
-        &catalog,
-        &[0, 0, 0]
-    ));
-}
-
 fn stat_result(
     catalog: &StatCatalog,
     active: bool,
@@ -2333,28 +2303,6 @@ fn conditional_properties_use_the_unique_owner_modifier_with_diagnostics() {
     assert!(ignored.is_empty() && inferred.is_empty());
     assert_eq!(trace.len(), 1);
     assert_eq!(trace[0].modifier_serial, Some(42));
-}
-
-#[test]
-fn a_removed_ability_ends_only_its_intrinsic_modifiers() {
-    let folder = super::super::catalog::tests::fixture();
-    let mut catalog = StatCatalog::from_directory(folder.path()).unwrap();
-    catalog.modifiers[2].ability_id = Some(123);
-    catalog.modifiers[2].definition_path = "/test_gun/m_AutoIntrinsicModifiers/0".into();
-    let ctx = Context::new(1.0 / 64.0).unwrap();
-    let mut entry = CModifierTableEntry {
-        modifier_subclass: Some(12),
-        ability_subclass: Some(123),
-        ability: Some(1234),
-        ..Default::default()
-    };
-    assert!(!intrinsic_ability_present(&ctx, &catalog, &entry));
-    // A timed cast buff may survive destruction of the source ability.
-    catalog.modifiers[2].definition_path = "/test_gun/m_BuffModifier".into();
-    assert!(intrinsic_ability_present(&ctx, &catalog, &entry));
-    catalog.modifiers[2].definition_path = "/test_gun/m_AutoIntrinsicModifiers/0".into();
-    entry.ability = None;
-    assert!(intrinsic_ability_present(&ctx, &catalog, &entry));
 }
 
 #[test]

@@ -481,6 +481,12 @@
       "ability_id": 84321454,
       "ability_name": "upgrade_quick_silver",
       "display_name": "Quicksilver Reload"
+    },
+    {
+      "record_key": "abilities.vdata#/ability_golden_idol",
+      "definition_path": "/ability_golden_idol",
+      "ability_id": 2521299219,
+      "ability_name": "ability_golden_idol"
     }
   ],
   "modifiers": [
@@ -494,7 +500,10 @@
       "modifier_id": 2059539911,
       "modifier_name": "timer",
       "qualified_modifier_id": 2905152593,
-      "qualified_modifier_name": "ability_golden_idol/timer"
+      "qualified_modifier_name": "ability_golden_idol/timer",
+      "record_key": "abilities.vdata#/ability_golden_idol/m_DropoffTimerModifier",
+      "definition_path": "/ability_golden_idol/m_DropoffTimerModifier",
+      "ability_id": 2521299219
     },
     {
       "modifier_id": 2059539911,
@@ -519,6 +528,15 @@
       "modifier_name": "timer",
       "qualified_modifier_id": 229220981,
       "qualified_modifier_name": "modifier_rejuv_pickup_aura/timer"
+    },
+    {
+      "record_key": "abilities.vdata#/ability_golden_idol/m_HoldingIdolModifier",
+      "definition_path": "/ability_golden_idol/m_HoldingIdolModifier",
+      "ability_id": 2521299219,
+      "modifier_id": 1537269736,
+      "modifier_name": "modifier_citadel_holding_golden_idol",
+      "qualified_modifier_id": 3062547506,
+      "qualified_modifier_name": "ability_golden_idol/modifier_citadel_holding_golden_idol"
     }
   ],
   "misc": [

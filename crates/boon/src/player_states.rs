@@ -160,14 +160,10 @@ impl PlayerStateQuery {
 }
 
 /// Cached wire keys for a fixed array. Its length comes from the demo schema.
+#[derive(Clone, Debug)]
 struct MaskKeys(Vec<u64>);
-/// Bits present in any recorded mask, without assigning mask precedence.
-/// A disabled bit can hide a live modifier's state, so it also counts as evidence.
-pub(crate) fn modifier_state_evidence(ctx: &Context, pawn: &Entity) -> Option<Vec<u32>> {
-    StateEvidenceKeys::resolve(ctx.serializers().get(&pawn.class_name)?)?.read(pawn)
-}
-
 /// Resolve once for consumers that check modifier lifetimes on every tick.
+#[derive(Clone, Debug)]
 pub(crate) struct StateEvidenceKeys([MaskKeys; 3]);
 
 impl StateEvidenceKeys {

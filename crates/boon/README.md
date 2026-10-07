@@ -177,3 +177,38 @@ parser.run_to_end_filtered(&filter, |ctx| {
 ## License
 
 MIT &mdash; see [LICENSE](https://github.com/pnxenopoulos/boon/blob/main/LICENSE) for details.
+
+### Effective modifier lifetimes
+
+Use the same catalog as your stat queries:
+
+```rust,no_run
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let parser = boon::Parser::from_file(std::path::Path::new("match.dem"))?;
+let catalog = boon::hero_stats::StatCatalog::load("6746")?;
+let initial = parser.parse_init()?;
+let clock = boon::ModifierClock::resolve(&initial);
+let mut modifiers = boon::EffectiveModifierState::with_catalog(&catalog);
+modifiers.rebuild(&initial, clock.game_time(&initial));
+parser.run_to_end(|ctx| {
+    for change in modifiers.update(ctx, clock.game_time(ctx)) {
+        // Use these changes to build modifier spans.
+        println!("{} {} {}", ctx.tick(), change.serial, change.kind.as_str());
+    }
+    // modifiers.entries(): effective applications.
+    // modifiers.raw_entries(): merged replay rows, including ended effects.
+})?;
+# Ok(())
+# }
+```
+
+Catalog rules require observed state transitions or source-ability deletions.
+Missing evidence does not end an effect. A partial value update cannot revive
+an ended application; a new application time or full handle can.
+`Default` uses duration and aura rules only. It does not load a catalog.
+Replay from signon for exact history; a keyframe cannot recover earlier evidence.
+Python `demo.active_modifiers` and `boon-dev active-modifiers` use local game data
+and download the latest data if none is installed.
+Use `boon::urn::UrnState::with_catalog(&catalog)` for Urn carrier events.
+Pass the shared modifier changes, modifier time, and observed delivery-point closure to `update()`.
+The tracker reads IDs from the catalog. Entry into the delivery area does not prove a return.

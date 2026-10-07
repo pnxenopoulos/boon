@@ -599,13 +599,8 @@ impl Effect {
             .iter()
             .filter_map(|(item, target)| (Some(*item) == source_ability_id).then_some(*target))
             .collect();
-        let corruption = resolver.corruption_diagnostic(definition, source, entry);
-        let fatal = value.is_err() || corruption.is_err();
-        let diagnostic = value
-            .as_ref()
-            .err()
-            .map(ToString::to_string)
-            .or_else(|| corruption.unwrap_or_else(|error| Some(error.to_string())));
+        let fatal = value.is_err();
+        let diagnostic = value.as_ref().err().map(ToString::to_string);
         Some(Self {
             stat,
             source: source.record_key.clone(),

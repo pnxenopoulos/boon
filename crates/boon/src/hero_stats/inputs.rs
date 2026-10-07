@@ -397,32 +397,6 @@ enum ValuePolicy {
     Recipient,
 }
 
-// Item removal can destroy its ability without a modifier-table removal row.
-// Only intrinsic modifiers depend on that entity's lifetime; cast effects can
-// outlive their source ability. Missing handles do not prove removal.
-fn intrinsic_ability_present(
-    ctx: &Context,
-    catalog: &StatCatalog,
-    entry: &CModifierTableEntry,
-) -> bool {
-    let Some(handle) = entry.ability.filter(|h| *h != crate::INVALID_ENTITY_HANDLE) else {
-        return true;
-    };
-    if ctx.entities().get_by_handle(handle).is_some() {
-        return true;
-    }
-    let Some(owner) = entry
-        .ability_subclass
-        .and_then(|id| catalog.abilities.get(&id))
-    else {
-        return true;
-    };
-    entry
-        .modifier_subclass
-        .and_then(|id| catalog.modifier(id, entry.ability_subclass).ok())
-        .is_none_or(|modifier| !modifier.is_intrinsic_modifier_of(owner))
-}
-
 struct RecordedStat {
     source_id: u32,
     value_type: Option<u32>,
@@ -437,30 +411,6 @@ struct PlayerInputs<'a> {
     owned: Vec<&'a Record>,
     active: Vec<&'a CModifierTableEntry>,
     permanent: Vec<RecordedStat>,
-}
-
-fn modifier_states_absent(source: &Record, catalog: &StatCatalog, evidence: &[u32]) -> bool {
-    let Some(mask) = source.definition["m_nEnabledStateMask"].as_str() else {
-        return false;
-    };
-    let mut declared = false;
-    for name in mask
-        .split('|')
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-    {
-        let Some(&index) = catalog.modifier_states.get(name) else {
-            return false;
-        };
-        let Some(word) = evidence.get(index as usize / u32::BITS as usize) else {
-            return false;
-        };
-        if word & (1 << (index % u32::BITS)) != 0 {
-            return false;
-        }
-        declared = true;
-    }
-    declared
 }
 
 impl<'a> PlayerInputs<'a> {
@@ -478,26 +428,13 @@ impl<'a> PlayerInputs<'a> {
         let weapon = catalog.weapon(hero)?;
         let pawn =
             hero_pawn(ctx, controller).ok_or_else(|| invalid("player has no current pawn"))?;
-        let states = crate::player_states::modifier_state_evidence(ctx, pawn);
         let mut active: Vec<_> = state
             .entries()
             .values()
-            .filter(|m| intrinsic_ability_present(ctx, catalog, m))
             .filter(|m| {
                 m.parent
                     .and_then(|h| ctx.entities().get_by_handle(h))
                     .is_some_and(|e| std::ptr::eq(e, pawn))
-            })
-            .filter(|m| {
-                // Untimed rows can remain after their effects end. A catalog
-                // modifier that enables states cannot still apply when all of
-                // those states are absent. Missing masks or names prove nothing;
-                // a present bit alone does not prove that an old row is active.
-                !states.as_ref().is_some_and(|evidence| {
-                    m.modifier_subclass
-                        .and_then(|id| catalog.modifier(id, m.ability_subclass).ok())
-                        .is_some_and(|source| modifier_states_absent(source, catalog, evidence))
-                })
             })
             .collect();
         active.sort_by_key(|m| m.serial_number);
@@ -588,7 +525,7 @@ impl<'a> Resolver<'a, '_> {
     }
 
     fn recorded_stat(&mut self, recorded: &RecordedStat) -> Result<Option<&'a str>> {
-        // One source can supply several stats (range/radius pickups or corruption).
+        // One source can supply several stat types.
         // The replay records the type; enum numbers come from the selected catalog.
         if let Some(value_type) = recorded.value_type
             && !self.catalog.modifier_value_types.is_empty()
@@ -2122,9 +2059,6 @@ impl<'a> Resolver<'a, '_> {
                     }
                     continue;
                 }
-                if let Some(message) = self.corruption_diagnostic(effect, item, None)? {
-                    self.unmapped_inputs.insert(message);
-                }
                 add(value, Some(effect))?;
                 let kind = contribution_kind(kind, effect);
                 self.record(
@@ -2302,9 +2236,6 @@ impl<'a> Resolver<'a, '_> {
                 {
                     self.infer_binding(effect, ability, source);
                 }
-                if let Some(message) = self.corruption_diagnostic(effect, source, Some(entry))? {
-                    self.unmapped_inputs.insert(message);
-                }
                 add(value, Some(effect))?;
                 let kind = contribution_kind(kind, effect);
                 self.record(input, kind, value, source, path, entry.serial_number);
@@ -2360,39 +2291,6 @@ impl<'a> Resolver<'a, '_> {
             return Err(invalid("nonfinite normalized runtime count"));
         }
         Ok(count)
-    }
-
-    fn corruption_diagnostic(
-        &self,
-        effect: &Value,
-        source: &Record,
-        entry: Option<&CModifierTableEntry>,
-    ) -> Result<Option<String>> {
-        let Some(owner) = source
-            .ability_id
-            .or_else(|| entry.and_then(|e| e.ability_subclass))
-            .and_then(|id| self.catalog.abilities.get(&id))
-        else {
-            return Ok(None);
-        };
-        let Some(changes) =
-            owner.definition["m_CorruptedItemInfo"]["m_Upgrade"]["m_vecPropertyUpgrades"]
-                .as_array()
-        else {
-            return Ok(None);
-        };
-        if !changes.iter().any(|change| change["m_strPropertyName"] == effect["property_name"])
-            // AbilityUpgradeBits_t::ABILITY_UPGRADE_BIT_CORRUPTED is a wire flag,
-            // not an item ID or a balance value. `upgrades` excludes the trained bit.
-            || self.upgrades(entry, owner.ability_id)? & (128 >> 1) == 0
-        {
-            return Ok(None);
-        }
-        Ok(Some(format!(
-            "{} in {} has a corrupted upgrade that is not included; its exact value is not resolved",
-            effect["property_name"].as_str().unwrap_or("property"),
-            owner.record_key,
-        )))
     }
 
     fn check_scaling(&self, effect: &Value) -> Result<()> {

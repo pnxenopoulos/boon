@@ -14759,6 +14759,14 @@ pub mod c_msg_client_to_gc_update_hero_build_response {
     pub enum EResponse {
         KEInternalError = 0,
         KESuccess = 1,
+        KENotAuthor = 2,
+        KEInvalidBuildId = 3,
+        KEInvalidName = 4,
+        KENameTooLong = 5,
+        KEDescriptionTooLong = 6,
+        KEInvalidDetails = 7,
+        KEStaleVersion = 8,
+        KEBuildTooLarge = 9,
     }
     impl EResponse {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -14769,6 +14777,14 @@ pub mod c_msg_client_to_gc_update_hero_build_response {
             match self {
                 Self::KEInternalError => "k_eInternalError",
                 Self::KESuccess => "k_eSuccess",
+                Self::KENotAuthor => "k_eNotAuthor",
+                Self::KEInvalidBuildId => "k_eInvalidBuildID",
+                Self::KEInvalidName => "k_eInvalidName",
+                Self::KENameTooLong => "k_eNameTooLong",
+                Self::KEDescriptionTooLong => "k_eDescriptionTooLong",
+                Self::KEInvalidDetails => "k_eInvalidDetails",
+                Self::KEStaleVersion => "k_eStaleVersion",
+                Self::KEBuildTooLarge => "k_eBuildTooLarge",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -14776,6 +14792,14 @@ pub mod c_msg_client_to_gc_update_hero_build_response {
             match value {
                 "k_eInternalError" => Some(Self::KEInternalError),
                 "k_eSuccess" => Some(Self::KESuccess),
+                "k_eNotAuthor" => Some(Self::KENotAuthor),
+                "k_eInvalidBuildID" => Some(Self::KEInvalidBuildId),
+                "k_eInvalidName" => Some(Self::KEInvalidName),
+                "k_eNameTooLong" => Some(Self::KENameTooLong),
+                "k_eDescriptionTooLong" => Some(Self::KEDescriptionTooLong),
+                "k_eInvalidDetails" => Some(Self::KEInvalidDetails),
+                "k_eStaleVersion" => Some(Self::KEStaleVersion),
+                "k_eBuildTooLarge" => Some(Self::KEBuildTooLarge),
                 _ => None,
             }
         }
@@ -14851,6 +14875,8 @@ pub mod c_msg_client_to_gc_find_hero_builds_response {
         KEInternalError = 0,
         KESuccess = 1,
         KETooBusy = 2,
+        KEMissingHeroId = 3,
+        KEInvalidLanguages = 4,
     }
     impl EResponse {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -14862,6 +14888,8 @@ pub mod c_msg_client_to_gc_find_hero_builds_response {
                 Self::KEInternalError => "k_eInternalError",
                 Self::KESuccess => "k_eSuccess",
                 Self::KETooBusy => "k_eTooBusy",
+                Self::KEMissingHeroId => "k_eMissingHeroID",
+                Self::KEInvalidLanguages => "k_eInvalidLanguages",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -14870,6 +14898,8 @@ pub mod c_msg_client_to_gc_find_hero_builds_response {
                 "k_eInternalError" => Some(Self::KEInternalError),
                 "k_eSuccess" => Some(Self::KESuccess),
                 "k_eTooBusy" => Some(Self::KETooBusy),
+                "k_eMissingHeroID" => Some(Self::KEMissingHeroId),
+                "k_eInvalidLanguages" => Some(Self::KEInvalidLanguages),
                 _ => None,
             }
         }
