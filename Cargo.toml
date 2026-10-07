@@ -9,13 +9,13 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.14.0"
+version = "0.15.0"
 rust-version = "1.88.0"
 
 [workspace.dependencies]
-boon = { path = "crates/boon", package = "boon-deadlock", version = "0.14.0" }
+boon = { path = "crates/boon", package = "boon-deadlock", version = "0.15.0" }
 boon-proto = { path = "crates/boon-proto", version = "0.4" }
-pbdems2 = "0.3.5"
+pbdems2 = "0.3.6"
 anyhow = "1.0"
 criterion = "0.5"
 prost = "0.14"

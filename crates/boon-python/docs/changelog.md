@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.0
+
+- Add bounded exact replay checkpoints for repeated Rust stat batches.
+- Preserve adapter configuration across checkpoints.
+- Use pbdems2 0.3.6.
+
 ## 0.14.0
 
 - Share modifier lifetime rules across stat queries, modifier events, and `boon-dev`. Keep raw modifier data.

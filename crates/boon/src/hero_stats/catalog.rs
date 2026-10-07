@@ -100,6 +100,7 @@ impl Record {
 /// Parsed definitions from one boon-data snapshot. Reuse across queries.
 #[derive(Debug)]
 pub struct StatCatalog {
+    pub(super) identity: std::sync::Arc<()>,
     pub data_version: String,
     pub snapshot_version: String,
     pub source_commit: String,
@@ -258,6 +259,7 @@ impl StatCatalog {
             }
         }
         Ok(Self {
+            identity: std::sync::Arc::new(()),
             data_version: heroes.client_version.clone(),
             snapshot_version: heroes.client_version,
             source_commit: heroes.source_commit,

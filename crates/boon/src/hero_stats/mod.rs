@@ -4,6 +4,7 @@
 mod batch;
 mod catalog;
 mod inputs;
+mod replay;
 use crate::{
     Parser,
     rulesets::{self, Rule},
@@ -11,6 +12,7 @@ use crate::{
 pub use batch::{StatBatch, StatBatchResult};
 pub use catalog::StatCatalog;
 pub use inputs::abilities as ability_stats;
+pub use replay::StatReplay;
 use serde::Serialize;
 use std::collections::HashMap;
 
@@ -426,11 +428,27 @@ impl Parser {
         &self,
         requested: &[i32],
         catalog: &StatCatalog,
+        visit: impl FnMut(
+            &crate::Context,
+            &crate::EffectiveModifierState,
+        ) -> Result<(), CalculationError>,
+    ) -> Result<(), CalculationError> {
+        self.visit_stat_ticks_with_replay(requested, catalog, None, visit)
+    }
+
+    pub(crate) fn visit_stat_ticks_with_replay(
+        &self,
+        requested: &[i32],
+        catalog: &StatCatalog,
+        replay: Option<&StatReplay>,
         mut visit: impl FnMut(
             &crate::Context,
             &crate::EffectiveModifierState,
         ) -> Result<(), CalculationError>,
     ) -> Result<(), CalculationError> {
+        if let Some(replay) = replay {
+            replay.validate(self, catalog)?;
+        }
         validate_ticks(requested)?;
         let mut ticks = requested.to_vec();
         ticks.sort_unstable();
@@ -451,10 +469,16 @@ impl Parser {
             .last()
             .and_then(|t| t.checked_add(1))
             .ok_or_else(|| CalculationError::Invalid("tick is too large".into()))?;
-        let mut modifiers = crate::EffectiveModifierState::with_catalog(catalog);
+        let checkpoint = replay.and_then(|r| r.before(ticks[0]));
+        let mut modifiers = checkpoint.map_or_else(
+            || crate::EffectiveModifierState::with_catalog(catalog),
+            |c| c.modifiers.clone(),
+        );
         let clock = crate::ModifierClock::resolve(&initial);
-        modifiers.rebuild(&initial, clock.game_time(&initial));
-        self.decode_stat_ticks(end, &classes, |ctx| {
+        if checkpoint.is_none() {
+            modifiers.rebuild(&initial, clock.game_time(&initial));
+        }
+        self.stat_checkpoint(checkpoint.map(|c| &c.playback), end - 1, &classes, |ctx| {
             modifiers.update(ctx, clock.game_time(ctx));
             if failure.is_some()
                 || ticks.binary_search(&ctx.tick()).is_err()
