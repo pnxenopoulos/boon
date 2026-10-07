@@ -3,7 +3,7 @@
 //! This module provides the main [`Parser`] for reading Deadlock demo files,
 //! along with command type definitions and header structures.
 
-mod adapter;
+pub(crate) mod adapter;
 mod command;
 pub mod decode;
 mod parser;

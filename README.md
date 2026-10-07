@@ -83,6 +83,15 @@ Use `Parser::calculate_stats` with a `StatBatch` to query hero stats, ability
 stats and imbues in one replay pass. Each query keeps its own selections.
 See [the Rust example](crates/boon/examples/stat_batch.rs).
 
+The unreleased checkpoint API needs the sibling pbdems2 checkpoint branch.
+Test it locally without vendoring or publishing:
+
+```bash
+cargo test -p boon-deadlock --config 'patch.crates-io.pbdems2.path="../pbdems2"'
+```
+
+Release pbdems2 and update its dependency before releasing these Boon changes.
+
 ## Quick Start
 
 ### Python

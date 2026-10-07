@@ -42,7 +42,7 @@ pub(super) struct EventDescriptor {
 }
 
 #[derive(Default)]
-pub(super) struct CitadelAdapter {
+pub(crate) struct CitadelAdapter {
     packet_body: Vec<u8>,
     descriptors: HashMap<i32, EventDescriptor>,
     tick_events: Vec<GameEvent>,
@@ -112,17 +112,51 @@ impl DemoAdapter for CitadelAdapter {
 }
 
 impl CheckpointAdapter for CitadelAdapter {
-    type Checkpoint = HashMap<i32, EventDescriptor>;
+    type Checkpoint = CitadelCheckpoint;
 
     fn checkpoint(&self) -> Self::Checkpoint {
-        self.descriptors.clone()
+        CitadelCheckpoint {
+            descriptors: self.descriptors.clone(),
+            collect_events: self.collect_events,
+            skip_modifier_snapshots: self.skip_modifier_snapshots,
+            event_types: self.event_types.clone(),
+        }
     }
 
     fn from_checkpoint(checkpoint: &Self::Checkpoint) -> Self {
         Self {
-            descriptors: checkpoint.clone(),
+            descriptors: checkpoint.descriptors.clone(),
+            collect_events: checkpoint.collect_events,
+            skip_modifier_snapshots: checkpoint.skip_modifier_snapshots,
+            event_types: checkpoint.event_types.clone(),
             ..Self::default()
         }
+    }
+}
+
+pub(crate) struct CitadelCheckpoint {
+    descriptors: HashMap<i32, EventDescriptor>,
+    collect_events: bool,
+    skip_modifier_snapshots: bool,
+    event_types: Option<HashSet<u32>>,
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::*;
+
+    #[test]
+    fn restores_configuration_without_transient_buffers() {
+        let mut adapter = CitadelAdapter::default();
+        adapter.skip_modifier_snapshots();
+        adapter.enable_event_types(&HashSet::from([42]));
+        adapter.packet_body.extend([1, 2, 3]);
+        let restored = CitadelAdapter::from_checkpoint(&adapter.checkpoint());
+        assert!(restored.skip_modifier_snapshots);
+        assert!(restored.collect_events);
+        assert_eq!(restored.event_types, Some(HashSet::from([42])));
+        assert!(restored.packet_body.is_empty());
+        assert!(restored.tick_events.is_empty());
     }
 }
 

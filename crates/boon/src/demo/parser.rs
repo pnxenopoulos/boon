@@ -130,6 +130,7 @@ impl AsRef<[u8]> for Storage {
 /// The main parser. Owns the demo file data (memory-mapped or in-memory).
 pub struct Parser {
     storage: Storage,
+    replay_identity: std::sync::Arc<()>,
     prepared_cache: OnceLock<PreparedPlayback<CitadelAdapter>>,
     prepared_lock: Mutex<()>,
 }
@@ -145,6 +146,7 @@ impl Parser {
         let mmap = unsafe { Mmap::map(&file)? };
         Ok(Self {
             storage: Storage::Mmap(mmap),
+            replay_identity: std::sync::Arc::new(()),
             prepared_cache: OnceLock::new(),
             prepared_lock: Mutex::new(()),
         })
@@ -157,6 +159,7 @@ impl Parser {
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Self {
             storage: Storage::Bytes(bytes),
+            replay_identity: std::sync::Arc::new(()),
             prepared_cache: OnceLock::new(),
             prepared_lock: Mutex::new(()),
         }

@@ -62,6 +62,27 @@ impl Parser {
         batch: &StatBatch<'_>,
         catalog: &StatCatalog,
     ) -> Result<StatBatchResult, CalculationError> {
+        self.calculate_stat_batch(batch, catalog, None)
+    }
+
+    /// Calculate an exact stat batch using optional prepared replay checkpoints.
+    /// # Errors
+    /// Also rejects checkpoints from a different parser or catalog.
+    pub fn calculate_stats_with_replay(
+        &self,
+        batch: &StatBatch<'_>,
+        catalog: &StatCatalog,
+        replay: &super::StatReplay,
+    ) -> Result<StatBatchResult, CalculationError> {
+        self.calculate_stat_batch(batch, catalog, Some(replay))
+    }
+
+    fn calculate_stat_batch(
+        &self,
+        batch: &StatBatch<'_>,
+        catalog: &StatCatalog,
+        replay: Option<&super::StatReplay>,
+    ) -> Result<StatBatchResult, CalculationError> {
         if batch.hero_stats.is_none() && batch.ability_stats.is_none() && batch.imbues.is_none() {
             return Err(CalculationError::Invalid(
                 "provide at least one stat query".into(),
@@ -98,7 +119,7 @@ impl Parser {
             .chain(&imbue_ticks)
             .copied()
             .collect();
-        self.visit_stat_ticks(&requested, catalog, |ctx, modifiers| {
+        self.visit_stat_ticks_with_replay(&requested, catalog, replay, |ctx, modifiers| {
             if hero_ticks.contains(&ctx.tick())
                 && let (Some((query, _)), Some(result)) = (batch.hero_stats, &mut result.hero_stats)
             {
@@ -241,6 +262,28 @@ mod tests {
             Some(super::super::StatMode::Baseline)
         );
         assert!(result.imbues.unwrap().bindings.is_empty());
+        let replay = parser.prepare_stat_replay(&catalog, 2).unwrap();
+        assert_eq!(replay.len(), 2);
+        let fresh = parser.calculate_stats(&batch, &catalog).unwrap();
+        let cached = parser
+            .calculate_stats_with_replay(&batch, &catalog, &replay)
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(fresh).unwrap(),
+            serde_json::to_value(cached).unwrap()
+        );
+        let other_catalog = StatCatalog::from_directory(folder.path()).unwrap();
+        assert!(
+            parser
+                .calculate_stats_with_replay(&batch, &other_catalog, &replay)
+                .is_err()
+        );
+        assert!(parser.prepare_stat_replay(&catalog, 0).is_err());
+        assert!(
+            Parser::from_bytes(Vec::new())
+                .calculate_stats_with_replay(&batch, &catalog, &replay)
+                .is_err()
+        );
         let result = parser
             .calculate_stats(&StatBatch::new().imbues(&imbues), &catalog)
             .unwrap();

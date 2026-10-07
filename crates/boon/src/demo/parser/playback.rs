@@ -1,4 +1,4 @@
-use pbdems2::{DemoParser, PreparedPlayback};
+use pbdems2::{DemoParser, PlaybackCheckpoint, PreparedPlayback};
 
 use crate::entity::{ClassInfo, SerializerContainer};
 use crate::error::{Error, Result};
@@ -8,6 +8,30 @@ use super::{CitadelAdapter, Context, GameEvent, HEADER_SIZE, Parser};
 const DEFAULT_TICK_INTERVAL: f32 = 1.0 / 30.0;
 
 impl Parser {
+    pub(crate) fn replay_identity(&self) -> &std::sync::Arc<()> {
+        &self.replay_identity
+    }
+
+    pub(crate) fn stat_checkpoint(
+        &self,
+        previous: Option<&PlaybackCheckpoint<CitadelAdapter>>,
+        tick: i32,
+        classes: &std::collections::HashSet<&str>,
+        mut on_tick: impl FnMut(&Context),
+    ) -> Result<PlaybackCheckpoint<CitadelAdapter>> {
+        let parser = self.demo_parser()?;
+        let visit = |ctx: &Context, _: &mut CitadelAdapter| {
+            on_tick(ctx);
+            Ok(())
+        };
+        if let Some(previous) = previous {
+            previous.replay_through(parser, tick, visit)
+        } else {
+            let mut session = self.prepared()?.session(parser)?;
+            session.adapter_mut().skip_modifier_snapshots();
+            session.checkpoint_through(tick, classes, visit)
+        }
+    }
     fn demo_parser(&self) -> Result<DemoParser<'_>> {
         DemoParser::new(self.data()).map_err(Error::from)
     }
