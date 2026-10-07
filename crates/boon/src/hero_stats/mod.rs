@@ -4,7 +4,6 @@
 mod batch;
 mod catalog;
 mod inputs;
-mod lifetimes;
 use crate::{
     Parser,
     rulesets::{self, Rule},
@@ -452,13 +451,11 @@ impl Parser {
             .last()
             .and_then(|t| t.checked_add(1))
             .ok_or_else(|| CalculationError::Invalid("tick is too large".into()))?;
-        let mut modifiers = crate::EffectiveModifierState::default();
+        let mut modifiers = crate::EffectiveModifierState::with_catalog(catalog);
         let clock = crate::ModifierClock::resolve(&initial);
         modifiers.rebuild(&initial, clock.game_time(&initial));
-        let mut lifetimes = lifetimes::ModifierLifetimes::new(&initial, catalog, &modifiers);
         self.decode_stat_ticks(end, &classes, |ctx| {
-            let changes = modifiers.update(ctx, clock.game_time(ctx));
-            lifetimes.update(ctx, catalog, &mut modifiers, &changes);
+            modifiers.update(ctx, clock.game_time(ctx));
             if failure.is_some()
                 || ticks.binary_search(&ctx.tick()).is_err()
                 || !seen.insert(ctx.tick())

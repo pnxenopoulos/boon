@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.0
+
+- Share modifier lifetime rules across stat queries, modifier events, and `boon-dev`. Keep raw modifier data.
+- Preserve ordered modifier changes. Exclude table snapshots from events.
+- Remove the six-player filter from `demo.active_modifiers`.
+- Validate full entity handles. Use pbdems2 0.3.5.
+- Correct Urn carrier events. Confirm returns from channel completion and delivery-point closure.
+- Remove corruption-specific stat detection.
+
 ## 0.13.0
 
 - Add Rust catalog loading from JSON bytes and single-pass stat batches.

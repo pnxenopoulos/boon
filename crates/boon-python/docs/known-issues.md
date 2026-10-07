@@ -11,13 +11,6 @@ Compare results with the demo viewer.
 Report errors on [GitHub](https://github.com/pnxenopoulos/boon/issues) or [Discord](https://discord.gg/WmjZHxWrCD).
 Include the demo, tick, hero, stat, mode, catalog version, calculated value, and viewer value.
 
-Untimed modifiers can stay after their effects end.
-Missing catalog-declared states can end an effect after an observed transition.
-A new application timestamp can restore it.
-Missing declarations or shared state sources can leave the expiry time unknown.
-Raw row presence does not prove an active stat effect.
-Use `player_states()` for recorded flags.
-
 Unknown passive roles give partial baseline values.
 Current mode includes supported temporary effects, but does not simulate firing, crouching, bullet-hit slows, or sprint acceleration.
 Baseline gravity scale is unavailable.
@@ -44,8 +37,8 @@ After the selected release changes, run `boon get VERSION --force`.
 The resolver reads the primary weapon block, cost-based shop bonuses, and recorded stat types.
 Recorded penalties and permanent range/radius pickups count once.
 
-Corrupted property bonuses are incomplete. Catalog defaults do not represent all rolled values.
-Affected stats keep a partial subtotal with diagnostics.
+Corrupted ability bonuses are unsupported. Boon does not detect these bonuses.
+Catalog defaults do not include all rolled values. A calculated result can be incomplete.
 A recorded source-item label can also be incorrect. Modifier records can identify the source.
 Do not count duplicate penalty records twice.
 
@@ -189,3 +182,21 @@ Dynamic values use the matching catalog's `modifier_value_types`.
 Unsupported scaling, missing charge counts, and unknown apply filters stay unresolved.
 Results are bonus percentages, not final property values or inputs to an earlier cast.
 See [ability stats](ability-stats.md).
+
+## Modifier lifetimes
+
+Some replay rows have no duration or removal. Boon ends an effect when its timer
+ends, its aura leaves range, its declared states disappear after observation,
+or its observed source ability is deleted (intrinsic effects only).
+Missing entities, fields, or catalog definitions do not prove expiry.
+
+The untimed Grapple Arm parent in `111155916.dem` remains unresolved. Its catalog
+has no state mask. The hook victim pointer may provide an end signal, but Boon
+does not yet apply that rule. Raw modifier rows remain available for review.
+
+## Urn returns
+
+A return requires carrier loss, a completed delivery channel, and delivery-point closure on the same tick.
+Entry into the delivery area does not prove a return.
+Missing evidence gives a `dropped` event for carrier loss.
+If the carrier pawn is absent, event coordinates use its last observed event position.

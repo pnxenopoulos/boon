@@ -44,7 +44,7 @@ def demo_paths() -> list[Path]:
 
 
 @pytest.fixture(scope="session", params=_demo_files(), ids=lambda p: p.name)
-def demo(request: pytest.FixtureRequest) -> Demo:
+def demo(request: pytest.FixtureRequest, name_catalog_cache: Path) -> Demo:
     """Share loaded replay data for read-only assertions.
 
     Tests that check parsing, caches, or decoder settings use fresh Demo instances.
@@ -53,6 +53,7 @@ def demo(request: pytest.FixtureRequest) -> Demo:
     # Share one serial reference across seek and parallel comparisons.
     with pytest.MonkeyPatch.context() as patch:
         patch.setenv("BOON_TICK_SEGMENTS", "1")
+        patch.setenv("BOON_DATA_DIR", str(name_catalog_cache))
         parsed.load(*ALL_DATASETS)
     return parsed
 
@@ -74,6 +75,12 @@ def name_catalog_cache(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
     root = tmp_path_factory.mktemp("boon-data")
     records = json.loads(Path(__file__).with_name("name-catalogs.json").read_text())
+    for name, entries in records.items():
+        for index, entry in enumerate(entries):
+            entry.setdefault("record_key", f"{name}#/{index}")
+            entry.setdefault("definition_path", f"/{index}")
+            entry.setdefault("definition", {})
+            entry.setdefault("stat_changes", [])
     index, files = release(records=records)
     directory = root / VERSION
     directory.mkdir()
@@ -89,6 +96,7 @@ def offline_catalogs(monkeypatch: pytest.MonkeyPatch, name_catalog_cache: Path) 
     from boon import data
 
     monkeypatch.setattr(data, "BOON_DATA_DIR", name_catalog_cache)
+    monkeypatch.setenv("BOON_DATA_DIR", str(name_catalog_cache))
 
     def offline(url):
         raise AssertionError(f"unexpected network request in test: {url}")

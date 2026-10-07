@@ -159,7 +159,8 @@ Missing counts are not zero.
 
 Modifier state follows packet changes from the start; relay keyframes can contain future modifier state.
 Timers use recorded game time and do not include pauses.
-An intrinsic effect ends when its ability entity disappears. Other effects can continue.
+An intrinsic effect ends after a recorded deletion of its observed ability handle.
+Missing entities do not prove expiry. Other effects can continue.
 State masks can end effects, but shared or missing states leave some expiry times unknown.
 See [Known Issues](known-issues.md#stat-calculations).
 
@@ -202,8 +203,8 @@ Weapon values come from the hero's primary weapon record, including `m_mapWeapon
 Hero spirit scaling comes from `m_mapScalingStats.EClipSize`.
 Boon does not substitute an alternate weapon for a missing primary definition.
 
-Permanent bonuses and corruption penalties use recorded stat types.
-Corrupted property bonuses are incomplete and can give partial values.
+Permanent bonuses and penalties use recorded stat types.
+Corrupted ability bonuses are unsupported and are not detected.
 Powerup values use catalog ranges and match time at application.
 See [ammo limits](known-issues.md#ammo-and-barrier-snapshots).
 

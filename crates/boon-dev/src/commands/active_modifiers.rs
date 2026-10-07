@@ -4,19 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use colored::Colorize;
-use prost::Message;
 use serde::Serialize;
-
-struct CachedModifier {
-    hero_id: i64,
-    serial: u32,
-    modifier: String,
-    ability: String,
-    duration: f32,
-    last_applied_time: f32,
-    caster_hero_id: i64,
-    stacks: i32,
-}
 
 #[derive(Serialize)]
 struct ActiveModifierOutput {
@@ -51,193 +39,72 @@ pub fn run(
         .with_context(|| format!("failed to open {}", file.display()))?;
     let names = boon::CatalogNames::load(None)?;
 
-    let class_filter: HashSet<&str> = ["CCitadelPlayerPawn"].into_iter().collect();
-
-    let mut keys_resolved = false;
-    let mut pk_hero_id: Option<u64> = None;
-    let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
-    let mut entity_to_hero_built = false;
-
-    // Track active modifiers by serial_number, plus the serial currently stored
-    // at each ActiveModifiers entry index — so a slot reused by a new modifier
-    // (a removal without an explicit entry_type == 2) is detected.
-    let mut prev_modifiers: HashMap<u32, CachedModifier> = HashMap::new();
-    let mut idx_serial: HashMap<usize, u32> = HashMap::new();
-    let mut events_out: Vec<ActiveModifierOutput> = Vec::new();
-
+    let directory = boon::data::catalog_dir(None)?;
+    let catalog = boon::hero_stats::StatCatalog::from_directory(&directory)?;
+    let mut state = boon::EffectiveModifierState::with_catalog(&catalog);
+    let initial = parser.parse_init()?;
+    let clock = boon::ModifierClock::resolve(&initial);
+    state.rebuild(&initial, clock.game_time(&initial));
+    let hero_key = initial
+        .serializers()
+        .get("CCitadelPlayerPawn")
+        .and_then(|s| s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"));
+    let mut class_filter: HashSet<&str> = [
+        "CCitadelPlayerPawn",
+        "CCitadelPlayerController",
+        "CCitadelGameRulesProxy",
+    ]
+    .into_iter()
+    .collect();
+    class_filter.extend(
+        initial
+            .serializers()
+            .iter()
+            .map(|(name, _)| name)
+            .filter(|name| name.contains("Ability")),
+    );
+    let mut identities = HashMap::new();
+    let mut events_out = Vec::new();
     parser
         .run_to_end_filtered(&class_filter, |ctx| {
-            // Resolve pawn hero_id key once (retry until serializers available)
-            if !keys_resolved && let Some(s) = ctx.serializers().get("CCitadelPlayerPawn") {
-                pk_hero_id = s.resolve_field_key("m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID");
-                keys_resolved = true;
-            }
-
-            // Build entity_to_hero map (retry until populated)
-            if !entity_to_hero_built {
-                for (idx, entity) in ctx.entities().iter() {
-                    if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
-                        let hid = entity.get_i64(pk_hero_id);
-                        if hid != 0 {
-                            entity_to_hero.insert(idx, hid);
-                        }
+            for change in state.update(ctx, clock.game_time(ctx)) {
+                let modifier = change.entry;
+                let hero = |handle: Option<u32>| {
+                    handle
+                        .and_then(|h| ctx.entities().get_by_handle(h))
+                        .filter(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                        .map(|pawn| pawn.get_i64(hero_key))
+                        .filter(|&id| id != 0)
+                };
+                let identity = if change.kind == boon::ModifierChangeKind::Removed {
+                    identities.remove(&change.serial)
+                } else {
+                    let identity = hero(modifier.parent)
+                        .map(|id| (id, hero(modifier.caster).unwrap_or(0)))
+                        .or_else(|| identities.get(&change.serial).copied());
+                    if let Some(identity) = identity {
+                        identities.insert(change.serial, identity);
                     }
-                }
-                if !entity_to_hero.is_empty() {
-                    entity_to_hero_built = true;
-                }
-            }
-
-            // Scan only the ActiveModifiers entries this tick's delta touched.
-            // The table grows past 1000 entries and is delta-updated, so a full
-            // rescan + re-decode every tick re-fired the same applied/removed
-            // pair for stale entries indefinitely (the table never shrinks, and
-            // a removed modifier leaves both its original entry and a separate
-            // entry_type == 2 entry behind). Processing only changed indices,
-            // with an index -> serial map to catch slot reuse, reports each
-            // modifier exactly once applied and once removed.
-            if let Some(table) = ctx.string_tables().find_table("ActiveModifiers") {
-                for &idx in table.dirty_indices() {
-                    let Some(entry) = table.entries().get(idx) else {
-                        continue;
-                    };
-                    let data = match &entry.user_data {
-                        Some(d) if !d.is_empty() => d,
-                        _ => continue,
-                    };
-
-                    let Ok(modifier) =
-                        boon_proto::proto::CModifierTableEntry::decode(data.as_slice())
-                    else {
-                        continue;
-                    };
-
-                    let Some(serial) = modifier.serial_number else {
-                        continue;
-                    };
-
-                    // Slot reused by a different serial => the old modifier was
-                    // removed without an explicit entry_type == 2.
-                    if let Some(old_serial) = idx_serial.get(&idx).copied()
-                        && old_serial != serial
-                        && let Some(cached) = prev_modifiers.remove(&old_serial)
-                    {
-                        events_out.push(ActiveModifierOutput {
-                            tick: ctx.tick(),
-                            hero_id: cached.hero_id,
-                            event: "removed".to_string(),
-                            serial: cached.serial,
-                            modifier: cached.modifier,
-                            ability: cached.ability,
-                            duration: cached.duration,
-                            caster_hero_id: cached.caster_hero_id,
-                            stacks: cached.stacks,
-                        });
-                    }
-
-                    let entry_type = modifier.entry_type.unwrap_or(1);
-
-                    // entry_type == 2 means explicitly removed
-                    if entry_type == 2 {
-                        idx_serial.remove(&idx);
-                        if let Some(cached) = prev_modifiers.remove(&serial) {
-                            events_out.push(ActiveModifierOutput {
-                                tick: ctx.tick(),
-                                hero_id: cached.hero_id,
-                                event: "removed".to_string(),
-                                serial: cached.serial,
-                                modifier: cached.modifier,
-                                ability: cached.ability,
-                                duration: cached.duration,
-                                caster_hero_id: cached.caster_hero_id,
-                                stacks: cached.stacks,
-                            });
-                        }
-                        continue;
-                    }
-
-                    idx_serial.insert(idx, serial);
-
-                    let Some(parent_idx) = boon::protobuf_handle_index(modifier.parent) else {
-                        continue;
-                    };
-
-                    // Only track modifiers on player pawns
-                    let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
-                        continue;
-                    };
-
-                    match prev_modifiers.entry(serial) {
-                        // New modifier (not seen before)
-                        std::collections::hash_map::Entry::Vacant(e) => {
-                            let modifier_name = names
-                                .modifier_name(modifier.modifier_subclass.unwrap_or(0))
-                                .to_string();
-                            let ability_name = names
-                                .ability_name(modifier.ability_subclass.unwrap_or(0))
-                                .to_string();
-                            let duration = modifier.duration.unwrap_or(-1.0);
-                            let caster_hero_id = boon::protobuf_handle_index(modifier.caster)
-                                .and_then(|i| entity_to_hero.get(&i).copied())
-                                .unwrap_or(0);
-                            let stacks = modifier.stack_count.unwrap_or(0);
-                            let last_applied_time = modifier.last_applied_time.unwrap_or(-1.0);
-
-                            events_out.push(ActiveModifierOutput {
-                                tick: ctx.tick(),
-                                hero_id,
-                                event: "applied".to_string(),
-                                serial,
-                                modifier: modifier_name.clone(),
-                                ability: ability_name.clone(),
-                                duration,
-                                caster_hero_id,
-                                stacks,
-                            });
-
-                            e.insert(CachedModifier {
-                                hero_id,
-                                serial,
-                                modifier: modifier_name,
-                                ability: ability_name,
-                                duration,
-                                last_applied_time,
-                                caster_hero_id,
-                                stacks,
-                            });
-                        }
-                        // Already tracked: entry re-sent with updated fields. Emit a
-                        // `changed` row for stack, duration, or application-time changes.
-                        std::collections::hash_map::Entry::Occupied(mut e) => {
-                            let cached = e.get_mut();
-                            let stacks = modifier.stack_count.unwrap_or(cached.stacks);
-                            let duration = modifier.duration.unwrap_or(cached.duration);
-                            let last_applied_time = modifier
-                                .last_applied_time
-                                .unwrap_or(cached.last_applied_time);
-                            let changed = stacks != cached.stacks
-                                || duration.to_bits() != cached.duration.to_bits()
-                                || last_applied_time.to_bits()
-                                    != cached.last_applied_time.to_bits();
-                            if changed {
-                                events_out.push(ActiveModifierOutput {
-                                    tick: ctx.tick(),
-                                    hero_id: cached.hero_id,
-                                    event: "changed".to_string(),
-                                    serial,
-                                    modifier: cached.modifier.clone(),
-                                    ability: cached.ability.clone(),
-                                    duration,
-                                    caster_hero_id: cached.caster_hero_id,
-                                    stacks,
-                                });
-                                cached.stacks = stacks;
-                                cached.duration = duration;
-                                cached.last_applied_time = last_applied_time;
-                            }
-                        }
-                    }
-                }
+                    identity
+                };
+                let Some((hero_id, caster_hero_id)) = identity else {
+                    continue;
+                };
+                events_out.push(ActiveModifierOutput {
+                    tick: ctx.tick(),
+                    hero_id,
+                    event: change.kind.as_str().into(),
+                    serial: change.serial,
+                    modifier: names
+                        .modifier_name(modifier.modifier_subclass.unwrap_or(0))
+                        .into(),
+                    ability: names
+                        .ability_name(modifier.ability_subclass.unwrap_or(0))
+                        .into(),
+                    duration: modifier.duration.unwrap_or(-1.0),
+                    caster_hero_id,
+                    stacks: modifier.stack_count.unwrap_or(0),
+                });
             }
         })
         .with_context(|| "failed to parse demo")?;

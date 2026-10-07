@@ -1,0 +1,170 @@
+{
+  "demo": "111155916.dem",
+  "source": "https://github.com/Rupas1k/source2-demo/tree/b1b1d504a29267e15b4d925126ddfa1f1e6b746d",
+  "samples": [
+    {
+      "tick": 26074,
+      "raw_count": 1152,
+      "entries": [
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 459.703125,
+          "duration": null,
+          "float1": 0.0,
+          "float2": 0.0,
+          "in_aura": null,
+          "int1": 16777215,
+          "last_applied": 459.703125,
+          "modifier_id": 1467475030,
+          "parent": 9207899,
+          "serial": 4604,
+          "stacks": null
+        }
+      ]
+    },
+    {
+      "tick": 26133,
+      "raw_count": 1147,
+      "entries": [
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 459.703125,
+          "duration": null,
+          "float1": 0.0,
+          "float2": 0.0,
+          "in_aura": null,
+          "int1": 16777215,
+          "last_applied": 459.703125,
+          "modifier_id": 1467475030,
+          "parent": 9207899,
+          "serial": 4604,
+          "stacks": null
+        }
+      ]
+    },
+    {
+      "tick": 26134,
+      "raw_count": 1149,
+      "entries": [
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 459.703125,
+          "duration": null,
+          "float1": 0.0,
+          "float2": 0.0,
+          "in_aura": null,
+          "int1": 16777215,
+          "last_applied": 459.703125,
+          "modifier_id": 1467475030,
+          "parent": 9207899,
+          "serial": 4604,
+          "stacks": null
+        },
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 460.640625,
+          "duration": 0.5400000214576721,
+          "float1": null,
+          "float2": null,
+          "in_aura": null,
+          "int1": null,
+          "last_applied": 460.640625,
+          "modifier_id": 1061661896,
+          "parent": 9207899,
+          "serial": 4605,
+          "stacks": null
+        }
+      ]
+    },
+    {
+      "tick": 26147,
+      "raw_count": 1147,
+      "entries": [
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 459.703125,
+          "duration": null,
+          "float1": 0.0,
+          "float2": 0.0,
+          "in_aura": null,
+          "int1": 16777215,
+          "last_applied": 459.703125,
+          "modifier_id": 1467475030,
+          "parent": 9207899,
+          "serial": 4604,
+          "stacks": null
+        },
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 460.640625,
+          "duration": 0.5400000214576721,
+          "float1": null,
+          "float2": null,
+          "in_aura": null,
+          "int1": null,
+          "last_applied": 460.640625,
+          "modifier_id": 1061661896,
+          "parent": 9207899,
+          "serial": 4605,
+          "stacks": null
+        }
+      ]
+    },
+    {
+      "tick": 26169,
+      "raw_count": 1147,
+      "entries": [
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 459.703125,
+          "duration": null,
+          "float1": 0.0,
+          "float2": 0.0,
+          "in_aura": null,
+          "int1": 16777215,
+          "last_applied": 459.703125,
+          "modifier_id": 1467475030,
+          "parent": 9207899,
+          "serial": 4604,
+          "stacks": null
+        }
+      ]
+    },
+    {
+      "tick": 40441,
+      "raw_count": 1589,
+      "entries": [
+        {
+          "ability_handle": 5458733,
+          "ability_id": 1928108461,
+          "caster": 12697674,
+          "creation": 459.703125,
+          "duration": null,
+          "float1": 0.0,
+          "float2": 0.0,
+          "in_aura": null,
+          "int1": 16777215,
+          "last_applied": 459.703125,
+          "modifier_id": 1467475030,
+          "parent": 9207899,
+          "serial": 4604,
+          "stacks": null
+        }
+      ]
+    }
+  ]
+}

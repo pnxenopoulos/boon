@@ -1,9 +1,12 @@
-//! State tracking for Deadlock's `ActiveModifiers` string table.
+//! Raw and effective state for Deadlock's ordered `ActiveModifiers` writes.
 //!
 //! String-table entries are protobuf changes. An update can contain only changed
 //! fields. [`ModifierState`] merges the changes. It handles slot reuse and
 //! explicit removals. It can rebuild state from a keyframe snapshot.
 
+pub(crate) mod lifetimes;
+
+use lifetimes::ModifierLifetimes;
 use std::collections::HashMap;
 
 use boon_proto::proto::CModifierTableEntry;
@@ -68,18 +71,26 @@ impl ModifierState {
         let Some(table) = ctx.string_tables().find_table("ActiveModifiers") else {
             return Vec::new();
         };
+        self.apply_table_changes(table)
+    }
+
+    fn apply_table_changes(&mut self, table: &crate::StringTable) -> Vec<ModifierChange> {
         let mut changes = Vec::new();
-        for &index in table.dirty_indices() {
-            let Some(data) = table
-                .entries()
-                .get(index)
-                .and_then(|entry| entry.user_data.as_deref())
+        for change in table.changes() {
+            // Keyframe snapshots are table state, not new modifier events.
+            if change.kind == pbdems2::entity::StringTableChangeKind::Snapshot {
+                continue;
+            }
+            let Some(data) = change
+                .entry
+                .user_data
+                .as_deref()
                 .filter(|data| !data.is_empty())
             else {
                 continue;
             };
             if let Ok(delta) = CModifierTableEntry::decode(data) {
-                changes.extend(self.apply_delta(index, delta));
+                changes.extend(self.apply_delta(change.index, delta));
             }
         }
         changes
@@ -235,28 +246,55 @@ pub struct EffectiveModifierState {
     raw: ModifierState,
     effective_by_serial: HashMap<u32, CModifierTableEntry>,
     ended_applications: HashMap<u32, ModifierApplication>,
+    lifetimes: ModifierLifetimes,
 }
 
 /// Recorded identity of one application, separate from later payload changes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct ModifierApplication(Option<u32>, Option<u32>);
+pub(crate) struct ModifierApplication {
+    creation: Option<u32>,
+    applied: Option<u32>,
+    parent: Option<u32>,
+    caster: Option<u32>,
+    ability: Option<u32>,
+    modifier: Option<u32>,
+}
 
 impl From<&CModifierTableEntry> for ModifierApplication {
     fn from(entry: &CModifierTableEntry) -> Self {
-        Self(
-            entry.creation_time.map(f32::to_bits),
-            entry.last_applied_time.map(f32::to_bits),
-        )
+        Self {
+            creation: entry.creation_time.map(f32::to_bits),
+            applied: entry.last_applied_time.map(f32::to_bits),
+            parent: entry.parent,
+            caster: entry.caster,
+            ability: entry.ability,
+            modifier: entry.modifier_subclass,
+        }
     }
 }
 
 impl EffectiveModifierState {
+    /// Use catalog state masks and intrinsic-source rules in addition to duration and aura rules.
+    /// All consumers can share this tracker, including modifier-span builders.
+    pub fn with_catalog(catalog: &crate::hero_stats::StatCatalog) -> Self {
+        Self {
+            lifetimes: ModifierLifetimes::from_catalog(catalog),
+            ..Self::default()
+        }
+    }
+
+    /// Raw merged applications, including those whose effective lifetime ended.
+    pub fn raw_entries(&self) -> &HashMap<u32, CModifierTableEntry> {
+        self.raw.entries()
+    }
+
     /// Modifiers that currently have a gameplay effect.
     pub fn entries(&self) -> &HashMap<u32, CModifierTableEntry> {
         &self.effective_by_serial
     }
 
-    /// Apply this tick's table deltas, then end modifiers whose deadlines pass.
+    /// Apply ordered deltas, then apply duration, aura, and configured catalog rules.
+    /// Catalog expiry emits a `Removed` change and keeps the raw row.
     ///
     /// game_time must use the same Source 2 GameTime_t domain as
     /// CModifierTableEntry::last_applied_time. Use [`ModifierClock::game_time`]
@@ -267,7 +305,16 @@ impl EffectiveModifierState {
     /// and aura exits still apply when no player clock is available.
     pub fn update(&mut self, ctx: &Context, game_time: Option<f32>) -> Vec<ModifierChange> {
         let raw_changes = self.raw.update(ctx);
-        self.reconcile(raw_changes, game_time)
+        let mut changes = self.reconcile(raw_changes, game_time);
+        for serial in self
+            .lifetimes
+            .expired(ctx, &self.effective_by_serial, &changes)
+        {
+            if let Some(change) = self.end_application(serial) {
+                changes.push(change);
+            }
+        }
+        changes
     }
 
     /// Rebuild effective state from a complete string-table snapshot.
@@ -285,6 +332,7 @@ impl EffectiveModifierState {
             .filter(|(_, entry)| modifier_is_effective_at(entry, game_time))
             .map(|(&serial, entry)| (serial, entry.clone()))
             .collect();
+        self.lifetimes.rebuild(ctx, &self.effective_by_serial);
     }
 
     /// Clear the raw and effective views.
@@ -292,16 +340,21 @@ impl EffectiveModifierState {
         self.raw.clear();
         self.effective_by_serial.clear();
         self.ended_applications.clear();
+        self.lifetimes.clear();
     }
 
     /// End effects using additional replay evidence, while keeping raw payloads.
     /// A changed stack/value cannot revive the same application. A new recorded
     /// application time can; it may need fields retained in the raw row.
-    pub(crate) fn end_application(&mut self, serial: u32) {
-        if let Some(entry) = self.effective_by_serial.remove(&serial) {
-            self.ended_applications
-                .insert(serial, ModifierApplication::from(&entry));
-        }
+    fn end_application(&mut self, serial: u32) -> Option<ModifierChange> {
+        let entry = self.effective_by_serial.remove(&serial)?;
+        self.ended_applications
+            .insert(serial, ModifierApplication::from(&entry));
+        Some(ModifierChange {
+            kind: ModifierChangeKind::Removed,
+            serial,
+            entry,
+        })
     }
 
     fn reconcile(
@@ -314,10 +367,11 @@ impl EffectiveModifierState {
         for change in raw_changes {
             let serial = change.serial;
             if change.kind == ModifierChangeKind::Removed {
-                // A table refresh can move an unchanged serial to another slot.
-                // Keep its lifetime when the final raw row is identical and active.
-                if self.raw.get(serial) == Some(&change.entry)
-                    && modifier_is_effective_at(&change.entry, game_time)
+                // An identical snapshot-style remove/reinsert cannot revive an
+                // application already ended by semantic evidence.
+                if self.ended_applications.get(&serial)
+                    == Some(&ModifierApplication::from(&change.entry))
+                    && self.raw.get(serial) == Some(&change.entry)
                 {
                     continue;
                 }
@@ -513,6 +567,73 @@ mod tests {
     }
 
     #[test]
+    fn ordered_slot_reuse_merges_deltas_and_keeps_explicit_removals() {
+        use pbdems2::entity::{CreateStringTable, StringTableEntry, UpdateStringTable};
+        fn wire(data: &[u8]) -> Vec<u8> {
+            let bits = [true, false, true]
+                .into_iter()
+                .chain((0..17).map(|i| data.len() >> i & 1 != 0))
+                .chain(
+                    data.iter()
+                        .flat_map(|byte| (0..8).map(move |i| byte >> i & 1 != 0)),
+                );
+            let mut bytes = vec![0; (20 + data.len() * 8).div_ceil(8)];
+            for (i, bit) in bits.enumerate() {
+                bytes[i / 8] |= u8::from(bit) << (i % 8);
+            }
+            bytes
+        }
+        let mut tables = crate::StringTableContainer::new();
+        tables
+            .handle_create(
+                CreateStringTable::new("ActiveModifiers", 0, vec![]).with_change_tracking(),
+            )
+            .unwrap();
+        for entry in [
+            active(7),
+            active(8),
+            CModifierTableEntry {
+                serial_number: Some(8),
+                stack_count: Some(2),
+                ..Default::default()
+            },
+            CModifierTableEntry {
+                serial_number: Some(7),
+                entry_type: Some(2),
+                ..Default::default()
+            },
+        ] {
+            tables
+                .handle_update(UpdateStringTable::new(0, 1, wire(&entry.encode_to_vec())))
+                .unwrap();
+        }
+        // A snapshot is not a fresh application; key-only writes are not events.
+        tables
+            .do_full_update([(
+                "ActiveModifiers".into(),
+                vec![StringTableEntry::new(None, Some(active(9).encode_to_vec()))],
+            )])
+            .unwrap();
+        let mut state = ModifierState::default();
+        let changes = state.apply_table_changes(tables.find_table("ActiveModifiers").unwrap());
+        assert_eq!(
+            changes
+                .iter()
+                .map(|c| (c.serial, c.kind))
+                .collect::<Vec<_>>(),
+            [
+                (7, ModifierChangeKind::Applied),
+                (8, ModifierChangeKind::Applied),
+                (8, ModifierChangeKind::Changed),
+                (7, ModifierChangeKind::Removed)
+            ]
+        );
+        assert_eq!(state.entries().len(), 1);
+        assert_eq!(state.get(8).unwrap().stack_count, Some(2));
+        assert_eq!(state.get(8).unwrap().duration, Some(5.0));
+    }
+
+    #[test]
     fn state_mask_expiry_persists_until_a_recorded_refresh() {
         let mut state = EffectiveModifierState::default();
         let mut entry = active(7);
@@ -521,8 +642,11 @@ mod tests {
         entry.last_applied_time = Some(10.0);
         let changes = state.raw.apply_delta(0, entry);
         state.reconcile(changes, Some(10.0));
-        state.end_application(7);
+        let removed = state.end_application(7).unwrap();
+        assert_eq!(removed.kind, ModifierChangeKind::Removed);
+        assert_eq!(removed.serial, 7);
         assert!(state.entries().is_empty());
+        assert!(state.raw_entries().contains_key(&7));
         // Moving an unchanged raw row between slots cannot restore the effect.
         let same = state.raw.get(7).unwrap().clone();
         let mut changes = state.raw.apply_delta(
@@ -569,6 +693,41 @@ mod tests {
         );
         state.reconcile(changes, Some(21.0));
         assert!(state.ended_applications.is_empty());
+    }
+
+    #[test]
+    fn changed_parent_handle_is_a_new_application_but_values_are_not() {
+        let mut state = EffectiveModifierState::default();
+        let entry = CModifierTableEntry {
+            parent: Some((9 << 14) | 2),
+            duration: None,
+            ..active(7)
+        };
+        let changes = state.raw.apply_delta(0, entry);
+        state.reconcile(changes, None);
+        state.end_application(7);
+        let changes = state.raw.apply_delta(
+            0,
+            CModifierTableEntry {
+                serial_number: Some(7),
+                float1: Some(22.0),
+                ..Default::default()
+            },
+        );
+        assert!(state.reconcile(changes, None).is_empty());
+        let changes = state.raw.apply_delta(
+            0,
+            CModifierTableEntry {
+                serial_number: Some(7),
+                parent: Some((10 << 14) | 2),
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            state.reconcile(changes, None)[0].kind,
+            ModifierChangeKind::Applied
+        );
+        assert_eq!(state.entries()[&7].float1, Some(22.0));
     }
 
     #[test]

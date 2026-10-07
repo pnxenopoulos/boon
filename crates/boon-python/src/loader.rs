@@ -217,24 +217,31 @@ impl Demo {
         // hundreds (one per ability), so collect their names from the send tables
         // (any networked class whose name contains "Ability") into an owned Vec
         // that outlives the borrowed `&str` class filter below.
-        let ability_class_names: Vec<String> = if load_ability_ticks {
-            self.parser
-                .parse_send_tables()
-                .map(|sc| {
-                    sc.iter()
-                        .map(|(name, _)| name)
-                        .filter(|name| name.contains("Ability"))
-                        .map(str::to_owned)
-                        .collect()
-                })
-                .unwrap_or_default()
-        } else {
-            Vec::new()
-        };
+        let ability_class_names: Vec<String> =
+            if load_ability_ticks || load_active_modifiers || load_urn {
+                self.parser
+                    .parse_send_tables()
+                    .map(|sc| {
+                        sc.iter()
+                            .map(|(name, _)| name)
+                            .filter(|name| {
+                                if load_ability_ticks || load_active_modifiers {
+                                    name.contains("Ability")
+                                } else {
+                                    *name == "CCitadel_Ability_GoldenIdol"
+                                }
+                            })
+                            .map(str::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            };
 
         // Build union class filter
         let mut class_names: Vec<&str> = Vec::new();
-        if load_street_brawl_ticks || load_rift || load_active_modifiers {
+        if load_street_brawl_ticks || load_rift || load_active_modifiers || load_urn {
             class_names.push("CCitadelGameRulesProxy");
         }
         if load_abilities
@@ -252,6 +259,7 @@ impl Demo {
             || load_chat
             || load_stat_modifier_events
             || load_active_modifiers
+            || load_urn
         {
             class_names.push("CCitadelPlayerController");
         }
@@ -280,8 +288,8 @@ impl Demo {
             // rest of the lifecycle comes off the game rules entity.
             class_names.push("CCitadelItemKothSpawner");
         }
-        if load_ability_ticks {
-            // Pawns for the owner -> hero mapping, plus every ability class.
+        if load_ability_ticks || load_active_modifiers || load_urn {
+            // Ability owners and sources for snapshots and modifier lifetimes.
             class_names.push("CCitadelPlayerPawn");
             for n in &ability_class_names {
                 class_names.push(n.as_str());
@@ -500,22 +508,8 @@ impl Demo {
         let mut rift_spawners_cur: std::collections::HashSet<i32> =
             std::collections::HashSet::new();
 
-        // Effective (duration-aware) modifier state supplies this lifecycle frame.
-        //
-        // The engine re-stamps every live modifier on one tick about once a minute
-        // (bookkeeping, not gameplay), bumping their last_applied_time. Effective state has
-        // already expired the finite ones, so on that re-stamp it resurrects them and
-        // reports each as a fresh `applied`, a phantom. On a re-stamp tick, an `applied` for
-        // a modifier the hero already has (by identity, see `am_logical_seen`) is one of those
-        // re-applications and is dropped, along with the rest of that entry's lifecycle
-        // (`emitted` records whether a serial was actually reported, so its later
-        // changed/removed stay silent too). A modifier the hero did not have is a real apply
-        // and is always kept.
-        //
-        // Limitation: a suppressed entry stays silent until it leaves `am_prev`, so a genuine
-        // re-cast of the same modifier inside a re-stamp window is masked. This trades a rare,
-        // bounded miss for removing the re-stamp phantoms, and it never emits an orphan
-        // changed/removed.
+        // The shared tracker supplies the effective lifecycle. Cache identity
+        // for removals after the owner entity disappears or changes hero.
         struct CachedMod {
             hero_id: i64,
             modifier_id: u32,
@@ -524,26 +518,28 @@ impl Demo {
             duration: f32,
             caster_hero_id: i64,
             stacks: i32,
-            emitted: bool,
         }
         let mut am_prev: HashMap<u32, CachedMod> = HashMap::new();
-        let mut am_state = boon_parser::EffectiveModifierState::default();
-        // (hero, modifier_id) reported as `applied` this match. A re-stamp re-applies a
-        // modifier a hero already has, so this identity -- not the serial -- is what marks a
-        // re-application: the engine reuses a serial for some re-stamped modifiers and mints
-        // a fresh one for others, and a serial-only test misses the fresh ones (letting the
-        // finite-modifier-past-window applies through as phantoms).
-        let mut am_logical_seen: std::collections::HashSet<(i64, u32)> =
-            std::collections::HashSet::new();
-        // A re-stamp re-applies modifiers the heroes already have across most of the roster
-        // on one tick; real play re-applies a known modifier for at most a hero or two at a
-        // time (an aura re-entering range), and a fresh cast is a modifier the hero did not
-        // have. So the number of distinct heroes getting a re-application on a single tick is
-        // the discriminator, and this bound sits far above normal play. It is not an applies
-        // count: an early re-stamp re-applies fewer modifiers (fewer are live) yet still spans
-        // the roster. On the available fixtures the most any non-re-stamp tick reaches is a
-        // handful, and every re-stamp reaches most of the roster.
-        const RESTAMP_MIN_REAPPLY_HEROES: usize = 6;
+        let (mut am_state, mut urn_state) = if load_active_modifiers || load_urn {
+            let directory = boon_parser::data::catalog_dir(None)
+                .map_err(|error| InvalidDemoError::new_err(error.to_string()))?;
+            let catalog = boon_parser::hero_stats::StatCatalog::from_directory(&directory)
+                .map_err(|error| InvalidDemoError::new_err(error.to_string()))?;
+            let urn = if load_urn {
+                Some(
+                    boon_parser::urn::UrnState::with_catalog(&catalog)
+                        .map_err(|error| InvalidDemoError::new_err(error.to_string()))?,
+                )
+            } else {
+                None
+            };
+            (
+                boon_parser::EffectiveModifierState::with_catalog(&catalog),
+                urn,
+            )
+        } else {
+            (boon_parser::EffectiveModifierState::default(), None)
+        };
 
         // ability_ticks: per-ability-class resolved field keys (cached on first
         // sight of each class) and per-entity previous state for change detection.
@@ -568,24 +564,9 @@ impl Demo {
         let mut ability_keys_cache: HashMap<String, AbilityKeys> = HashMap::new();
         let mut abil_prev: HashMap<i32, AbilState> = HashMap::new();
 
-        // Track idol modifiers for urn lifecycle
-        const GOLDEN_IDOL_ABILITY: u32 = 2_521_299_219; // ability_golden_idol
-        const IDOL_RETURN: u32 = 3_388_847_715; // modifier_citadel_idol_return
-
-        // serial -> hero_id for golden_idol modifiers (carrying state)
-        let mut urn_idol_serials: HashMap<u32, i64> = HashMap::new();
-        // ActiveModifiers entry index -> idol-relevant serial currently there
-        // (golden_idol or idol_return). Mirrors `am_idx_serial` for the urn pass
-        // so a slot being reused counts as the old idol modifier disappearing.
-        let mut urn_idx_serial: HashMap<usize, u32> = HashMap::new();
-        // hero_id -> number of active golden_idol modifiers
-        let mut urn_hero_count: HashMap<i64, i32> = HashMap::new();
-        // serials for idol_return modifiers already emitted
-        let mut urn_return_seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
-        // hero_id -> last tick a "returned" event was emitted (dedup flicker)
-        let mut urn_last_return_tick: HashMap<i64, i32> = HashMap::new();
-        // entity_idx -> (disabled, team_num) for delivery trigger change detection
-        let mut urn_trigger_prev: HashMap<i32, (bool, i64)> = HashMap::new();
+        // Cache full carrier identity for removals after a pawn disappears.
+        let mut urn_owners: HashMap<u32, (i64, [f32; 3])> = HashMap::new();
+        let mut urn_trigger_prev: HashMap<boon_parser::EntityId, (bool, i64)> = HashMap::new();
 
         // ── Field keys ──
         let mut keys_resolved = false;
@@ -963,7 +944,7 @@ impl Demo {
                                 s.resolve_field_key("m_pGameRules.m_vKothCashInCurrentLocation");
                         }
                     }
-                    if load_active_modifiers {
+                    if load_active_modifiers || load_urn {
                         modifier_clock = boon_parser::ModifierClock::resolve($ctx);
                     }
                     keys_resolved = true;
@@ -1245,52 +1226,34 @@ impl Demo {
                 }
 
                 // ── Collect active_modifiers (effective, duration-aware state) ──
+                let modifier_time = if load_active_modifiers || load_urn {
+                    modifier_clock.game_time($ctx)
+                } else { None };
+                let modifier_changes = if load_active_modifiers || load_urn {
+                    am_state.update($ctx, modifier_time)
+                } else { Vec::new() };
                 if load_active_modifiers {
-                    let game_time = modifier_clock.game_time($ctx);
-                    let changes = am_state.update($ctx, game_time);
-
-                    // Flag a re-stamp tick: many heroes get a modifier they already have
-                    // re-applied at once. `am_logical_seen` still holds the state from before
-                    // this tick, so an `applied` whose (hero, modifier_id) is in it is a
-                    // re-application, whatever serial the re-stamp gave it.
-                    let mut restamp_reapplied_heroes: std::collections::HashSet<i64> =
-                        std::collections::HashSet::new();
-                    for change in &changes {
-                        if change.kind == boon_parser::ModifierChangeKind::Applied {
-                            let hero = boon_parser::protobuf_handle_index(change.entry.parent)
-                                .and_then(|index| entity_to_hero.get(&index).copied())
-                                .unwrap_or(0);
-                            let modifier_id = change.entry.modifier_subclass.unwrap_or(0);
-                            if hero != 0 && am_logical_seen.contains(&(hero, modifier_id)) {
-                                restamp_reapplied_heroes.insert(hero);
-                            }
-                        }
-                    }
-                    let is_restamp =
-                        restamp_reapplied_heroes.len() >= RESTAMP_MIN_REAPPLY_HEROES;
-
-                    for change in changes {
+                    for change in &modifier_changes {
                         let serial = change.serial;
                         if change.kind == boon_parser::ModifierChangeKind::Removed {
                             if let Some(cached) = am_prev.remove(&serial) {
-                                if cached.emitted {
-                                    am_tick.push($ctx.tick());
-                                    am_hero_id.push(cached.hero_id);
-                                    am_event.push("removed".to_string());
-                                    am_serial.push(serial);
-                                    am_modifier_id.push(cached.modifier_id);
-                                    am_ability_id.push(cached.ability_id);
-                                    am_duration.push(cached.duration);
-                                    am_caster_hero_id.push(cached.caster_hero_id);
-                                    am_stacks.push(cached.stacks);
-                                }
+                                am_tick.push($ctx.tick());
+                                am_hero_id.push(cached.hero_id);
+                                am_event.push("removed".to_string());
+                                am_serial.push(serial);
+                                am_modifier_id.push(cached.modifier_id);
+                                am_ability_id.push(cached.ability_id);
+                                am_duration.push(cached.duration);
+                                am_caster_hero_id.push(cached.caster_hero_id);
+                                am_stacks.push(cached.stacks);
                             }
                             continue;
                         }
 
-                        let modifier = change.entry;
-                        let hero_id = boon_parser::protobuf_handle_index(modifier.parent)
-                            .and_then(|index| entity_to_hero.get(&index).copied())
+                        let modifier = &change.entry;
+                        let hero_id = modifier.parent.and_then(|handle| $ctx.entities().get_by_handle(handle))
+                            .filter(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                            .map(|pawn| pawn.get_i64(pk_hero_id))
                             .or_else(|| am_prev.get(&serial).map(|cached| cached.hero_id))
                             .unwrap_or(0);
                         if hero_id == 0 {
@@ -1303,31 +1266,23 @@ impl Demo {
                         let last_applied_time =
                             modifier.last_applied_time.unwrap_or(-1.0);
                         let caster_hero_id =
-                            boon_parser::protobuf_handle_index(modifier.caster)
-                                .and_then(|index| entity_to_hero.get(&index).copied())
+                            modifier.caster.and_then(|handle| $ctx.entities().get_by_handle(handle))
+                                .filter(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                                .map(|pawn| pawn.get_i64(pk_hero_id))
                                 .unwrap_or(0);
                         let stacks = modifier.stack_count.unwrap_or(0);
 
                         match am_prev.entry(serial) {
                             std::collections::hash_map::Entry::Vacant(entry) => {
-                                // On a re-stamp tick, an `applied` for a modifier the hero
-                                // already has is a re-application (whatever its serial), so
-                                // drop it; `emitted` keeps its changed/removed silent too. A
-                                // modifier the hero did not have is real and is kept.
-                                let logical = (hero_id, modifier_id);
-                                let emitted = !(is_restamp && am_logical_seen.contains(&logical));
-                                if emitted {
-                                    am_logical_seen.insert(logical);
-                                    am_tick.push($ctx.tick());
-                                    am_hero_id.push(hero_id);
-                                    am_event.push("applied".to_string());
-                                    am_serial.push(serial);
-                                    am_modifier_id.push(modifier_id);
-                                    am_ability_id.push(ability_id);
-                                    am_duration.push(duration);
-                                    am_caster_hero_id.push(caster_hero_id);
-                                    am_stacks.push(stacks);
-                                }
+                                am_tick.push($ctx.tick());
+                                am_hero_id.push(hero_id);
+                                am_event.push("applied".to_string());
+                                am_serial.push(serial);
+                                am_modifier_id.push(modifier_id);
+                                am_ability_id.push(ability_id);
+                                am_duration.push(duration);
+                                am_caster_hero_id.push(caster_hero_id);
+                                am_stacks.push(stacks);
                                 entry.insert(CachedMod {
                                     hero_id,
                                     modifier_id,
@@ -1336,15 +1291,9 @@ impl Demo {
                                     duration,
                                     caster_hero_id,
                                     stacks,
-                                    emitted,
                                 });
                             }
                             std::collections::hash_map::Entry::Occupied(mut entry) => {
-                                // A serial whose apply was dropped as a phantom stays silent
-                                // for the rest of its lifecycle.
-                                if !entry.get().emitted {
-                                    continue;
-                                }
                                 let cached = entry.get_mut();
                                 let caster_hero_id = if caster_hero_id == 0 {
                                     cached.caster_hero_id
@@ -1373,7 +1322,6 @@ impl Demo {
                                         am_duration.push(cached.duration);
                                         am_caster_hero_id.push(cached.caster_hero_id);
                                         am_stacks.push(cached.stacks);
-                                        am_logical_seen.insert((hero_id, modifier_id));
                                     }
                                     am_tick.push($ctx.tick());
                                     am_hero_id.push(hero_id);
@@ -1392,7 +1340,6 @@ impl Demo {
                                         duration,
                                         caster_hero_id,
                                         stacks,
-                                        emitted: true,
                                     };
                                 }
                             }
@@ -1468,238 +1415,67 @@ impl Demo {
                     }
                 }
 
-                // ── Collect urn (idol lifecycle tracking) ──
-                //
-                // Same change-only strategy as active_modifiers: walk just the
-                // entries the delta touched, keeping `urn_idx_serial` (entry index
-                // -> idol serial there). A golden idol "drops" when its slot is
-                // explicitly removed (entry_type == 2) or reused by another serial.
-                // The pickup/drop counters are order-sensitive, so we process
-                // touched indices in ascending index order — mirroring the previous
-                // full scan — and defer slot-reuse drops to a post-pass, mirroring
-                // the previous post-loop so per-tick ordering is unchanged.
-                if load_urn {
-                    if let Some(table) = $ctx.string_tables().find_table("ActiveModifiers") {
-                        let mut dirty: Vec<usize> = table.dirty_indices().to_vec();
-                        dirty.sort_unstable();
-                        dirty.dedup();
-
-                        // Golden serials whose slot was reused this tick; dropped
-                        // after the main pass (matches the old post-loop ordering).
-                        let mut urn_overwrite_gone: Vec<u32> = Vec::new();
-
-                        for &idx in &dirty {
-                            let Some(entry) = table.entries().get(idx) else {
-                                continue;
-                            };
-                            let data = match &entry.user_data {
-                                Some(d) if !d.is_empty() => d,
-                                _ => continue,
-                            };
-
-                            let Ok(modifier) =
-                                boon_proto::proto::CModifierTableEntry::decode(data.as_slice())
-                            else {
-                                continue;
-                            };
-
-                            let Some(serial) = modifier.serial_number else { continue };
-
-                            let mod_entry_type = modifier.entry_type.unwrap_or(1);
-
-                            // The idol serial previously stored at this slot leaving:
-                            // explicit removal (handled inline below) or slot reuse
-                            // (deferred to the post-pass).
-                            if let Some(old_serial) = urn_idx_serial.get(&idx).copied() {
-                                if old_serial != serial {
-                                    urn_idx_serial.remove(&idx);
-                                    urn_overwrite_gone.push(old_serial);
-                                    urn_return_seen.remove(&old_serial);
-                                } else if mod_entry_type == 2 {
-                                    urn_idx_serial.remove(&idx);
-                                }
-                            }
-
-                            // Handle explicit removal (entry_type == 2)
-                            if mod_entry_type == 2 {
-                                if let Some(hero_id) = urn_idol_serials.remove(&serial) {
-                                    let count =
-                                        urn_hero_count.entry(hero_id).or_insert(0);
-                                    *count -= 1;
-                                    if *count <= 0 {
-                                        urn_hero_count.remove(&hero_id);
-                                        let pawn = entity_to_hero.iter()
-                                            .find(|(_, hid)| **hid == hero_id)
-                                            .and_then(|(idx, _)| $ctx.entities().get(*idx));
-                                        let [drop_x, drop_y, drop_z] = pawn.map_or(
-                                            [0.0, 0.0, 0.0],
-                                            |e| world_position(
-                                                e,
-                                                [pk_cell_x, pk_cell_y, pk_cell_z],
-                                                [pk_vec_x, pk_vec_y, pk_vec_z],
-                                            ),
-                                        );
-                                        urn_tick.push($ctx.tick());
-                                        urn_event.push("dropped".to_string());
-                                        urn_hero_id.push(hero_id);
-                                        urn_team_num.push(0);
-                                        urn_x.push(drop_x);
-                                        urn_y.push(drop_y);
-                                        urn_z.push(drop_z);
-                                    }
-                                }
-                                urn_return_seen.remove(&serial);
-                                continue;
-                            }
-
-                            let mod_id = modifier.modifier_subclass.unwrap_or(0);
-                            let abil_id = modifier.ability_subclass.unwrap_or(0);
-                            let is_golden_idol = abil_id == GOLDEN_IDOL_ABILITY;
-                            let is_idol_return = mod_id == IDOL_RETURN;
-
-                            if !is_golden_idol && !is_idol_return {
-                                urn_idx_serial.remove(&idx);
-                                continue;
-                            }
-
-                            let Some(parent_idx) =
-                                boon_parser::protobuf_handle_index(modifier.parent)
-                            else {
-                                continue;
-                            };
-
-                            let Some(&hero_id) = entity_to_hero.get(&parent_idx) else {
-                                continue;
-                            };
-
-                            // Look up pawn position for hero events
-                            let pawn = $ctx.entities().get(parent_idx);
-                            let [hero_x, hero_y, hero_z] = pawn.map_or(
-                                [0.0, 0.0, 0.0],
-                                |e| world_position(
-                                    e,
-                                    [pk_cell_x, pk_cell_y, pk_cell_z],
-                                    [pk_vec_x, pk_vec_y, pk_vec_z],
-                                ),
-                            );
-
-                            urn_idx_serial.insert(idx, serial);
-
-                            if is_golden_idol
-                                && !urn_idol_serials.contains_key(&serial)
-                            {
-                                let count =
-                                    urn_hero_count.entry(hero_id).or_insert(0);
-                                if *count == 0 {
-                                    urn_tick.push($ctx.tick());
-                                    urn_event.push("picked_up".to_string());
-                                    urn_hero_id.push(hero_id);
-                                    urn_team_num.push(0);
-                                    urn_x.push(hero_x);
-                                    urn_y.push(hero_y);
-                                    urn_z.push(hero_z);
-                                }
-                                *count += 1;
-                                urn_idol_serials.insert(serial, hero_id);
-                            }
-
-                            if is_idol_return && urn_return_seen.insert(serial) {
-                                let last = urn_last_return_tick
-                                    .get(&hero_id)
-                                    .copied()
-                                    .unwrap_or(-999);
-                                if $ctx.tick() - last > 64 {
-                                    urn_tick.push($ctx.tick());
-                                    urn_event.push("returned".to_string());
-                                    urn_hero_id.push(hero_id);
-                                    urn_team_num.push(0);
-                                    urn_x.push(hero_x);
-                                    urn_y.push(hero_y);
-                                    urn_z.push(hero_z);
-                                    urn_last_return_tick.insert(hero_id, $ctx.tick());
-                                }
-                            }
-                        }
-
-                        // Slot-reuse drops (mirrors the previous post-loop).
-                        for serial in urn_overwrite_gone {
-                            if let Some(hero_id) = urn_idol_serials.remove(&serial) {
-                                let count =
-                                    urn_hero_count.entry(hero_id).or_insert(0);
-                                *count -= 1;
-                                if *count <= 0 {
-                                    urn_hero_count.remove(&hero_id);
-                                    let pawn = entity_to_hero.iter()
-                                        .find(|(_, hid)| **hid == hero_id)
-                                        .and_then(|(idx, _)| $ctx.entities().get(*idx));
-                                    let [drop_x, drop_y, drop_z] = pawn.map_or(
-                                        [0.0, 0.0, 0.0],
-                                        |e| world_position(
-                                            e,
-                                            [pk_cell_x, pk_cell_y, pk_cell_z],
-                                            [pk_vec_x, pk_vec_y, pk_vec_z],
-                                        ),
-                                    );
-                                    urn_tick.push($ctx.tick());
-                                    urn_event.push("dropped".to_string());
-                                    urn_hero_id.push(hero_id);
-                                    urn_team_num.push(0);
-                                    urn_x.push(drop_x);
-                                    urn_y.push(drop_y);
-                                    urn_z.push(drop_z);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // ── Collect urn delivery triggers ──
-                if load_urn {
+                // ── Collect urn carrier and delivery-point transitions ──
+                if let Some(state) = urn_state.as_mut() {
+                    let mut delivery_closed = false;
+                    let mut trigger_events = Vec::new();
                     for &idx in $ctx.entities().updated_indices() {
-                        let Some(entity) = $ctx.entities().get(idx) else {
-                            continue;
-                        };
+                        let Some(entity) = $ctx.entities().get(idx) else { continue };
                         if entity.class_name.as_ref() != "CCitadelIdolReturnTrigger" {
                             continue;
                         }
-                        let disabled = entity.get_bool(urnk_disabled);
+                        // Missing fields are unknown, not a delivery transition.
+                        let Some(boon_parser::FieldValue::Bool(disabled)) = urnk_disabled.and_then(|key| entity.fields.get(&key)) else { continue };
+                        if urnk_team_num.is_none_or(|key| !entity.fields.contains_key(&key)) {
+                            continue;
+                        }
+                        let disabled = *disabled;
                         let team = entity.get_i64(urnk_team_num);
-                        let cur = (disabled, team);
-                        let prev = urn_trigger_prev.get(&idx).copied();
-                        let changed = match prev {
-                            None => true,
-                            Some(p) => p != cur,
-                        };
-                        if changed {
-                            urn_trigger_prev.insert(idx, cur);
-                            let [trig_x, trig_y, trig_z] = world_position(
+                        let id = entity.id();
+                        let previous = urn_trigger_prev.insert(id, (disabled, team));
+                        if previous == Some((disabled, team)) { continue }
+                        let event = if !disabled && team != 0 {
+                            Some("delivery_active")
+                        } else if disabled && previous.is_some_and(|(was_disabled, _)| !was_disabled) {
+                            delivery_closed = true;
+                            Some("delivery_inactive")
+                        } else { None };
+                        if let Some(event) = event {
+                            trigger_events.push((event, team, world_position(
                                 entity,
                                 [urnk_cell_x, urnk_cell_y, urnk_cell_z],
                                 [urnk_vec_x, urnk_vec_y, urnk_vec_z],
-                            );
-                            if !disabled && team != 0 {
-                                urn_tick.push($ctx.tick());
-                                urn_event.push("delivery_active".to_string());
-                                urn_hero_id.push(0);
-                                urn_team_num.push(team);
-                                urn_x.push(trig_x);
-                                urn_y.push(trig_y);
-                                urn_z.push(trig_z);
-                            } else if disabled {
-                                // Only emit inactive when transitioning from active
-                                if let Some((prev_disabled, _)) = prev {
-                                    if !prev_disabled {
-                                        urn_tick.push($ctx.tick());
-                                        urn_event.push("delivery_inactive".to_string());
-                                        urn_hero_id.push(0);
-                                        urn_team_num.push(team);
-                                        urn_x.push(trig_x);
-                                        urn_y.push(trig_y);
-                                        urn_z.push(trig_z);
-                                    }
-                                }
-                            }
+                            )));
                         }
+                    }
+                    for change in state.update(&modifier_changes, modifier_time, delivery_closed) {
+                        let owner = $ctx.entities().get_by_handle(change.parent)
+                            .filter(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                            .map(|pawn| (pawn.get_i64(pk_hero_id), world_position(
+                                pawn, [pk_cell_x, pk_cell_y, pk_cell_z], [pk_vec_x, pk_vec_y, pk_vec_z],
+                            )))
+                            .or_else(|| urn_owners.get(&change.parent).copied());
+                        let Some((hero_id, position)) = owner.filter(|(hero, _)| *hero != 0) else { continue };
+                        urn_owners.insert(change.parent, (hero_id, position));
+                        if change.kind != boon_parser::urn::UrnEventKind::PickedUp {
+                            urn_owners.remove(&change.parent);
+                        }
+                        urn_tick.push($ctx.tick());
+                        urn_event.push(change.kind.as_str().to_owned());
+                        urn_hero_id.push(hero_id);
+                        urn_team_num.push(0);
+                        urn_x.push(position[0]);
+                        urn_y.push(position[1]);
+                        urn_z.push(position[2]);
+                    }
+                    for (event, team, position) in trigger_events {
+                        urn_tick.push($ctx.tick());
+                        urn_event.push(event.to_owned());
+                        urn_hero_id.push(0);
+                        urn_team_num.push(team);
+                        urn_x.push(position[0]);
+                        urn_y.push(position[1]);
+                        urn_z.push(position[2]);
                     }
                 }
 
