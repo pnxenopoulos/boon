@@ -141,25 +141,6 @@ pub(crate) struct CitadelCheckpoint {
     event_types: Option<HashSet<u32>>,
 }
 
-#[cfg(test)]
-mod checkpoint_tests {
-    use super::*;
-
-    #[test]
-    fn restores_configuration_without_transient_buffers() {
-        let mut adapter = CitadelAdapter::default();
-        adapter.skip_modifier_snapshots();
-        adapter.enable_event_types(&HashSet::from([42]));
-        adapter.packet_body.extend([1, 2, 3]);
-        let restored = CitadelAdapter::from_checkpoint(&adapter.checkpoint());
-        assert!(restored.skip_modifier_snapshots);
-        assert!(restored.collect_events);
-        assert_eq!(restored.event_types, Some(HashSet::from([42])));
-        assert!(restored.packet_body.is_empty());
-        assert!(restored.tick_events.is_empty());
-    }
-}
-
 impl CitadelAdapter {
     pub(super) fn skip_modifier_snapshots(&mut self) {
         self.skip_modifier_snapshots = true;
@@ -423,4 +404,23 @@ fn create_string_table(message: CsvcMsgCreateStringTable) -> CreateStringTable {
         table = table.with_varint_bitcounts();
     }
     table
+}
+
+#[cfg(test)]
+mod checkpoint_tests {
+    use super::*;
+
+    #[test]
+    fn restores_configuration_without_transient_buffers() {
+        let mut adapter = CitadelAdapter::default();
+        adapter.skip_modifier_snapshots();
+        adapter.enable_event_types(&HashSet::from([42]));
+        adapter.packet_body.extend([1, 2, 3]);
+        let restored = CitadelAdapter::from_checkpoint(&adapter.checkpoint());
+        assert!(restored.skip_modifier_snapshots);
+        assert!(restored.collect_events);
+        assert_eq!(restored.event_types, Some(HashSet::from([42])));
+        assert!(restored.packet_body.is_empty());
+        assert!(restored.tick_events.is_empty());
+    }
 }

@@ -4,6 +4,7 @@
 
 - Add bounded exact replay checkpoints for repeated Rust stat batches.
 - Preserve adapter configuration across checkpoints.
+- Use pbdems2 0.3.6.
 
 ## 0.14.0
 
