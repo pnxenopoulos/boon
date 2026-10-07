@@ -73,7 +73,7 @@ Use Python 3.11–3.14.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.13"
+boon-deadlock = "0.15"
 ```
 
 Rust callers can load stat and state catalogs from JSON bytes with
@@ -83,7 +83,7 @@ Use `Parser::calculate_stats` with a `StatBatch` to query hero stats, ability
 stats and imbues in one replay pass. Each query keeps its own selections.
 See [the Rust example](crates/boon/examples/stat_batch.rs).
 
-The unreleased checkpoint API uses pbdems2 0.3.6 or later. No local patch is needed.
+The checkpoint API uses pbdems2 0.3.6 or later. No local patch is needed.
 
 ## Quick Start
 

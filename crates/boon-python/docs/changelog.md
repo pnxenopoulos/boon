@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.15.0
 
 - Add bounded exact replay checkpoints for repeated Rust stat batches.
 - Preserve adapter configuration across checkpoints.
