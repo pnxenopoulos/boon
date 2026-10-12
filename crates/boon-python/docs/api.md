@@ -1663,3 +1663,10 @@ states, and deletion of an observed source ability for intrinsic effects.
 A table snapshot is not a new event. New applications can affect multiple players
 on the same tick. Missing evidence does not end an effect.
 The query uses local game data and downloads the latest data if none is installed.
+
+### Ability history identity
+
+`ability_ticks` records changes to ability cooldowns, charges, owners, IDs, and
+slots. A new entity application emits its first row even when its cooldown and
+charge values match the previous occupant. Owner links require a matching full
+entity handle. No new columns are required.

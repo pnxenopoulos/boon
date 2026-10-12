@@ -33,3 +33,27 @@ uv run --no-sync python benchmarks/compare.py \
 The tool rejects changed output fingerprints or mismatched measurement settings.
 Run repeated comparisons on an idle machine. CI only smoke-tests the harness;
 shared-runner timings are not a performance gate.
+
+## Parser core 0.4.0
+
+Boon 0.16.0 uses pbdems2 0.4.0. Paired controls separate checked field paths,
+child-value cleanup, shared packet handling, and decoded-baseline caching.
+The cache recovers much of the full-parse cost. Packed-prefix cleanup reduces
+parse times by a further 1.9–4.5% in the measured replay workloads. Later
+field-path changes reduce Deadlock parse times by about 3–5% in paired controls.
+A later cleanup change reduces CS2 player-only parse times by 1.3–2.0% across
+five demos. A later vector skip change reduces two affected synthetic cases by
+about 8–10%. A follow-up reduces coordinate and quantized vector skip times by
+34% and 39%. The earlier mixed entity gains remain; an isolated mixed-value
+control takes about 2% more time. Replay timing changes are within 1% of the
+control; this does not show a clear complete-replay speedup. Costs relative to
+the pre-fix core remain. The report records these limits.
+
+Reference-parser comparisons must use the same input, classes, table updates,
+allocator, release profile, and timing boundary. The earlier source2-demo
+control skipped non-baseline table updates. The corrected comparison includes
+them and keeps state parsing separate from Python datasets, stat calculations,
+and ordered modifier history. Sample checks do not prove full output equality.
+
+See the [measured results](https://github.com/pnxenopoulos/pbdems2/blob/main/crates/pbdems2-bench/RELEASE_0.4.0.md)
+for the controls, inputs, costs, and verification limits.

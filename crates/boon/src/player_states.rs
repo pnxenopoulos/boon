@@ -195,10 +195,10 @@ impl MaskKeys {
         let indices = fp.data.get(..=fp.last)?;
         let mut field = serializer
             .fields
-            .get(usize::from(*indices.first()?))?
+            .get(usize::try_from(*indices.first()?).ok()?)?
             .as_ref();
         for &index in &indices[1..] {
-            field = field.get_child(usize::from(index))?;
+            field = field.get_child(usize::try_from(index).ok()?)?;
         }
         let length = field.field_type.array_length?;
         if length == 0 || length > usize::from(u8::MAX) + 1 {
@@ -211,9 +211,9 @@ impl MaskKeys {
         let keys = (0..length)
             .map(|index| {
                 field.get_child(index)?;
-                fp.data[next] = u8::try_from(index).ok()?;
+                fp.data[next] = i16::try_from(index).ok()?;
                 fp.last = next;
-                Some(fp.pack())
+                fp.try_pack()
             })
             .collect::<Option<Vec<_>>>()?;
         Some(Self(keys))
@@ -513,7 +513,7 @@ mod tests {
         for (i, &key) in keys.0.iter().enumerate() {
             let fp = FieldPath::unpack(key);
             assert_eq!(fp.last, 1);
-            assert_eq!(usize::from(fp.data[1]), i);
+            assert_eq!(usize::try_from(fp.data[1]).unwrap(), i);
         }
         let mut entity = Entity::from_fields(1, 1, 0, "Test", true, Default::default()).unwrap();
         let mut words = Vec::new();

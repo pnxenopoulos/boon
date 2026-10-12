@@ -256,3 +256,12 @@ def test_summary_soul_sources_and_identity(
         assert identities.join(
             roster, on=["steam_id", "hero_id"], how="anti"
         ).is_empty()
+
+
+def test_reused_ability_slot_emits_new_identity(demo: Demo) -> None:
+    # Slot 3935 is reused with serial 273, a new owner, and a new ability.
+    # Its zero cooldown/charge values equal those of the previous occupant.
+    rows = demo.ability_ticks.filter(
+        (pl.col("tick") == 154504) & (pl.col("ability_id") == 3005970438)
+    )
+    assert rows.height == 1

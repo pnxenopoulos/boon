@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.0
+
+- Correct ability history after entity-slot reuse and owner, ability, or slot changes.
+- Validate full ability-owner handles in Python and `boon-dev`.
+- **Rust API change:** Use pbdems2 0.4.0. Resolve cached field keys again after an upgrade.
+- Correct large field indices and cleared child values. Cache class baselines.
+- Reduce work during field-path and player entity parsing.
+
 ## 0.15.0
 
 - Add bounded exact replay checkpoints for repeated Rust stat batches.

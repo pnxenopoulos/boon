@@ -555,6 +555,10 @@ impl Demo {
         }
         #[derive(PartialEq)]
         struct AbilState {
+            owner: u32,
+            hero_id: i64,
+            ability_id: u32,
+            slot: i32,
             cooldown_start: f32,
             cooldown_end: f32,
             remaining_charges: i32,
@@ -562,7 +566,7 @@ impl Demo {
             recharge_end: f32,
         }
         let mut ability_keys_cache: HashMap<String, AbilityKeys> = HashMap::new();
-        let mut abil_prev: HashMap<i32, AbilState> = HashMap::new();
+        let mut abil_prev: HashMap<boon_parser::EntityId, AbilState> = HashMap::new();
 
         // Cache full carrier identity for removals after a pawn disappears.
         let mut urn_owners: HashMap<u32, (i64, [f32; 3])> = HashMap::new();
@@ -1355,6 +1359,11 @@ impl Demo {
                 // differ per ability class, so they are resolved once per class and
                 // cached. Owner -> hero comes from m_hOwnerEntity (the pawn).
                 if load_ability_ticks {
+                    for change in $ctx.entities().entity_changes() {
+                        if change.kind == boon_parser::EntityChangeKind::Deleted {
+                            abil_prev.remove(&change.id());
+                        }
+                    }
                     // Only entities this tick changed: an ability's cooldown/charge
                     // state can only change on a tick it was updated.
                     for &idx in $ctx.entities().updated_indices() {
@@ -1384,22 +1393,23 @@ impl Demo {
                         if keys.cooldown_end.is_none() || keys.remaining_charges.is_none() {
                             continue;
                         }
-                        let hero_id = entity
-                            .get_handle(keys.owner)
-                            .map(|h| (h & boon_parser::ENTITY_HANDLE_INDEX_MASK) as i32)
-                            .and_then(|owner_idx| entity_to_hero.get(&owner_idx).copied())
-                            .unwrap_or(0);
-                        if hero_id == 0 {
-                            continue;
-                        }
-                        let state = AbilState {
+                        let Some(owner) = entity.get_handle(keys.owner) else { continue };
+                let hero_id = $ctx.entities().get_by_handle(owner)
+                    .filter(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                    .map_or(0, |pawn| pawn.get_i64(pk_hero_id));
+                if hero_id == 0 { continue; }
+                let state = AbilState {
+                    owner,
+                    hero_id,
+                    ability_id: entity.get_u32(keys.subclass_id),
+                    slot: entity.get_i64(keys.slot) as i32,
                             cooldown_start: entity.get_f32(keys.cooldown_start),
                             cooldown_end: entity.get_f32(keys.cooldown_end),
                             remaining_charges: entity.get_i64(keys.remaining_charges) as i32,
                             recharge_start: entity.get_f32(keys.recharge_start),
                             recharge_end: entity.get_f32(keys.recharge_end),
                         };
-                        let changed = abil_prev.get(&idx).map(|p| *p != state).unwrap_or(true);
+                        let changed = abil_prev.get(&entity.id()).map(|p| *p != state).unwrap_or(true);
                         if changed {
                             at_tick.push($ctx.tick());
                             at_hero_id.push(hero_id);
@@ -1410,7 +1420,7 @@ impl Demo {
                             at_remaining_charges.push(state.remaining_charges);
                             at_charge_recharge_start.push(state.recharge_start);
                             at_charge_recharge_end.push(state.recharge_end);
-                            abil_prev.insert(idx, state);
+                            abil_prev.insert(entity.id(), state);
                         }
                     }
                 }

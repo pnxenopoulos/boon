@@ -200,3 +200,10 @@ A return requires carrier loss, a completed delivery channel, and delivery-point
 Entry into the delivery area does not prove a return.
 Missing evidence gives a `dropped` event for carrier loss.
 If the carrier pawn is absent, event coordinates use its last observed event position.
+
+## Low-level format limits
+
+The parser does not yet select concrete polymorphic serializers or preserve
+serializer versions. Alternate and rolling packet baselines also need support
+and dedicated replay tests. These paths were not verified by the current
+Deadlock fixtures. They can affect other Source 2 recording modes.

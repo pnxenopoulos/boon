@@ -18,9 +18,13 @@ struct AbilityKeys {
     owner: Option<u64>,
 }
 
-/// The cooldown/charge state we change-detect on, per ability entity.
+/// Identity, cooldown, and charge state for change detection.
 #[derive(PartialEq)]
 struct AbilState {
+    owner: u32,
+    hero_id: i64,
+    ability_id: u32,
+    slot: i32,
     cooldown_start: f32,
     cooldown_end: f32,
     remaining_charges: i32,
@@ -50,7 +54,7 @@ struct AbilityTickSummary {
 
 /// List ability cooldown/charge state changes from a demo.
 ///
-/// Emit a row only when the cooldown or charge state changes. Each ability has
+/// Emit a row when identity, cooldown, or charge state changes. Each ability has
 /// a separate networked entity. Read the decoded ability entities for each tick.
 /// Resolve the field keys for each class one time. Use `m_hOwnerEntity` to link
 /// each ability to its hero.
@@ -88,12 +92,9 @@ pub fn run(
 
     let mut keys_resolved = false;
     let mut pk_hero_id: Option<u64> = None;
-    let mut entity_to_hero: HashMap<i32, i64> = HashMap::new();
-    let mut entity_to_hero_built = false;
-
     // Per-ability-class resolved field keys, and per-entity previous state.
     let mut ability_keys_cache: HashMap<String, AbilityKeys> = HashMap::new();
-    let mut prev: HashMap<i32, AbilState> = HashMap::new();
+    let mut prev: HashMap<boon::EntityId, AbilState> = HashMap::new();
     let mut events_out: Vec<AbilityTickOutput> = Vec::new();
 
     parser
@@ -104,23 +105,14 @@ pub fn run(
                 keys_resolved = true;
             }
 
-            // Build entity_to_hero map (retry until populated).
-            if !entity_to_hero_built {
-                for (idx, entity) in ctx.entities().iter() {
-                    if entity.class_name.as_ref() == "CCitadelPlayerPawn" {
-                        let hid = entity.get_i64(pk_hero_id);
-                        if hid != 0 {
-                            entity_to_hero.insert(idx, hid);
-                        }
-                    }
-                }
-                if !entity_to_hero.is_empty() {
-                    entity_to_hero_built = true;
+            for change in ctx.entities().entity_changes() {
+                if change.kind == boon::EntityChangeKind::Deleted {
+                    prev.remove(&change.id());
                 }
             }
 
             // Only the entities this tick actually changed — an ability's
-            // cooldown/charge state can only change on a tick it was updated, so
+            // recorded fields only change when it receives an update, so
             // scanning every active entity every tick is wasted work.
             for &idx in ctx.entities().updated_indices() {
                 let Some(entity) = ctx.entities().get(idx) else {
@@ -151,22 +143,29 @@ pub fn run(
                 if keys.cooldown_end.is_none() || keys.remaining_charges.is_none() {
                     continue;
                 }
-                let hero_id = entity
-                    .get_handle(keys.owner)
-                    .map(|h| (h & boon::ENTITY_HANDLE_INDEX_MASK) as i32)
-                    .and_then(|owner_idx| entity_to_hero.get(&owner_idx).copied())
-                    .unwrap_or(0);
+                let Some(owner) = entity.get_handle(keys.owner) else {
+                    continue;
+                };
+                let hero_id = ctx
+                    .entities()
+                    .get_by_handle(owner)
+                    .filter(|pawn| pawn.class_name.as_ref() == "CCitadelPlayerPawn")
+                    .map_or(0, |pawn| pawn.get_i64(pk_hero_id));
                 if hero_id == 0 {
                     continue;
                 }
                 let state = AbilState {
+                    owner,
+                    hero_id,
+                    ability_id: entity.get_u32(keys.subclass_id),
+                    slot: entity.get_i64(keys.slot) as i32,
                     cooldown_start: entity.get_f32(keys.cooldown_start),
                     cooldown_end: entity.get_f32(keys.cooldown_end),
                     remaining_charges: entity.get_i64(keys.remaining_charges) as i32,
                     recharge_start: entity.get_f32(keys.recharge_start),
                     recharge_end: entity.get_f32(keys.recharge_end),
                 };
-                let changed = prev.get(&idx).map(|p| *p != state).unwrap_or(true);
+                let changed = prev.get(&entity.id()).map(|p| *p != state).unwrap_or(true);
                 if changed {
                     events_out.push(AbilityTickOutput {
                         tick: ctx.tick(),
@@ -181,7 +180,7 @@ pub fn run(
                         charge_recharge_start: state.recharge_start,
                         charge_recharge_end: state.recharge_end,
                     });
-                    prev.insert(idx, state);
+                    prev.insert(entity.id(), state);
                 }
             }
         })

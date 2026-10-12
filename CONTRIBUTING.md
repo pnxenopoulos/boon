@@ -40,6 +40,17 @@ cargo nextest run --workspace --all-features --locked --exclude boon-python
 cargo build --release -p boon-dev
 ```
 
+### Local parser core
+
+To test a matching pbdems2 version from a sibling checkout, run from this root:
+
+```bash
+cargo --config 'patch.crates-io.pbdems2.path="../pbdems2"' test -p boon-deadlock
+```
+
+Publish pbdems2 before a Boon release that requires its new version.
+Then run `cargo update -p pbdems2` without the local patch to refresh the registry lock.
+
 ### Python Development
 
 ```bash
@@ -79,7 +90,7 @@ this codebase. Do not enable all pedantic or nursery lints at once.
 - Return errors for failed input or data operations. Reserve `expect` for
   documented invariants that indicate a programming error.
 - Borrow data used only for inspection or serialization. Clone when the caller must own the data.
-- Keep missing fields when applying partial replay updates.
+- Preserve omitted fields in ordinary partial updates. Remove child values after a pointer clear or vector shrink.
 - Document unsafe operations and keep their scope small.
 - Keep examples fallible with `?`, and test behavior that a refactor could change.
 
