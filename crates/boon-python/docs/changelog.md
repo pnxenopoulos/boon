@@ -2,6 +2,7 @@
 
 ## 0.16.0
 
+- Update protobufs to Deadlock 6774 (`boon-proto 0.4.11112755+6774`).
 - Correct ability history after entity-slot reuse and owner, ability, or slot changes.
 - Validate full ability-owner handles in Python and `boon-dev`.
 - **Rust API change:** Use pbdems2 0.4.0. Resolve cached field keys again after an upgrade.

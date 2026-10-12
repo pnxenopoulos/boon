@@ -22951,6 +22951,8 @@ pub struct CCitadelUserMsgHeroKilled {
     pub killfeed_gold: ::core::option::Option<i32>,
     #[prost(uint32, optional, tag = "9")]
     pub killer_ability_id: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "10")]
+    pub first_blood: ::core::option::Option<bool>,
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, ::prost::Message)]
