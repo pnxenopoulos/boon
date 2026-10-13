@@ -23,6 +23,10 @@ operation times, output sizes, process peak RSS where supported, and output
 fingerprints. Downloads are not included; install catalogs with `boon get` before
 measurements of features that use names.
 
+Use `--case minimap/single` for one selected minimap tick, or
+`--case minimap/sampled` for a 64-tick interval. Both cases scan the replay to
+preserve last-seen history.
+
 Use the same harness and environment for the two revisions. Compare the reports:
 
 ```bash

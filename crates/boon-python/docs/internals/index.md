@@ -27,6 +27,11 @@ name-tables
   `inputs/tests.rs` contains the resolver tests.
 - `crates/boon/src/rulesets/`: Keep equations different of catalog balance values.
   `percentage.rs` supplies the shared remaining-factor equation.
+- `crates/boon/src/replay_inputs.rs`: Read upgrade tokens with `UpgradeReader`
+  and enemy minimap icons with `EnemyMinimap`. Resolve field keys from the replay
+  serializers. Recreate readers if the schema changes. Call
+  `EnemyMinimap::update(ctx, emit)` at every completed tick; set `emit=false`
+  between selected ticks to preserve last-seen history.
 - `crates/boon-python/src/`: Build Polars columns and cache datasets.
   `DatasetCache` uses the dataset enum for direct lookups.
 - `crates/boon-python/python/boon/`: Supply public queries and typed result tables.

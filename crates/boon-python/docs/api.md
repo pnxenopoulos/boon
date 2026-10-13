@@ -106,8 +106,8 @@ world_ticks, street_brawl_ticks, street_brawl_rounds
 ```
 
 The two `street_brawl_*` names apply only to a Street Brawl demo. There is no Python
-dataset enum. Calculated stats, state lists, and imbues use different methods;
-their names are not accepted by `load()`.
+dataset enum. Calculated stats, state lists, imbues, and enemy minimap queries
+use separate methods; their names are not accepted by `load()`.
 
 ---
 
@@ -256,6 +256,63 @@ Unknown state bits make `unlimited_ammo` null unless `INFINITE_CLIP` is present.
 Missing or duplicate Steam IDs leave calculated ammo and state values null.
 Unlimited ammo does not change the counts to infinity. `demo.player_ticks` and `demo.load("player_ticks")` do not calculate these added fields.
 
+
+(enemy-minimap-ticks)=
+#### `enemy_minimap_ticks(*, ticks=None, every=None)`
+
+Read recorded enemy hero icons from each team's minimap channel. Each row
+identifies an observing team and an enemy icon at a completed demo tick.
+This is shared team information, not an individual player's line of sight.
+The method reads `CCitadelTeam.m_vecFOWEntities` entries with class code 1.
+Other map icons are excluded. No boon-data catalog is needed.
+
+```python
+icons = demo.enemy_minimap_ticks(ticks=[187554])
+sampled = demo.enemy_minimap_ticks(every=64)
+```
+
+- **`ticks`** (`Sequence[int] | None`) -- Exact demo ticks to return.
+- **`every`** (`int | None`) -- Positive interval between sampled ticks.
+
+Omit both arguments to return every recorded tick. Pass only one selector;
+`ticks=[]` returns an empty DataFrame with the same column types.
+Each call scans the replay, including unsampled ticks, to preserve last-seen
+history. Missing source entries do not produce rows.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `tick` | `Int32` | Completed demo tick |
+| `observer_team` | `Int64` | Team receiving the minimap channel: 2 or 3 |
+| `target_team` | `Int64` | Enemy team: 2 or 3 |
+| `target_hero_id` | `Int64`, nullable | Hero ID from the current pawn |
+| `target_steam_id` | `UInt64`, nullable | Steam ID from a unique active controller bound to that pawn |
+| `target_entity_index` | `Int32`, nullable | Resolved pawn entity index |
+| `target_entity_serial` | `UInt32`, nullable | Pawn serial that distinguishes reuse of the index |
+| `fow_entity_index_raw` | `Int64` | Decoded source entity index, kept even if unresolved |
+| `visible_on_map` | `bool`, nullable | Recorded icon visibility |
+| `map_x` | `Int64`, nullable | Current minimap X, from 0 to 255, only while shown |
+| `map_y` | `Int64`, nullable | Current minimap Y, from 0 to 255, only while shown |
+| `tick_hidden_raw` | `Int64`, nullable | Recorded hidden-tick field; its meaning and units are not inferred |
+| `last_seen_tick` | `Int32`, nullable | Most recent shown tick for this team and pawn lifetime |
+| `last_seen_x` | `Int64`, nullable | Minimap X at that shown tick |
+| `last_seen_y` | `Int64`, nullable | Minimap Y at that shown tick |
+
+Minimap coordinates are not world coordinates. Current coordinates are null
+when the icon is hidden, visibility is unknown, or either coordinate is invalid.
+Last-seen values require a resolved pawn and an earlier or current shown position.
+They are kept separately for each observing team and pawn lifetime.
+
+Missing pawns leave target identity fields null. Controller bindings use full
+handles, including serials. `target_steam_id` is null if no valid binding or
+Steam ID exists, current handles identify different pawns, or multiple
+controllers claim the same pawn.
+Use `target_steam_id` to join to `demo.players`; do not join null IDs.
+
+**Returns:** `polars.DataFrame` with the columns above.
+
+**Raises:** `ValueError` if both selectors are supplied or `every <= 0`.
+
+See [enemy minimap icons](examples.md#enemy-minimap-icons) for a query example.
 
 (summary)=
 #### `summary()`
@@ -746,6 +803,7 @@ demo.banned_heroes
 
 ---
 
+(player-ticks)=
 #### `player_ticks`
 
 ```python
@@ -821,6 +879,17 @@ same history. Later queries reuse it. Barrier snapshots use no boon-data catalog
 | `kills` | `int` | Total kills |
 | `deaths` | `int` | Total deaths |
 | `assists` | `int` | Total assists |
+| `upgrade_ids` | `List(UInt32)`, nullable | Current recorded upgrade tokens |
+| `boon_count` | `Int64`, nullable | Directly recorded boon count, if available |
+
+`upgrade_ids` reads the controller's `m_PlayerDataGlobal.m_vecUpgrades` vector
+at that tick. It can include hero abilities. Use the matching boon-data catalog
+to identify items. `[]` means a recorded empty vector; null means the vector or
+an entry is missing or invalid. This column also appears in player snapshots.
+
+`boon_count` reads a direct `m_iBoonCount` or `m_nBoonCount` field, at controller
+level or under `m_PlayerDataGlobal`. It is null if the field is absent or invalid.
+Boon does not calculate this value from the player's level.
 
 ---
 
@@ -1016,7 +1085,9 @@ In-game chat messages. Boon loads this dataset on first access.
 demo.objectives  # polars.DataFrame
 ```
 
-Objective health state changes. Tracks walkers, barracks, shrines, patrons, and mid boss. Emits a row when an objective's health or max_health changes.
+Objective health state changes for walkers, barracks, shrines, patrons, and mid boss.
+Records objectives with nonzero `max_health`. Emits their first observed state
+and each change in `health`, `max_health`, or patron `phase`.
 Boon loads this dataset on first access.
 
 | Column | Type | Description |
@@ -1031,7 +1102,12 @@ Boon loads this dataset on first access.
 | `x` | `float` | X position in world (Hammer) units |
 | `y` | `float` | Y position in world (Hammer) units |
 | `z` | `float` | Z position in world (Hammer) units |
-| `entity_id` | `int` | Entity index (stable for each structure across ticks) |
+| `entity_id` | `int` | Entity index; another entity can later use the same index |
+| `entity_serial` | `UInt32` | Serial that distinguishes reuse of the index |
+
+Use `(entity_id, entity_serial)` to identify one objective lifetime.
+Filter `objective_type == "mid_boss"` to read boss health, including an observed
+50% crossing. Use `demo.mid_boss` for lifecycle events.
 
 ---
 

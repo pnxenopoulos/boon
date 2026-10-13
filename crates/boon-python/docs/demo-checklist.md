@@ -42,6 +42,12 @@ Choose an early, middle and late tick. Compare **each player** at each tick with
   and angles are comparable only with a coordinate readout; a visual comparison shows only placement.
 - [ ] Shop/regen-zone flags and rejuvenator/rebirth possession match where
   independently observable.
+- [ ] Compare `upgrade_ids` with the current build using the matching catalog.
+  It can include hero abilities. A null `boon_count` is unknown, not zero.
+- [ ] Select each team in `enemy_minimap_ticks(ticks=[...])`. Compare visible
+  enemy icons with that team's minimap. Hidden icons must have null current coordinates.
+- [ ] Compare an icon before and after it disappears. `last_seen_*` must keep
+  its last shown position for that team and pawn lifetime.
 
 ### 3. Compare every dataset
 
@@ -61,7 +67,7 @@ Record an outcome for each of these 22 datasets:
 | `item_purchases` | Purchase, upgrade, sale/swap, current hero, and component links by Steam ID and tick. |
 | `chat` | Text, sender, channel, and current hero, including after a hero change. |
 | `flex_slots` | Team and unlock tick. |
-| `objectives` | Team, health, destruction, and patron phase. |
+| `objectives` | Team, health, destruction, patron phase, and `(entity_id, entity_serial)` across respawns. |
 | `mid_boss` | Spawn, death, and rejuvenator pickup/use/expiry. |
 | `troopers` | A wave's team, lane, position, and health. Entity indices can be reused. |
 | `neutrals` | A camp's entity identity, location, health, and state changes. This table records changes only. |

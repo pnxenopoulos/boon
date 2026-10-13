@@ -9,7 +9,7 @@
 **Python** &nbsp;
 [![PyPI](https://img.shields.io/pypi/v/boon-deadlock.svg)](https://pypi.org/project/boon-deadlock/)
 [![PyPI Downloads](https://static.pepy.tech/personalized-badge/boon-deadlock?period=total&units=international_system&left_color=grey&right_color=blue&left_text=PyPI%20Downloads)](https://pepy.tech/project/boon-deadlock)
-[![Python 3.11–3.14](https://img.shields.io/badge/python-3.11%E2%80%933.14-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![Python 3.11–3.15](https://img.shields.io/badge/python-3.11%E2%80%933.15-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/downloads/)
 
 **Rust** &nbsp;
 [![crates.io](https://img.shields.io/crates/v/boon-deadlock.svg)](https://crates.io/crates/boon-deadlock)
@@ -37,7 +37,7 @@ You can also use pip:
 pip install boon-deadlock
 ```
 
-Use Python 3.11–3.14.
+Use Python 3.11–3.15.
 
 ## Quick Start
 
@@ -75,7 +75,6 @@ print(demo.players)
 # Datasets (combat is preloaded; other frames load on first access)
 player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
-enemy_icons      = demo.enemy_minimap_ticks(every=64)  # team-specific enemy map icons
 kills            = demo.kills             # kill events
 damage           = demo.damage            # damage events, including melee classification
 item_purchases   = demo.item_purchases    # item shop transactions
@@ -94,10 +93,15 @@ stat_modifier_events = demo.stat_modifier_events  # permanent stat bonus change 
 active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 urn              = demo.urn               # urn lifecycle and delivery events
 rift             = demo.rift              # rift (koth) lifecycle, one row per rift
+
+# Recorded enemy minimap icons for both teams, sampled every 64 ticks.
+enemy_icons = demo.enemy_minimap_ticks(every=64)
 ```
 
-See [replay input fields](docs/replay-input-fields.md) for the recorded upgrade
-vector, direct boon count, enemy minimap observations, and mid-boss health.
+Player snapshots include current `upgrade_ids` and an optional recorded
+`boon_count`. Objectives include `entity_serial` to distinguish reuse of an
+entity index. See the [API reference](https://boon.readthedocs.io/en/latest/api.html)
+and [minimap example](https://boon.readthedocs.io/en/latest/examples.html#enemy-minimap-icons).
 
 ## CLI
 

@@ -12,7 +12,7 @@
 <p>
   <a href="https://pypi.org/project/boon-deadlock/"><img src="https://img.shields.io/pypi/v/boon-deadlock.svg?style=for-the-badge" alt="PyPI"></a>
   <a href="https://pepy.tech/project/boon-deadlock"><img src="https://img.shields.io/pepy/dt/boon-deadlock?style=for-the-badge" alt="Downloads"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11–3.14"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/pypi/pyversions/boon-deadlock?style=for-the-badge" alt="Python 3.11–3.15"></a>
 </p>
 
 </div>
@@ -63,7 +63,7 @@ Or use pip:
 pip install boon-deadlock
 ```
 
-Use Python 3.11–3.14.
+Use Python 3.11–3.15.
 
 ### CLI
 
@@ -73,7 +73,7 @@ Use Python 3.11–3.14.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.16"
+boon-deadlock = "0.17"
 ```
 
 Rust callers can load stat and state catalogs from JSON bytes with
@@ -82,6 +82,11 @@ These constructors validate the catalogs without filesystem or network access.
 Use `Parser::calculate_stats` with a `StatBatch` to query hero stats, ability
 stats and imbues in one replay pass. Each query keeps its own selections.
 See [the Rust example](crates/boon/examples/stat_batch.rs).
+
+Use `boon::replay_inputs::UpgradeReader` for current upgrade tokens and
+`EnemyMinimap` for recorded enemy icons. Call `EnemyMinimap::update(ctx, emit)`
+at every completed tick. Set `emit=false` between selected ticks to keep
+last-seen history.
 
 Boon uses pbdems2 0.4.0. Resolve field keys from the current schema; do not
 store numeric field keys across parser upgrades.
@@ -106,6 +111,9 @@ kills = demo.kills
 damage = demo.damage
 player_ticks = demo.player_ticks
 
+# Recorded enemy minimap icons for both teams, sampled every 64 ticks
+enemy_icons = demo.enemy_minimap_ticks(every=64)
+
 # Load datasets together; compatible datasets share a parser pass
 demo.load("kills", "damage", "player_ticks", "objectives")
 
@@ -124,6 +132,9 @@ See the [feature examples](crates/boon-python/docs/examples.md#stats-states-and-
 [hero stat names](crates/boon-python/docs/hero-stats.md), and
 [ability stat names](crates/boon-python/docs/ability-stats.md#percentage-rules).
 The guides list accepted strings and enum members.
+See [enemy minimap icons](crates/boon-python/docs/examples.md#enemy-minimap-icons)
+for team visibility and last-seen positions. Player snapshots also include
+current `upgrade_ids` and an optional recorded `boon_count`.
 
 ### CLI
 

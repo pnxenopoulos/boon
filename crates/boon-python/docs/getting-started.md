@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.11–3.14
+- Python 3.11–3.15
 - Rust toolchain (for building from source)
 
 ## Installation
@@ -66,6 +66,10 @@ print(player_ticks.shape)    # Row counts depend on the recorded pawns and ticks
 print(player_ticks.columns)  # ['tick', 'steam_id', 'ammo_fraction', 'hero_id', ...]
 ```
 
+Player rows include current `upgrade_ids` and an optional recorded `boon_count`.
+Use `demo.snapshots(ticks=[187554])` to select player ticks before loading the
+full frame. See {ref}`player-ticks` for column meanings.
+
 ## Events and Economy
 
 ```python
@@ -97,10 +101,17 @@ mid_boss = demo.mid_boss
 # Get one row per Rift, with the winner and lane.
 rift = demo.rift
 
+# Recorded enemy hero icons on each team's minimap.
+enemy_icons = demo.enemy_minimap_ticks(every=64)
+
 # Lane troopers and guardians (opt-in, large dataset)
 troopers = demo.troopers
 # "trooper" is a lane creep. "trooper_boss" is a lane guardian.
 ```
+
+Minimap coordinates use the range 0–255. Hidden icons have null current
+coordinates and can retain a last-seen position. See
+[enemy minimap icons](examples.md#enemy-minimap-icons).
 
 ## Filtering with Polars
 

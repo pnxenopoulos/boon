@@ -417,6 +417,50 @@ The purchase has `upgraded_from_ability_ids=[1548066885]`.
 Missing IDs, catalog links, or unique matches give `[]`.
 Match players with `steam_id`; use `tick` for the transaction time.
 
+## Current upgrades
+
+Read the recorded upgrade vector at a selected tick. It can include hero
+abilities as well as items. Use the matching boon-data catalog to classify IDs.
+
+```python
+from boon import Demo
+
+demo = Demo("108575009.dem", preload=False)
+players = demo.snapshots(ticks=[187554])
+print(players.select("tick", "steam_id", "hero_id", "upgrade_ids", "boon_count"))
+```
+
+An empty list is a recorded empty vector. Null means missing or invalid data.
+`boon_count` is null when the replay has no direct count field.
+
+## Enemy minimap icons
+
+Read enemy hero icons as seen on each team's minimap. Select an observing team
+to get its channel. Coordinates use the range 0–255, not world units.
+
+```python
+import polars as pl
+from boon import Demo
+
+demo = Demo("108575009.dem", preload=False)
+icons = demo.enemy_minimap_ticks(ticks=[187554])
+team_icons = icons.filter(pl.col("observer_team") == 2)
+print(team_icons.select(
+    "tick", "target_steam_id", "target_hero_id", "visible_on_map", "map_x", "map_y"
+))
+
+# Hidden icons have null current coordinates; inspect their last shown position.
+hidden = team_icons.filter(~pl.col("visible_on_map"))
+print(hidden.select("target_steam_id", "last_seen_tick", "last_seen_x", "last_seen_y"))
+
+# Sample every 64 ticks. History still uses every recorded tick.
+sampled = demo.enemy_minimap_ticks(every=64)
+```
+
+The result is a DataFrame of icons. To draw a map, convert its coordinates to
+the image coordinate system. See {ref}`enemy-minimap-ticks` for all columns,
+missing values, and sampling options.
+
 ## Objective timeline
 
 Track when objectives are destroyed by filtering for health reaching zero.
@@ -434,6 +478,10 @@ for row in destroyed.iter_rows(named=True):
     team = teams.get(row["team_num"], "Unknown")
     print(f"[{time}] {team} lost {row['objective_type']}")
 ```
+
+Use `(entity_id, entity_serial)` to identify one objective lifetime. The same
+index can later identify a new entity. Filter `objective_type == "mid_boss"`
+to read boss health changes; use `demo.mid_boss` for lifecycle events.
 
 ## Heatmap data
 
