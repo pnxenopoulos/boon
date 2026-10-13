@@ -59,6 +59,11 @@ boon get
 uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
   --case names/cold --case names/warm --case dataset/breakables \
   --output ../../target/benchmarks/names.json
+
+# Enemy hero icons, including history before selected ticks.
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+  --case minimap/single --case minimap/sampled \
+  --output ../../target/benchmarks/minimap.json
 ```
 
 `names/cold` clears parsed-map caches before every sample. `names/warm` fills

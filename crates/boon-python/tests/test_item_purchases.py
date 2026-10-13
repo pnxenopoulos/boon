@@ -3,10 +3,11 @@
 import json
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import polars as pl
 import pytest
-from boon import data
+from boon import Demo, data
 from boon.item_purchases import _upgrade_sources, get_item_purchases
 from polars.testing import assert_frame_equal
 
@@ -109,7 +110,7 @@ def test_catalog_selection_and_refresh(monkeypatch, tmp_path):
             "change": ["purchased", "sold"],
         }
     )
-    demo = SimpleNamespace(_item_purchases=raw)
+    demo = cast(Demo, SimpleNamespace(_item_purchases=raw))
     result = get_item_purchases(demo)
     assert result["upgraded_from_ability_ids"].to_list() == [[1548066885], []]
     assert_frame_equal(result.drop("upgraded_from_ability_ids"), raw)
@@ -125,7 +126,9 @@ def test_catalog_selection_and_refresh(monkeypatch, tmp_path):
 
 
 def test_empty_events_do_not_need_catalogs():
-    demo = SimpleNamespace(_item_purchases=pl.DataFrame(schema={"tick": pl.Int32}))
+    demo = cast(
+        Demo, SimpleNamespace(_item_purchases=pl.DataFrame(schema={"tick": pl.Int32}))
+    )
     result = get_item_purchases(demo)
     assert result.is_empty()
     assert result.schema["upgraded_from_ability_ids"] == pl.List(pl.UInt32)

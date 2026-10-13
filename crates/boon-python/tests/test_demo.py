@@ -43,6 +43,7 @@ PLAYER_TICKS_COLUMNS = {
     "ap_net_worth", "gold_net_worth", "denies", "hero_damage",
     "hero_healing", "objective_damage", "self_healing", "kill_streak",
     "last_hits", "level", "kills", "deaths", "assists",
+    "boon_count", "upgrade_ids",
 }
 
 WORLD_TICKS_COLUMNS = {"tick", "is_paused", "next_midboss"}
@@ -73,7 +74,7 @@ CHAT_COLUMNS = {"tick", "hero_id", "text", "chat_type"}
 
 OBJECTIVES_COLUMNS = {
     "tick", "objective_type", "team_num", "lane", "health", "max_health", "phase",
-    "x", "y", "z", "entity_id",
+    "x", "y", "z", "entity_id", "entity_serial",
 }
 
 MID_BOSS_COLUMNS = {"tick", "team_num", "event"}

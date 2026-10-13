@@ -62,6 +62,7 @@ def cases() -> list[str]:
         *(f"dataset/{name}" for name in (*Demo.available_datasets(), "players", "banned_heroes")),
         *(f"{mode}/{name}" for mode in ("load", "sequential", "cached") for name in GROUPS),
         *(f"snapshot/{name}" for name in SNAPSHOTS),
+        *(["minimap/single", "minimap/sampled"] if hasattr(Demo, "enemy_minimap_ticks") else []),
         *(f"derived/{name}" for name in DERIVED),
     ]
 
@@ -125,6 +126,9 @@ def execute(demo: Any, case: str) -> Any:
         return {dataset: getattr(demo, dataset) for dataset in GROUPS[name]}
     if mode == "snapshot":
         return {"player_ticks": demo.snapshots(**snapshot_args(demo, name))}
+    if mode == "minimap":
+        query = {"ticks": [demo.total_ticks // 2]} if name == "single" else {"every": 64}
+        return {"enemy_minimap_ticks": demo.enemy_minimap_ticks(**query)}
     if mode == "summary":
         return demo.summary()
     if mode == "derived":

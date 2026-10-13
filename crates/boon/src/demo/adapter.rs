@@ -350,7 +350,14 @@ fn decode_send_tables(command: CDemoSendTables) -> Result<FlattenedSerializer> {
     let mut reader = ByteReader::new(&data);
     let _encoded_size = reader.read_uvarint64()?;
     let remaining = reader.read_bytes(reader.remaining())?;
-    let message = CsvcMsgFlattenedSerializer::decode(remaining)?;
+    let mut message = CsvcMsgFlattenedSerializer::decode(remaining)?;
+    // CEntityIndex is a signed varint typedef. Normalize it before pbdems2
+    // selects the decoder; its unknown-type fallback is an unsigned varint.
+    for symbol in &mut message.symbols {
+        if symbol == "CEntityIndex" {
+            *symbol = "int32".into();
+        }
+    }
 
     Ok(FlattenedSerializer::new(
         message
@@ -409,6 +416,45 @@ fn create_string_table(message: CsvcMsgCreateStringTable) -> CreateStringTable {
 #[cfg(test)]
 mod checkpoint_tests {
     use super::*;
+
+    #[test]
+    fn entity_indices_use_signed_varints() {
+        use boon_proto::proto::{ProtoFlattenedSerializerFieldT, ProtoFlattenedSerializerT};
+        use pbdems2::entity::{Decoder, FieldDecodeContext, FieldValue, SerializerContainer};
+        use pbdems2::io::BitReader;
+
+        let message = CsvcMsgFlattenedSerializer {
+            symbols: ["Test", "m_nEntIndex", "CEntityIndex"]
+                .map(String::from)
+                .into(),
+            serializers: vec![ProtoFlattenedSerializerT {
+                serializer_name_sym: Some(0),
+                fields_index: vec![0],
+                ..Default::default()
+            }],
+            fields: vec![ProtoFlattenedSerializerFieldT {
+                var_type_sym: Some(2),
+                var_name_sym: Some(1),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let mut bytes = vec![0];
+        bytes.extend(message.encode_to_vec());
+        let tables = decode_send_tables(CDemoSendTables { data: Some(bytes) }).unwrap();
+        let serializers = SerializerContainer::parse(tables, DECODE_PROFILE).unwrap();
+        let decoder = &serializers.get("Test").unwrap().fields[0].metadata.decoder;
+        assert!(matches!(decoder, Decoder::I64));
+        for (wire, expected) in [(&[0x94, 0x01][..], 74), (&[1][..], -1), (&[0][..], 0)] {
+            let value = decoder
+                .decode(
+                    &mut FieldDecodeContext::new(1.0 / 64.0),
+                    &mut BitReader::new(wire),
+                )
+                .unwrap();
+            assert!(matches!(value, FieldValue::I64(n) if n == expected));
+        }
+    }
 
     #[test]
     fn restores_configuration_without_transient_buffers() {

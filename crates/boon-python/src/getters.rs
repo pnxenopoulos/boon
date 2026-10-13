@@ -5,7 +5,11 @@ impl Demo {
     /// Per-tick, per-player state as a Polars DataFrame.
     ///
     /// Records position, health, barrier, combat timers,
-    /// kills, deaths, and net worth for each recorded player and tick.
+    /// kills, deaths, net worth, optional directly recorded boon count, and
+    /// the controller's complete current upgrade-token vector. `upgrade_ids`
+    /// is null when that vector cannot be decoded; an empty list means the
+    /// source explicitly records zero entries. Classify tokens with the
+    /// matching game-data catalog to select purchased items.
     /// Boon loads this dataset on first access.
     #[getter]
     pub(crate) fn player_ticks(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
@@ -120,7 +124,7 @@ impl Demo {
 
     /// Objective health state changes as a Polars DataFrame.
     ///
-    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``, ``phase``, ``x``, ``y``, ``z``, ``entity_id``.
+    /// Columns: ``tick``, ``objective_type``, ``team_num``, ``lane``, ``health``, ``max_health``, ``phase``, ``x``, ``y``, ``z``, ``entity_id``, ``entity_serial``.
     /// Emits a row when an objective's health or max_health changes.
     /// Boon loads this dataset on first access.
     #[getter]

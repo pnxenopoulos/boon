@@ -212,6 +212,7 @@ pub(super) struct PtKeys {
     pub(super) kills: Option<u64>,
     pub(super) deaths: Option<u64>,
     pub(super) assists: Option<u64>,
+    pub(super) boon_count: Option<u64>,
 }
 
 impl PtKeys {
@@ -273,6 +274,39 @@ impl PtKeys {
             kills: c("m_PlayerDataGlobal.m_iPlayerKills"),
             deaths: c("m_PlayerDataGlobal.m_iDeaths"),
             assists: c("m_PlayerDataGlobal.m_iPlayerAssists"),
+            boon_count: c("m_PlayerDataGlobal.m_iBoonCount")
+                .or_else(|| c("m_PlayerDataGlobal.m_nBoonCount"))
+                .or_else(|| c("m_iBoonCount"))
+                .or_else(|| c("m_nBoonCount")),
+        }
+    }
+}
+
+/// Append inventories directly to Arrow; keep no allocation per player row.
+struct UpgradeCols {
+    reader: Option<boon_parser::replay_inputs::UpgradeReader>,
+    builder: ListPrimitiveChunkedBuilder<UInt32Type>,
+}
+
+impl Default for UpgradeCols {
+    fn default() -> Self {
+        Self {
+            reader: None,
+            builder: ListPrimitiveChunkedBuilder::new("upgrade_ids".into(), 0, 0, DataType::UInt32),
+        }
+    }
+}
+
+impl UpgradeCols {
+    fn append(&mut self, ctx: &boon_parser::Context, controller: &boon_parser::Entity) {
+        let reader = self.reader.get_or_insert_with(|| {
+            boon_parser::replay_inputs::UpgradeReader::new(
+                ctx.serializers().get(&controller.class_name),
+            )
+        });
+        match reader.read(controller) {
+            Some(ids) => self.builder.append_slice(ids),
+            None => self.builder.append_null(),
         }
     }
 }
@@ -470,6 +504,8 @@ pub(super) struct PtCols {
     pub(super) kills: Vec<i64>,
     pub(super) deaths: Vec<i64>,
     pub(super) assists: Vec<i64>,
+    pub(super) boon_count: Vec<Option<i64>>,
+    upgrade_ids: UpgradeCols,
 }
 
 impl PtCols {
@@ -569,11 +605,23 @@ impl PtCols {
             self.kills.push(ctrl.get_i64(k.kills));
             self.deaths.push(ctrl.get_i64(k.deaths));
             self.assists.push(ctrl.get_i64(k.assists));
+            self.boon_count.push(k.boon_count.and_then(|key| {
+                let value = ctrl.field_value(Some(key))?;
+                match value {
+                    boon_parser::FieldValue::I32(n) => Some(i64::from(*n)),
+                    boon_parser::FieldValue::U32(n) => Some(i64::from(*n)),
+                    boon_parser::FieldValue::I64(n) => Some(*n),
+                    boon_parser::FieldValue::U64(n) => i64::try_from(*n).ok(),
+                    _ => None,
+                }
+            }));
+            self.upgrade_ids.append(ctx, ctrl);
         }
     }
 
     /// Build the `player_ticks` DataFrame. Column order/names must match `load()`.
-    pub(super) fn into_dataframe(self) -> PyResult<DataFrame> {
+    pub(super) fn into_dataframe(mut self) -> PyResult<DataFrame> {
+        let upgrade_ids = self.upgrade_ids.builder.finish();
         df_from_columns(vec![
             numeric_column("tick", self.tick),
             Column::new("steam_id".into(), self.steam_id),
@@ -627,6 +675,8 @@ impl PtCols {
             numeric_column("kills", self.kills),
             numeric_column("deaths", self.deaths),
             numeric_column("assists", self.assists),
+            Column::new("boon_count".into(), self.boon_count),
+            upgrade_ids.into_column(),
         ])
         .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))
     }

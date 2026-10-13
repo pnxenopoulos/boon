@@ -41,6 +41,7 @@ mod datasets;
 mod getters;
 mod hero_stats;
 mod loader;
+mod minimap;
 mod names;
 mod player_states;
 mod runtime;

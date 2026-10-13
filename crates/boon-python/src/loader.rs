@@ -346,8 +346,9 @@ impl Demo {
         let mut obj_y: Vec<f32> = Vec::new();
         let mut obj_z: Vec<f32> = Vec::new();
         let mut obj_entity_id: Vec<i32> = Vec::new();
-        // Change detection: entity_index → (health, max_health, phase)
-        let mut obj_prev: HashMap<i32, (i64, i64, i64)> = HashMap::new();
+        let mut obj_entity_serial: Vec<u32> = Vec::new();
+        // Key by entity lifetime, not just a reusable slot index.
+        let mut obj_prev: HashMap<boon_parser::EntityId, (i64, i64, i64)> = HashMap::new();
         // Patron phase key
         let mut patron_phase_key: Option<u64> = None;
         // ── Column vectors for mid_boss ──
@@ -1159,12 +1160,13 @@ impl Demo {
                         let hp = entity.get_i64(hp_key);
                         let phase = if is_patron { entity.get_i64(patron_phase_key) } else { 0 };
                         let cur = (hp, max_hp, phase);
-                        let changed = match obj_prev.get(&idx) {
+                        let id = entity.id();
+                        let changed = match obj_prev.get(&id) {
                             None => true,
                             Some(prev) => *prev != cur,
                         };
                         if changed {
-                            obj_prev.insert(idx, cur);
+                            obj_prev.insert(id, cur);
                             obj_tick.push($ctx.tick());
                             obj_type.push(otype.to_string());
                             obj_team_num.push(entity.get_i64(team_key));
@@ -1177,6 +1179,7 @@ impl Demo {
                             obj_y.push(oy);
                             obj_z.push(oz);
                             obj_entity_id.push(idx);
+                            obj_entity_serial.push(id.serial);
                         }
 
                     }
@@ -2218,6 +2221,7 @@ impl Demo {
                 Column::new("y".into(), obj_y),
                 Column::new("z".into(), obj_z),
                 Column::new("entity_id".into(), obj_entity_id),
+                Column::new("entity_serial".into(), obj_entity_serial),
             ])
             .map_err(|e| InvalidDemoError::new_err(format!("Failed to create DataFrame: {e}")))?;
             self.cached_datasets[Dataset::Objectives] = Some(df);

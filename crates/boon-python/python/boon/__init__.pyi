@@ -617,6 +617,23 @@ class Demo:
         """
         ...
 
+    def enemy_minimap_ticks(
+        self, *, ticks: Sequence[int] | None = None, every: int | None = None
+    ) -> pl.DataFrame:
+        """Team-specific enemy hero minimap observations from replay FOW state.
+
+        `observer_team` selects the team's shared map channel. `visible_on_map`
+        is directly recorded; `map_x` and `map_y` are native byte coordinates
+        only for shown icons. `last_seen_*` is carried from the last shown row
+        of the same resolved pawn lifetime. Unbound rows retain their raw FOW
+        entity index and leave identity and last-seen columns null.
+        `target_steam_id` is present only when one active controller with a
+        recorded Steam ID points to that exact pawn lifetime.
+        Omit both arguments for all ticks. Pass either exact ``ticks`` or a
+        positive ``every`` interval. An empty tick list returns an empty frame.
+        """
+        ...
+
     @property
     def player_ticks(self) -> pl.DataFrame:
         """Per-tick, per-player state as a Polars DataFrame.
@@ -631,6 +648,8 @@ class Demo:
             - **tick** (*int*) -- The game tick.
             - **steam_id** (*int, nullable*) -- Steam account ID (UInt64).
             - **hero_id** (*int*) -- The player's hero ID.
+            - **boon_count** (*int, nullable*) -- Directly recorded boon count, when present in the replay schema.
+            - **upgrade_ids** (*list[int], nullable*) -- Complete current controller upgrade-token vector; classify item tokens with matching game data. Null means unavailable or undecodable.
             - **ammo_fraction** (*float, nullable*) -- Recorded primary-gun ammo fraction.
               Use snapshots(data_version=...) to calculate ammo and max_ammo.
             - **x** (*float*) -- Player X position.
@@ -847,6 +866,7 @@ class Demo:
             - **y** (*float*) -- Y position.
             - **z** (*float*) -- Z position.
             - **entity_id** (*int*) -- Entity index (stable per structure across ticks).
+            - **entity_serial** (*int*) -- Entity lifetime serial; pair with entity_id to distinguish slot reuse.
         """
         ...
 

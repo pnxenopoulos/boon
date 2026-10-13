@@ -36,6 +36,7 @@ data
 hero-stats
 ability-stats
 player-states
+replay-input-fields
 demo-checklist
 benchmarks
 faq

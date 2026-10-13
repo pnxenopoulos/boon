@@ -81,6 +81,7 @@ pub mod modifier_state;
 pub mod patron_phases;
 pub mod player_states;
 pub mod position;
+pub mod replay_inputs;
 pub mod rift;
 pub mod rulesets;
 pub mod stat_modifiers;

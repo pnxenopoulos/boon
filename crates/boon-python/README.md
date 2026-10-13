@@ -75,6 +75,7 @@ print(demo.players)
 # Datasets (combat is preloaded; other frames load on first access)
 player_ticks     = demo.player_ticks      # per-player state every tick
 world_ticks      = demo.world_ticks       # world state every tick
+enemy_icons      = demo.enemy_minimap_ticks(every=64)  # team-specific enemy map icons
 kills            = demo.kills             # kill events
 damage           = demo.damage            # damage events, including melee classification
 item_purchases   = demo.item_purchases    # item shop transactions
@@ -94,6 +95,9 @@ active_modifiers = demo.active_modifiers  # buff/debuff modifier events
 urn              = demo.urn               # urn lifecycle and delivery events
 rift             = demo.rift              # rift (koth) lifecycle, one row per rift
 ```
+
+See [replay input fields](docs/replay-input-fields.md) for the recorded upgrade
+vector, direct boon count, enemy minimap observations, and mid-boss health.
 
 ## CLI
 
