@@ -1,7 +1,7 @@
 [project]
 name = "boon-deadlock"
 description = "Boon is a Deadlock demo parser."
-requires-python = ">=3.11,<3.15"
+requires-python = ">=3.11,<3.16"
 license = "MIT"
 license-files = ["LICENSE"]
 readme = "README.md"
@@ -23,7 +23,12 @@ classifiers = [
     "Topic :: Games/Entertainment",
     "Topic :: Software Development :: Libraries",
 ]
-dependencies = ["polars>=1.0", "typer>=0.12"]
+dependencies = [
+    # Polars 1.x Series dispatch does not work on Python 3.15.
+    "polars>=1.0; python_version < '3.15'",
+    "polars>=2.0,<3; python_version >= '3.15'",
+    "typer>=0.12",
+]
 
 [project.scripts]
 boon = "boon.cli:app"
