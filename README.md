@@ -73,7 +73,7 @@ Use Python 3.11–3.15.
 
 ```toml
 [dependencies]
-boon-deadlock = "0.17"
+boon-deadlock = "0.18"
 ```
 
 Rust callers can load stat and state catalogs from JSON bytes with
@@ -88,7 +88,7 @@ Use `boon::replay_inputs::UpgradeReader` for current upgrade tokens and
 at every completed tick. Set `emit=false` between selected ticks to keep
 last-seen history.
 
-Boon uses pbdems2 0.4.0. Resolve field keys from the current schema; do not
+Boon uses pbdems2 0.4.1. Resolve field keys from the current schema; do not
 store numeric field keys across parser upgrades.
 
 ## Quick Start

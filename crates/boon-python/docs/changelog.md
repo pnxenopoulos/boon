@@ -1,8 +1,12 @@
 # Changelog
 
+## 0.18.0
+
+- Reduce combat and `ability_ticks` parse time with property filtering. Use pbdems2 0.4.1.
+- Add Rust `Parser::run_to_end_with_properties()` for selected entity fields.
+
 ## 0.17.0
 
-- Use pbdems2 0.4.1 to decode only needed combat and `ability_ticks` properties.
 - Add current `upgrade_ids` and optional recorded `boon_count` to player snapshots.
 - Add `enemy_minimap_ticks()` for each team's recorded enemy hero icons and last-seen positions.
 - Add objective `entity_serial`. Keep health records separate when an entity slot is used again.
