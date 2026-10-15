@@ -2,6 +2,7 @@
 
 ## 0.18.0
 
+- Update `boon-proto` to `0.4.11132425+6785` (Deadlock 6785).
 - Reduce combat and `ability_ticks` parse time with property filtering. Use pbdems2 0.4.1.
 - Add Rust `Parser::run_to_end_with_properties()` for selected entity fields.
 
