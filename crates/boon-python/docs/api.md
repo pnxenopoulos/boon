@@ -123,6 +123,10 @@ Boon skips datasets that are already loaded. Event and entity datasets share
 one filtered pass. Player, world, and trooper snapshots share a parallel pass.
 A mixed request uses one pass for each group.
 
+Combat and `ability_ticks` loads decode only needed properties. Requests that
+also load `active_modifiers` or `urn` keep full entity fields. Later schema
+changes also use full decoding.
+
 **Parameters:**
 
 - **\*datasets** (`str`) -- One or more dataset names to load.

@@ -178,6 +178,48 @@ impl Parser {
         })
     }
 
+    /// Parse selected entity properties and optional event types in one pass.
+    ///
+    /// Listed classes retain the selected dotted paths and their descendants.
+    /// Unlisted classes keep all fields. Pointer presence and array lengths are
+    /// retained. The selection is fixed for this run and does not change later
+    /// runs. An empty property plan or post-signon schema commands use full decoding.
+    /// Pass `None` for `event_types` to skip event collection.
+    pub fn run_to_end_with_properties<F>(
+        &self,
+        class_filter: &std::collections::HashSet<&str>,
+        properties: &[(&str, &[&str])],
+        event_types: Option<&std::collections::HashSet<u32>>,
+        mut on_tick: F,
+    ) -> Result<()>
+    where
+        F: FnMut(&Context, &[GameEvent]),
+    {
+        let parser = self.demo_parser()?;
+        let prepared = self.prepared()?;
+        let mut session = if properties.is_empty() || prepared.index().has_schema_changes() {
+            prepared.session(parser)?
+        } else {
+            let filter = pbdems2::PropertyFilter::new(
+                prepared.initial_state().serializers(),
+                properties
+                    .iter()
+                    .map(|&(class, paths)| (class, paths.iter().copied())),
+            );
+            prepared.session_with_properties(parser, filter)?
+        };
+        if let Some(event_types) = event_types {
+            session.adapter_mut().enable_event_types(event_types);
+            session.run_to_end_filtered_with_adapter(class_filter, |state, adapter| {
+                on_tick(state, adapter.tick_events());
+                adapter.clear_tick_events();
+            })?;
+        } else {
+            session.run_to_end_filtered(class_filter, |state| on_tick(state, &[]))?;
+        }
+        Ok(())
+    }
+
     /// Parse entities and only selected final event message types in one pass.
     pub fn run_to_end_with_event_types_filtered<F>(
         &self,
@@ -221,6 +263,39 @@ impl Parser {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn property_selection_falls_back_for_later_schema_commands() {
+        use boon_proto::proto::{CDemoSendTables, EDemoCommands};
+        use prost::Message;
+
+        let mut bytes = b"PBDEMS2\0".to_vec();
+        bytes.extend([0; 8]);
+        let tables = CDemoSendTables {
+            data: Some(vec![0]),
+        }
+        .encode_to_vec();
+        for (command, tick, body) in [
+            (EDemoCommands::DemSendTables, 0, tables.clone()),
+            (EDemoCommands::DemClassInfo, 0, Vec::new()),
+            (EDemoCommands::DemSyncTick, 0, Vec::new()),
+            (EDemoCommands::DemSendTables, 1, tables),
+            (EDemoCommands::DemStop, 2, Vec::new()),
+        ] {
+            for value in [command as u64, tick, body.len() as u64] {
+                prost::encoding::encode_varint(value, &mut bytes);
+            }
+            bytes.extend(body);
+        }
+        Parser::from_bytes(bytes)
+            .run_to_end_with_properties(
+                &Default::default(),
+                &[("Missing", &["optional"])],
+                None,
+                |_, _| {},
+            )
+            .unwrap();
+    }
 
     #[test]
     fn exact_queries_skip_modifier_snapshots_but_keep_other_tables() {

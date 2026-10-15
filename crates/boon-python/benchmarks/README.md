@@ -12,7 +12,9 @@ The sibling pbdems2 benchmark suite covers bit readers, field paths, serializers
 and entity decoding. Profile an expensive Boon workload before choosing which
 of those microbenchmarks to optimize. See [RESULTS.md](RESULTS.md) for a measured
 Boon baseline and its limits, and [SNAPSHOT_RESULTS.md](SNAPSHOT_RESULTS.md) for
-the snapshot allocation and preload comparison.
+the snapshot allocation and preload comparison. See
+[PROPERTY_FILTER_RESULTS.md](PROPERTY_FILTER_RESULTS.md) for combat and ability-state
+filtering results and full-decoding controls.
 
 ## Build and measure the Python API
 
@@ -47,6 +49,11 @@ skipped on standard matches; other failures produce a nonzero exit code.
 uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
   --case load/combat --case sequential/combat --case cached/combat \
   --output ../../target/benchmarks/combat.json
+
+# Combat and ability-state filtering, with an unchanged economy control.
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+  --case load/combat --case dataset/ability_ticks --case load/combat_state \
+  --case load/economy --output ../../target/benchmarks/property-filtering.json
 
 # Full extraction, targeted seeks, and parallel sampling.
 uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \

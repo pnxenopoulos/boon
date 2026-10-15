@@ -3,6 +3,54 @@ use boon_parser::world_position;
 
 use crate::*;
 
+const PAWN_HERO_PROPERTIES: &[&str] = &["m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"];
+const ABILITY_PROPERTIES: [&str; 8] = [
+    "m_nSubclassID",
+    "m_eAbilitySlot",
+    "m_flCooldownStart",
+    "m_flCooldownEnd",
+    "m_iRemainingCharges",
+    "m_flChargeRechargeStart",
+    "m_flChargeRechargeEnd",
+    "m_hOwnerEntity",
+];
+
+struct AbilityKeys {
+    subclass_id: Option<u64>,
+    slot: Option<u64>,
+    cooldown_start: Option<u64>,
+    cooldown_end: Option<u64>,
+    remaining_charges: Option<u64>,
+    recharge_start: Option<u64>,
+    recharge_end: Option<u64>,
+    owner: Option<u64>,
+}
+
+impl AbilityKeys {
+    fn resolve(serializer: Option<&boon_parser::Serializer>) -> Self {
+        let [
+            subclass_id,
+            slot,
+            cooldown_start,
+            cooldown_end,
+            remaining_charges,
+            recharge_start,
+            recharge_end,
+            owner,
+        ] = ABILITY_PROPERTIES.map(|path| serializer.and_then(|s| s.resolve_field_key(path)));
+        Self {
+            subclass_id,
+            slot,
+            cooldown_start,
+            cooldown_end,
+            remaining_charges,
+            recharge_start,
+            recharge_end,
+            owner,
+        }
+    }
+}
+
 #[pymethods]
 impl Demo {
     /// Load and cache one or more datasets using compatible parser passes.
@@ -297,6 +345,22 @@ impl Demo {
         }
         let class_filter: std::collections::HashSet<&str> = class_names.into_iter().collect();
 
+        // Lifetime and urn readers need additional pawn/ability state. Keep full
+        // fields for those mixed requests until their dependencies are audited.
+        let mut properties: Vec<(&str, &[&str])> = Vec::new();
+        if !load_active_modifiers && !load_urn {
+            if load_abilities || load_kills || load_damage || load_ability_ticks {
+                properties.push(("CCitadelPlayerPawn", PAWN_HERO_PROPERTIES));
+            }
+            if load_ability_ticks {
+                properties.extend(
+                    ability_class_names
+                        .iter()
+                        .map(|name| (name.as_str(), ABILITY_PROPERTIES.as_slice())),
+                );
+            }
+        }
+
         // ── Kill / damage event collection ──
         struct RawEvent<T> {
             tick: i32,
@@ -544,16 +608,6 @@ impl Demo {
 
         // ability_ticks: per-ability-class resolved field keys (cached on first
         // sight of each class) and per-entity previous state for change detection.
-        struct AbilityKeys {
-            subclass_id: Option<u64>,
-            slot: Option<u64>,
-            cooldown_start: Option<u64>,
-            cooldown_end: Option<u64>,
-            remaining_charges: Option<u64>,
-            recharge_start: Option<u64>,
-            recharge_end: Option<u64>,
-            owner: Option<u64>,
-        }
         #[derive(PartialEq)]
         struct AbilState {
             owner: u32,
@@ -724,9 +778,7 @@ impl Demo {
                 if !keys_resolved {
                     if load_abilities || load_kills || load_damage || load_sinners_sacrifice || load_active_modifiers || load_urn || load_ability_ticks {
                         if let Some(s) = $ctx.serializers().get("CCitadelPlayerPawn") {
-                            pk_hero_id = s.resolve_field_key(
-                                "m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID",
-                            );
+                            pk_hero_id = s.resolve_field_key(PAWN_HERO_PROPERTIES[0]);
                             if load_urn {
                                 pk_vec_x = s.resolve_field_key(
                                     "CBodyComponent.m_skeletonInstance.m_vecOrigin.m_vecX",
@@ -1378,17 +1430,7 @@ impl Demo {
                         }
                         if !ability_keys_cache.contains_key(entity.class_name.as_ref()) {
                             let s = $ctx.serializers().get(&entity.class_name);
-                            let r = |p: &str| s.and_then(|s| s.resolve_field_key(p));
-                            let ak = AbilityKeys {
-                                subclass_id: r("m_nSubclassID"),
-                                slot: r("m_eAbilitySlot"),
-                                cooldown_start: r("m_flCooldownStart"),
-                                cooldown_end: r("m_flCooldownEnd"),
-                                remaining_charges: r("m_iRemainingCharges"),
-                                recharge_start: r("m_flChargeRechargeStart"),
-                                recharge_end: r("m_flChargeRechargeEnd"),
-                                owner: r("m_hOwnerEntity"),
-                            };
+                            let ak = AbilityKeys::resolve(s);
                             ability_keys_cache.insert(entity.class_name.to_string(), ak);
                         }
                         let keys = &ability_keys_cache[entity.class_name.as_ref()];
@@ -1703,9 +1745,10 @@ impl Demo {
         // ── Run the parse pass ──
         if need_events {
             py.detach(|| {
-                self.parser.run_to_end_with_event_types_filtered(
+                self.parser.run_to_end_with_properties(
                     &class_filter,
-                    &event_types,
+                    &properties,
+                    Some(&event_types),
                     |ctx, events| {
                         collect_entity_data!(ctx);
 
@@ -1970,9 +2013,14 @@ impl Demo {
             .map_err(to_py_err)?;
         } else {
             py.detach(|| {
-                self.parser.run_to_end_filtered(&class_filter, |ctx| {
-                    collect_entity_data!(ctx);
-                })
+                self.parser.run_to_end_with_properties(
+                    &class_filter,
+                    &properties,
+                    None,
+                    |ctx, _| {
+                        collect_entity_data!(ctx);
+                    },
+                )
             })
             .map_err(to_py_err)?;
         }

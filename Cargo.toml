@@ -15,7 +15,7 @@ rust-version = "1.88.0"
 [workspace.dependencies]
 boon = { path = "crates/boon", package = "boon-deadlock", version = "0.17.0" }
 boon-proto = { path = "crates/boon-proto", version = "0.4" }
-pbdems2 = "0.4.0"
+pbdems2 = "0.4.1"
 anyhow = "1.0"
 criterion = "0.5"
 prost = "0.14"

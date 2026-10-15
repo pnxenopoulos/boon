@@ -247,6 +247,62 @@ fn bench_decode(c: &mut Criterion) {
         );
     });
 
+    // Keep projected and full decoding in the same binary so the full cases
+    // also detect code-generation regressions introduced by property filtering.
+    g.bench_function("run_to_end_properties_pawn", |b| {
+        b.iter_batched(
+            || bytes.clone(),
+            |bytes| {
+                let p = boon::Parser::from_bytes(bytes);
+                let mut ticks = 0u32;
+                p.run_to_end_with_properties(
+                    &pawn,
+                    &[(
+                        "CCitadelPlayerPawn",
+                        &["m_CCitadelHeroComponent.m_spawnedHero.m_nHeroID"],
+                    )],
+                    None,
+                    |_, _| ticks += 1,
+                )
+                .unwrap();
+                black_box(ticks);
+            },
+            BatchSize::PerIteration,
+        );
+    });
+    let properties: Vec<(&str, &[&str])> = ability_classes
+        .iter()
+        .map(|class| {
+            (
+                class.as_str(),
+                [
+                    "m_nSubclassID",
+                    "m_eAbilitySlot",
+                    "m_flCooldownStart",
+                    "m_flCooldownEnd",
+                    "m_iRemainingCharges",
+                    "m_flChargeRechargeStart",
+                    "m_flChargeRechargeEnd",
+                    "m_hOwnerEntity",
+                ]
+                .as_slice(),
+            )
+        })
+        .collect();
+    g.bench_function("run_to_end_properties_abilities", |b| {
+        b.iter_batched(
+            || bytes.clone(),
+            |bytes| {
+                let p = boon::Parser::from_bytes(bytes);
+                let mut ticks = 0u32;
+                p.run_to_end_with_properties(&abilities, &properties, None, |_, _| ticks += 1)
+                    .unwrap();
+                black_box(ticks);
+            },
+            BatchSize::PerIteration,
+        );
+    });
+
     g.finish();
 }
 

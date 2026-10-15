@@ -25,6 +25,7 @@ from unittest.mock import patch
 
 GROUPS = {
     "combat": ("kills", "damage", "abilities"),
+    "combat_state": ("kills", "damage", "abilities", "ability_ticks"),
     "economy": ("chat", "item_purchases", "ability_upgrades"),
     "mixed": ("player_ticks", "world_ticks", "kills", "damage"),
 }
