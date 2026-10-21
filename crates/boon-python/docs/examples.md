@@ -3,8 +3,8 @@
 ```python
 from boon import Demo
 
-demo = Demo("108575009.dem", preload=False)
-print(demo.snapshots(ticks=187554).select("steam_id", "hero_id", "health"))
+demo = Demo("match.dem", preload=False)
+print(demo.snapshots(ticks=10000).select("steam_id", "hero_id", "health"))
 print(demo.summary()["snapshots"].tail(12))
 ```
 
@@ -56,8 +56,8 @@ for row in demo.players.iter_rows(named=True):
 
 ## Query Boon stats, states, and ammo
 
-These examples use `108575009.dem` at demo tick `187554`. Replace the filename,
-tick, and client version for another replay. List versions with `boon versions`.
+Replace `match.dem`, the example ticks, and the client version with values for
+your replay. List versions with `boon versions`.
 Install the matching version with `boon get VERSION`. A query downloads a missing
 version; it does not choose a version from the demo header.
 
@@ -68,10 +68,10 @@ import polars as pl
 from boon import AbilityStat, Demo, HeroStat, StatMode
 
 version = "6712"
-tick = 187554
-demo = Demo("108575009.dem", preload=False)
+tick = 10000
+demo = Demo("match.dem", preload=False)
 roster = demo.players.select("steam_id", "player_name", "team_num")
-steam_id = roster["steam_id"][0]
+steam_id = roster["steam_id"].drop_nulls()[0]
 ```
 
 <a id="all-hero-stats-for-every-player"></a>
@@ -80,7 +80,7 @@ steam_id = roster["steam_id"][0]
 
 ```python
 report = demo.calculate_hero_stats(
-    ticks=tick,                  # A list, such as [187554, 187600], also works.
+    ticks=tick,                  # A list, such as [10000, 10100], also works.
     data_version=version,
     stats=list(HeroStat),
     mode=StatMode.CURRENT,
@@ -438,7 +438,7 @@ Keep recorded purchases and sales; an item-path upgrade can still have `change="
 import polars as pl
 from boon import Demo, ability_names
 
-demo = Demo("108575009.dem", preload=False)
+demo = Demo("match.dem", preload=False)
 version = "6712"
 names = ability_names(version=version)
 purchases = demo.get_item_purchases(data_version=version)
@@ -450,8 +450,7 @@ for row in upgrades.iter_rows(named=True):
     print(row["tick"], row["steam_id"], components, "->", item)
 ```
 
-At tick 23567, Haze upgrades Extended Magazine to Titanic Magazine.
-The purchase has `upgraded_from_ability_ids=[1548066885]`.
+`upgraded_from_ability_ids` contains the matched component item IDs.
 Missing IDs, catalog links, or unique matches give `[]`.
 Match players with `steam_id`; use `tick` for the transaction time.
 
@@ -465,8 +464,8 @@ abilities as well as items. Use the matching boon-data catalog to classify IDs.
 ```python
 from boon import Demo
 
-demo = Demo("108575009.dem", preload=False)
-players = demo.snapshots(ticks=[187554])
+demo = Demo("match.dem", preload=False)
+players = demo.snapshots(ticks=[10000])
 print(players.select("tick", "steam_id", "hero_id", "upgrade_ids", "boon_count"))
 ```
 
@@ -484,8 +483,8 @@ to get its channel. Coordinates use the range 0–255, not world units.
 import polars as pl
 from boon import Demo
 
-demo = Demo("108575009.dem", preload=False)
-icons = demo.enemy_minimap_ticks(ticks=[187554])
+demo = Demo("match.dem", preload=False)
+icons = demo.enemy_minimap_ticks(ticks=[10000])
 team_icons = icons.filter(pl.col("observer_team") == 2)
 print(team_icons.select(
     "tick", "target_steam_id", "target_hero_id", "visible_on_map", "map_x", "map_y"

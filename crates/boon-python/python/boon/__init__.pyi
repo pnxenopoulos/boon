@@ -434,8 +434,8 @@ class Demo:
 
         Examples:
             >>> from boon import Demo
-            >>> demo = Demo("108575009.dem", preload=False)
-            >>> frames = demo.snapshots(["player_ticks", "ziplines"], ticks=187554)
+            >>> demo = Demo("match.dem", preload=False)
+            >>> frames = demo.snapshots(["player_ticks", "ziplines"], ticks=10000)
             >>> print(frames["ziplines"])
         """
         ...
@@ -498,8 +498,8 @@ class Demo:
 
         Examples:
             >>> from boon import Demo
-            >>> demo = Demo("108575009.dem", preload=False)
-            >>> result = demo.imbues(ticks=187554, data_version="6712")
+            >>> demo = Demo("match.dem", preload=False)
+            >>> result = demo.imbues(ticks=10000, data_version="6712")
             >>> print(result.bindings)
         """
         ...
@@ -549,9 +549,9 @@ class Demo:
 
         Examples:
             >>> from boon import AbilityStat, Demo
-            >>> demo = Demo("108575009.dem", preload=False)
+            >>> demo = Demo("match.dem", preload=False)
             >>> result = demo.calculate_ability_stats(
-            ...     ticks=187554, data_version="6712",
+            ...     ticks=10000, data_version="6712",
             ...     stats=[AbilityStat.COOLDOWN_REDUCTION], strict=False,
             ... )
             >>> print(result.values)
@@ -637,8 +637,8 @@ class Demo:
 
         Examples:
             >>> from boon import Demo
-            >>> demo = Demo("108575009.dem", preload=False)
-            >>> states = demo.player_states(ticks=187554, data_version="6712")
+            >>> demo = Demo("match.dem", preload=False)
+            >>> states = demo.player_states(ticks=10000, data_version="6712")
             >>> print(states.select("steam_id", "hero_id", "states"))
         """
         ...
@@ -705,9 +705,9 @@ class Demo:
 
         Examples:
             >>> from boon import Demo, HeroStat
-            >>> demo = Demo("108575009.dem", preload=False)
+            >>> demo = Demo("match.dem", preload=False)
             >>> result = demo.calculate_hero_stats(
-            ...     ticks=187554, data_version="6712",
+            ...     ticks=10000, data_version="6712",
             ...     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE], strict=False,
             ... )
             >>> print(result.values)

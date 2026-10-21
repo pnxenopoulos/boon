@@ -69,8 +69,8 @@ def snapshots(
 
     Examples:
         >>> from boon import Demo
-        >>> demo = Demo("108575009.dem", preload=False)
-        >>> frames = demo.snapshots(["player_ticks", "ziplines"], ticks=187554)
+        >>> demo = Demo("match.dem", preload=False)
+        >>> frames = demo.snapshots(["player_ticks", "ziplines"], ticks=10000)
         >>> print(frames["ziplines"])
     """
     if data_version is not None:

@@ -4,8 +4,10 @@
 cd crates/boon-python
 uv run maturin develop --release --locked --uv
 uv run --no-sync python benchmarks/bench_parse.py \
-  --demo ../../108575009.dem --output ../../target/benchmarks/baseline.json
+  --demo ../../match.dem --output ../../target/benchmarks/baseline.json
 ```
+
+Replace `match.dem` with a local replay. Use the same file for each comparison.
 
 Use three layers to decide where to optimize:
 
@@ -32,7 +34,7 @@ uv run maturin develop --release --locked --uv
 uv run --no-sync python benchmarks/bench_parse.py --list
 
 uv run --no-sync python benchmarks/bench_parse.py \
-  --demo ../../108575009.dem --repeat 5 --warmup 1 \
+  --demo ../../match.dem --repeat 5 --warmup 1 \
   --threads 4 --segments 4 --output ../../target/benchmarks/baseline.json
 ```
 
@@ -53,29 +55,29 @@ skipped on standard matches; other failures produce a nonzero exit code.
 
 ```bash
 # Shared serial pass versus individual property access versus cached access.
-uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../match.dem \
   --case load/combat --case sequential/combat --case cached/combat \
   --output ../../target/benchmarks/combat.json
 
 # Combat and ability-state filtering, with an unchanged economy control.
-uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../match.dem \
   --case load/combat --case dataset/ability_ticks --case load/combat_state \
   --case load/economy --output ../../target/benchmarks/property-filtering.json
 
 # Full extraction, targeted seeks, and parallel sampling.
-uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../match.dem \
   --case dataset/player_ticks --case snapshot/single --case snapshot/many \
   --case snapshot/sampled --case snapshot/kills --segments 1 \
   --output ../../target/benchmarks/snapshots-serial.json
 
 # Uses local installed catalogs; prepare them before timing.
 boon get
-uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../match.dem \
   --case names/cold --case names/warm --case dataset/breakables \
   --output ../../target/benchmarks/names.json
 
 # Enemy hero icons, including history before selected ticks.
-uv run --no-sync python benchmarks/bench_parse.py --demo ../../108575009.dem \
+uv run --no-sync python benchmarks/bench_parse.py --demo ../../match.dem \
   --case minimap/single --case minimap/sampled \
   --output ../../target/benchmarks/minimap.json
 ```
@@ -156,7 +158,7 @@ checks. It does not turn a changed dataset into a correct optimization.
 From the repository root:
 
 ```bash
-export BOON_BENCH_DEMO="$PWD/108575009.dem"
+export BOON_BENCH_DEMO="$PWD/match.dem"
 cargo bench -p boon-deadlock --bench parse --locked -- --save-baseline before
 # After rebuilding the candidate with the same benchmark harness:
 cargo bench -p boon-deadlock --bench parse --locked -- --baseline before

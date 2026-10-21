@@ -133,9 +133,9 @@ def calculate_hero_stats(
 
     Examples:
         >>> from boon import Demo, HeroStat
-        >>> demo = Demo("108575009.dem", preload=False)
+        >>> demo = Demo("match.dem", preload=False)
         >>> result = demo.calculate_hero_stats(
-        ...     ticks=187554, data_version="6712",
+        ...     ticks=10000, data_version="6712",
         ...     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE], strict=False,
         ... )
         >>> print(result.values)

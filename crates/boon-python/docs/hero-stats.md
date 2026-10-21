@@ -3,10 +3,11 @@
 ```python
 from boon import Demo, HeroStat, StatMode
 
-demo = Demo("108575009.dem", preload=False)
+demo = Demo("match.dem", preload=False)
+steam_id = demo.players["steam_id"].drop_nulls()[0]
 result = demo.calculate_hero_stats(
-    ticks=[187554, 187600],
-    steam_ids=[76561198037652386],  # McGinnis in this demo.
+    ticks=[10000, 10100],
+    steam_ids=[steam_id],
     data_version="6712",
     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
     mode=StatMode.CURRENT,
@@ -20,6 +21,7 @@ print(result.metadata)
 
 Use `demo.calculate_hero_stats()` for values at selected demo ticks.
 Boon uses replay state, a boon-data catalog, and a calculation rule.
+Replace the example ticks and client version with values for your replay.
 Select stats with these strings or enum members. Names are case-sensitive.
 
 | String | Python enum | Rust enum | Unit |
@@ -506,13 +508,12 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let parser = Parser::from_file(Path::new("match.dem"))?;
     let catalog = StatCatalog::load("6712")?;
     let query = HeroStatQuery::new(
-        [187554, 187600],
+        [10000, 10100],
         [HeroStat::ClipSize, HeroStat::FireRate],
     )
-    .steam_ids([76561198037652386])
     .mode(StatMode::Current)
     .explain(true)
     .strict(false);

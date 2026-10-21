@@ -4,15 +4,15 @@
 from boon import AbilityStat, Demo, StatMode
 
 version = "6712"  # Select the client version for your demo.
-steam_id = 76561198037652386  # McGinnis in this demo.
-demo = Demo("108575009.dem", preload=False)
+demo = Demo("match.dem", preload=False)
+steam_id = demo.players["steam_id"].drop_nulls()[0]
 
-imbues = demo.imbues(ticks=187554, steam_ids=[steam_id], data_version=version)
+imbues = demo.imbues(ticks=10000, steam_ids=[steam_id], data_version=version)
 print(imbues.bindings)
 print(imbues.effects)
 
 result = demo.calculate_ability_stats(
-    ticks=[187554, 60000],
+    ticks=[10000, 10100],
     steam_ids=[steam_id],
     data_version=version,
     stats=[AbilityStat.COOLDOWN_REDUCTION, AbilityStat.RANGE_BONUS],
@@ -27,6 +27,7 @@ print(result.contributions)
 Use `demo.imbues()` to read which items imbue each ability.
 Use `demo.calculate_ability_stats()` to calculate each ability's bonus percentages.
 The two methods read replay state and a selected boon-data version.
+Replace the example ticks and client version with values for your replay.
 
 <a id="python"></a>
 
@@ -189,17 +190,12 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let parser = Parser::from_file(Path::new("match.dem"))?;
     let catalog = StatCatalog::load("6712")?;
-    let steam_id = 76561198037652386_u64;
-    let imbues = parser.imbues(
-        &ImbueQuery::new([187554]).steam_ids([steam_id]),
-        &catalog,
-    )?;
+    let imbues = parser.imbues(&ImbueQuery::new([10000]), &catalog)?;
     let stats = [AbilityStat::CooldownReduction, AbilityStat::RangeBonus];
     let rules = stats.iter().fold(AbilityRuleset::new(), |r, s| r.with(s.rule()));
-    let query = AbilityStatQuery::new([187554], stats)
-        .steam_ids([steam_id])
+    let query = AbilityStatQuery::new([10000], stats)
         .mode(StatMode::Current)
         .explain(true)
         .strict(false);

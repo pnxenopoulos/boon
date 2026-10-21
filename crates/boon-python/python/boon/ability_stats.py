@@ -112,8 +112,8 @@ def imbues(
 
     Examples:
         >>> from boon import Demo
-        >>> demo = Demo("108575009.dem", preload=False)
-        >>> result = demo.imbues(ticks=187554, data_version="6712")
+        >>> demo = Demo("match.dem", preload=False)
+        >>> result = demo.imbues(ticks=10000, data_version="6712")
         >>> print(result.bindings)
     """
     validate_version(data_version)
@@ -196,9 +196,9 @@ def calculate_ability_stats(
 
     Examples:
         >>> from boon import AbilityStat, Demo
-        >>> demo = Demo("108575009.dem", preload=False)
+        >>> demo = Demo("match.dem", preload=False)
         >>> result = demo.calculate_ability_stats(
-        ...     ticks=187554, data_version="6712",
+        ...     ticks=10000, data_version="6712",
         ...     stats=[AbilityStat.COOLDOWN_REDUCTION], strict=False,
         ... )
         >>> print(result.values)

@@ -112,7 +112,7 @@ Timelines need no catalogs or images.
 
 ```python
 fig, ax = plot.positions(
-    demo, tick=187554, version=version,
+    demo, tick=10000, version=version,
     objectives=True, troopers=True, ziplines=True,
 )
 fig.savefig("positions.png", dpi=160, bbox_inches="tight")
@@ -154,7 +154,7 @@ Ziplines draw below troopers, objectives, and players.
 Use `frame()` for tables that you have already read:
 
 ```python
-frames = demo.snapshots(["player_ticks", "troopers", "ziplines"], ticks=187554)
+frames = demo.snapshots(["player_ticks", "troopers", "ziplines"], ticks=10000)
 fig, ax = plot.frame(
     frames["player_ticks"],
     troopers=frames["troopers"],
@@ -192,7 +192,7 @@ Boon omits missing or invalid positions. It also omits positions outside map bou
 
 ```python
 fig, ax = plot.positions(
-    demo, tick=187554, version=version, layer=plot.MapLayer.TUNNELS,
+    demo, tick=10000, version=version, layer=plot.MapLayer.TUNNELS,
 )
 ```
 

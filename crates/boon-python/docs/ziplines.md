@@ -3,7 +3,7 @@
 ```python
 from boon import Demo
 
-demo = Demo("108575009.dem", preload=False)
+demo = Demo("match.dem", preload=False)
 nodes = demo.zipline_nodes
 changes = demo.zipline_changes
 # Both tables share one cached history pass.
@@ -59,9 +59,9 @@ If the node stays active through that tick, Boon adds no removal or observation 
 ## Query Boon zipline snapshots at an exact tick
 
 ```python
-state = demo.snapshots("ziplines", ticks=187554)
+state = demo.snapshots("ziplines", ticks=10000)
 sampled = demo.snapshots("ziplines", seconds=5)
-frames = demo.snapshots(["player_ticks", "ziplines"], ticks=[321, 187554])
+frames = demo.snapshots(["player_ticks", "ziplines"], ticks=[321, 10000])
 ```
 
 Snapshots contain the node columns plus `team_num`. Here, `tick` is the query tick,
@@ -86,7 +86,7 @@ seek or parallel paths used by player, world, and trooper snapshots.
 ```python
 from boon import plot
 
-fig, ax = plot.positions(demo, tick=187554, version="6795", ziplines=True)
+fig, ax = plot.positions(demo, tick=10000, version="6795", ziplines=True)
 fig.savefig("ziplines.png", dpi=160, bbox_inches="tight")
 ```
 
@@ -112,9 +112,9 @@ origins; use the recorded connections when you construct paths.
 use boon::{Parser, ziplines::ZiplineHistory};
 use std::path::Path;
 
-let parser = Parser::from_file(Path::new("108575009.dem"))?;
+let parser = Parser::from_file(Path::new("match.dem"))?;
 let history = ZiplineHistory::build(&parser)?;
-history.visit_snapshots(&[187554], |tick, node, team| {
+history.visit_snapshots(&[10000], |tick, node, team| {
     println!("{tick}: {} {team:?}", node.node_handle);
 });
 ```

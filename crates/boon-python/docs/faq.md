@@ -11,7 +11,7 @@ print(demo.players)
 ## Where do I get demo files?
 
 Deadlock demo files (`.dem`) are GOTV match recordings. Download them from the in-game match history or from a replay service.
-The file name usually contains the match ID. For example, `108575009.dem` contains match 108575009.
+Downloaded filenames can contain the match ID. These guides use `match.dem` as an example filename.
 
 ## Why does Boon return Polars DataFrames instead of pandas?
 

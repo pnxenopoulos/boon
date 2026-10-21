@@ -3,8 +3,8 @@
 ```python
 from boon import Demo
 
-demo = Demo("108575009.dem", preload=False)
-states = demo.player_states(data_version="6712", ticks=[187554])
+demo = Demo("match.dem", preload=False)
+states = demo.player_states(data_version="6712", ticks=[10000])
 print(states.select("tick", "steam_id", "hero_id", "states"))
 ```
 
@@ -27,16 +27,15 @@ selects several. Boon sorts the selection and removes duplicate ticks. Negative
 or missing ticks cause an error. An empty tick or Steam ID list returns no rows.
 
 ```python
-mcginnis = demo.player_states(
+steam_id = demo.players["steam_id"].drop_nulls()[0]
+selected_player = demo.player_states(
     data_version="6712",
-    ticks=187554,
-    steam_ids=[76561198037652386],  # This player in 108575009.dem.
+    ticks=10000,
+    steam_ids=[steam_id],
 )
 
 # All ticks for this player.
-all_ticks = demo.player_states(
-    data_version="6712", steam_ids=[76561198037652386]
-)
+all_ticks = demo.player_states(data_version="6712", steam_ids=[steam_id])
 ```
 
 The query reads only player controllers and hero pawns. It does not load
@@ -132,11 +131,9 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let parser = Parser::from_file(Path::new("match.dem"))?;
     let catalog = StateCatalog::load("6712")?;
-    let query = PlayerStateQuery::default()
-        .ticks([187554])
-        .steam_ids([76561198037652386]);
+    let query = PlayerStateQuery::default().ticks([10000]);
     let rows = parser.player_states(&query, &catalog)?;
     println!("{rows:?}");
     Ok(())

@@ -189,9 +189,10 @@ Some replay rows have no duration or removal. Boon ends effects when their timer
 An intrinsic effect also ends when its observed source ability is deleted.
 Missing entities, fields, or catalog definitions do not prove expiry.
 
-The untimed Grapple Arm parent in `111155916.dem` remains unresolved. Its catalog
-has no state mask. The hook victim pointer may provide an end signal, but Boon
-does not yet apply that rule. Raw modifier rows remain available for review.
+Some untimed Grapple Arm parent modifiers remain unresolved. Their catalog
+definitions have no state mask. The hook victim pointer may provide an end
+signal, but Boon does not yet apply that rule. Raw modifier rows remain available
+for review.
 
 ## Urn returns
 

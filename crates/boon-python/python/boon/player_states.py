@@ -47,8 +47,8 @@ def player_states(
 
     Examples:
         >>> from boon import Demo
-        >>> demo = Demo("108575009.dem", preload=False)
-        >>> states = demo.player_states(ticks=187554, data_version="6712")
+        >>> demo = Demo("match.dem", preload=False)
+        >>> states = demo.player_states(ticks=10000, data_version="6712")
         >>> print(states.select("steam_id", "hero_id", "states"))
     """
     validate_version(data_version)

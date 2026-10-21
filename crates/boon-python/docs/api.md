@@ -144,7 +144,7 @@ changes also use full decoding.
 #### `tick_to_seconds()`
 
 ```python
-demo.tick_to_seconds(187554)
+demo.tick_to_seconds(10000)
 ```
 
 Convert a tick number to elapsed seconds. The result does not include paused time.
@@ -161,7 +161,7 @@ The method loads `world_ticks` on the first call to find pauses.
 #### `tick_to_clock_time()`
 
 ```python
-demo.tick_to_clock_time(187554)
+demo.tick_to_clock_time(10000)
 ```
 
 Convert a tick number to a clock time string, such as `"3:14"` or `"12:34"`.
@@ -179,7 +179,7 @@ call to find pauses.
 #### `tick_to_match_seconds()`
 
 ```python
-demo.tick_to_match_seconds(187554)
+demo.tick_to_match_seconds(10000)
 ```
 
 Convert a demo tick to match-clock seconds, with pauses not included.
@@ -198,7 +198,7 @@ is unavailable.
 #### `tick_to_match_clock()`
 
 ```python
-demo.tick_to_match_clock(187554)
+demo.tick_to_match_clock(10000)
 demo.tick_to_match_clock(500)  # A pregame tick can show a negative clock.
 ```
 
@@ -220,7 +220,7 @@ demo.snapshots(ticks=[29000, 30000])              # specific ticks
 demo.snapshots(start_tick=29000, end_tick=30000)  # a contiguous window
 demo.snapshots("troopers", events="kills")        # troopers at kill ticks
 demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)  # -> dict
-demo.snapshots(ticks=187554, data_version="6712")  # add calculated ammo
+demo.snapshots(ticks=10000, data_version="6712")  # add calculated ammo
 ```
 
 Read state for each tick only at selected ticks.
@@ -275,7 +275,7 @@ The method reads `CCitadelTeam.m_vecFOWEntities` entries with class code 1.
 Other map icons are excluded. No boon-data catalog is needed.
 
 ```python
-icons = demo.enemy_minimap_ticks(ticks=[187554])
+icons = demo.enemy_minimap_ticks(ticks=[10000])
 sampled = demo.enemy_minimap_ticks(every=64)
 ```
 
@@ -1191,7 +1191,7 @@ demo.rift.select(["rift_num", "capture_tick", "winning_team", "lane"])
 ```python
 nodes = demo.zipline_nodes
 changes = demo.zipline_changes
-state = demo.snapshots("ziplines", ticks=187554)
+state = demo.snapshots("ziplines", ticks=10000)
 ```
 
 Read recorded geometry and ownership without a game-data catalog.

@@ -107,7 +107,7 @@ fig, ax = plot.summary(demo, version="6795", builds=True)
 fig.savefig("summary.png")
 fig, ax = plot.timeline(demo, "net_worth")
 fig.savefig("souls.png")
-fig, ax = plot.positions(demo, tick=187554, version="6795", ziplines=True)
+fig, ax = plot.positions(demo, tick=10000, version="6795", ziplines=True)
 fig.savefig("positions.png")
 ```
 

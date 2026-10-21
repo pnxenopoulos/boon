@@ -85,7 +85,7 @@ print(player_ticks.columns)  # ['tick', 'steam_id', 'ammo_fraction', 'hero_id', 
 ```
 
 Player rows include current `upgrade_ids` and an optional recorded `boon_count`.
-Use `demo.snapshots(ticks=[187554])` to select player ticks before loading the
+Use `demo.snapshots(ticks=[10000])` to select player ticks before loading the
 full frame. See {ref}`player-ticks` for column meanings.
 
 <a id="events-and-economy"></a>
@@ -127,7 +127,7 @@ rift = demo.rift
 enemy_icons = demo.enemy_minimap_ticks(every=64)
 
 # Zipline state at one tick; see the zipline guide for compact histories.
-ziplines = demo.snapshots("ziplines", ticks=187554)
+ziplines = demo.snapshots("ziplines", ticks=10000)
 
 # Lane troopers and guardians (opt-in, large dataset)
 troopers = demo.troopers
