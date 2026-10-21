@@ -53,11 +53,29 @@ impl AbilityKeys {
 
 #[pymethods]
 impl Demo {
-    /// Load and cache one or more datasets using compatible parser passes.
+    /// Load and cache selected Boon datasets using compatible parser passes.
     ///
-    /// Already-loaded datasets are skipped. Event/entity datasets requested
-    /// together share one filtered pass; snapshot datasets share one parallel
-    /// keyframe-segmented pass, including when both groups are requested.
+    /// Args:
+    ///     *datasets: One or more names returned by Demo.available_datasets().
+    ///
+    /// Returns:
+    ///     None. Read the cached frames through the matching Demo properties.
+    ///
+    /// Raises:
+    ///     ValueError: A dataset name is unknown.
+    ///     NotStreetBrawlError: A Street Brawl dataset is requested for another mode.
+    ///     InvalidDemoError: Requested replay state cannot be decoded.
+    ///
+    /// Notes:
+    ///     Compatible events share filtered passes. Player/world/trooper snapshots
+    ///     use parallel segments. Zipline tables share their own cached serial
+    ///     history. Previously loaded frames are reused.
+    ///
+    /// Examples:
+    ///     >>> from boon import Demo
+    ///     >>> demo = Demo("match.dem", preload=False)
+    ///     >>> demo.load("kills", "damage")
+    ///     >>> print(demo.kills)
     #[pyo3(signature = (*datasets))]
     pub(crate) fn load(&mut self, py: Python<'_>, datasets: Vec<String>) -> PyResult<()> {
         let datasets: Vec<Dataset> = datasets
@@ -81,6 +99,9 @@ impl Demo {
         // event stream. A later property access can then use the cache instead
         // of scanning the demo again.
         let requested = |dataset| datasets.contains(&dataset);
+        if requested(Dataset::ZiplineNodes) || requested(Dataset::ZiplineChanges) {
+            py.detach(|| self.ensure_zipline_frames())?;
+        }
         let kill_cohort = requested(Dataset::Kills) || requested(Dataset::Abilities);
         let controller_cohort = requested(Dataset::AbilityUpgrades)
             || requested(Dataset::ItemPurchases)

@@ -1,5 +1,13 @@
 # Replay verification checklist
 
+```python
+from boon import Demo
+
+demo = Demo("108575009.dem", preload=False)
+print(demo.players)
+print(demo.snapshots(ticks=187554))
+```
+
 Use this checklist with the demo open in the game viewer and the current Boon
 build installed. Record viewer values **before** you inspect Boon's results.
 Compare values; a file that opens can still have incorrect results.
@@ -53,7 +61,7 @@ Choose an early, middle and late tick. Compare **each player** at each tick with
 
 Inspect the event tick and the ticks before and after it.
 Use one clear event, then a repeated event or a transition.
-Record an outcome for each of these 22 datasets:
+Record an outcome for each of these 24 datasets:
 
 | Dataset | Compare with the viewer |
 | --- | --- |
@@ -69,6 +77,8 @@ Record an outcome for each of these 22 datasets:
 | `flex_slots` | Team and unlock tick. |
 | `objectives` | Team, health, destruction, patron phase, and `(entity_id, entity_serial)` across respawns. |
 | `mid_boss` | Spawn, death, and rejuvenator pickup/use/expiry. |
+| `zipline_nodes` | Route positions, lanes, connections, and geometry revisions. |
+| `zipline_changes` | Team ownership and visibility changes. Keyframe restamps must not add transitions. |
 | `troopers` | A wave's team, lane, position, and health. Entity indices can be reused. |
 | `neutrals` | A camp's entity identity, location, health, and state changes. This table records changes only. |
 | `breakables` | Destroyed prop, subclass, position, entity, and serial. Leaving view must not count as destruction. |
@@ -111,7 +121,7 @@ Use `get_item_purchases(data_version=...)` for component links; retain recorded 
 
 ### 6. Compare stats, states, and imbues
 
-Use the matching boon-data client version. See [feature examples](examples.md#stats-states-and-ammo).
+Use the matching boon-data client version. See [feature examples](examples.md#query-boon-stats-states-and-ammo).
 
 - [ ] Record `data_version`, tick, Steam ID, query mode, and the viewer value.
   Use the tick passed to `demo_gototick`; the pause message can show a server tick.

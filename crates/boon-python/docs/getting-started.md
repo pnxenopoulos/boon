@@ -1,11 +1,25 @@
 # 🚀 Getting Started
 
-## Requirements
+```python
+from boon import Demo
+
+demo = Demo("match.dem", preload=False)
+demo.load("kills", "damage")
+print(demo.players)
+print(demo.kills.head())
+demo.kills.write_parquet("kills.parquet")
+```
+
+<a id="requirements"></a>
+
+## Boon Python requirements
 
 - Python 3.11–3.15
 - Rust toolchain (for building from source)
 
-## Installation
+<a id="installation"></a>
+
+## Install Boon for Python
 
 Install with [uv](https://docs.astral.sh/uv/):
 
@@ -21,7 +35,9 @@ pip install boon-deadlock
 
 Boon is a Rust library. Its Python bindings use [PyO3](https://pyo3.rs) and [maturin](https://www.maturin.rs).
 
-## Quick Start
+<a id="quick-start"></a>
+
+## Parse a Deadlock demo with Boon Demo
 
 Give `Demo` the path to a `.dem` file. It loads kills, damage, and abilities.
 Other datasets load on first access. Use `preload=False` to defer all dataset loads.
@@ -53,7 +69,9 @@ print(f"Kills: {len(demo.kills)}")
 print(f"Damage events: {len(demo.damage)}")
 ```
 
-## Working with Tick Data
+<a id="working-with-tick-data"></a>
+
+## Read sampled player and world state with Boon
 
 ```python
 # World state per tick
@@ -70,7 +88,9 @@ Player rows include current `upgrade_ids` and an optional recorded `boon_count`.
 Use `demo.snapshots(ticks=[187554])` to select player ticks before loading the
 full frame. See {ref}`player-ticks` for column meanings.
 
-## Events and Economy
+<a id="events-and-economy"></a>
+
+## Read Boon combat and item events
 
 ```python
 # Kill events
@@ -89,7 +109,9 @@ ability_upgrades = demo.ability_upgrades
 chat = demo.chat
 ```
 
-## Objectives and Map State
+<a id="objectives-and-map-state"></a>
+
+## Read Boon objectives and map state
 
 ```python
 # Objective health state changes (walkers, barracks, shrines, patron, mid boss)
@@ -104,6 +126,9 @@ rift = demo.rift
 # Recorded enemy hero icons on each team's minimap.
 enemy_icons = demo.enemy_minimap_ticks(every=64)
 
+# Zipline state at one tick; see the zipline guide for compact histories.
+ziplines = demo.snapshots("ziplines", ticks=187554)
+
 # Lane troopers and guardians (opt-in, large dataset)
 troopers = demo.troopers
 # "trooper" is a lane creep. "trooper_boss" is a lane guardian.
@@ -111,9 +136,11 @@ troopers = demo.troopers
 
 Minimap coordinates use the range 0–255. Hidden icons have null current
 coordinates and can retain a last-seen position. See
-[enemy minimap icons](examples.md#enemy-minimap-icons).
+[enemy minimap icons](examples.md#read-boon-enemy-minimap-icons).
 
-## Filtering with Polars
+<a id="filtering-with-polars"></a>
+
+## Filter Boon DataFrames with Polars
 
 Select players by Steam ID. Include `tick` when you join sampled player rows:
 
@@ -132,25 +159,31 @@ final_tick = player_ticks.filter(pl.col("tick") == player_ticks["tick"].max())
 final_tick.select("hero_id", "gold_net_worth", "ap_net_worth", "kills", "deaths", "assists")
 ```
 
-## Stats, states, and imbues
+<a id="stats-states-and-imbues"></a>
+
+## Query Boon stats, states, and imbues
 
 Use `calculate_hero_stats()` for supported hero values and `calculate_ability_stats()` for ability bonus percentages.
 Use `imbues()` for item selections and `player_states()` for recorded state names. Each method uses a selected boon-data client
 version. List versions with `boon versions` and install one with `boon get VERSION`.
 A query downloads a missing version.
 
-Start with the [feature examples](examples.md#stats-states-and-ammo).
-The [hero stat table](hero-stats.md) and [ability stat table](ability-stats.md#percentage-rules)
+Start with the [feature examples](examples.md#query-boon-stats-states-and-ammo).
+The [hero stat table](hero-stats.md) and [ability stat table](ability-stats.md#boon-ability-bonus-names-and-v1-rules)
 list all accepted strings and enum members. Join player rows with `steam_id`;
 include `tick` when you join sampled results.
 
-## Item upgrade links
+<a id="item-upgrade-links"></a>
+
+## Resolve Boon item upgrade components
 
 `demo.item_purchases` uses the newest installed catalog, or downloads latest if none is installed.
 Use `demo.get_item_purchases(data_version="6712")` to select an exact version.
 The `upgraded_from_ability_ids` column lists matched component sales. Recorded `change` values do not change.
-See [item upgrades](examples.md#item-upgrades) for a complete query.
+See [item upgrades](examples.md#read-boon-item-upgrade-links) for a complete query.
 
-## Error Handling
+<a id="error-handling"></a>
+
+## Handle Boon parsing errors
 
 Boon raises specific exceptions for invalid demo files. See {ref}`Exceptions <exceptions>` for the full list.

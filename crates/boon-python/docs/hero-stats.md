@@ -1,5 +1,23 @@
 # Calculate hero stats
 
+```python
+from boon import Demo, HeroStat, StatMode
+
+demo = Demo("108575009.dem", preload=False)
+result = demo.calculate_hero_stats(
+    ticks=[187554, 187600],
+    steam_ids=[76561198037652386],  # McGinnis in this demo.
+    data_version="6712",
+    stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
+    mode=StatMode.CURRENT,
+    explain=True,
+    strict=False,
+)
+print(result.values)
+print(result.contributions)
+print(result.metadata)
+```
+
 Use `demo.calculate_hero_stats()` for values at selected demo ticks.
 Boon uses replay state, a boon-data catalog, and a calculation rule.
 Select stats with these strings or enum members. Names are case-sensitive.
@@ -35,13 +53,14 @@ Select stats with these strings or enum members. Names are case-sensitive.
 | `spirit_lifesteal` | `HeroStat.SPIRIT_LIFESTEAL` | `HeroStat::SpiritLifesteal` | `%` |
 | `melee_lifesteal` | `HeroStat.MELEE_LIFESTEAL` | `HeroStat::MeleeLifesteal` | `%` |
 
-
 `HeroStat.AMMO` is an alias for `HeroStat.CLIP_SIZE`. The string `"ammo"` is not accepted.
 Without `stats`, the query selects capacity. Use `stats=list(HeroStat)` to select all supported stats.
 Percentage values use percentage points: `20` means 20%.
-Capacity stays finite during unlimited ammo. Use [ammo snapshots](examples.md#remaining-rounds-and-unlimited-ammo) for remaining rounds.
+Capacity stays finite during unlimited ammo. Use [ammo snapshots](examples.md#read-boon-ammo-capacity-and-unlimited-ammo-state) for remaining rounds.
 
-## Select the game data
+<a id="select-the-game-data"></a>
+
+## Select boon-data for hero calculations
 
 ```bash
 boon versions
@@ -54,25 +73,9 @@ Boon does not select the version from the demo header.
 Catalogs must include `record_key`, `definition_path`, and `stat_changes`.
 After a catalog release changes, use `boon get VERSION --force` to replace local files.
 
-## Python
+<a id="python"></a>
 
-```python
-from boon import Demo, HeroStat, StatMode
-
-demo = Demo("108575009.dem", preload=False)
-result = demo.calculate_hero_stats(
-    ticks=[187554, 187600],
-    steam_ids=[76561198037652386],  # McGinnis in this demo.
-    data_version="6712",
-    stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE],
-    mode=StatMode.CURRENT,
-    explain=True,
-    strict=False,
-)
-print(result.values)
-print(result.contributions)
-print(result.metadata)
-```
+## Calculate hero stats with Boon Demo.calculate_hero_stats
 
 Without `rulesets`, each stat uses its supported `v1` rule.
 An explicit mapping must contain one supported rule for each requested stat:
@@ -89,7 +92,9 @@ selected_rules = {
 
 Each rule has a name, version, and documentation date. The date is not a game patch date.
 
-## Select baseline or current effects
+<a id="select-baseline-or-current-effects"></a>
+
+## Select baseline or current Boon stat effects
 
 The two hero and ability queries accept these modes:
 
@@ -108,7 +113,9 @@ Movement values do not simulate firing, crouching, bullet-hit slows, or sprint a
 `gravity_scale` has only a recorded current value.
 A baseline gravity query raises an error, or returns null with `strict=False`.
 
-## Select ticks and players
+<a id="select-ticks-and-players"></a>
+
+## Select Boon stat ticks and Steam IDs
 
 `ticks` accepts an integer or a sequence of integers from 0 through 2147483646.
 Boon removes duplicate ticks and reads state after each tick.
@@ -120,7 +127,9 @@ Get Steam IDs from `demo.players`. The two filters apply when set.
 Without filters, the query selects all players with a hero. An empty filter selects no players.
 A requested Steam ID without a selected hero causes an error at that tick.
 
-## Results
+<a id="results"></a>
+
+## Read Boon StatResult tables
 
 | `result.values` column | Contents |
 | --- | --- |
@@ -144,7 +153,9 @@ Purchase-cost rows use souls, not percentage points.
 Join player results with `steam_id`. Include `tick` for sampled rows and `stat` for stat rows.
 Do not join null Steam IDs as one player.
 
-## Shared inputs
+<a id="shared-inputs"></a>
+
+## Read shared Boon stat inputs
 
 Hero bases, growth, scaling, item prices, and effect values come from boon-data.
 Bound properties contribute once through their effective modifier.
@@ -480,7 +491,9 @@ Even a calculated value cannot include effects missing from the catalog.
 Boon ignores the two known ping markers for stat calculations. They stay in modifier datasets.
 See [Known Issues](known-issues.md) for binding, scaling, and lifetime limits.
 
-## Rust
+<a id="rust"></a>
+
+## Calculate hero stats with the Boon Rust API
 
 Rust queries use `HeroStat` enum members and `u64` Steam IDs.
 

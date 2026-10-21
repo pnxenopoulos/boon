@@ -21,7 +21,11 @@ if TYPE_CHECKING:
 
 
 class AbilityStat(StrEnum):
-    """Bonus percentages, separate from seconds, metres, and running timers."""
+    """Ability bonus names accepted by Boon calculation queries.
+
+    Use the enum members or their exact string values. Values are percentages,
+    not durations in seconds, distances in meters, or remaining cooldown timers.
+    """
 
     COOLDOWN_REDUCTION = "cooldown_reduction"
     ITEM_COOLDOWN_REDUCTION = "item_cooldown_reduction"
@@ -32,7 +36,13 @@ class AbilityStat(StrEnum):
 
 @dataclass(frozen=True)
 class ImbueResult:
-    """Recorded selections and individual catalog effects; no stacking applied."""
+    """Recorded item selections and their individual catalog effects.
+
+    Attributes:
+        bindings: Polars rows with tick, steam_id, hero_id, item ID, selected ability ID, status, and diagnostic.
+        effects: Individual effect values, units, targeting filters, and source paths. Values are not combined.
+        metadata: Selected client version and catalog source details.
+    """
 
     bindings: pl.DataFrame
     effects: pl.DataFrame
@@ -41,7 +51,13 @@ class ImbueResult:
 
 @dataclass(frozen=True)
 class AbilityStatResult:
-    """Per-ability percentages, optional source trace, and catalog provenance."""
+    """Calculated Deadlock ability bonus percentages as Polars tables.
+
+    Attributes:
+        values: One row per selected tick, player, ability, and stat, with unit, mode, ruleset, status, and diagnostic.
+        contributions: Effect sources, scope, activation state, and inclusion. Empty unless explain=True.
+        metadata: Selected client version, catalog source, mode, and ruleset details.
+    """
 
     values: pl.DataFrame
     contributions: pl.DataFrame
@@ -72,14 +88,33 @@ def imbues(
     data_version: str,
     steam_ids: Sequence[int] | None = None,
 ) -> ImbueResult:
-    """Read item imbues after each exact tick using an explicit catalog version.
+    """Read recorded item imbues and their catalog effects at exact ticks.
 
-    Select Steam accounts with ``steam_ids``; omit it to include all players.
-    All tables include ``steam_id`` (UInt64), or null when it is unavailable.
-    A missing installation is downloaded and verified. Missing catalog records
-    do not discard recorded bindings. Each effect retains its targeting filter.
-    Effects contain catalog values, not combined bonuses or final cast values.
-    Temporary next-cast effects are reported by calculate_ability_stats instead.
+    Args:
+        demo: Boon Demo to query.
+        ticks: One nonnegative demo tick or a sequence of exact ticks.
+        data_version: Explicit Deadlock client version from `boon versions`. Download and verify it if missing.
+        steam_ids: Steam account IDs from `demo.players`. None selects all players; an empty sequence selects none.
+
+    Returns:
+        ImbueResult with bindings, individual effects, and metadata.
+        Missing catalog entries do not remove recorded bindings.
+
+    Raises:
+        ValueError: The version or tick/account selection is invalid.
+        CalculationError: A requested tick or player cannot be resolved.
+        data.DataError: The selected catalog cannot be downloaded or read.
+
+    Notes:
+        Effects keep their targeting filters. This method does not stack bonuses
+        or return final cast values. Use calculate_ability_stats for temporary
+        next-cast effects.
+
+    Examples:
+        >>> from boon import Demo
+        >>> demo = Demo("108575009.dem", preload=False)
+        >>> result = demo.imbues(ticks=187554, data_version="6712")
+        >>> print(result.bindings)
     """
     validate_version(data_version)
     ticks = select_ticks(ticks)
@@ -129,30 +164,44 @@ def calculate_ability_stats(
     explain: bool = False,
     strict: bool = True,
 ) -> AbilityStatResult:
-    """Calculate applicable bonus percentages for each selected ability.
+    """Calculate bonus percentages for each selected Deadlock ability.
 
-    Select stats with ``AbilityStat`` enum members. Matching strings also work.
-    The result's ``stat`` column contains strings.
-    Select Steam accounts with ``steam_ids``; get IDs from ``demo.players``.
-    All tables include ``steam_id`` (UInt64), or null when it is unavailable.
-    The default selection contains the hero's signature abilities.
-    Select owned ability or item IDs with ``abilities``.
-    Use ``include_items=True`` to include all owned items.
-    Ability and item cooldown reductions remain separate. Range and radius are
-    separate stats. These values are not seconds, metres, or remaining cooldowns.
+    Args:
+        demo: Boon Demo to query.
+        ticks: One nonnegative demo tick or a sequence of exact ticks.
+        data_version: Explicit Deadlock client version from `boon versions`. Download and verify it if missing.
+        stats: AbilityStat members or matching strings. Defaults to cooldown_reduction, duration_bonus, range_bonus, and radius_bonus.
+        mode: `current` or StatMode.CURRENT includes supported active effects. `baseline` or StatMode.BASELINE selects passive and permanent inputs.
+        steam_ids: Steam account IDs from `demo.players`. None selects all players; an empty sequence selects none.
+        abilities: Owned ability or item IDs. None selects signature abilities and, if requested, owned items.
+        include_items: Include all owned items when True. Item cooldown reduction remains separate from hero ability cooldown reduction.
+        rulesets: One supported V1 Rule for each selected stat. None uses the built-in V1 rules.
+        explain: Include source scope, activation, and inclusion details in contributions.
+        strict: Raise CalculationError for missing inputs when True. False returns unresolved rows with null values.
 
-    Use ``mode="current"`` (default) to include supported active effects.
-    Use ``mode="baseline"`` for owned passive bonuses, persistent imbues, and
-    permanent recorded changes. Temporary and next-cast effects are excluded.
-    Unknown source roles retain diagnostics. Results and metadata include mode.
+    Returns:
+        AbilityStatResult with percentage values, source contributions, and metadata.
+        Range and radius are separate bonuses. Results are not seconds or meters.
 
-    V1 combines source percentages as 100 * (1 - product(1 - bonus / 100)).
-    Permanent totals, active modifiers, and recorded dynamic values are included
-    once. Catalog filters restrict imbued and charged-ability effects.
-    With explain=True, contributions include scope, activation, and whether each
-    source was included. Ready next-cast effects are never applied to every skill.
-    Unsupported activation is partial with a diagnostic. Missing inputs raise
-    CalculationError; strict=False returns unresolved rows with null values.
+    Raises:
+        ValueError: A selection, mode, stat name, or ruleset is invalid.
+        CalculationError: A requested tick/player is absent, or required inputs are missing with strict=True.
+        data.DataError: The selected catalog cannot be downloaded, verified, or read.
+
+    Notes:
+        V1 uses 100 * (1 - product(1 - bonus / 100)). Each source is counted once.
+        Catalog filters restrict effects to their selected abilities. Current mode
+        can include supported next-cast effects. Baseline excludes temporary
+        effects. Unsupported activation produces partial values and diagnostics.
+
+    Examples:
+        >>> from boon import AbilityStat, Demo
+        >>> demo = Demo("108575009.dem", preload=False)
+        >>> result = demo.calculate_ability_stats(
+        ...     ticks=187554, data_version="6712",
+        ...     stats=[AbilityStat.COOLDOWN_REDUCTION], strict=False,
+        ... )
+        >>> print(result.values)
     """
     mode = StatMode(mode)
     validate_version(data_version)

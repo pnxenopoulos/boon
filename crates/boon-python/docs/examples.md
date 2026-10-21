@@ -1,8 +1,18 @@
 # 📖 Examples
 
+```python
+from boon import Demo
+
+demo = Demo("108575009.dem", preload=False)
+print(demo.snapshots(ticks=187554).select("steam_id", "hero_id", "health"))
+print(demo.summary()["snapshots"].tail(12))
+```
+
 These examples show common Deadlock replay analysis tasks.
 
-## Resolving IDs to names
+<a id="resolving-ids-to-names"></a>
+
+## Resolve Boon hero, ability, and modifier names
 
 Boon DataFrames use integer IDs for heroes, teams, abilities, and modifiers.
 The IDs keep data compact and make operations fast. A change to a display
@@ -42,7 +52,9 @@ for row in demo.players.iter_rows(named=True):
     print(heroes.get(row["hero_id"], "Unknown"))
 ```
 
-## Stats, states, and ammo
+<a id="stats-states-and-ammo"></a>
+
+## Query Boon stats, states, and ammo
 
 These examples use `108575009.dem` at demo tick `187554`. Replace the filename,
 tick, and client version for another replay. List versions with `boon versions`.
@@ -62,7 +74,9 @@ roster = demo.players.select("steam_id", "player_name", "team_num")
 steam_id = roster["steam_id"][0]
 ```
 
-### All hero stats for every player
+<a id="all-hero-stats-for-every-player"></a>
+
+### Calculate all Boon hero stats for each player
 
 ```python
 report = demo.calculate_hero_stats(
@@ -96,7 +110,9 @@ known subtotal, not a verified final value. Always retain `status` and
 `diagnostic` when you export a report. Do not sum contribution rows: they can
 include intermediate inputs, such as spirit power.
 
-### Compare baseline and current values
+<a id="compare-baseline-and-current-values"></a>
+
+### Compare baseline and current Boon stat values
 
 ```python
 query = dict(
@@ -123,12 +139,14 @@ comparison = current.join(
 print(comparison)
 ```
 
-The [mode table](hero-stats.md#select-baseline-or-current-effects) lists the two
+The [mode table](hero-stats.md#select-baseline-or-current-boon-stat-effects) lists the two
 strings and enum members. The two modes use the selected tick. Each calculation
 applies its equation to the selected inputs. Current movement values do not include
 crouching, sprint acceleration, and bullet-hit slows.
 
-### Join recorded states to stat rows
+<a id="join-recorded-states-to-stat-rows"></a>
+
+### Join Boon states and stats with Polars
 
 ```python
 states = demo.player_states(ticks=tick, data_version=version)
@@ -150,11 +168,13 @@ never match them as one account. Use each row's `hero_id` for its hero at that t
 The roster's hero ID describes the final hero.
 
 State names come from the catalog, not a fixed enum. See
-[available state names](player-states.md#available-state-names) to list them.
+[available state names](player-states.md#list-boon-state-names-from-boon-data) to list them.
 An empty known-state list does not prove that no states are set: inspect
 `unknown_states`. A null mask means unavailable data.
 
-### Remaining rounds and unlimited ammo
+<a id="remaining-rounds-and-unlimited-ammo"></a>
+
+### Read Boon ammo capacity and unlimited-ammo state
 
 ```python
 ammo = demo.snapshots(ticks=tick, data_version=version)
@@ -170,7 +190,9 @@ rounded to the nearest integer; halves round up. `max_ammo` stays finite when
 `unlimited_ammo` is true. Missing or duplicate Steam IDs leave calculated ammo
 fields null. Partial capacity also makes the round count partial.
 
-### Ability bonuses and imbues
+<a id="ability-bonuses-and-imbues"></a>
+
+### Query Boon ability bonuses and imbues
 
 ```python
 imbues = demo.imbues(ticks=tick, steam_ids=[steam_id], data_version=version)
@@ -209,7 +231,7 @@ if not imbues.bindings.is_empty():
 The default query selects signature abilities. `include_items=True` also selects
 owned items. `abilities` accepts owned catalog IDs, not names or signature-slot
 numbers. Read recorded IDs from `imbues.bindings` or `demo.ability_ticks`.
-See the [ability stat table](ability-stats.md#percentage-rules) for all strings,
+See the [ability stat table](ability-stats.md#boon-ability-bonus-names-and-v1-rules) for all strings,
 enum members, and rules.
 
 Ability results are percentages, not final seconds, meters, or running timers.
@@ -218,7 +240,9 @@ Ability results are percentages, not final seconds, meters, or running timers.
 disabled item. Imbue effects are individual catalog values; they are not combined
 bonuses. `included=False` contribution rows explain skipped effects.
 
-### Select a ruleset
+<a id="select-a-ruleset"></a>
+
+### Select a Boon stat ruleset
 
 ```python
 from boon import rulesets
@@ -241,7 +265,9 @@ for each requested stat. Rule objects have `stat`, `id`, `version`, and
 `documented_on`. Rule versions identify equations; `data_version` selects game
 data. Custom equations and other rule versions are not accepted.
 
-## Healing and barrier absorption in the summary
+<a id="healing-and-barrier-absorption-in-the-summary"></a>
+
+## Read Boon healing and barrier absorption totals
 
 ```python
 summary = demo.summary()
@@ -269,7 +295,9 @@ Use `summary["healing"]` for healing and regeneration by source and period,
 recorded matrix. See {ref}`summary <summary>` for fields and aggregation rules.
 `demo.healing` and `demo.barriers()` are not available.
 
-## Match summary
+<a id="match-summary"></a>
+
+## Read the Boon post-match summary
 
 Print the match duration, winner, and player roster.
 
@@ -293,7 +321,9 @@ for row in players.iter_rows(named=True):
     print(f"  {name:<16} ({team})")
 ```
 
-## Kill feed
+<a id="kill-feed"></a>
+
+## Build a Boon kill feed with Polars
 
 Build a kill feed with hero names and timestamps.
 
@@ -314,7 +344,9 @@ for row in kills.iter_rows(named=True):
     print(f"[{time}] {attacker} killed {victim}{assist_str}")
 ```
 
-## Net worth over time
+<a id="net-worth-over-time"></a>
+
+## Read Boon player souls over time
 
 Read net worth for each player at regular intervals.
 
@@ -337,7 +369,9 @@ nw = (
 print(nw)
 ```
 
-## Damage breakdown
+<a id="damage-breakdown"></a>
+
+## Group Boon damage events with Polars
 
 The damage dataset includes recorded hits on heroes, objectives, troopers, and neutrals.
 Filter attacker or victim IDs to select events.
@@ -366,7 +400,9 @@ summary = (
 print(summary)
 ```
 
-## Item build order
+<a id="item-build-order"></a>
+
+## Read Boon item purchase order
 
 Show each player's item purchase order with timestamps.
 
@@ -391,7 +427,9 @@ for row in purchases.iter_rows(named=True):
     print(f"[{time}] {hero:<16} bought {item}")
 ```
 
-## Item upgrades
+<a id="item-upgrades"></a>
+
+## Read Boon item upgrade links
 
 Use the replay's catalog version to read component links.
 Keep recorded purchases and sales; an item-path upgrade can still have `change="purchased"`.
@@ -417,7 +455,9 @@ The purchase has `upgraded_from_ability_ids=[1548066885]`.
 Missing IDs, catalog links, or unique matches give `[]`.
 Match players with `steam_id`; use `tick` for the transaction time.
 
-## Current upgrades
+<a id="current-upgrades"></a>
+
+## Read Boon current player upgrades
 
 Read the recorded upgrade vector at a selected tick. It can include hero
 abilities as well as items. Use the matching boon-data catalog to classify IDs.
@@ -433,7 +473,9 @@ print(players.select("tick", "steam_id", "hero_id", "upgrade_ids", "boon_count")
 An empty list is a recorded empty vector. Null means missing or invalid data.
 `boon_count` is null when the replay has no direct count field.
 
-## Enemy minimap icons
+<a id="enemy-minimap-icons"></a>
+
+## Read Boon enemy minimap icons
 
 Read enemy hero icons as seen on each team's minimap. Select an observing team
 to get its channel. Coordinates use the range 0–255, not world units.
@@ -461,7 +503,9 @@ The result is a DataFrame of icons. To draw a map, convert its coordinates to
 the image coordinate system. See {ref}`enemy-minimap-ticks` for all columns,
 missing values, and sampling options.
 
-## Objective timeline
+<a id="objective-timeline"></a>
+
+## Read Boon objective state changes
 
 Track when objectives are destroyed by filtering for health reaching zero.
 
@@ -483,7 +527,9 @@ Use `(entity_id, entity_serial)` to identify one objective lifetime. The same
 index can later identify a new entity. Filter `objective_type == "mid_boss"`
 to read boss health changes; use `demo.mid_boss` for lifecycle events.
 
-## Heatmap data
+<a id="heatmap-data"></a>
+
+## Select Boon positions for matplotlib
 
 Extract player positions for a specific hero, suitable for plotting.
 
@@ -505,7 +551,9 @@ print(f"{positions.height} position samples for hero {hero_id}")
 # positions["x"], positions["y"] pass straight to plt.scatter(...)
 ```
 
-## Active modifiers (buffs/debuffs)
+<a id="active-modifiers-buffsdebuffs"></a>
+
+## Read Boon modifier events and names
 
 Track the effective lifetime of abilities on players. An `applied` event starts
 an effective lifetime. A `removed` event ends it because of an explicit state
@@ -546,7 +594,9 @@ top = (
 print(top)
 ```
 
-## Street brawl scores
+<a id="street-brawl-scores"></a>
+
+## Read Boon Street Brawl round scores
 
 Street Brawl is game mode 4. Use `street_brawl_ticks` for state and `street_brawl_rounds` for scores.
 Other modes raise `NotStreetBrawlError` when you access these datasets.

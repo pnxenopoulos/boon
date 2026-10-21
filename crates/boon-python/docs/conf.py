@@ -27,6 +27,8 @@ source_suffix = {
 # colors taken from https://www.color-hex.com/color-palette/1069181
 html_theme = "furo"
 html_static_path = ["_static"]
+# Read the Docs serves this built file at the documentation domain root.
+html_extra_path = ["llms.txt"]
 html_favicon = "_static/favicon.ico"
 html_theme_options = {
     "source_repository": "https://github.com/pnxenopoulos/boon",

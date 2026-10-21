@@ -8,31 +8,31 @@
 
 </div>
 
-Pre-generated Rust types for the Deadlock protobuf definitions. The [Boon](https://github.com/pnxenopoulos/boon) demo parser uses these types.
+```rust
+use boon_proto::proto::CDemoFileHeader;
 
-## Overview
+fn main() {
+    let header = CDemoFileHeader::default();
+    println!("Map: {:?}", header.map_name);
+}
+```
+
+Rust types for Valve Deadlock Source 2 protobuf messages, generated with prost.
+The [Boon](https://github.com/pnxenopoulos/boon) replay parser uses these types.
+
+## Boon protobuf source
 
 [`prost`](https://github.com/tokio-rs/prost) generates this Rust code from Valve's
 `.proto` files. The repository contains `src/proto.rs`. Use these types without `protoc`.
 
-## Installation
+## Install the boon-proto Rust crate
 
 ```toml
 [dependencies]
 boon-proto = "0.4"
 ```
 
-## Usage
-
-```rust
-use boon_proto::proto;
-
-// Access Deadlock protobuf message types
-let header = proto::CDemoFileHeader::default();
-let event = proto::CCitadelUserMsgHeroKilled::default();
-```
-
-## Regenerating
+## Regenerate Boon Rust protobuf types
 
 Use the scripts in the [Boon repository](https://github.com/pnxenopoulos/boon)
 when an upstream `.proto` file changes:
@@ -48,7 +48,7 @@ cargo run --manifest-path scripts/build-protos/Cargo.toml --bin build-boon-proto
 The generator uses a bundled `protoc`. It removes unsupported C++ annotations
 from temporary inputs. The source `.proto` files stay unchanged.
 
-## Check for upstream changes
+## Check Boon protobufs against SteamTracking
 
 From the repository root, run:
 
@@ -66,7 +66,7 @@ Set `DEADLOCK_REF` to compare a specific upstream commit, branch, or tag.
 CI runs this check on pull requests and pushes to `main`. The job summary shows
 the result. A failed check adds a warning but does not block `CI Check` or releases.
 
-## Version tracking
+## Read boon-proto version numbers
 
 The crate version records the upstream build as
 `MAJOR.MINOR.SourceRevision+ServerVersion`. `MAJOR.MINOR` identifies the

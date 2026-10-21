@@ -20,7 +20,11 @@ if TYPE_CHECKING:
 
 
 class HeroStat(StrEnum):
-    """Stats with implemented rules. These values are not network enum IDs."""
+    """Hero stat names accepted by Boon calculation queries.
+
+    Use enum members or their exact string values. AMMO is an alias for
+    CLIP_SIZE. These strings are not Source 2 network enum IDs.
+    """
 
     CLIP_SIZE = "clip_size"
     AMMO = "clip_size"
@@ -54,7 +58,11 @@ class HeroStat(StrEnum):
 
 
 class StatMode(StrEnum):
-    """Select current effects or baseline passive and permanent inputs."""
+    """Input modes for Boon hero and ability calculations.
+
+    CURRENT includes supported active effects. BASELINE includes hero values,
+    owned passive effects, and permanent recorded bonuses at the selected tick.
+    """
 
     CURRENT = "current"
     BASELINE = "baseline"
@@ -66,7 +74,13 @@ class CalculationError(ValueError):
 
 @dataclass(frozen=True)
 class StatResult:
-    """Calculated rows, optional input trace, and catalog/ruleset provenance."""
+    """Polars tables from a Boon hero-stat query.
+
+    Attributes:
+        values: Rows keyed by tick, steam_id, hero_id, and stat, with value, unit, mode, ruleset, status, and diagnostic.
+        contributions: Source values and catalog paths. Empty unless explain=True.
+        metadata: Selected data version, source revision, mode, and ruleset details.
+    """
 
     values: pl.DataFrame
     contributions: pl.DataFrame
@@ -87,36 +101,44 @@ def calculate_hero_stats(
     explain: bool = False,
     strict: bool = True,
 ) -> StatResult:
-    """Calculate hero stats after each selected tick.
+    """Calculate selected Deadlock hero stats after each exact tick.
 
-    Use ``HeroStat`` enum members for ``stats``. Matching strings also work.
-    The result's ``stat`` column contains strings. ``HeroStat.AMMO`` selects
-    the same stat as ``HeroStat.CLIP_SIZE``. Omit stats to select ammo capacity.
+    Args:
+        demo: Boon Demo to query. Reuse this object for repeated queries.
+        ticks: One nonnegative demo tick or a sequence of ticks below 2147483647.
+        data_version: Explicit Deadlock client version from `boon versions`. Download and verify it if missing.
+        stats: HeroStat members or their exact string values. The default is `clip_size` (ammo capacity).
+        mode: `current` or StatMode.CURRENT includes supported active effects. `baseline` or StatMode.BASELINE selects passive and permanent inputs.
+        steam_ids: Steam account IDs from `demo.players`. None selects all players; an empty sequence selects none.
+        heroes: Current hero IDs to select. If steam_ids is also set, both filters apply.
+        rulesets: One supported Rule for each selected stat. None selects boon.rulesets.<stat>.v1.
+        explain: Include source values and catalog paths in contributions when True.
+        strict: Raise CalculationError for missing inputs when True. False keeps unresolved rows with null values.
 
-    Select Steam accounts with ``steam_ids`` or current hero IDs with ``heroes``.
-    Both filters apply when set. Get Steam IDs from ``demo.players``.
-    Omit both filters to include all players. An empty filter selects no players.
-    Results contain ``steam_id`` (UInt64), or null when the ID is missing.
-    Use ``steam_id`` for player joins. Do not join missing IDs as one player.
+    Returns:
+        StatResult with Polars values, contributions, and metadata.
+        Keep status and diagnostic with exported values. A partial value is a known subtotal.
 
-    Set ``data_version`` to a client version from ``boon versions``.
-    Boon downloads and verifies a missing version. Omit ``rulesets`` to use V1.
-    Otherwise, supply one supported rule for each selected stat.
+    Raises:
+        ValueError: A selection, mode, stat name, or ruleset is invalid.
+        CalculationError: A requested tick/player is absent, or required inputs are missing with strict=True.
+        data.DataError: The selected catalog cannot be downloaded, verified, or read.
 
-    Use ``mode="current"`` (default) to include supported active effects.
-    Use ``mode="baseline"`` for hero values, owned passive effects, and permanent
-    recorded changes. Both modes use the selected tick and apply to dependencies.
-    Unknown effect roles produce partial baseline values. Baseline gravity scale
-    is unavailable. Mode does not change stat units or the selected equation.
+    Notes:
+        Use tick and steam_id for player joins. Missing Steam IDs stay null.
+        Fire rate and weapon damage are bonus percentages. Clip size stays finite
+        during unlimited ammo. Move speed and sprint speed are nominal values;
+        they do not simulate crouching, sprint acceleration, or bullet-hit slows.
+        Baseline gravity scale is unavailable. Units and equations do not change by mode.
 
-    Set ``explain=True`` to include input sources and catalog paths.
-    Unknown modifiers and assumed links produce partial values with diagnostics.
-    Other missing inputs raise ``CalculationError``. With ``strict=False``, those
-    rows have null values and status ``unresolved``. Invalid queries still fail.
-
-    Ammo is capacity, not remaining rounds. Fire rate is the bonus percentage.
-    Move speed and sprint speed are nominal values, without current movement states.
-    See the hero stats guide for units, equations, and limits for each stat.
+    Examples:
+        >>> from boon import Demo, HeroStat
+        >>> demo = Demo("108575009.dem", preload=False)
+        >>> result = demo.calculate_hero_stats(
+        ...     ticks=187554, data_version="6712",
+        ...     stats=[HeroStat.CLIP_SIZE, HeroStat.FIRE_RATE], strict=False,
+        ... )
+        >>> print(result.values)
     """
     validate_version(data_version)
     mode = StatMode(mode)

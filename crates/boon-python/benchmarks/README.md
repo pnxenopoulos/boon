@@ -1,5 +1,12 @@
 # Boon performance benchmarks
 
+```bash
+cd crates/boon-python
+uv run maturin develop --release --locked --uv
+uv run --no-sync python benchmarks/bench_parse.py \
+  --demo ../../108575009.dem --output ../../target/benchmarks/baseline.json
+```
+
 Use three layers to decide where to optimize:
 
 | Layer | Measures | Entry point |
@@ -21,7 +28,7 @@ filtering results and full-decoding controls.
 From `crates/boon-python/`, build an optimized extension in your environment:
 
 ```bash
-uv run maturin develop --release --locked
+uv run maturin develop --release --locked --uv
 uv run --no-sync python benchmarks/bench_parse.py --list
 
 uv run --no-sync python benchmarks/bench_parse.py \

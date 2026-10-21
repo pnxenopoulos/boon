@@ -1,11 +1,19 @@
 # ❓ FAQ
 
+```python
+from boon import Demo
+
+demo = Demo("match.dem", preload=False)
+print(Demo.available_datasets())
+print(demo.players)
+```
+
 ## Where do I get demo files?
 
 Deadlock demo files (`.dem`) are GOTV match recordings. Download them from the in-game match history or from a replay service.
 The file name usually contains the match ID. For example, `108575009.dem` contains match 108575009.
 
-## Why does boon return Polars DataFrames instead of pandas?
+## Why does Boon return Polars DataFrames instead of pandas?
 
 [Polars](https://pola.rs) is fast for common replay analysis operations. These operations include filters, groups, and joins.
 Polars also uses memory efficiently. Use `df.to_pandas()` to get a pandas DataFrame.
@@ -56,7 +64,7 @@ These methods do not include pauses. The first call loads pause data from `world
 
 The `damage` dataset includes all recorded damage events. It includes damage to heroes, objectives, troopers, and neutral units. Filter `attacker_hero_id` or `victim_hero_id` to select events for analysis.
 
-## Can I use boon without Python?
+## Can I use Boon without Python?
 
 Yes. The core parser is the `boon-deadlock` Rust crate on [crates.io](https://crates.io/crates/boon-deadlock).
 The repository also contains the low-level `boon-dev` debug tool. Build it with `cargo build --release -p boon-dev`. See {doc}`cli`. Use Python to run the package's `boon` command.

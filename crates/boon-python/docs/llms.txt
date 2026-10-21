@@ -1,0 +1,49 @@
+# Boon
+
+> Boon parses Valve Deadlock Source 2 replay files with Rust and Python. Python results use Polars DataFrames. PyO3 connects Python to the Rust parser.
+
+Install the Python distribution `boon-deadlock` and import `boon`.
+The Rust distribution is `boon-deadlock`; its crate name is `boon`.
+Use `boon` for the Python CLI and `boon-dev` for the Rust debug tool.
+
+Boon reads recorded events and state. Calculated hero and ability stats use
+versioned boon-data JSON catalogs and explicit rulesets. Keep status and diagnostic
+columns when values are partial. Missing data is unknown, not zero.
+Use Steam IDs to join player records. Include tick when joining sampled state.
+
+Polars supports filters, groups, joins, and Parquet output. Boon plots use
+matplotlib. Image plots use optional boon-data images. Boon does not infer a
+catalog version from a replay header. Python imports do not download game data.
+
+Use Boon 0.11.0 or later for demos from the City Never Sleeps update
+(September 29, 2026) or later. Use Boon 0.10.0 or earlier for older demos.
+
+## Start with Boon
+
+- [Install and parse a Deadlock demo](https://boon.readthedocs.io/en/latest/_sources/getting-started.md.txt): Python installation, metadata, Polars tables, and sampled state.
+- [Boon Python API](https://boon.readthedocs.io/en/latest/_sources/api.md.txt): Typed methods, dataset columns, errors, and time conversions.
+- [Boon examples](https://boon.readthedocs.io/en/latest/_sources/examples.md.txt): Complete queries for stats, names, player states, and match analysis.
+- [Boon CLI](https://boon.readthedocs.io/en/latest/_sources/cli.md.txt): Inspect demos and download or remove catalogs and images.
+
+## Query replay state and game data
+
+- [Boon hero stats](https://boon.readthedocs.io/en/latest/_sources/hero-stats.md.txt): Stat strings, enum members, units, equations, modes, and limits.
+- [Boon ability stats and imbues](https://boon.readthedocs.io/en/latest/_sources/ability-stats.md.txt): Ability bonus percentages, item selections, and effect scope.
+- [Boon player states](https://boon.readthedocs.io/en/latest/_sources/player-states.md.txt): Recorded status masks, state names, and unknown bits.
+- [Boon zipline state](https://boon.readthedocs.io/en/latest/_sources/ziplines.md.txt): Route geometry, full entity handles, ownership changes, and snapshots.
+- [Boon game-data cache](https://boon.readthedocs.io/en/latest/_sources/data.md.txt): Client versions, automatic downloads, checksums, image groups, and local paths.
+- [Boon matplotlib plots](https://boon.readthedocs.io/en/latest/_sources/plot.md.txt): Summaries, item builds, timelines, map positions, and zipline ownership.
+
+## Verify Boon results
+
+- [Boon known issues](https://boon.readthedocs.io/en/latest/_sources/known-issues.md.txt): Unsupported calculations and replay evidence limits.
+- [Boon replay checklist](https://boon.readthedocs.io/en/latest/_sources/demo-checklist.md.txt): Compare parsed data with the Deadlock replay viewer.
+- [Boon benchmarks](https://boon.readthedocs.io/en/latest/_sources/benchmarks.md.txt): Release builds and output-checked parser measurements.
+- [Boon changelog](https://boon.readthedocs.io/en/latest/_sources/changelog.md.txt): Releases and compatibility changes.
+
+## Optional
+
+- [Boon Python type hints](https://raw.githubusercontent.com/pnxenopoulos/boon/main/crates/boon-python/python/boon/__init__.pyi): Native Python methods and Google-style docstrings.
+- [Boon Rust API](https://docs.rs/boon-deadlock/latest/boon/): Parser, replay context, entity handles, and typed Rust queries.
+- [Boon source code](https://github.com/pnxenopoulos/boon): Rust parser, PyO3 bindings, Python helpers, and tests.
+- [boon-data source](https://github.com/pnxenopoulos/boon-data): Versioned Deadlock VData catalogs and extracted game images.

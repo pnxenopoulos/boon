@@ -171,7 +171,7 @@ The message supplies hero IDs without teams, players, or draft order.
 The link is inferred. An unrelated sale at another tick does not qualify.
 Missing IDs, missing catalog links, or competing matches give an empty list.
 Keep recorded `change` values; an item-path upgrade can have `change="purchased"`.
-See {ref}`the API <item-purchases>` and [upgrade example](examples.md#item-upgrades).
+See {ref}`the API <item-purchases>` and [upgrade example](examples.md#read-boon-item-upgrade-links).
 
 ## Ability bonuses and Arcane Surge
 
@@ -185,9 +185,8 @@ See [ability stats](ability-stats.md).
 
 ## Modifier lifetimes
 
-Some replay rows have no duration or removal. Boon ends an effect when its timer
-ends, its aura leaves range, its declared states disappear after observation,
-or its observed source ability is deleted (intrinsic effects only).
+Some replay rows have no duration or removal. Boon ends effects when their timers end, their auras leave range, or their declared states clear after observation.
+An intrinsic effect also ends when its observed source ability is deleted.
 Missing entities, fields, or catalog definitions do not prove expiry.
 
 The untimed Grapple Arm parent in `111155916.dem` remains unresolved. Its catalog

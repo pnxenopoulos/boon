@@ -1,5 +1,13 @@
 # Performance benchmarks
 
+```bash
+cd crates/boon-python
+uv run maturin develop --release --locked --uv
+uv run --no-sync python benchmarks/bench_parse.py --list
+uv run --no-sync python benchmarks/bench_parse.py \
+  --demo /path/to/match.dem --output ../../target/benchmarks/baseline.json
+```
+
 The [benchmark guide](https://github.com/pnxenopoulos/boon/tree/main/crates/boon-python/benchmarks)
 covers release builds, Python dataset workloads, Criterion parser phases,
 output-checked comparisons, memory interpretation and CPU profiling.
@@ -7,15 +15,6 @@ output-checked comparisons, memory interpretation and CPU profiling.
 Start with the actual workload you want to speed up: a fresh dataset load,
 a grouped load, sparse snapshots, full snapshots or a derived metric. Use the
 Rust benchmarks and pbdems2 microbenchmarks to narrow down expensive components.
-
-From `crates/boon-python/`:
-
-```bash
-uv run maturin develop --release --locked
-uv run --no-sync python benchmarks/bench_parse.py --list
-uv run --no-sync python benchmarks/bench_parse.py \
-  --demo /path/to/match.dem --output ../../target/benchmarks/baseline.json
-```
 
 Runs use explicit local demo files and a process for each case.
 They record build and input fingerprints, thread settings, initialization and
@@ -42,13 +41,20 @@ shared-runner timings are not a performance gate.
 
 Boon 0.16.0 uses pbdems2 0.4.0. Paired controls separate checked field paths,
 child-value cleanup, shared packet handling, and decoded-baseline caching.
-The cache recovers much of the full-parse cost. Packed-prefix cleanup reduces
+The cache recovers much of the full-parse cost.
+
+Packed-prefix cleanup reduces
 parse times by a further 1.9–4.5% in the measured replay workloads. Later
 field-path changes reduce Deadlock parse times by about 3–5% in paired controls.
+
 A later cleanup change reduces CS2 player-only parse times by 1.3–2.0% across
-five demos. A later vector skip change reduces two affected synthetic cases by
+five demos.
+
+A later vector skip change reduces two affected synthetic cases by
 about 8–10%. A follow-up reduces coordinate and quantized vector skip times by
-34% and 39%. The earlier mixed entity gains remain; an isolated mixed-value
+34% and 39%.
+
+The earlier mixed entity gains remain; an isolated mixed-value
 control takes about 2% more time. Replay timing changes are within 1% of the
 control; this does not show a clear complete-replay speedup. Costs relative to
 the pre-fix core remain. The report records these limits.

@@ -1,7 +1,14 @@
 # Changelog
 
-## 0.18.0
+## 0.19.0
 
+- Add `boon.plot` for match summaries, team totals, and map positions.
+- Add item builds and optional objectives, troopers, and ziplines to plots.
+- Add `zipline_nodes`, `zipline_changes`, and `snapshots("ziplines")` for recorded routes and ownership.
+- Add image downloads through `boon get --images` and `data.update(images=...)`.
+- Add `llms.txt`, code-first guides, and typed Google-style Python docstrings.
+
+## 0.18.0
 - Update rustls to 0.23.46 to fix TLS security advisories.
 - Update `boon-proto` to `0.4.11132425+6785` (Deadlock 6785).
 - Reduce combat and `ability_ticks` parse time with property filtering. Use pbdems2 0.4.1.

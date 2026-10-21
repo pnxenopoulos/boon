@@ -1,29 +1,15 @@
-"""Command-line interface for inspecting Deadlock demo files.
+"""Inspect Valve Deadlock Source 2 replays with the Boon Typer CLI.
 
-This is the Python / `Typer <https://typer.tiangolo.com>`_ counterpart to Boon's
-Rust ``boon-dev`` tool. Installing ``boon-deadlock`` (``pip install
-boon-deadlock`` or ``uv add boon-deadlock``) exposes a ``boon`` command that
-reads a demo through the exact same parser the library uses, so you can inspect
-a match straight from the terminal without writing any code::
-
-    boon info match.dem                       # match metadata
-    boon players match.dem                    # roster
-    boon datasets                             # list inspectable datasets
-    boon show match.dem kills --limit 20      # any dataset as a table
-    boon summary match.dem                    # post-match summary
-    boon stats match.dem -m kill-participation # derived metrics
-    boon get                                 # download the latest JSON catalogs
-    boon versions                            # list client versions and installation status
-    boon remove 6698                         # remove a local catalog version
-
-Demo inspection commands load the demo lazily. Pass
-``--json`` (where available) for machine-readable output.
+Install boon-deadlock to use the boon command. Demo inspection uses the same Rust
+parser as the Python API. Use --json where supported for structured output.
+Use boon versions and boon get to select and install game catalogs and images.
 """
 
 from __future__ import annotations
 
 import json as _json
 from pathlib import Path
+from typing import Annotated
 
 import polars as pl
 import typer
@@ -38,7 +24,7 @@ from boon import (
 from boon import data as game_data
 
 app = typer.Typer(
-    help="Boon — inspect Deadlock demos and download versioned JSON catalogs.",
+    help="Boon — inspect Deadlock demos and download versioned catalogs and images.",
     no_args_is_help=True,
     add_completion=False,
 )
@@ -58,7 +44,17 @@ _LIMIT_OPT = typer.Option(
 
 
 def _open(path: Path) -> Demo:
-    """Open a demo file, turning any parse failure into a clean CLI error."""
+    """Open a demo file, turning any parse failure into a clean CLI error.
+
+    Args:
+        path: Local Deadlock .dem path.
+
+    Returns:
+        Boon Demo with combat preloading disabled.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     try:
         return Demo(str(path), preload=False)
     except Exception as exc:  # surface any parse error cleanly
@@ -74,10 +70,13 @@ def _print_df(
     """Print a DataFrame as a full-width table, or as JSON when requested.
 
     Args:
-        df: The frame to display.
-        limit: Max rows to show, or ``None`` for every row.
-        tail: Show the last rows instead of the first.
-        as_json: Emit row-oriented JSON rather than a table.
+        df: Polars DataFrame to print.
+        limit: Maximum rows to show; 0 means all for commands, and None means all for the helper.
+        tail: Show the last rows when True.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
     """
     view = df if limit is None else (df.tail(limit) if tail else df.head(limit))
     if as_json:
@@ -92,7 +91,14 @@ def _print_df(
 
 
 def _version_callback(value: bool) -> None:
-    """Print the installed Boon version and exit (``--version``)."""
+    """Print the installed Boon version and exit (``--version``).
+
+    Args:
+        value: Whether the --version flag was requested.
+
+    Returns:
+        None. Requested output is written to the terminal.
+    """
     if value:
         typer.echo(f"boon {__version__}")
         raise typer.Exit()
@@ -108,12 +114,27 @@ def _main(
         help="Show the Boon version and exit.",
     ),
 ) -> None:
-    """Boon — inspect Deadlock demos and download versioned JSON catalogs."""
+    """Boon — inspect Deadlock demos and download versioned JSON catalogs.
+
+    Args:
+        version: Whether --version was requested. The callback prints and exits.
+
+    Returns:
+        None. Requested output is written to the terminal.
+    """
 
 
 @app.command()
 def info(file: Path = _FILE_ARG, as_json: bool = _JSON_OPT) -> None:
-    """Show match metadata: map, mode, build, duration, and result."""
+    """Show match metadata: map, mode, build, duration, and result.
+
+    Args:
+        file: Local Deadlock .dem path validated by Typer.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+    """
     demo = _open(file)
     modes = game_mode_names()
     teams = team_names()
@@ -144,7 +165,18 @@ def info(file: Path = _FILE_ARG, as_json: bool = _JSON_OPT) -> None:
 
 @app.command()
 def players(file: Path = _FILE_ARG, as_json: bool = _JSON_OPT) -> None:
-    """Show the player roster (name, Steam ID, hero, team, start lane)."""
+    """Show the player roster (name, Steam ID, hero, team, start lane).
+
+    Args:
+        file: Local Deadlock .dem path validated by Typer.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     demo = _open(file)
     roster = demo.players
     try:
@@ -161,7 +193,11 @@ def players(file: Path = _FILE_ARG, as_json: bool = _JSON_OPT) -> None:
 
 @app.command()
 def datasets() -> None:
-    """List the datasets that ``show`` can display."""
+    """List the datasets that ``show`` can display.
+
+    Returns:
+        None. Requested output is written to the terminal.
+    """
     for name in Demo.available_datasets():
         typer.echo(name)
 
@@ -176,7 +212,21 @@ def show(
     ),
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Load and display one dataset from the demo as a table."""
+    """Load and display one dataset from the demo as a table.
+
+    Args:
+        file: Local Deadlock .dem path validated by Typer.
+        dataset: Dataset name listed by boon datasets.
+        limit: Maximum rows to show; 0 means all for commands, and None means all for the helper.
+        tail: Show the last rows when True.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     available = Demo.available_datasets()
     if dataset not in available:
         typer.secho(
@@ -209,9 +259,28 @@ def summary(
     limit: int = _LIMIT_OPT,
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Show recorded post-match totals for souls, damage, healing, and objectives."""
+    """Show recorded post-match totals for souls, damage, healing, and objectives.
+
+    Args:
+        file: Local Deadlock .dem path validated by Typer.
+        part: snapshots, last_hits (default), objectives, damage, healing, gold_sources, or all.
+        limit: Maximum rows to show; 0 means all for commands, and None means all for the helper.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     valid = [
-        "snapshots", "last_hits", "objectives", "damage", "healing", "gold_sources", "all"
+        "snapshots",
+        "last_hits",
+        "objectives",
+        "damage",
+        "healing",
+        "gold_sources",
+        "all",
     ]
     if part not in valid:
         typer.secho(f"error: unknown part '{part}'", fg=typer.colors.RED, err=True)
@@ -258,7 +327,20 @@ def stats(
     limit: int = _LIMIT_OPT,
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Compute a derived metric from ``boon.stats``."""
+    """Compute a derived metric from ``boon.stats``.
+
+    Args:
+        file: Local Deadlock .dem path validated by Typer.
+        metric: kill-participation (default), time-dead, or in-combat.
+        limit: Maximum rows to show; 0 means all for commands, and None means all for the helper.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     demo = _open(file)
     metrics = {
         "kill-participation": demo.kill_participation,
@@ -282,7 +364,17 @@ def stats(
 
 @app.command()
 def verify(file: Path = _FILE_ARG) -> None:
-    """Check that a file is a valid Deadlock demo."""
+    """Check that a file is a valid Deadlock demo.
+
+    Args:
+        file: Local Deadlock .dem path validated by Typer.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     try:
         Demo(str(file), preload=False)
     except Exception as exc:  # report invalid demos as a clean failure
@@ -301,24 +393,51 @@ def get(
         "--force",
         help="Replace installed files after verifying a fresh download.",
     ),
+    images: Annotated[
+        list[game_data.ImageGroup] | None,
+        typer.Option(
+            "--images",
+            help="Image group to extract; repeat for multiple groups, or use all.",
+        ),
+    ] = None,
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Download boon-data JSON catalogs to ~/.boon/<client-version>/."""
+    """Download catalogs and selected images to ~/.boon/<client-version>/.
+
+    Args:
+        version: Deadlock client version. None selects the latest published version where allowed.
+        force: Download and verify fresh files before replacing an installation.
+        images: Optional ImageGroup list: all, map, heroes, abilities, items, or icons.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     try:
-        path = game_data.update(version, force=force)
+        path = game_data.update(version, force=force, images=images or ())
         files = game_data.available_files(path.name)
     except game_data.DataError as exc:
         typer.secho(f"error: {exc}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from exc
-    result = {
+    result: dict = {
         "client_version": path.name,
         "path": str(path),
         "files": files,
     }
+    if images:
+        result["images"] = {
+            "path": str(path / "images"),
+            "groups": [group.value for group in images],
+        }
     if as_json:
         typer.echo(_json.dumps(result, indent=2))
     else:
         typer.echo(f"{path.name}: {len(files)} JSON files in {path}")
+        if images:
+            typer.echo(f"Images: {path / 'images'}")
 
 
 @app.command(rich_help_panel="Game data")
@@ -328,7 +447,18 @@ def remove(
     ),
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Remove one installed boon-data version from the local cache; works offline."""
+    """Remove one installed boon-data version from the local cache; works offline.
+
+    Args:
+        version: Explicit installed client version to remove, including its images.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     try:
         path = game_data.remove(version)
     except game_data.DataError as exc:
@@ -354,7 +484,18 @@ def versions(
     ),
     as_json: bool = _JSON_OPT,
 ) -> None:
-    """Show client versions, source build dates/times, and installed status."""
+    """Show client versions, source build dates/times, and installed status.
+
+    Args:
+        local: List verified installed versions without a network request when True.
+        as_json: Print JSON instead of a text table when True.
+
+    Returns:
+        None. Requested output is written to the terminal.
+
+    Raises:
+        typer.Exit: The requested file, dataset, calculation, or data operation fails.
+    """
     try:
         cached = {
             entry["client_version"]: entry for entry in game_data.local_versions()

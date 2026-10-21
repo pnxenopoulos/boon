@@ -2,18 +2,43 @@
 
 from functools import lru_cache
 from pathlib import Path
+from typing import TypeAlias
 
 from boon import data
 from boon._boon import _read_catalog_names
 
+_NameMaps: TypeAlias = tuple[
+    dict[int, str], dict[int, str], dict[str, str], dict[int, str], dict[int, str]
+]
+
 
 @lru_cache(maxsize=8)
-def _read_names(directory: Path, signature: tuple[tuple[int, int], ...]):
+def _read_names(directory: Path, signature: tuple[tuple[int, int], ...]) -> _NameMaps:
     # File signatures prevent stale maps after a forced reinstall.
+    """Cache native name maps for one catalog-file signature.
+
+    Args:
+        directory: Directory with the four name catalogs.
+        signature: File modification times and lengths used to invalidate the cache.
+
+    Returns:
+        Hero, ability, display-name, modifier, and breakable dictionaries.
+    """
     return _read_catalog_names(directory)
 
 
-def _names(version: str | None):
+def _names(version: str | None) -> _NameMaps:
+    """Resolve a catalog version and read its verified name maps.
+
+    Args:
+        version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
+
+    Returns:
+        Hero, ability, display-name, modifier, and breakable dictionaries.
+
+    Raises:
+        data.DataError: The selected catalogs cannot be installed or read.
+    """
     directory = data.update(data.resolve_version(version))
     try:
         signature = tuple(
@@ -29,37 +54,79 @@ def _names(version: str | None):
 
 
 def hero_names(version: str | None = None) -> dict[int, str]:
-    """Hero IDs to localized names (internal names when localization is absent).
+    """Map Deadlock hero IDs to localized names.
 
-    Use the newest installed boon-data version, or download latest if none is
-    installed. An explicit client version is downloaded if missing.
+    Args:
+        version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
+
+    Returns:
+        New dict mapping hero IDs to display names. Internal names are used when localization is missing.
+
+    Raises:
+        data.DataError: The catalog cannot be installed, read, or resolved without conflicts.
     """
     return _names(version)[0].copy()
 
 
 def ability_names(version: str | None = None) -> dict[int, str]:
-    """Ability/item IDs to internal names from the selected boon-data version."""
+    """Map Deadlock ability and item IDs to internal names.
+
+    Args:
+        version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
+
+    Returns:
+        New dict mapping MurmurHash2 IDs to exact internal ability or item names.
+
+    Raises:
+        data.DataError: The catalog cannot be installed, read, or resolved without conflicts.
+    """
     return _names(version)[1].copy()
 
 
 def ability_display_names(version: str | None = None) -> dict[str, str]:
-    """Internal ability/item names to English names; omit unlocalized entries."""
+    """Map internal Deadlock ability/item names to English display names.
+
+    Args:
+        version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
+
+    Returns:
+        New dict keyed by exact internal names. Entries without localization are omitted.
+
+    Raises:
+        data.DataError: The catalog cannot be installed, read, or resolved without conflicts.
+    """
     return _names(version)[2].copy()
 
 
 def modifier_names(version: str | None = None) -> dict[int, str]:
-    """Unqualified and owner-qualified modifier IDs to their corresponding names.
+    """Map unqualified and owner-qualified modifier IDs to names.
 
-    Repeated definitions with the same ID and name share one entry. Conflicting
-    names raise DataError rather than choosing a definition arbitrarily.
+    Args:
+        version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
+
+    Returns:
+        New dict containing both supported modifier-ID forms.
+
+    Raises:
+        data.DataError: The catalog cannot be installed, read, or resolved without conflicts.
+
+    Notes:
+        Duplicate definitions with the same ID and name share one entry.
+        Conflicting names raise DataError.
     """
     return _names(version)[3].copy()
 
 
 def breakable_names(version: str | None = None) -> dict[int, str]:
-    """Breakable subclass IDs to internal names from misc.json.
+    """Map breakable subclass IDs to internal names in misc.json.
 
-    Includes only records whose definition._class is citadel_breakable_prop.
-    Uses the same version selection and automatic acquisition as hero_names().
+    Args:
+        version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
+
+    Returns:
+        New dict of records whose definition._class is citadel_breakable_prop.
+
+    Raises:
+        data.DataError: The catalog cannot be installed, read, or resolved without conflicts.
     """
     return _names(version)[4].copy()

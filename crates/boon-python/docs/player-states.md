@@ -1,8 +1,5 @@
 # Player states
 
-Use `Demo.player_states()` to read named states for each player at each tick.
-The names come from `modifiers.json` in the selected boon-data version.
-
 ```python
 from boon import Demo
 
@@ -11,6 +8,9 @@ states = demo.player_states(data_version="6712", ticks=[187554])
 print(states.select("tick", "steam_id", "hero_id", "states"))
 ```
 
+Use `Demo.player_states()` to read named states for each player at each tick.
+The names come from `modifiers.json` in the selected boon-data version.
+
 Use `boon versions` to list catalog versions and `boon get VERSION` to install
 one. The method downloads a missing version and does integrity checks. The catalog must
 include `modifier_states`; rebuild older releases that lack this mapping.
@@ -18,7 +18,9 @@ If the mapping is missing, Boon reports an error with the install commands.
 Choose a catalog from the same game build as the replay. Boon does not select
 that version from the demo header.
 
-## Select ticks and players
+<a id="select-ticks-and-players"></a>
+
+## Select Boon player-state ticks and Steam IDs
 
 Without `ticks`, the query reads every recorded tick. An integer selects one tick; a list
 selects several. Boon sorts the selection and removes duplicate ticks. Negative
@@ -41,7 +43,9 @@ The query reads only player controllers and hero pawns. It does not load
 `player_ticks` or calculate stats. It uses the hero pawn during death and
 respawn, even when the controller selects a spectator pawn.
 
-## Columns
+<a id="columns"></a>
+
+## Read Boon player-state columns
 
 | Column | Type | Contents |
 |---|---|---|
@@ -68,13 +72,15 @@ list before you conclude that no bits are set. Null in the two columns means tha
 the pawn, mask, or a necessary mask word is unavailable. A player without a Steam
 ID retains a row with a null ID. A Steam ID filter selects
 only rows with a matching recorded ID. An unknown Steam ID returns no rows.
-Stat and imbue queries instead report an error for an missing requested player.
+Stat and imbue queries instead report an error for a missing requested player.
 
 Use `steam_id` to join these rows to `demo.players`.
 Use `tick` and `steam_id` to join state rows to stat results.
 Do not join null Steam IDs.
 
-## Available state names
+<a id="available-state-names"></a>
+
+## List Boon state names from boon-data
 
 State names depend on the selected catalog. They are output strings, not a
 fixed Python enum or a selector argument. Examples include `SPRINTING`,
@@ -95,7 +101,9 @@ print(state_names)
 This lists defined states, including states never set in your replay.
 The `unknown_*` columns retain bits missing from that catalog.
 
-## Use state lists
+<a id="use-state-lists"></a>
+
+## Filter Boon player-state lists with Polars
 
 ```python
 import polars as pl
@@ -112,7 +120,9 @@ These flags do not change the calculated move-speed or sprint-speed stats.
 A defined flag can stay unset in a replay. Do not use `IN_COMBAT_BULLET_HIT`
 alone to count hits.
 
-## Rust
+<a id="rust"></a>
+
+## Read player states with the Boon Rust API
 
 ```rust
 use boon::{

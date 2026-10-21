@@ -63,7 +63,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install quality tools and runtime dependencies
-        run: uv sync --locked --no-install-project --no-default-groups --group quality
+        run: uv sync --locked --no-install-project --no-default-groups --group quality --extra plot
 
       - name: Ruff
         run: uv run --no-sync ruff check python/boon
