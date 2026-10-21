@@ -1,4 +1,8 @@
-"""Python bindings for the Boon Deadlock demo parser."""
+"""Read Valve Deadlock Source 2 replays with Rust, PyO3, and Polars.
+
+Install boon-deadlock and import boon. Import boon.plot for optional matplotlib
+plots. Versioned boon-data supplies names, calculation inputs, and images.
+"""
 
 from importlib.metadata import version
 

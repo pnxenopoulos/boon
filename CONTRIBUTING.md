@@ -1,11 +1,16 @@
 # Contributing to Boon
 
+```bash
+cargo fmt --all -- --check
+cargo nextest run --workspace --all-features --locked --exclude boon-python
+```
+
 Use this guide to set up Boon, do tests, and submit changes.
 
 ## Prerequisites
 
 - **Rust** (stable) &mdash; install with [rustup](https://rustup.rs)
-- **Python 3.11–3.14** &mdash; for the Python bindings
+- **Python 3.11–3.15** &mdash; for the Python bindings
 - **cargo-nextest** &mdash; `cargo install cargo-nextest --locked`
 - **maturin** &mdash; `pip install maturin` (or `uv add maturin`)
 
@@ -62,7 +67,7 @@ maturin develop --locked
 
 # Using uv
 uv sync
-uv run maturin develop --locked
+uv run maturin develop --locked --uv
 ```
 
 ## Code Quality
@@ -99,7 +104,7 @@ this codebase. Do not enable all pedantic or nursery lints at once.
 From `crates/boon-python`, run:
 
 ```bash
-uv sync --locked --no-install-project --group quality --group docs
+uv sync --locked --no-install-project --group quality --group docs --extra plot
 uv run --no-sync ruff check python/boon
 uv run --no-sync ty check python/boon
 uv run --no-sync sphinx-build -W -b html docs docs/_build/html
@@ -110,7 +115,7 @@ pins their versions. Update these pins together after a review of new diagnostic
 Use `uv run --no-sync pytest tests/ --durations=10` after building the extension or installing
 a wheel. This prevents uv from replacing the build under test.
 
-CI builds Linux wheels for x86-64 and ARM64 with Python 3.11–3.14.
+CI builds Linux wheels for x86-64 and ARM64. Python tests cover 3.11–3.15.
 ARM64 builds use `ubuntu-24.04-arm`. CI and releases use native manylinux2014
 containers for these builds. The Python test jobs use the x86-64 debug wheels.
 The debug profile uses `opt-level = 1` for Boon and pbdems2.
@@ -129,6 +134,16 @@ you claim compliance with the standard.
 - Do not use a vague word such as "this" without a clear noun.
 - Put behavior and its reason in different sentences.
 - Keep exact API names, game field names, and Source 2 terms.
+
+### Write Boon guides and Python API contracts
+
+- Start guides with a complete example. Include the imports and input setup.
+- Use headings that name Boon and the function or task.
+- Explain one concept in each paragraph.
+- Add type hints to Python parameters, return values, and result fields.
+- Use Google-style docstrings with `Args`, `Returns`, and `Raises` where applicable.
+- Keep PyO3 help text and Python `.pyi` declarations consistent.
+- Update `docs/llms.txt` when a guide moves or its scope changes.
 
 Use these technical terms consistently:
 

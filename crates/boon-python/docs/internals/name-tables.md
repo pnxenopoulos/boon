@@ -1,10 +1,21 @@
 # Name lookups
 
+```python
+from boon import ability_names, hero_names, modifier_names
+
+version = "6712"
+print(hero_names(version=version))
+print(ability_names(version=version))
+print(modifier_names(version=version))
+```
+
 Hero, ability/item, modifier, and breakable names come from versioned
 [boon-data](https://github.com/pnxenopoulos/boon-data) JSON catalogs.
 Boon does not embed these maps in its source or compiled package.
 
-## IDs and labels
+<a id="ids-and-labels"></a>
+
+## Boon catalog IDs and name labels
 
 - `heroes.json`: `hero_id` comes from `m_HeroID`. Names use `display_name`,
   falling back to `hero_name` when localization is missing.
@@ -25,7 +36,9 @@ labels, but does not select a gameplay definition. Conflicting labels are errors
 Use boon-data's record indexes to examine multiple modifier definitions.
 IDs missing from the selected catalog stay unresolved; no names are invented.
 
-## Acquisition and caching
+<a id="acquisition-and-caching"></a>
+
+## Boon name downloads and caching
 
 Python name functions accept `version=None`. The default chooses the newest
 verified local client version. With no complete local installation, Boon downloads
@@ -47,7 +60,9 @@ and does file checks before reuse. Reinstalling a version invalidates its maps.
 names and source revisions. The caller must do checksum checks. This method does
 not use the network.
 
-## Other lookup tables
+<a id="other-lookup-tables"></a>
+
+## Boon protocol enum lookup tables
 
 Protocol enums for teams, game modes, hitgroups, life states, and patron phases
 stay in Boon. All VData name lookups come from boon-data; no name-table

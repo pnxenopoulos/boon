@@ -17,6 +17,19 @@ if TYPE_CHECKING:
 @lru_cache(maxsize=8)
 def _components(path: Path, signature: tuple[int, int]) -> dict[int, tuple[int, ...]]:
     # File signatures prevent stale links after a catalog reinstall.
+    """Read item-component links from the selected abilities catalog.
+
+    Args:
+        path: Path to abilities.json.
+        signature: File modification time and length used to invalidate the cache.
+
+    Returns:
+        Item IDs mapped to sorted component-ID tuples.
+
+    Raises:
+        ValueError: The JSON file is not an abilities catalog.
+        OSError: The file cannot be read.
+    """
     catalog = json.loads(path.read_text())
     if catalog["catalog"] != "abilities":
         raise ValueError("expected an abilities catalog")
@@ -41,6 +54,16 @@ def _components(path: Path, signature: tuple[int, int]) -> dict[int, tuple[int, 
 def _upgrade_sources(
     frame: pl.DataFrame, components: dict[int, tuple[int, ...]]
 ) -> pl.Series:
+    """Match component sales to a unique purchase by account and tick.
+
+    Args:
+        frame: Recorded item events with tick, steam_id, ability_id, and change.
+        components: Catalog item-to-component links.
+
+    Returns:
+        List(UInt32) Series named upgraded_from_ability_ids. Ambiguous or
+        missing matches produce empty lists.
+    """
     events = frame.select("tick", "steam_id", "ability_id", "change").rows()
     counts = Counter(events)
     candidates = [
@@ -82,14 +105,23 @@ def _upgrade_sources(
 def get_item_purchases(
     demo: "Demo", /, *, data_version: str | None = None
 ) -> pl.DataFrame:
-    """Read item changes and match components sold by the same player and tick.
+    """Read Deadlock item events with catalog-based component links.
 
-    Keep the recorded change values. upgraded_from_ability_ids contains catalog
-    component IDs for unambiguous purchase/sale pairs, or an empty list. Missing
-    Steam IDs and component links do not produce inferred matches.
+    Args:
+        demo: Boon Demo with recorded item changes.
+        data_version: Client version to select. None uses the newest verified local version, or the latest published version if none is installed.
 
-    Use the newest installed boon-data version by default; download latest if
-    none is installed. An explicit data_version is downloaded if missing.
+    Returns:
+        Polars DataFrame with recorded event columns and
+        upgraded_from_ability_ids. Recorded change strings remain unchanged.
+
+    Raises:
+        data.DataError: The selected component catalog cannot be installed or read.
+
+    Notes:
+        Only unambiguous purchase/sale pairs for the same Steam ID and tick
+        receive component links. Missing accounts or links do not produce inferred
+        upgrades. An empty event table needs no catalog.
     """
     frame = demo._item_purchases
     if frame.is_empty():

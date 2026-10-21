@@ -17,7 +17,21 @@
 
 </div>
 
-Boon is a fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo parser. The Rust core has native Python bindings. Boon reads Source 2 `.dem` files and returns [Polars](https://pola.rs) DataFrames.
+```python
+from boon import Demo
+
+demo = Demo("match.dem", preload=False)
+demo.load("kills", "damage")
+print(demo.players)
+print(demo.kills.head())
+demo.kills.write_parquet("kills.parquet")
+```
+
+Boon parses [Valve Deadlock](https://store.steampowered.com/app/1422450/Deadlock/)
+Source 2 `.dem` files with a Rust parser and [PyO3](https://pyo3.rs) Python bindings.
+Python results use [Polars](https://pola.rs) DataFrames for filters, groups, joins,
+and Apache Parquet output. Optional plots use [matplotlib](https://matplotlib.org).
+Install `boon-deadlock`; import `boon` in Python or Rust.
 
 **Demo compatibility:** Use Boon **0.10.0 or earlier** for demos recorded before
 the **City Never Sleeps** update (**September 29, 2026**).
@@ -26,11 +40,11 @@ Use Boon **0.11.0 or later** for demos recorded with that update or later.
 ## Table of Contents
 
 - [Why Boon?](#why-boon)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Available Datasets](#available-datasets)
-- [Project Structure](#project-structure)
-- [Documentation](#documentation)
+- [Installation](#install-boon-for-python-or-rust)
+- [Quick Start](#read-deadlock-replay-data-with-boon)
+- [Available Datasets](#boon-replay-datasets)
+- [Project Structure](#boon-repository-structure)
+- [Documentation](#boon-documentation)
 - [Useful Links](#useful-links)
 - [Contributing](#contributing)
 - [License](#license)
@@ -42,10 +56,13 @@ Boon reads player state, combat events, items, and objectives from Deadlock demo
 - **Rust core:** Read Source 2 demo files with native Python bindings.
 - **DataFrames:** Filter, group, and join results with Polars.
 - **Dataset selection:** Load compatible datasets in one parser pass.
-- **Game data:** Use boon-data catalogs for names and calculated stats.
+- **Game data:** Use boon-data catalogs for names and calculated stats. Download optional plotting images.
+- **Plots:** Draw match scoreboards, team totals, and player positions with `boon.plot`.
 - **CLI:** Inspect demos with the `boon` command.
 
-## Installation
+<a id="installation"></a>
+
+## Install Boon for Python or Rust
 
 Use Boon as a Python library, Rust crate, or CLI.
 
@@ -69,11 +86,37 @@ Use Python 3.11–3.15.
 
 `pip install boon-deadlock` or `uv add boon-deadlock` adds the `boon` command to your PATH. See the [CLI documentation](https://boon.readthedocs.io/en/latest/cli.html). The repository also contains the low-level `boon-dev` debug tool. Build it with `cargo build --release -p boon-dev`.
 
+Download catalogs and optional images from a boon-data release:
+
+```bash
+boon get --images all
+# Or select groups: --images map --images heroes --images items --images icons
+```
+
+### Plotting
+
+Install `uv add 'boon-deadlock[plot]'` or `pip install 'boon-deadlock[plot]'`.
+
+```python
+from boon import Demo, plot
+
+demo = Demo("match.dem", preload=False)
+fig, ax = plot.summary(demo, version="6795", builds=True)
+fig.savefig("summary.png")
+fig, ax = plot.timeline(demo, "net_worth")
+fig.savefig("souls.png")
+fig, ax = plot.positions(demo, tick=10000, version="6795", ziplines=True)
+fig.savefig("positions.png")
+```
+
+Use a boon-data version with images and map bounds for position plots.
+See the [plotting guide](https://boon.readthedocs.io/en/latest/plot.html).
+
 ### Rust library
 
 ```toml
 [dependencies]
-boon-deadlock = "0.18"
+boon-deadlock = "0.19"
 ```
 
 Rust callers can load stat and state catalogs from JSON bytes with
@@ -91,48 +134,33 @@ last-seen history.
 Boon uses pbdems2 0.4.1. Resolve field keys from the current schema; do not
 store numeric field keys across parser upgrades.
 
-## Quick Start
+<a id="quick-start"></a>
+
+## Read Deadlock replay data with Boon
 
 ### Python
 
 ```python
 from boon import Demo
 
-demo = Demo("match.dem")
-
-# Match metadata
-print(demo.match_id)
-print(demo.map_name)
-print(demo.total_clock_time)
+demo = Demo("match.dem", preload=False)
+print(demo.match_id, demo.map_name, demo.total_clock_time)
 print(demo.winning_team_num)
 
-# Combat datasets are preloaded; other Polars DataFrames load on first access
-kills = demo.kills
-damage = demo.damage
-player_ticks = demo.player_ticks
-
-# Recorded enemy minimap icons for both teams, sampled every 64 ticks
-enemy_icons = demo.enemy_minimap_ticks(every=64)
-
-# Load datasets together; compatible datasets share a parser pass
-demo.load("kills", "damage", "player_ticks", "objectives")
-
-# See what datasets are available
-Demo.available_datasets()
-
-# Derived stats (boon.stats), also exposed as Demo methods
-demo.kill_participation()    # (kills + assists) / team kills, per player
+players = demo.snapshots("players", ticks=[10000, 20000])
+print(players.select("tick", "steam_id", "hero_id", "health"))
+print(demo.kill_participation())
 ```
 
 Use `calculate_hero_stats()` for hero values, `calculate_ability_stats()` for
 ability bonuses, `imbues()` for item selections, and `player_states()` for state
 names. Select a boon-data version from `boon versions`.
 Use `get_item_purchases(data_version=...)` for catalog-specific item upgrade links.
-See the [feature examples](crates/boon-python/docs/examples.md#stats-states-and-ammo),
+See the [feature examples](crates/boon-python/docs/examples.md#query-boon-stats-states-and-ammo),
 [hero stat names](crates/boon-python/docs/hero-stats.md), and
-[ability stat names](crates/boon-python/docs/ability-stats.md#percentage-rules).
+[ability stat names](crates/boon-python/docs/ability-stats.md#boon-ability-bonus-names-and-v1-rules).
 The guides list accepted strings and enum members.
-See [enemy minimap icons](crates/boon-python/docs/examples.md#enemy-minimap-icons)
+See [enemy minimap icons](crates/boon-python/docs/examples.md#read-boon-enemy-minimap-icons)
 for team visibility and last-seen positions. Player snapshots also include
 current `upgrade_ids` and an optional recorded `boon_count`.
 
@@ -159,8 +187,9 @@ boon --help
 
 The `boon-dev` tool adds low-level commands such as `entities`, `events`, and `send-tables`. Build it with `cargo build --release -p boon-dev`. See the [CLI reference](https://boon.readthedocs.io/en/latest/cli.html).
 
+<a id="available-datasets"></a>
 
-## Available Datasets
+## Boon replay datasets
 
 Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataFrame. `Demo(path)` preloads kills, damage, and abilities together. Other datasets load on first access. Use `Demo(path, preload=False)` for metadata-only construction, then `load()` to request several datasets together. Call `Demo.available_datasets()` to get the full list.
 
@@ -178,6 +207,8 @@ Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataF
 | `chat` | In-game chat messages (all chat and team chat) |
 | `objectives` | Objective health state changes (walkers, barracks, shrines, patron, mid boss) with position and phase tracking |
 | `mid_boss` | Mid boss lifecycle events (spawn, kill, rejuv pickup/use/expire) |
+| `zipline_nodes` | Initial zipline geometry and later revisions, with full entity handles |
+| `zipline_changes` | Recorded zipline ownership and visibility changes |
 | `troopers` | Alive lane trooper state for each tick with position *(opt-in, large)* |
 | `neutrals` | Neutral creep state changes with change detection *(opt-in)* |
 | `breakables` | Breakable map-prop destruction events with resolved subclass and last-known position *(opt-in)* |
@@ -189,7 +220,9 @@ Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataF
 | `street_brawl_ticks` | Street Brawl state for each tick *(street brawl only)* |
 | `street_brawl_rounds` | Street brawl round scoring events *(street brawl only)* |
 
-## Project Structure
+<a id="project-structure"></a>
+
+## Boon repository structure
 
 | Crate | Description |
 |-------|-------------|
@@ -198,7 +231,17 @@ Each dataset is a `Demo` property that returns a [Polars](https://pola.rs) DataF
 | [`boon-dev`](crates/boon-dev) | Low-level developer / debugging CLI (in-repo only, not published) |
 | [`boon-python`](crates/boon-python) | Python bindings that use PyO3 (published as `boon-deadlock` on PyPI) |
 
-## Documentation
+<a id="documentation"></a>
+
+## Boon documentation
+
+Recorded zipline routes and ownership are available through `demo.zipline_nodes`,
+`demo.zipline_changes`, and `demo.snapshots("ziplines", ticks=...)`.
+See the [zipline guide](https://boon.readthedocs.io/en/latest/ziplines.html).
+
+See [Visual Design](DESIGN.md) for the plot style guide.
+
+The [llms.txt index](https://boon.readthedocs.io/llms.txt) links to plain-text guides and API contracts.
 
 Full documentation is available at [boon.readthedocs.io](https://boon.readthedocs.io), including:
 

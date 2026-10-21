@@ -20,13 +20,11 @@ the data easier to use. Use the same format as `team_names()` and
 
 Add helpers that create visuals from parsed DataFrames:
 
-- **Static plots** for common views: net worth over time, kill timelines,
-  damage-dealt-vs-taken matrices, lane control.
+- Extend `boon.plot` with kill timelines and damage matrices.
+  Summary, team-total, position, and zipline views are available.
 - **Position heatmaps** for each hero or team, calculated from `player_ticks`.
 - **Animated GIFs** of player movement for a match or time window. Show the
   movement on a stylized map.
-- A small style API that applies the same Deadlock colors to teams, heroes, and
-  lanes.
 
 ## Analysis helpers
 

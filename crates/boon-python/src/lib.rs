@@ -46,21 +46,28 @@ mod names;
 mod player_states;
 mod runtime;
 mod snapshots;
+mod ziplines;
 
 use datasets::*;
 use names::*;
 use snapshots::*;
 
-/// A Deadlock demo file.
+/// Read Valve Deadlock Source 2 replays with the Boon Rust parser.
 ///
 /// Args:
-///     path: Path to the demo file.
-///     preload: Load kills, damage, and abilities together (default True).
-///         Set False for lightweight construction and loading on first access.
+///     path: String path to a local .dem replay.
+///     preload: Preload kills, damage, and abilities when True. Other datasets load on access.
 ///
-/// Raises:
-///     FileNotFoundError: If the file does not exist.
-///     InvalidDemoError: If the file is not a valid demo file.
+/// Notes:
+///     Python dataset results are Polars DataFrames. Use Steam IDs for player
+///     joins. Only name, game-data, and image queries can download boon-data.
+///     The Rust parser is exposed through PyO3.
+///
+/// Examples:
+///     >>> from boon import Demo
+///     >>> demo = Demo("match.dem", preload=False)
+///     >>> print(demo.players)
+///     >>> print(demo.kills.head())
 #[pyclass]
 struct Demo {
     parser: boon_parser::Parser,
@@ -80,6 +87,7 @@ struct Demo {
     cached_datasets: DatasetCache,
     cached_barriers: std::sync::OnceLock<BarrierTimeline>,
     cached_summary: Option<SummaryFrames>,
+    cached_ziplines: std::sync::OnceLock<boon_parser::ziplines::ZiplineHistory>,
     // Game over state: (winning_team_num, tick), None if no event found
     game_over: Option<(i32, i32)>,
     // Match-clock seconds at game over. The flag distinguishes "not read"

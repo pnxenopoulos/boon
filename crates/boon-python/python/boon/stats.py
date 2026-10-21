@@ -1,8 +1,8 @@
 """Calculate statistics from parsed Boon demo data.
 
-Each function accepts a :class:`boon.Demo` and returns a Polars DataFrame. The
+Each function accepts a `boon.Demo` and returns a Polars DataFrame. The
 same functions are convenience methods on ``Demo``. For example,
-``demo.kill_participation()`` calls :func:`kill_participation`.
+``demo.kill_participation()`` calls `kill_participation`.
 
 Results use ``hero_id`` as a key. Join them to ``players``, ``kills``,
 ``player_ticks``, or the ``summary()`` frames.
@@ -32,7 +32,7 @@ def in_combat(demo: Demo) -> pl.DataFrame:
     ``player_ticks``.
 
     The comparison requires the current game time for each tick. Calculate this
-    time from non-paused ticks, as :meth:`Demo.tick_to_seconds` does. Then add one
+    time from non-paused ticks, as `Demo.tick_to_seconds` does. Then add one
     constant offset between the demo clock and the engine clock. At a damage
     tick, ``last_damage_time`` equals the current engine time. It cannot be later
     than the current engine time. Thus, the maximum value of
@@ -299,7 +299,7 @@ def teamfights(
         - ``fight_id`` (*int*) -- Sequential fight number (1-indexed).
         - ``start_tick`` / ``end_tick`` (*int*) -- First and last damage tick.
         - ``start_seconds`` / ``end_seconds`` (*float*) -- Start and end times.
-          The values exclude paused time and use :meth:`Demo.tick_to_seconds`.
+          The values exclude paused time and use `Demo.tick_to_seconds`.
         - ``duration_seconds`` (*float*) -- ``end_seconds - start_seconds``.
         - ``center_x`` / ``center_y`` (*float*) -- Mean event position.
         - ``participants`` (*list[int]*) -- Hero IDs that dealt or took hero

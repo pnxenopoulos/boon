@@ -1,7 +1,7 @@
 # 📚 API Reference
 
 (demo)=
-## `Demo`
+## Boon Demo API
 
 ```python
 from boon import Demo
@@ -31,7 +31,9 @@ only the datasets they request.
 - **path** (`str`) -- Path to the `.dem` file.
 - **preload** (`bool`, keyword-only) -- Load kills, damage, and abilities during construction. Default: `True`.
 
-### Methods
+<a id="methods"></a>
+
+### Boon Demo methods
 
 #### `player_states(...)`
 
@@ -48,12 +50,12 @@ Use `mode="current"` (default) for supported active effects, or `mode="baseline"
 for passive and permanent inputs. `StatMode` enum members also work. Results
 include the selected mode.
 See {doc}`hero-stats` for supported stats, modes, equations, input sources, and limits.
-See [feature examples](examples.md#stats-states-and-ammo) for complete calls.
+See [feature examples](examples.md#query-boon-stats-states-and-ammo) for complete calls.
 
 #### `calculate_ability_stats(...)`
 
 Calculate bonus percentages for each ability. Select stats with `AbilityStat` enum members
-or their matching strings. See [Percentage rules](ability-stats.md#percentage-rules)
+or their matching strings. See [Percentage rules](ability-stats.md#boon-ability-bonus-names-and-v1-rules)
 for all accepted names.
 Set `ticks`, `data_version`, and optional `steam_ids`.
 Use `mode="current"` (default) for supported active effects, or `mode="baseline"`
@@ -75,7 +77,7 @@ purchases = demo.get_item_purchases(data_version="6712")
 Read item changes with catalog component links in `upgraded_from_ability_ids`.
 Use `data_version` for an exact client version.
 Without `data_version`, use the newest installed catalog. Download latest if none is installed.
-See {ref}`item-purchase columns <item-purchases>` and [upgrade examples](examples.md#item-upgrades).
+See {ref}`item-purchase columns <item-purchases>` and [upgrade examples](examples.md#read-boon-item-upgrade-links).
 
 #### `verify()`
 
@@ -102,7 +104,7 @@ The accepted strings are:
 abilities, ability_upgrades, ability_ticks, active_modifiers, breakables, chat,
 damage, flex_slots, item_purchases, kills, mid_boss, neutrals, objectives,
 player_ticks, rift, sinners_sacrifice, stat_modifier_events, troopers, urn,
-world_ticks, street_brawl_ticks, street_brawl_rounds
+world_ticks, zipline_nodes, zipline_changes, street_brawl_ticks, street_brawl_rounds
 ```
 
 The two `street_brawl_*` names apply only to a Street Brawl demo. There is no Python
@@ -121,7 +123,8 @@ Load one or more datasets from the demo. Use `available_datasets()` to get accep
 
 Boon skips datasets that are already loaded. Event and entity datasets share
 one filtered pass. Player, world, and trooper snapshots share a parallel pass.
-A mixed request uses one pass for each group.
+A mixed request uses one pass for each group. Zipline tables share a separate
+filtered history pass, cached for later snapshot queries.
 
 Combat and `ability_ticks` loads decode only needed properties. Requests that
 also load `active_modifiers` or `urn` keep full entity fields. Later schema
@@ -141,7 +144,7 @@ changes also use full decoding.
 #### `tick_to_seconds()`
 
 ```python
-demo.tick_to_seconds(187554)
+demo.tick_to_seconds(10000)
 ```
 
 Convert a tick number to elapsed seconds. The result does not include paused time.
@@ -158,7 +161,7 @@ The method loads `world_ticks` on the first call to find pauses.
 #### `tick_to_clock_time()`
 
 ```python
-demo.tick_to_clock_time(187554)
+demo.tick_to_clock_time(10000)
 ```
 
 Convert a tick number to a clock time string, such as `"3:14"` or `"12:34"`.
@@ -176,7 +179,7 @@ call to find pauses.
 #### `tick_to_match_seconds()`
 
 ```python
-demo.tick_to_match_seconds(187554)
+demo.tick_to_match_seconds(10000)
 ```
 
 Convert a demo tick to match-clock seconds, with pauses not included.
@@ -195,7 +198,7 @@ is unavailable.
 #### `tick_to_match_clock()`
 
 ```python
-demo.tick_to_match_clock(187554)
+demo.tick_to_match_clock(10000)
 demo.tick_to_match_clock(500)  # A pregame tick can show a negative clock.
 ```
 
@@ -217,16 +220,18 @@ demo.snapshots(ticks=[29000, 30000])              # specific ticks
 demo.snapshots(start_tick=29000, end_tick=30000)  # a contiguous window
 demo.snapshots("troopers", events="kills")        # troopers at kill ticks
 demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)  # -> dict
-demo.snapshots(ticks=187554, data_version="6712")  # add calculated ammo
+demo.snapshots(ticks=10000, data_version="6712")  # add calculated ammo
 ```
 
 Read state for each tick only at selected ticks.
-Up to four explicit ticks use direct seeks. Larger selections use parallel keyframe segments.
+Player, world, and trooper queries use direct seeks for up to four explicit ticks.
+Larger selections use parallel keyframe segments. Zipline queries use a cached
+serial history; see {doc}`ziplines`.
 Barrier history and calculated ammo can use extra passes.
 Sampling usually uses less memory than loading and filtering a full `player_ticks` frame.
 
 - **`datasets`** -- which snapshot dataset(s): `"player_ticks"` (default),
-  `"world_ticks"`, `"troopers"`, or a list.
+  `"world_ticks"`, `"troopers"`, `"ziplines"`, or a list.
 - **`ticks`** -- a specific tick or list of ticks.
 - **`every`** / **`seconds`** -- a periodic stride (mutually exclusive).
 - **`events`** -- sample at the `tick` values in a named dataset, or a list.
@@ -260,7 +265,6 @@ Unknown state bits make `unlimited_ammo` null unless `INFINITE_CLIP` is present.
 Missing or duplicate Steam IDs leave calculated ammo and state values null.
 Unlimited ammo does not change the counts to infinity. `demo.player_ticks` and `demo.load("player_ticks")` do not calculate these added fields.
 
-
 (enemy-minimap-ticks)=
 #### `enemy_minimap_ticks(*, ticks=None, every=None)`
 
@@ -271,7 +275,7 @@ The method reads `CCitadelTeam.m_vecFOWEntities` entries with class code 1.
 Other map icons are excluded. No boon-data catalog is needed.
 
 ```python
-icons = demo.enemy_minimap_ticks(ticks=[187554])
+icons = demo.enemy_minimap_ticks(ticks=[10000])
 sampled = demo.enemy_minimap_ticks(every=64)
 ```
 
@@ -316,7 +320,7 @@ Use `target_steam_id` to join to `demo.players`; do not join null IDs.
 
 **Raises:** `ValueError` if both selectors are supplied or `every <= 0`.
 
-See [enemy minimap icons](examples.md#enemy-minimap-icons) for a query example.
+See [enemy minimap icons](examples.md#read-boon-enemy-minimap-icons) for a query example.
 
 (summary)=
 #### `summary()`
@@ -564,7 +568,9 @@ It raises `ValueError` when the tick rate is zero.
 
 ---
 
-### Metadata Properties
+<a id="metadata-properties"></a>
+
+### Boon Demo metadata properties
 
 #### `path`
 
@@ -748,7 +754,9 @@ The match-clock value at game over as a formatted string (for example,
 `"32:45"`). The format drops fractional seconds. `None` if no game-over event
 was found.
 
-### DataFrame Properties
+<a id="dataframe-properties"></a>
+
+### Boon Demo Polars properties
 
 #### `players`
 
@@ -955,6 +963,7 @@ Damage events. Preloaded during construction unless `preload=False`.
 | `crit_damage` | `float` | Critical damage amount |
 | `attacker_class` | `int` | The attacker's entity class ID |
 | `victim_class` | `int` | The victim's entity class ID |
+| `victim_entity_id` | `int` | Victim entity index; `-1` when absent |
 | `ability_id` | `int` | Raw ability/weapon ID, or `0` when missing; resolve with `ability_names()` |
 | `damage_type` | `int` | Raw Source `type` damage bitfield |
 | `citadel_type` | `int` | Deadlock damage category; `3` is melee-typed damage |
@@ -1177,6 +1186,19 @@ demo.rift.select(["rift_num", "capture_tick", "winning_team", "lane"])
 
 ---
 
+#### Zipline tables
+
+```python
+nodes = demo.zipline_nodes
+changes = demo.zipline_changes
+state = demo.snapshots("ziplines", ticks=10000)
+```
+
+Read recorded geometry and ownership without a game-data catalog.
+See {doc}`ziplines` for columns, change strings, and snapshot limits.
+
+---
+
 #### `troopers`
 
 ```python
@@ -1357,7 +1379,7 @@ Not loaded by default. Access this property or call `load("active_modifiers")` e
 | `serial` | `int` | Source 2 runtime identifier; unique while live, reusable after removal |
 | `modifier_id` | `int` | Raw modifier subclass hash ID (use `modifier_names()` to resolve) |
 | `ability_id` | `int` | Raw ability subclass hash ID (use `ability_names()` to resolve) |
-| `duration` | `float` | Current modifier duration in seconds (`-1` when indefinite) |
+| `duration` | `float` | Current duration in seconds; `-1` when absent or indefinite |
 | `caster_hero_id` | `int` | Hero ID of the caster |
 | `stacks` | `int` | Number of stacks |
 

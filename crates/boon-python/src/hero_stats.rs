@@ -4,6 +4,20 @@ use boon_parser::hero_stats::{HeroStat, HeroStatQuery, Ruleset, StatCatalog, Sta
 #[pymethods]
 impl Demo {
     // Keyword arguments mirror the public Python query.
+    /// Serialize native hero-stat results using a local catalog.
+    ///
+    /// Args:
+    ///     directory: Verified local boon-data directory.
+    ///     ticks: Exact demo ticks to read.
+    ///     stats: Exact selected stat strings.
+    ///     mode: current or baseline input mode.
+    ///     steam_ids: Optional selected Steam account IDs.
+    ///     heroes: Optional selected current hero IDs.
+    ///     explain: Include source contributions when True.
+    ///     strict: Raise for missing calculation inputs when True.
+    ///
+    /// Returns:
+    ///     str: Native results used by the public Python wrapper.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (directory, ticks, *, stats, mode="current", steam_ids=None, heroes=None, explain=false, strict=true))]
     fn _calculate_hero_stats(
@@ -48,6 +62,15 @@ impl Demo {
 
 #[pymethods]
 impl Demo {
+    /// Serialize recorded imbue rows using a local catalog.
+    ///
+    /// Args:
+    ///     directory: Verified local boon-data directory.
+    ///     ticks: Exact demo ticks to read.
+    ///     steam_ids: Optional selected Steam account IDs.
+    ///
+    /// Returns:
+    ///     str: Native results used by the public Python wrapper.
     #[pyo3(signature = (directory, ticks, *, steam_ids=None))]
     fn _imbues(
         &self,
@@ -68,6 +91,21 @@ impl Demo {
         })
         .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))
     }
+    /// Serialize native ability bonus results using a local catalog.
+    ///
+    /// Args:
+    ///     directory: Verified local boon-data directory.
+    ///     ticks: Exact demo ticks to read.
+    ///     stats: Exact selected stat strings.
+    ///     mode: current or baseline input mode.
+    ///     steam_ids: Optional selected Steam account IDs.
+    ///     abilities: Optional selected owned ability IDs.
+    ///     include_items: Include owned items when True.
+    ///     explain: Include source contributions when True.
+    ///     strict: Raise for missing calculation inputs when True.
+    ///
+    /// Returns:
+    ///     str: Native results used by the public Python wrapper.
     #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (directory, ticks, *, stats, mode="current", steam_ids=None, abilities=None, include_items=false, explain=false, strict=true))]
     fn _calculate_ability_stats(

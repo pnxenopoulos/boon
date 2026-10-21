@@ -1,5 +1,13 @@
 # Replay verification checklist
 
+```python
+from boon import Demo
+
+demo = Demo("match.dem", preload=False)
+print(demo.players)
+print(demo.snapshots(ticks=10000))
+```
+
 Use this checklist with the demo open in the game viewer and the current Boon
 build installed. Record viewer values **before** you inspect Boon's results.
 Compare values; a file that opens can still have incorrect results.
@@ -53,7 +61,7 @@ Choose an early, middle and late tick. Compare **each player** at each tick with
 
 Inspect the event tick and the ticks before and after it.
 Use one clear event, then a repeated event or a transition.
-Record an outcome for each of these 22 datasets:
+Record an outcome for each of these 24 datasets:
 
 | Dataset | Compare with the viewer |
 | --- | --- |
@@ -69,6 +77,8 @@ Record an outcome for each of these 22 datasets:
 | `flex_slots` | Team and unlock tick. |
 | `objectives` | Team, health, destruction, patron phase, and `(entity_id, entity_serial)` across respawns. |
 | `mid_boss` | Spawn, death, and rejuvenator pickup/use/expiry. |
+| `zipline_nodes` | Route positions, lanes, connections, and geometry revisions. |
+| `zipline_changes` | Team ownership and visibility changes. Keyframe restamps must not add transitions. |
 | `troopers` | A wave's team, lane, position, and health. Entity indices can be reused. |
 | `neutrals` | A camp's entity identity, location, health, and state changes. This table records changes only. |
 | `breakables` | Destroyed prop, subclass, position, entity, and serial. Leaving view must not count as destruction. |
@@ -111,7 +121,7 @@ Use `get_item_purchases(data_version=...)` for component links; retain recorded 
 
 ### 6. Compare stats, states, and imbues
 
-Use the matching boon-data client version. See [feature examples](examples.md#stats-states-and-ammo).
+Use the matching boon-data client version. See [feature examples](examples.md#query-boon-stats-states-and-ammo).
 
 - [ ] Record `data_version`, tick, Steam ID, query mode, and the viewer value.
   Use the tick passed to `demo_gototick`; the pause message can show a server tick.
@@ -178,8 +188,8 @@ Replace the filename and ticks with those you are viewing.
 import polars as pl
 from boon import Demo, hero_names
 
-demo = Demo("108575009.dem", preload=False)
-ticks = [187554]
+demo = Demo("match.dem", preload=False)
+ticks = [10000]
 names = hero_names(version="6712")
 
 print(demo.players)
@@ -226,9 +236,9 @@ used to run it. It does not change the replay or parser.
 From the repository root, with the current Boon build installed:
 
 ```bash
-python scripts/check-demo.py 108575009.dem \
-  --out target/demo-checks/108575009 \
-  --ticks 187554
+python scripts/check-demo.py match.dem \
+  --out target/demo-checks/match \
+  --ticks 10000
 ```
 
 Use a new output directory for each run. On Windows, enter the command on one
@@ -236,7 +246,7 @@ line. If using this repository's WSL virtual environment, replace `python` with
 `crates/boon-python/.venv/bin/python`.
 
 Without `--ticks`, the script selects three ticks from the observed player history. You can
-supply several: `--ticks 30000 187554 70000`. Use **demo ticks**, not match seconds.
+supply several: `--ticks 10000 30000 70000`. Use **demo ticks**, not match seconds.
 The report includes the two time conversions for the selected ticks.
 
 The full run loads and exports all datasets supported by the replay's mode,
@@ -248,9 +258,9 @@ troopers only; full trooper coverage will explicitly stay unverified.
 To also do checks of real data downloads and removal:
 
 ```bash
-python scripts/check-demo.py 108575009.dem \
-  --out target/demo-checks/108575009-with-data \
-  --ticks 187554 --cli --data-version 6712
+python scripts/check-demo.py match.dem \
+  --out target/demo-checks/match-with-data \
+  --ticks 10000 --cli --data-version 6712
 ```
 
 Choose an available client version from `boon versions`. This option uses
@@ -282,8 +292,7 @@ No single replay can prove every feature. Track which file covers each case:
 
 - [ ] Complete standard match with its ending and post-match statistics.
 - [ ] Street Brawl match: test rounds, scores, transitions, and mode guards.
-- [ ] Early hero switch, including subsequent chat and purchases. Match
-  `100655353.dem` is the existing Silver-to-Victor regression example.
+- [ ] Early hero switch, including subsequent chat and purchases.
 - [ ] Pause/resume, death/respawn, and rebirth/rejuvenator if available.
 - [ ] Another supported client: do a check of missing fields and unknown name IDs.
 - [ ] Incomplete/late-start replay: report missing pregame/end/summary data. A missing frame is not a zero-valued match statistic.
@@ -301,8 +310,9 @@ Use the known player/Steam identity, their hero history, and the event time.
 from pathlib import Path
 import polars as pl
 
-folder = Path("target/demo-checks/108575009")
-tick, steam_id = 187554, 76561198037652386  # McGinnis
+folder = Path("target/demo-checks/match")
+tick = 10000
+steam_id = pl.read_parquet(folder / "players.parquet")["steam_id"].drop_nulls()[0]
 
 players = pl.scan_parquet(folder / "player_ticks.parquet")
 selected = players.filter((pl.col("tick") == tick) & (pl.col("steam_id") == steam_id)).collect()
@@ -329,21 +339,21 @@ Compare a fresh lazy load with the exported evidence from the bulk load:
 from boon import Demo
 from polars.testing import assert_frame_equal
 
-fresh = Demo("108575009.dem", preload=False)
+fresh = Demo("match.dem", preload=False)
 assert_frame_equal(fresh.damage, pl.read_parquet(folder / "damage.parquet"))
 ```
 
 ## Turn different observations into repeatable assertions
 
-Transcribe a value from the replay UI, not from Boon's output. Suppose McGinnis has
-123 health at demo tick 187554. Save the following JSON in `observations.json`.
-**123 is an example. Replace it with the value you observe.**
+Transcribe a value from the replay UI, not from Boon's output. Save the following
+JSON in `observations.json`. Replace the example tick, Steam ID, and health with
+your observations. Get the player's Steam ID from `demo.players`.
 
 ```json
 [
   {
     "dataset": "player_ticks",
-    "where": {"tick": 187554, "steam_id": 76561198037652386},
+    "where": {"tick": 10000, "steam_id": 0},
     "expect": {"health": 123},
     "tolerance": 0
   }

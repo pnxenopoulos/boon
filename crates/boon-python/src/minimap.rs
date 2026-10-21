@@ -72,14 +72,29 @@ impl MinimapCols {
 
 #[pymethods]
 impl Demo {
-    /// Recorded enemy hero icons on each team's minimap.
+    /// Team-specific enemy hero minimap observations from replay FOW state.
     ///
-    /// `observer_team` is the shared team information channel. Coordinates are
-    /// native 0..255 map bytes and are populated only while the icon is shown.
-    /// Last-seen coordinates come only from a prior shown row with the same
-    /// pawn entity identity; unresolved identities keep those fields null.
-    /// `target_steam_id` requires one active controller bound to that pawn.
-    /// Pass `ticks` to sample exact replay ticks, or `every` for a tick stride.
+    /// Args:
+    ///     ticks: Exact tick sequence. An empty sequence returns no rows. Cannot be combined with every.
+    ///     every: Positive tick interval. Omit both selectors for all ticks.
+    ///
+    /// Returns:
+    ///     Polars DataFrame with observer team, target identity, recorded visibility,
+    ///     native 0–255 map coordinates, and per-pawn last-seen values.
+    ///
+    /// Raises:
+    ///     ValueError: Ticks or stride are invalid or both selectors are supplied.
+    ///
+    /// Notes:
+    ///     `observer_team` identifies the team's shared map channel. `visible_on_map`
+    ///     is directly recorded; `map_x` and `map_y` are native byte coordinates
+    ///     only for shown icons. `last_seen_*` is carried from the last shown row
+    ///     of the same resolved pawn lifetime. Unbound rows retain their raw FOW
+    ///     entity index and leave identity and last-seen columns null.
+    ///     `target_steam_id` is present only when one active controller with a
+    ///     recorded Steam ID points to that exact pawn lifetime.
+    ///     Omit both arguments for all ticks. Pass either exact ``ticks`` or a
+    ///     positive ``every`` interval. An empty tick list returns an empty frame.
     #[pyo3(signature = (*, ticks=None, every=None))]
     pub(crate) fn enemy_minimap_ticks(
         &self,

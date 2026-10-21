@@ -40,4 +40,16 @@ def _read_catalog_names(
     directory: Path,
 ) -> tuple[
     dict[int, str], dict[int, str], dict[str, str], dict[int, str], dict[int, str]
-]: ...
+]:
+    """Read native ID/name maps from one local boon-data snapshot.
+
+    Args:
+        directory: Local catalog directory already verified by the caller.
+
+    Returns:
+        Tuple of hero, ability, display-name, modifier, and breakable dictionaries.
+
+    Raises:
+        ValueError: Catalog definitions are missing or contain conflicting names.
+    """
+    ...

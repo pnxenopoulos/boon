@@ -1,17 +1,26 @@
 # 💻 CLI
 
+```bash
+pip install boon-deadlock
+boon info match.dem
+boon show match.dem kills --limit 20
+boon summary match.dem --part snapshots
+```
+
 Boon includes two CLI tools.
 
 - **Python CLI:** Install `boon-deadlock` with pip or uv. The package adds
   `boon` to your PATH. This command uses the library parser and prints
-  [Polars](https://pola.rs) DataFrames. See [Python CLI](#python-cli).
+  [Polars](https://pola.rs) DataFrames. See [Python CLI](#inspect-deadlock-demos-with-the-boon-python-cli).
 - **`boon-dev`:** This low-level Rust tool inspects entities, send tables,
   string tables, and raw messages. Build it from the repository. See
-  [boon-dev](#boon-dev).
+  [boon-dev](#inspect-source-2-state-with-boon-dev).
 
 The two tools support `--help` for each command.
 
-## Python CLI
+<a id="python-cli"></a>
+
+## Inspect Deadlock demos with the Boon Python CLI
 
 Installed with the `boon-deadlock` Python package:
 
@@ -22,7 +31,9 @@ pip install boon-deadlock   # or: uv add boon-deadlock
 Run `boon --help` for the full list, or `boon <command> --help` for one command.
 Pass `--json` (where available) for JSON output.
 
-### `info`
+<a id="info"></a>
+
+### Read match metadata with boon info
 
 Match metadata: map, mode, build, duration, and result.
 
@@ -31,8 +42,9 @@ boon info match.dem
 boon info match.dem --json
 ```
 
+<a id="players"></a>
 
-### `players`
+### Read the roster with boon players
 
 The player roster (name, Steam ID, hero, team, start lane), with hero names resolved.
 
@@ -40,8 +52,9 @@ The player roster (name, Steam ID, hero, team, start lane), with hero names reso
 boon players match.dem
 ```
 
+<a id="datasets"></a>
 
-### `datasets`
+### List datasets with boon datasets
 
 List every dataset that `show` can display.
 
@@ -49,8 +62,9 @@ List every dataset that `show` can display.
 boon datasets
 ```
 
+<a id="show"></a>
 
-### `show`
+### Read replay tables with boon show
 
 Load and print any dataset as a table (or JSON). Dataset names come from
 `boon datasets` (they mirror the `Demo` properties).
@@ -70,12 +84,13 @@ boon show match.dem item_purchases --limit 10
 | `--tail` | Show the last rows instead of the first |
 | `--json` | Return JSON rows |
 
-
 Item purchases include catalog-based `upgraded_from_ability_ids`.
 The CLI uses the newest installed catalog, or downloads latest if none is installed.
 Use Python `get_item_purchases(data_version=...)` to select a catalog explicitly.
 
-### `summary`
+<a id="summary"></a>
+
+### Read post-match totals with boon summary
 
 The post-match summary. Choose a part with `--part`.
 
@@ -92,8 +107,9 @@ boon summary match.dem --part objectives
 | `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
 | `--json` | Return JSON |
 
+<a id="stats"></a>
 
-### `stats`
+### Read match metrics with boon stats
 
 Derived metrics from [`boon.stats`](api.md). Use the Python stat query methods
 for hero values and ability bonuses; this command does not calculate them.
@@ -111,8 +127,9 @@ boon stats match.dem -m time-dead
 | `--limit <N>` / `-n <N>` | Maximum rows to show (`0` = all) |
 | `--json` | Return JSON |
 
+<a id="verify"></a>
 
-### `verify`
+### Check replay format with boon verify
 
 Make sure the file has the correct Deadlock demo format.
 
@@ -120,7 +137,9 @@ Make sure the file has the correct Deadlock demo format.
 boon verify match.dem
 ```
 
-### `get`, `versions`, and `remove`
+<a id="get-versions-and-remove"></a>
+
+### Manage local game data with the Boon CLI
 
 Download boon-data JSON catalogs and list client versions with source build dates,
 build times, and local installation status:
@@ -129,17 +148,24 @@ build times, and local installation status:
 boon get                         # latest client version in versions.json
 boon versions                    # client version, build date/time, installed status
 boon get 6712                     # a specific Deadlock client version
+boon get 6795 --images map --images heroes  # selected image groups
+boon get 6795 --images all         # all image groups
 boon versions --local             # offline installation listing
 boon remove 6712                  # remove a local version offline
 ```
 
 All three commands support `--json`. Files are stored under `~/.boon/<client-version>/`.
-`get --force` replaces an installation only after integrity checks of the new download.
+`--images` accepts `map`, `heroes`, `abilities`, `items`, `icons`, or `all`.
+Repeat it to select multiple groups. Files go under the version's `images/`
+directory; the cached ZIP supports offline additions. The release must include images.
+`get --force` replaces catalogs and images after their integrity checks.
 Set a version for `remove VERSION`. It also removes corrupt caches.
 See {doc}`data` for the Python API, integrity checks, cache configuration, and
 how client versions differ from replay build numbers.
 
-## boon-dev
+<a id="boon-dev"></a>
+
+## Inspect Source 2 state with boon-dev
 
 `boon-dev` reads raw demo data. Build it from the repository:
 
@@ -153,7 +179,9 @@ Run `boon-dev <command> --help` for the options on a command.
 Most commands support `--filter`, `--summary`, `--limit`, `--min-tick`, and
 `--max-tick`. The global `--json` option selects JSON output.
 
-### Commands
+<a id="commands"></a>
+
+### Boon Rust CLI commands
 
 | Command | Description |
 |---------|-------------|

@@ -34,24 +34,44 @@ def snapshots(
     end_tick: int | None = None,
     data_version: str | None = None,
 ) -> pl.DataFrame | dict[str, pl.DataFrame]:
-    """Read player_ticks, world_ticks, or troopers at selected ticks.
+    """Read selected Deadlock ticks as Polars DataFrames.
 
-    Select ticks, a stride (every or seconds), event ticks, or a tick window.
-    One dataset returns a DataFrame; multiple datasets return a dict.
-    Player rows include steam_id, hero_id, and the recorded ammo_fraction.
-    Use steam_id to join player rows. Missing IDs remain null.
+    Args:
+        demo: Boon Demo to query.
+        datasets: One name or a list: player_ticks (default), world_ticks, troopers, or ziplines.
+        ticks: One exact demo tick or a list of ticks.
+        every: Tick stride measured from the recording start. Cannot be combined with seconds.
+        seconds: Sample interval in seconds, converted to a tick stride. Paused samples can be included.
+        events: Event dataset name or names. Select their recorded tick values.
+        start_tick: Inclusive lower tick limit.
+        end_tick: Inclusive upper tick limit.
+        data_version: Optional boon-data version for calculated ammo in player_ticks. Requires player_ticks and downloads missing catalogs.
 
-    Set data_version to a boon-data client version to add ammo, max_ammo,
-    unlimited_ammo, ammo_status, and ammo_diagnostic to player_ticks. A missing
-    version is downloaded. This option requires player_ticks and adds stat and
-    state queries at the sampled ticks. Without it, no catalog is needed.
+    Returns:
+        One Polars DataFrame for a single dataset, or a dict keyed by dataset
+        name for several datasets. Player rows include steam_id, hero_id, and
+        recorded ammo_fraction. Unknown values stay null.
 
-    max_ammo is finite capacity. ammo is ammo_fraction * max_ammo, rounded to
-    the nearest integer (halves round up). Partial capacity produces partial
-    ammo. Missing inputs produce null values and diagnostics. unlimited_ammo
-    reports INFINITE_CLIP in the recorded predicted-state mask; unknown state
-    bits make it null unless INFINITE_CLIP is present. It does not change capacity.
-    Missing or duplicate Steam IDs leave calculated ammo and state values null.
+    Raises:
+        ValueError: A dataset, selector, window, or data_version request is invalid.
+        InvalidDemoError: The selected replay data cannot be decoded.
+        data.DataError: Requested ammo catalogs cannot be downloaded or read.
+
+    Notes:
+        Supply a selector or tick window. A window alone returns every recorded
+        tick inside it. Player, world, and trooper queries use direct seeks or
+        parallel segments. Zipline queries reuse one cached serial history.
+        With data_version, ammo is fraction * finite capacity, rounded to the
+        nearest integer with halves rounded up. unlimited_ammo reads INFINITE_CLIP
+        from the predicted-state mask and does not change capacity. Missing or
+        duplicate Steam IDs leave calculated values null. Keep ammo_status and
+        ammo_diagnostic with results. No catalog is required without data_version.
+
+    Examples:
+        >>> from boon import Demo
+        >>> demo = Demo("match.dem", preload=False)
+        >>> frames = demo.snapshots(["player_ticks", "ziplines"], ticks=10000)
+        >>> print(frames["ziplines"])
     """
     if data_version is not None:
         if not isinstance(data_version, str) or not data_version:
@@ -78,6 +98,17 @@ def snapshots(
 
 
 def _with_ammo(demo: Demo, frame: pl.DataFrame, version: str) -> pl.DataFrame:
+    """Add calculated capacity, remaining ammo, and unlimited-ammo state.
+
+    Args:
+        demo: Boon Demo used for stat and state queries.
+        frame: Sampled player rows with tick, steam_id, hero_id, and ammo_fraction.
+        version: Explicit client version used by both queries.
+
+    Returns:
+        The input columns plus nullable ammo columns, status, and diagnostics.
+        Row order is preserved. Missing or duplicate accounts are not matched.
+    """
     if frame.is_empty():
         return frame.with_columns(
             pl.lit(None, dtype=dtype).alias(name)

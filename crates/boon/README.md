@@ -9,7 +9,20 @@
 
 </div>
 
-A fast [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/) demo file (`.dem`) parser for Rust.
+```rust
+use boon::Parser;
+use std::path::Path;
+
+fn main() -> boon::Result<()> {
+    let parser = Parser::from_file(Path::new("match.dem"))?;
+    println!("Map: {:?}", parser.file_header()?.map_name);
+    Ok(())
+}
+```
+
+Boon parses Valve [Deadlock](https://store.steampowered.com/app/1422450/Deadlock/)
+Source 2 `.dem` files in Rust. The Python package uses PyO3 bindings and returns
+Polars DataFrames. The Rust API reads entities, game events, and match metadata.
 
 Part of the [Boon](https://github.com/pnxenopoulos/boon) project.
 
@@ -17,7 +30,9 @@ Part of the [Boon](https://github.com/pnxenopoulos/boon) project.
 the **City Never Sleeps** update (**September 29, 2026**).
 Use Boon **0.11.0 or later** for demos recorded with that update or later.
 
-## Features
+<a id="features"></a>
+
+## Boon Rust features
 
 - Memory-mapped input and selected entity decoding
 - Match metadata (map, players, duration, build number)
@@ -29,18 +44,22 @@ Use Boon **0.11.0 or later** for demos recorded with that update or later.
 - Versioned hero, ability/item, modifier, and breakable names from boon-data
 - Hero and ability stat queries, recorded states, and item imbues
 
-## Installation
+<a id="installation"></a>
+
+## Install the Boon Rust crate
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-boon-deadlock = "0.18"
+boon-deadlock = "0.19"
 ```
 
 Use Rust 1.88 or later (edition 2024).
 
-## Quick Start
+<a id="quick-start"></a>
+
+## Read Deadlock match metadata with Boon
 
 ```rust,no_run
 use std::path::Path;
@@ -60,7 +79,9 @@ println!("Duration: {:?}s", info.playback_time);
 # Ok::<(), boon::Error>(())
 ```
 
-## API Overview
+<a id="api-overview"></a>
+
+## Boon Rust parser and entity APIs
 
 ### `Parser`
 
@@ -112,7 +133,9 @@ let x = entity.get_by_name(
 # }
 ```
 
-### Helper Functions
+<a id="helper-functions"></a>
+
+### Boon Rust entity helper functions
 
 - `CatalogNames::load(version)` &mdash; load verified boon-data names, downloading missing data
 - `CatalogNames::ability_display_name(internal_name)` &mdash; resolve an internal ability/item name to its English label
@@ -132,9 +155,9 @@ Each query keeps its own ticks, player selection, and mode.
 Both catalogs also accept local data through `from_directory` or `from_json_bytes`.
 These constructors do not download data or verify checksums.
 
-See the [hero stat guide](https://boon.readthedocs.io/en/latest/hero-stats.html#rust),
-[ability stat guide](https://boon.readthedocs.io/en/latest/ability-stats.html#rust), and
-[player state guide](https://boon.readthedocs.io/en/latest/player-states.html#rust) for complete Rust examples.
+See the [hero stat guide](https://boon.readthedocs.io/en/latest/hero-stats.html#calculate-hero-stats-with-the-boon-rust-api),
+[ability stat guide](https://boon.readthedocs.io/en/latest/ability-stats.html#calculate-ability-bonuses-with-the-boon-rust-api), and
+[player state guide](https://boon.readthedocs.io/en/latest/player-states.html#read-player-states-with-the-boon-rust-api) for complete Rust examples.
 The guides list enum members, units, equations, and calculation limits.
 
 ### Effective modifier lifetimes
@@ -182,7 +205,17 @@ Use `boon::replay_inputs::EnemyMinimap` to read each team's enemy minimap observ
 Minimap positions use native 0–255 coordinates, not world coordinates.
 Update the reader at every tick to keep last-seen history. Missing fields remain unknown.
 
-## Examples
+## Recorded ziplines
+
+Use `boon::ziplines::ZiplineHistory::build(&parser)` to read compact route and
+ownership histories without a catalog. `nodes()` returns initial geometry and
+later revisions. `changes()` returns ownership and visibility transitions.
+Use `visit_snapshots(&[tick], callback)` for state after selected ticks.
+Full handles keep entity-slot reuse separate. Missing fields stay unknown.
+
+<a id="examples"></a>
+
+## Run the Boon Rust examples
 
 Runnable examples are in [`examples/`](examples/). Each accepts a demo file path as a CLI argument.
 
@@ -213,7 +246,9 @@ cargo run -p boon-deadlock --example stat_batch -- match.dem VERSION 5000
 | [`ability_stats`](examples/ability_stats.rs) | Ability bonus percentages and imbues from a catalog directory |
 | [`stat_batch`](examples/stat_batch.rs) | Hero stats, ability bonuses, and imbues in one replay pass |
 
-## Performance
+<a id="performance"></a>
+
+## Select Boon Rust replay data
 
 Use `run_to_end_filtered` to select entity classes.
 Use `run_to_end_with_properties` to select fields within those classes:

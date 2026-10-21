@@ -61,10 +61,12 @@ pub(super) enum Dataset {
     Rift,
     StreetBrawlTicks,
     StreetBrawlRounds,
+    ZiplineNodes,
+    ZiplineChanges,
 }
 
 impl Dataset {
-    pub(super) const ALL: [Self; 22] = [
+    pub(super) const ALL: [Self; 24] = [
         Self::Abilities,
         Self::AbilityUpgrades,
         Self::AbilityTicks,
@@ -87,6 +89,8 @@ impl Dataset {
         Self::Rift,
         Self::StreetBrawlTicks,
         Self::StreetBrawlRounds,
+        Self::ZiplineNodes,
+        Self::ZiplineChanges,
     ];
 
     pub(super) const fn as_str(self) -> &'static str {
@@ -113,6 +117,8 @@ impl Dataset {
             Self::Rift => "rift",
             Self::StreetBrawlTicks => "street_brawl_ticks",
             Self::StreetBrawlRounds => "street_brawl_rounds",
+            Self::ZiplineNodes => "zipline_nodes",
+            Self::ZiplineChanges => "zipline_changes",
         }
     }
 

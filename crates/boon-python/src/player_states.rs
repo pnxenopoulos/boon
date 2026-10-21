@@ -32,6 +32,15 @@ impl StateColumns {
 
 #[pymethods]
 impl Demo {
+    /// Read named state masks using a local catalog.
+    ///
+    /// Args:
+    ///     directory: Verified local boon-data directory.
+    ///     ticks: Exact demo ticks to read.
+    ///     steam_ids: Optional selected Steam account IDs.
+    ///
+    /// Returns:
+    ///     pl.DataFrame: Native results used by the public Python wrapper.
     #[pyo3(signature = (directory, *, ticks=None, steam_ids=None))]
     fn _player_states(
         &self,

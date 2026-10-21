@@ -2,6 +2,20 @@ use crate::*;
 
 #[pymethods]
 impl Demo {
+    /// Open one Valve Deadlock Source 2 replay with Boon.
+    ///
+    /// Args:
+    ///     path: String path to a local .dem file.
+    ///     preload: Load kills, damage, and abilities during construction when True. False keeps dataset loading deferred.
+    ///
+    /// Returns:
+    ///     None.
+    ///
+    /// Raises:
+    ///     FileNotFoundError: The file does not exist.
+    ///     InvalidDemoError: The file is not a supported replay.
+    ///     DemoHeaderError: Required header fields are absent.
+    ///     DemoInfoError: Required file-info fields are absent.
     #[new]
     #[pyo3(signature = (path, *, preload = true))]
     pub(crate) fn new(py: Python<'_>, path: &str, preload: bool) -> PyResult<Self> {
@@ -86,6 +100,7 @@ impl Demo {
             cached_datasets: DatasetCache::default(),
             cached_barriers: std::sync::OnceLock::new(),
             cached_summary: None,
+            cached_ziplines: std::sync::OnceLock::new(),
             game_over: None,
             game_over_match_clock: None,
             game_over_match_clock_scanned: false,
@@ -104,7 +119,7 @@ impl Demo {
     /// Returns:
     ///     True if the file is valid.
     ///
-    /// Note:
+    /// Notes:
     ///     This is already called during construction, so it will always
     ///     return True for an existing Demo instance.
     pub(crate) fn verify(&self) -> PyResult<bool> {
@@ -113,6 +128,9 @@ impl Demo {
     }
 
     /// The path to the demo file.
+    ///
+    /// Returns:
+    ///     Path: The path to the demo file.
     #[getter]
     pub(crate) fn path(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let pathlib = py.import("pathlib")?;
@@ -123,18 +141,27 @@ impl Demo {
     }
 
     /// The total number of ticks in the demo.
+    ///
+    /// Returns:
+    ///     int: The total number of ticks in the demo.
     #[getter]
     pub(crate) fn total_ticks(&self) -> i32 {
         self.total_ticks
     }
 
     /// The total duration of the demo in seconds.
+    ///
+    /// Returns:
+    ///     float: The total duration of the demo in seconds.
     #[getter]
     pub(crate) fn total_seconds(&self) -> f32 {
         self.playback_time
     }
 
-    /// The total duration of the demo as a formatted string (for example, "12:34").
+    /// The total duration of the demo as a formatted string (for example, ``"12:34"``).
+    ///
+    /// Returns:
+    ///     str: The total duration of the demo as a formatted string (for example, ``"12:34"``).
     #[getter]
     pub(crate) fn total_clock_time(&self) -> String {
         let total_seconds = self.playback_time as u32;
@@ -144,19 +171,30 @@ impl Demo {
     }
 
     /// The build number of the game that recorded the demo.
+    ///
+    /// Returns:
+    ///     int: The build number of the game that recorded the demo.
     #[getter]
     pub(crate) fn build(&self) -> i32 {
         self.build
     }
 
     /// The name of the map the demo was recorded on.
+    ///
+    /// Returns:
+    ///     str: The name of the map the demo was recorded on.
     #[getter]
     pub(crate) fn map_name(&self) -> String {
         self.map_name.clone()
     }
 
-    /// The match ID for this demo, or ``None`` if the demo does not carry one
-    /// (for example a partial capture or sandbox / custom content).
+    /// Read the match ID recorded in the replay.
+    ///
+    /// Returns:
+    ///     Match ID, or None when the replay omits it.
+    ///
+    /// Notes:
+    ///     Partial captures and custom demos can omit the match ID.
     #[getter]
     pub(crate) fn match_id(&self) -> Option<u64> {
         self.match_id
@@ -164,49 +202,59 @@ impl Demo {
 
     /// The game mode ID for this demo.
     ///
-    /// Use ``game_mode_names()`` to resolve IDs to names.
+    /// Returns:
+    ///     int: The game mode ID for this demo.
+    ///
+    /// Notes:
+    ///     Use ``game_mode_names()`` to resolve IDs to names.
     #[getter]
     pub(crate) fn game_mode(&self) -> i64 {
         self.game_mode
     }
 
     /// The tick rate of the demo (ticks per second).
+    ///
+    /// Returns:
+    ///     int: The tick rate of the demo (ticks per second).
     #[getter]
     pub(crate) fn tick_rate(&self) -> i32 {
         self.tick_rate
     }
 
-    /// Read the recorded ``PostMatchDetails`` message.
+    /// Read the recorded Deadlock PostMatchDetails message.
     ///
-    /// Return six cached Polars DataFrames:
+    /// Returns:
+    ///     Dictionary of six cached Polars DataFrames:
     ///
-    /// - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
-    ///   Includes ``steam_id``, ``hero_id``, damage by target type, damage taken,
-    ///   ``player_healing``, ``teammate_healing``, and ``self_healing``.
-    ///   ``barrier_absorption`` is damage stopped by barriers this player provided
-    ///   (recorded ``player_barriering``). Healing and barrier absorption are separate.
-    ///   Added counters are null when absent.
-    /// - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
-    ///   for each player, snapshot, and source. Includes ``source_id`` and the protobuf
-    ///   ``source_name``. Unknown IDs and absent counters remain available.
-    /// - ``last_hits``: final ``hero_id`` and ``last_hits`` totals.
-    /// - ``objectives``: recorded objective times and damage.
-    /// - ``damage``: the source-to-target matrix at each ``sample_time_s``.
-    ///   ``damage`` is the interval amount; ``total`` is the recorded cumulative value.
-    ///   The interval starts at ``interval_start_s``. Select ``stat_type`` for damage,
-    ///   healing, regeneration, or another recorded statistic. Category rows
-    ///   (``is_category=True``) duplicate specific sources; do not add them together.
-    /// - ``healing``: healing and regeneration rows without category duplicates.
-    ///   Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_hero_id``,
-    ///   ``target_steam_id``, ``target_hero_id``, ``source_name``,
-    ///   ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
-    ///   ``total`` is the recorded cumulative amount. Zero changes remain in the table.
+    ///     - ``snapshots``: cumulative player counters and state at ``snapshot_time_s``.
+    ///       Includes ``steam_id``, ``hero_id``, damage by target type, damage taken,
+    ///       ``player_healing``, ``teammate_healing``, and ``self_healing``.
+    ///       ``barrier_absorption`` is damage stopped by barriers this player provided
+    ///       (recorded ``player_barriering``). ``damage_absorbed`` is damage stopped
+    ///       by barriers on this player. Healing and barrier absorption are separate.
+    ///       Added counters are null when absent.
+    ///     - ``gold_sources``: cumulative ``gold``, ``gold_orbs``, ``kills``, and ``damage``
+    ///       for each player, snapshot, and source. Includes ``source_id`` and the protobuf
+    ///       ``source_name``. Unknown IDs and absent counters remain available.
+    ///     - ``last_hits``: final ``hero_id`` and ``last_hits`` totals.
+    ///     - ``objectives``: recorded objective times and damage.
+    ///     - ``damage``: the source-to-target matrix at each ``sample_time_s``.
+    ///       ``damage`` is the interval amount; ``total`` is the recorded cumulative value.
+    ///       The interval starts at ``interval_start_s``. Select ``stat_type`` for damage,
+    ///       healing, regeneration, or another recorded statistic. Category rows
+    ///       (``is_category=True``) duplicate specific sources; do not add them together.
+    ///     - ``healing``: healing and regeneration rows without category duplicates.
+    ///       Columns: ``interval_start_s``, ``interval_end_s``, ``healer_steam_id``, ``healer_hero_id``,
+    ///       ``target_steam_id``, ``target_hero_id``, ``source_name``,
+    ///       ``stat_type``, ``amount``, and ``total``. ``amount`` is the interval amount.
+    ///       ``total`` is the recorded cumulative amount. Zero changes remain in the table.
     ///
-    /// Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
-    /// Do not sum cumulative totals across periods. Use Steam IDs across hero changes;
-    /// hero IDs come from the match roster. These tables do not contain individual heals.
+    ///     Times use match-clock seconds. Snapshot and matrix reporting periods can differ.
+    ///     Do not sum cumulative totals across periods. Use Steam IDs across hero changes;
+    ///     hero IDs come from the match roster. These tables do not contain individual heals.
     ///
-    /// Raises ``DemoMessageError`` if the post-match message is absent or invalid.
+    /// Raises:
+    ///     DemoMessageError: The post-match message is absent or invalid.
     pub(crate) fn summary(&mut self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         self.ensure_summary(py)?;
 
@@ -224,32 +272,19 @@ impl Demo {
         Ok(dict.into_any().unbind())
     }
 
-    /// Snapshot per-tick state at selected ticks in a single parallel pass.
-    ///
-    /// Decode the demo once. Process keyframe segments in parallel.
-    /// Collect rows only at selected ticks. This uses less memory and time than
-    /// a full per-tick frame that you filter in Python.
+    /// Read native sampled state before optional Python ammo calculation.
     ///
     /// Args:
-    ///     datasets: Which snapshot dataset(s) to return — ``"player_ticks"``
-    ///         (default), ``"world_ticks"``, ``"troopers"``, or a list of them.
-    ///     ticks: A specific tick or list of ticks.
-    ///     every: Sample every ``N`` ticks (gap-robust stride).
-    ///     seconds: Sample about once per ``seconds`` (converted with the tick rate).
-    ///         Mutually exclusive with ``every``.
-    ///     events: Sample at the ticks of these event datasets (for example ``"kills"``
-    ///         or ``["kills", "damage"]``).
-    ///     start_tick, end_tick: Restrict to a contiguous ``[start, end]`` window.
+    ///     datasets: Snapshot dataset name or names.
+    ///     ticks: Exact demo ticks to read.
+    ///     every: Positive tick stride.
+    ///     seconds: Sampling interval in seconds.
+    ///     events: Dataset name or names whose event ticks should be sampled.
+    ///     start_tick: Inclusive lower tick bound.
+    ///     end_tick: Inclusive upper tick bound.
     ///
-    /// A window without another selector returns each tick in the window.
-    /// A request without a selector is an error. Return one DataFrame for one
-    /// dataset. Return a dictionary for multiple datasets.
-    ///
-    /// Example:
-    ///     >>> demo.snapshots(every=64)                     # ~1 row/sec of ticks
-    ///     >>> demo.snapshots(ticks=[29000, 30000])         # specific ticks
-    ///     >>> demo.snapshots("troopers", events="kills")   # troopers at kill ticks
-    ///     >>> demo.snapshots(["player_ticks", "world_ticks"], seconds=1.0)
+    /// Returns:
+    ///     pl.DataFrame | dict[str, pl.DataFrame]: Native results used by the public Python wrapper.
     #[pyo3(signature = (datasets=None, *, ticks=None, every=None, seconds=None, events=None, start_tick=None, end_tick=None))]
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn _snapshots(
@@ -273,14 +308,16 @@ impl Demo {
             ));
         }
         let mut wants = SnapWants::default();
+        let mut wants_ziplines = false;
         for n in &names {
             match n.as_str() {
                 "player_ticks" => wants.player_ticks = true,
                 "world_ticks" => wants.world_ticks = true,
                 "troopers" => wants.troopers = true,
+                "ziplines" => wants_ziplines = true,
                 other => {
                     return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                        "snapshots(): datasets must be player_ticks / world_ticks / troopers, got '{other}'"
+                        "snapshots(): datasets must be player_ticks / world_ticks / troopers / ziplines, got '{other}'"
                     )));
                 }
             }
@@ -316,7 +353,7 @@ impl Demo {
         // Event-dataset loading, tick indexing, seeking, and the snapshot decode
         // are all pure Rust work. Keep only the final Python object conversion
         // under the interpreter lock.
-        let (pt, wt, tr) = py.detach(|| {
+        let ((pt, wt, tr), zl) = py.detach(|| {
             let mut tick_set: std::collections::HashSet<i32> = std::collections::HashSet::new();
             if let Some(names) = event_names.as_deref() {
                 tick_set = self.event_ticks(names)?;
@@ -331,45 +368,52 @@ impl Demo {
                 ));
             }
 
-            // Use direct seeks for one event tick or at most four explicit ticks.
-            // Larger requests use one pass because each seek starts at a keyframe.
-            if stride.is_none()
+            let direct = stride.is_none()
                 && !has_window
-                && (tick_set.len() == 1 || (explicit_only && tick_set.len() <= 4))
-            {
-                self.snapshots_at_ticks(tick_set.into_iter().collect(), wants)
+                && (tick_set.len() == 1 || (explicit_only && tick_set.len() <= 4));
+            let start = start_tick.unwrap_or(i32::MIN);
+            let end = end_tick.unwrap_or(i32::MAX);
+            let predicate = if stride.is_none() && tick_set.is_empty() {
+                TickPredicate::Window { start, end }
             } else {
-                // The tick predicate is the union of stride-sampled and explicit
-                // event ticks, restricted to the requested window.
-                let start = start_tick.unwrap_or(i32::MIN);
-                let end = end_tick.unwrap_or(i32::MAX);
-                let pred = if stride.is_none() && tick_set.is_empty() {
-                    TickPredicate::Window { start, end }
-                } else {
-                    let mut sampled = tick_set;
-                    if let Some(step) = stride {
-                        let mut last: Option<i32> = None;
-                        for t in self.parser.distinct_ticks().map_err(to_py_err)? {
-                            if last.is_none_or(|l| t - l >= step) {
-                                sampled.insert(t);
-                                last = Some(t);
-                            }
+                if let Some(step) = stride {
+                    let mut last: Option<i32> = None;
+                    for tick in self.parser.distinct_ticks().map_err(to_py_err)? {
+                        if last.is_none_or(|previous| tick - previous >= step) {
+                            tick_set.insert(tick);
+                            last = Some(tick);
                         }
                     }
-                    TickPredicate::Set {
-                        ticks: sampled,
-                        start,
-                        end,
-                    }
+                }
+                TickPredicate::Set {
+                    ticks: tick_set,
+                    start,
+                    end,
+                }
+            };
+            // Static map nodes need the serial history, even for exact seeks.
+            // Other snapshot datasets keep their existing seek/parallel paths.
+            let frames = if !wants.any() {
+                (None, None, None)
+            } else if direct {
+                let TickPredicate::Set { ticks, .. } = &predicate else {
+                    unreachable!()
                 };
-                self.build_snapshots_parallel(wants, &pred)
-            }
+                self.snapshots_at_ticks(ticks.iter().copied().collect(), wants)?
+            } else {
+                self.build_snapshots_parallel(wants, &predicate)?
+            };
+            let ziplines = wants_ziplines
+                .then(|| self.zipline_snapshot_frame(&predicate))
+                .transpose()?;
+            Ok::<_, PyErr>((frames, ziplines))
         })?;
         let frame_for = |name: &str| -> PyResult<DataFrame> {
             let frame = match name {
                 "player_ticks" => pt.as_ref(),
                 "world_ticks" => wt.as_ref(),
                 "troopers" => tr.as_ref(),
+                "ziplines" => zl.as_ref(),
                 _ => None,
             };
             frame.cloned().ok_or_else(|| {
@@ -406,6 +450,12 @@ impl Demo {
     /// Convert a tick number to seconds elapsed, excluding paused time.
     ///
     /// Automatically loads ``world_ticks`` on first call to determine pauses.
+    ///
+    /// Args:
+    ///     tick: The game tick to convert.
+    ///
+    /// Returns:
+    ///     The elapsed time in seconds, excluding pauses.
     pub(crate) fn tick_to_seconds(&mut self, tick: i32) -> PyResult<f64> {
         if self.tick_rate == 0 {
             return Ok(0.0);
@@ -415,10 +465,15 @@ impl Demo {
         Ok(active_ticks as f64 / self.tick_rate as f64)
     }
 
-    /// Convert a tick number to a clock time string (for example, ``"03:14"``),
-    /// excluding paused time.
+    /// Convert a tick number to a clock time string (for example, ``"3:14"``), excluding paused time.
     ///
     /// Automatically loads ``world_ticks`` on first call to determine pauses.
+    ///
+    /// Args:
+    ///     tick: The game tick to convert.
+    ///
+    /// Returns:
+    ///     A formatted string like ``"3:14"`` or ``"12:34"``.
     pub(crate) fn tick_to_clock_time(&mut self, tick: i32) -> PyResult<String> {
         let secs = self.tick_to_seconds(tick)?;
         let total_seconds = secs as u32;
@@ -429,22 +484,17 @@ impl Demo {
 
     /// The pre-game lobby duration in seconds.
     ///
-    /// The demo starts recording during the pre-game, so tick 0 leads the on-screen
-    /// match clock (which only reaches ``0:00`` when the barrier drops and the game
-    /// begins) by this amount. ``tick_to_seconds`` counts from the recording start, so
-    /// ``on-screen match clock = tick_to_seconds - pregame_seconds`` (see
-    /// ``tick_to_match_seconds`` / ``tick_to_match_clock``).
+    /// Returns:
+    ///     float | None: The pre-game lobby duration in seconds.
     ///
-    /// Derived from the game's own replicated clock, not a heuristic:
-    /// ``tick_to_seconds(game_over_tick) - m_flMatchClockAtLastUpdate`` read at game
-    /// over. The match clock excludes both the pre-game and paused time, and so does
-    /// ``tick_to_seconds``, so the difference is a constant, pause-independent offset.
-    ///
-    /// Returns ``None`` when the demo has no game-over event, does not replicate the
-    /// match clock (older builds), or does not start in the pre-game. A recording that
-    /// begins after the barrier drop (a spectator join or a clipped replay) has no
-    /// pre-game on its timeline, so tick 0 is not the match origin and the offset is
-    /// negative. The offset is undeterminable in each case.
+    /// Notes:
+    ///     The demo starts recording during the pre-game, so tick 0 leads the on-screen
+    ///     match clock (which reaches ``0:00`` only when the barrier drops and the game
+    ///     begins) by this amount: ``match clock = tick_to_seconds - pregame_seconds``.
+    ///     Derived from the replicated match clock at game over, not a heuristic. Returns
+    ///     ``None`` if the demo has no game-over event, does not replicate the match clock
+    ///     (older builds), or does not start in the pre-game (a recording that begins after
+    ///     the barrier drop, where the offset would be negative).
     #[getter]
     pub(crate) fn pregame_seconds(&mut self) -> PyResult<Option<f64>> {
         if self.tick_rate == 0 {
@@ -466,12 +516,13 @@ impl Demo {
         Ok(Some(pregame))
     }
 
-    /// The tick at which the on-screen match clock reaches ``0:00`` — the game begins
-    /// and the barrier drops, ending the pre-game lobby. The counterpart to
-    /// ``game_over_tick``.
+    /// Read the demo tick at match start.
     ///
-    /// The pre-game is never paused, so this is ``round(pregame_seconds * tick_rate)``.
-    /// Returns ``None`` when ``pregame_seconds`` is unavailable.
+    /// Returns:
+    ///     Tick at match clock 0:00, or None when pregame_seconds is unavailable.
+    ///
+    /// Notes:
+    ///     This is the end of the pregame lobby, when the starting barriers drop.
     #[getter]
     pub(crate) fn game_start_tick(&mut self) -> PyResult<Option<i32>> {
         let Some(pregame) = self.pregame_seconds()? else {
@@ -480,12 +531,17 @@ impl Demo {
         Ok(Some((pregame * self.tick_rate as f64).round() as i32))
     }
 
-    /// Convert a tick to on-screen match-clock seconds (``0.0`` at ``game_start_tick``),
-    /// excluding paused time.
+    /// Convert a tick to on-screen match-clock seconds, excluding paused time.
     ///
-    /// This is ``tick_to_seconds(tick) - pregame_seconds``. Pre-game ticks return a
-    /// negative value, matching the spectator clock's pre-game countdown. Returns
-    /// ``None`` when ``pregame_seconds`` is unavailable.
+    /// ``0.0`` at ``game_start_tick``; negative during the pre-game lobby (matching
+    /// the spectator clock's pre-game countdown). Equal to
+    /// ``tick_to_seconds(tick) - pregame_seconds``.
+    ///
+    /// Args:
+    ///     tick: The game tick to convert.
+    ///
+    /// Returns:
+    ///     Match-clock seconds, or ``None`` if ``pregame_seconds`` is unavailable.
     pub(crate) fn tick_to_match_seconds(&mut self, tick: i32) -> PyResult<Option<f64>> {
         let Some(pregame) = self.pregame_seconds()? else {
             return Ok(None);
@@ -493,11 +549,18 @@ impl Demo {
         Ok(Some(self.tick_to_seconds(tick)? - pregame))
     }
 
-    /// Convert a tick to an on-screen match-clock string (for example, ``"03:14"``),
-    /// excluding paused time.
+    /// Convert a tick to an on-screen match-clock string (for example, ``"3:14"``).
     ///
-    /// Pre-game ticks read as a negative clock (for example, ``"-0:12"``), matching the
-    /// spectator countdown. Returns ``None`` when ``pregame_seconds`` is unavailable.
+    /// Args:
+    ///     tick: Nonnegative demo tick to convert.
+    ///
+    /// Returns:
+    ///     str | None: Convert a tick to an on-screen match-clock string (for example, ``"3:14"``).
+    ///
+    /// Notes:
+    ///     The formatted counterpart to ``tick_to_match_seconds``; pre-game ticks read as
+    ///     a negative clock (for example, ``"-0:12"``). Returns ``None`` if
+    ///     ``pregame_seconds`` is unavailable.
     pub(crate) fn tick_to_match_clock(&mut self, tick: i32) -> PyResult<Option<String>> {
         let Some(secs) = self.tick_to_match_seconds(tick)? else {
             return Ok(None);
@@ -509,17 +572,17 @@ impl Demo {
         Ok(Some(format!("{sign}{minutes}:{seconds:02}")))
     }
 
-    /// Get player information as a Polars DataFrame.
+    /// Player information as a Polars DataFrame.
     ///
-    /// Returns a DataFrame with columns:
-    /// - player_name: The player's display name
-    /// - steam_id: The player's Steam ID
-    /// - hero_id: The player's hero ID
-    /// - team_num: The player's raw team number
-    /// - start_lane: The player's original lane color
-    ///   (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the `CMsgLaneColor` proto enum)
-    /// - rank: The player's packed competitive display rank (0 means unranked,
-    ///   calibrating, or unavailable)
+    /// Returns:
+    ///     Polars DataFrame with these columns:
+    ///
+    ///     - **player_name** (*str*) -- The player's display name.
+    ///     - **steam_id** (*int*) -- The player's Steam ID.
+    ///     - **hero_id** (*int*) -- The player's hero ID.
+    ///     - **team_num** (*int*) -- The player's raw team number.
+    ///     - **start_lane** (*int*) -- The player's original lane color (1=yellow, 3=green, 4=blue, 6=purple, 0=none; from the ``CMsgLaneColor`` proto enum).
+    ///     - **rank** (*int*) -- The player's packed competitive display rank; 0 means unranked, calibrating, or unavailable.
     #[getter]
     pub(crate) fn players(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         if let Some(ref df) = self.cached_players {
@@ -549,19 +612,23 @@ impl Demo {
 
     /// Heroes banned from this match as a Polars DataFrame.
     ///
-    /// Returns a DataFrame with columns:
-    /// - hero_id: The banned hero's ID (joins to ``players.hero_id``)
-    /// - hero_name: The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID
-    ///   absent from the selected boon-data catalog
+    /// Returns:
+    ///     Polars DataFrame with these columns:
     ///
-    /// Read the ``BannedHeroes`` user message. The server can send this
-    /// message once before the match starts. The message contains only hero
-    /// IDs. It does not contain the team, banning player, or draft order.
-    /// Therefore, Boon cannot build a draft.
+    ///     - **hero_id** (*int*) -- The banned hero's ID (joins to ``players.hero_id``).
+    ///     - **hero_name** (*str*) -- The resolved hero name, or ``"HERO_NOT_FOUND"`` for an ID absent from the selected boon-data catalog.
     ///
-    /// An empty DataFrame means that the demo contains no ban data. It does not
-    /// prove that the match had no bans. The demo cannot distinguish a match
-    /// without bans from a server build that did not send the message.
+    /// Notes:
+    ///     Read from the single ``BannedHeroes`` user message, which the server
+    ///     sends early in the demo (before the match starts) only when the match
+    ///     has bans. The message carries nothing but the hero IDs -- no team, no
+    ///     banning player, and no pick/ban ordering -- so this cannot be used to
+    ///     build a draft.
+    ///
+    ///     An empty DataFrame means no bans were recorded for this match. Demos
+    ///     from builds that never emit the message are indistinguishable from
+    ///     ban-free matches, so treat empty as "nothing recorded" rather than as
+    ///     positive proof that nothing was banned.
     #[getter]
     pub(crate) fn banned_heroes(&mut self, py: Python<'_>) -> PyResult<PyDataFrame> {
         py.detach(|| self.ensure_always_events_scanned())?;
@@ -596,6 +663,10 @@ impl Demo {
     ///
     /// Returns:
     ///     A list of valid dataset name strings.
+    ///
+    /// Examples:
+    ///     >>> Demo.available_datasets()
+    ///     ['abilities', 'ability_upgrades', 'chat', ...]
     #[staticmethod]
     pub(crate) fn available_datasets() -> Vec<&'static str> {
         Dataset::ALL.into_iter().map(Dataset::as_str).collect()

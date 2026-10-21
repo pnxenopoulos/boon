@@ -25,7 +25,7 @@ name-tables
 
 - `crates/boon/src/hero_stats/`: Read catalog definitions and resolve stat inputs.
   `inputs/tests.rs` contains the resolver tests.
-- `crates/boon/src/rulesets/`: Keep equations different of catalog balance values.
+- `crates/boon/src/rulesets/`: Keep equations separate from catalog balance values.
   `percentage.rs` supplies the shared remaining-factor equation.
 - `crates/boon/src/replay_inputs.rs`: Read upgrade tokens with `UpgradeReader`
   and enemy minimap icons with `EnemyMinimap`. Resolve field keys from the replay

@@ -1,24 +1,18 @@
 # Ability stats and imbues
 
-Use `demo.imbues()` to read which items imbue each ability.
-Use `demo.calculate_ability_stats()` to calculate each ability's bonus percentages.
-The two methods read replay state and a selected boon-data version.
-
-## Python
-
 ```python
 from boon import AbilityStat, Demo, StatMode
 
 version = "6712"  # Select the client version for your demo.
-steam_id = 76561198037652386  # McGinnis in this demo.
-demo = Demo("108575009.dem", preload=False)
+demo = Demo("match.dem", preload=False)
+steam_id = demo.players["steam_id"].drop_nulls()[0]
 
-imbues = demo.imbues(ticks=187554, steam_ids=[steam_id], data_version=version)
+imbues = demo.imbues(ticks=10000, steam_ids=[steam_id], data_version=version)
 print(imbues.bindings)
 print(imbues.effects)
 
 result = demo.calculate_ability_stats(
-    ticks=[187554, 60000],
+    ticks=[10000, 10100],
     steam_ids=[steam_id],
     data_version=version,
     stats=[AbilityStat.COOLDOWN_REDUCTION, AbilityStat.RANGE_BONUS],
@@ -30,7 +24,16 @@ print(result.values)
 print(result.contributions)
 ```
 
-Use `AbilityStat` enum members or the strings in [Percentage rules](#percentage-rules).
+Use `demo.imbues()` to read which items imbue each ability.
+Use `demo.calculate_ability_stats()` to calculate each ability's bonus percentages.
+The two methods read replay state and a selected boon-data version.
+Replace the example ticks and client version with values for your replay.
+
+<a id="python"></a>
+
+## Calculate ability bonuses and read imbues with Boon
+
+Use `AbilityStat` enum members or the strings in [Percentage rules](#boon-ability-bonus-names-and-v1-rules).
 The same strings work as keys in `rulesets`. Names are case-sensitive;
 unknown names cause an error. The result's `stat` column contains strings.
 Use `HeroStat` with [hero stat queries](hero-stats.md).
@@ -40,7 +43,9 @@ A query downloads a missing version and does integrity checks. It does not selec
 The catalog's `modifier_value_types` map identifies recorded dynamic values.
 Use `boon get VERSION --force` after a release adds that map.
 
-## Select ticks, players, and abilities
+<a id="select-ticks-players-and-abilities"></a>
+
+## Select Boon ability ticks, Steam IDs, and ability IDs
 
 `ticks` accepts one integer or a list of nonnegative integers below 2147483647.
 Results describe state after each tick. Multiple ticks use one parser pass.
@@ -55,7 +60,9 @@ Use `abilities=[ability_id, ...]` to select owned abilities or items by catalog 
 Use `include_items=True` to add all owned items.
 Each requested ability ID must belong to a selected player during the query.
 
-## Select baseline or current effects
+<a id="select-baseline-or-current-effects"></a>
+
+## Select baseline or current Boon ability effects
 
 Use `mode="current"` (default) for supported active effects. Use
 `mode="baseline"` for owned passive bonuses, permanent recorded changes,
@@ -73,13 +80,15 @@ catalog charges and upgrades, without temporary changes to the recorded maximum.
 The mode does not change units or equations.
 
 `imbues()` reads recorded selections and has no mode parameter.
-See the [mode table](hero-stats.md#select-baseline-or-current-effects) for all
+See the [mode table](hero-stats.md#select-baseline-or-current-boon-stat-effects) for all
 accepted strings and Python/Rust enum members.
 
 For examples that select an imbued ability or include items, see
-[ability bonuses and imbues](examples.md#ability-bonuses-and-imbues).
+[ability bonuses and imbues](examples.md#query-boon-ability-bonuses-and-imbues).
 
-## Results
+<a id="results"></a>
+
+## Read Boon ability and imbue result tables
 
 | Table | Contents |
 | --- | --- |
@@ -103,7 +112,9 @@ Missing catalog records do not remove recorded imbue bindings.
 A binding can have no effect rows when the catalog has no mapped stat changes.
 `metadata` gives the selected version, source commit, and rule versions.
 
-## Percentage rules
+<a id="percentage-rules"></a>
+
+## Boon ability bonus names and V1 rules
 
 | String | Python enum | Rust enum | Python rule |
 | --- | --- | --- | --- |
@@ -137,7 +148,9 @@ Ultimate-only filters select the fourth signature slot.
 Charge recovery time and the delay between casts are different properties.
 An event that reduces a running cooldown does not become a permanent stat bonus.
 
-## Sources and limits
+<a id="sources-and-limits"></a>
+
+## Boon ability source evidence and limits
 
 The selected mode determines which recorded stat totals, modifiers, catalog effects,
 and ability upgrades enter the calculation.
@@ -164,7 +177,9 @@ These methods do not calculate each ability property's final duration or distanc
 A query also does not recover the inputs for an earlier cast.
 See [Known Issues](known-issues.md#ability-bonuses-and-arcane-surge).
 
-## Rust
+<a id="rust"></a>
+
+## Calculate ability bonuses with the Boon Rust API
 
 ```rust
 use boon::{
@@ -175,17 +190,12 @@ use boon::{
 use std::path::Path;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let parser = Parser::from_file(Path::new("108575009.dem"))?;
+    let parser = Parser::from_file(Path::new("match.dem"))?;
     let catalog = StatCatalog::load("6712")?;
-    let steam_id = 76561198037652386_u64;
-    let imbues = parser.imbues(
-        &ImbueQuery::new([187554]).steam_ids([steam_id]),
-        &catalog,
-    )?;
+    let imbues = parser.imbues(&ImbueQuery::new([10000]), &catalog)?;
     let stats = [AbilityStat::CooldownReduction, AbilityStat::RangeBonus];
     let rules = stats.iter().fold(AbilityRuleset::new(), |r, s| r.with(s.rule()));
-    let query = AbilityStatQuery::new([187554], stats)
-        .steam_ids([steam_id])
+    let query = AbilityStatQuery::new([10000], stats)
         .mode(StatMode::Current)
         .explain(true)
         .strict(false);

@@ -7838,6 +7838,8 @@ pub mod c_msg_match_player_damage_matrix {
         KETypeMitigated = 3,
         KETypeLethalDamage = 4,
         KETypeRegen = 5,
+        KETypeCrowdControl = 6,
+        KETypeMitigatedBySource = 7,
     }
     impl EStatType {
         /// String value of the enum field names used in the ProtoBuf definition.
@@ -7852,6 +7854,8 @@ pub mod c_msg_match_player_damage_matrix {
                 Self::KETypeMitigated => "k_eType_Mitigated",
                 Self::KETypeLethalDamage => "k_eType_LethalDamage",
                 Self::KETypeRegen => "k_eType_Regen",
+                Self::KETypeCrowdControl => "k_eType_CrowdControl",
+                Self::KETypeMitigatedBySource => "k_eType_MitigatedBySource",
             }
         }
         /// Creates an enum from field names used in the ProtoBuf definition.
@@ -7863,6 +7867,8 @@ pub mod c_msg_match_player_damage_matrix {
                 "k_eType_Mitigated" => Some(Self::KETypeMitigated),
                 "k_eType_LethalDamage" => Some(Self::KETypeLethalDamage),
                 "k_eType_Regen" => Some(Self::KETypeRegen),
+                "k_eType_CrowdControl" => Some(Self::KETypeCrowdControl),
+                "k_eType_MitigatedBySource" => Some(Self::KETypeMitigatedBySource),
                 _ => None,
             }
         }

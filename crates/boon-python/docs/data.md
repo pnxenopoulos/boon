@@ -1,10 +1,19 @@
 # Game data downloads
 
+```bash
+boon versions
+boon get 6712
+boon get 6795 --images map --images heroes --images items
+boon versions --local
+```
+
 Boon downloads versioned JSON catalogs from
 [boon-data](https://github.com/pnxenopoulos/boon-data). Use Boon without a Deadlock installation.
-These commands download the JSON files, do integrity checks, and store the files locally.
+These commands download catalogs and optional images, check file integrity, and store the files locally.
 
-## Automatic name lookups
+<a id="automatic-name-lookups"></a>
+
+## Resolve Boon names from boon-data
 
 `hero_names()`, `ability_names()`, `ability_display_names()`, `modifier_names()`,
 and `breakable_names()`
@@ -35,7 +44,9 @@ let historical = boon::CatalogNames::load(Some("6712"))?;
 Keep the returned Rust object for repeated lookups. `CatalogNames::from_directory`
 reads a locally built catalog directory without downloads or manifest hash checks. `CatalogNames::load` does integrity checks of installed release files before reading them.
 
-## Download a client version
+<a id="download-a-client-version"></a>
+
+## Download boon-data with boon get
 
 ```bash
 boon versions                 # client versions, build date/time, installed status
@@ -63,7 +74,65 @@ The command fails if the index and local installations are unavailable.
 with a verified installation is reused without a network request. An unknown
 version fails rather than downloading a different version.
 
-## Remove a client version
+<a id="download-images"></a>
+
+## Download Boon image groups with boon get --images
+
+Image downloads are optional. Select groups with repeated `--images` options:
+
+```bash
+boon get 6795 --images map --images heroes
+boon get 6795 --images items --images icons
+boon get 6795 --images all
+```
+
+| Selection | Images |
+| --- | --- |
+| `map` | The three Midtown minimap layers |
+| `heroes` | Hero minimap icons, small icons, and cards |
+| `abilities` | Ability icons and declared alternate icons |
+| `items` | Item shop images |
+| `icons` | Stat/property icons, such as `fire_rate` and `ammo_clip_size` |
+| `all` | All five groups |
+
+Use a boon-data release that includes images. Catalog-only releases report an
+error if images are requested. If your local metadata is older, use
+`boon get VERSION --images all --force` to fetch it again.
+
+Boon verifies `images.json` and `images.zip` against the version index and
+manifest. It also checks each extracted file's size and SHA-256 checksum.
+The release has one ZIP: selecting a group downloads the complete archive,
+then extracts only that group. The archive stays in the cache. Repeated requests
+for an explicit version work offline; adding groups uses the cached archive.
+Earlier selections remain installed. `--force` fetches fresh files and retains
+previous selections when their receipt can be read.
+
+Files are stored under `~/.boon/VERSION/images/`. Read `images.json` for each
+file's relative `path`. Shared images can use a path from another group.
+The index keys are hero IDs, ability IDs for items and abilities, and game
+filenames for stat icons. Images retain their PNG or SVG format.
+
+```python
+import json
+from boon import data
+
+folder = data.update("6795", images=["map", "icons"])
+image_dir = folder / "images"
+index = json.loads((image_dir / "images.json").read_text())
+fire_rate_icon = image_dir / index["stats"]["fire_rate"]["path"]
+print(fire_rate_icon)
+```
+
+`images` accepts a group string or a sequence of group strings. Enum members
+also work, for example `images=[data.ImageGroup.ICONS]`. The members are `ALL`,
+`MAP`, `HEROES`, `ABILITIES`, `ITEMS`, and `ICONS`, with the string values above.
+Catalog/name lookups do not download or validate images. Catalog installation
+and image installation each use verified staging; failed image updates retain
+the previous image selection. `boon remove VERSION` also removes its images.
+
+<a id="remove-a-client-version"></a>
+
+## Remove local boon-data with boon remove
 
 `boon remove VERSION` deletes that version's local directory, including its
 installation receipt. Set a version; the command never selects one
@@ -78,7 +147,9 @@ boon get 6712                   # download a fresh copy
 
 Removal uses the configured `BOON_DATA_DIR` and does not affect remote releases.
 
-## Local storage
+<a id="local-storage"></a>
+
+## Configure the Boon local data cache
 
 The default cache is `~/.boon/<client-version>/`:
 
@@ -89,7 +160,12 @@ The default cache is `~/.boon/<client-version>/`:
 ├── modifiers.json
 ├── misc.json
 ├── manifest.json
-└── .install.json
+├── .install.json
+└── images/                    # optional
+    ├── images.json
+    ├── images.zip
+    ├── .install.json          # selected image groups
+    └── ...                    # selected PNG and SVG files
 ```
 
 Published JSON files are stored unchanged. Releases contain all five JSON files.
@@ -115,7 +191,9 @@ resolves the exact download URLs through the index and stores files under the
 **requested client version**. The downloaded manifest retains the snapshot's
 original client version and source commit.
 
-## Python access
+<a id="python-access"></a>
+
+## Read catalogs with the Boon Python data API
 
 ```python
 from boon import data
@@ -132,14 +210,14 @@ for entry in data.local_versions():
 
 | Function | Behavior |
 | --- | --- |
-| `data.update(version=None, force=False)` | Acquire the specified client version, or latest; return its directory |
+| `data.update(version=None, force=False, images=())` | Acquire catalogs and selected image groups for the specified version, or latest; return its directory |
 | `data.remove(version)` | Delete one local version offline, including corrupt caches; return its former directory |
 | `data.latest_version()` | Read the latest client version from the published index |
 | `data.available_versions()` | Return published version metadata dictionaries, newest first |
 | `data.local_versions()` | Return verified installed version metadata dictionaries, newest first; no network |
 | `data.resolve_version(version=None)` | Validate an explicit version, otherwise choose newest installed, otherwise latest published |
 | `data.manifest(version=None)` | Read the manifest, downloading missing files first |
-| `data.available_files(version=None)` | List the selected release's JSON asset names, downloading missing files first |
+| `data.available_files(version=None)` | List the selected release's catalog JSON names, downloading missing files first |
 | `data.catalog_path(name, version=None)` | Return a verified local JSON path; accepted names are listed below |
 
 `catalog_path()` accepts `abilities`, `heroes`, `modifiers`, `misc`, and `manifest`.
@@ -152,9 +230,11 @@ Read helpers without a version prefer the newest installed client version.
 `data.DataError` reports network, metadata, filesystem, and integrity failures.
 Set `data.BOON_DATA_DIR` to a `Path` to redirect an existing process.
 
-## Relationship to replays
+<a id="relationship-to-replays"></a>
 
-A Deadlock `ClientVersion` is different of Boon's package version.
+## Select boon-data for a Deadlock replay
+
+A Deadlock `ClientVersion` differs from Boon's package version.
 Boon does not map it to `demo.build`. Opening a `Demo` does not select a
 catalog version. Name lookups use the selection policy described above.
 Select `version=` explicitly to get names from a particular client.
