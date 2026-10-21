@@ -2,6 +2,7 @@
 
 ## 0.19.0
 
+- Fix TLS certificate checks with rustls-webpki 0.103.16 and webpki-roots 1.0.10.
 - Update `boon-proto` to `0.4.11152727+6805` (Deadlock 6805).
 - Add `boon.plot` for match summaries, team totals, and map positions.
 - Add item builds and optional objectives, troopers, and ziplines to plots.
