@@ -2,6 +2,7 @@
 
 ## 0.19.0
 
+- Update `boon-proto` to `0.4.11152727+6805` (Deadlock 6805).
 - Add `boon.plot` for match summaries, team totals, and map positions.
 - Add item builds and optional objectives, troopers, and ziplines to plots.
 - Add `zipline_nodes`, `zipline_changes`, and `snapshots("ziplines")` for recorded routes and ownership.
