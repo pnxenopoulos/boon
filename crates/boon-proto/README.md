@@ -29,7 +29,7 @@ The [Boon](https://github.com/pnxenopoulos/boon) replay parser uses these types.
 
 ```toml
 [dependencies]
-boon-proto = "0.4"
+boon-proto = "0.5"
 ```
 
 ## Regenerate Boon Rust protobuf types
