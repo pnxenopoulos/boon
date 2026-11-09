@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Update `boon-proto` to `0.5.11211860+6860` for Deadlock build 6860.
+- **Rust API change:** Remove `is_high_skill_range_party` from `CsoCitadelParty`.
+- Update `futures-util` to `0.3.34` and `hyper` to `1.12.0`. Remove `pin-utils`.
+
 ## 0.19.0
 
 - Fix TLS certificate checks with rustls-webpki 0.103.16 and webpki-roots 1.0.10.

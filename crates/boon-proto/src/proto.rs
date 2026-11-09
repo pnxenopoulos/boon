@@ -7096,6 +7096,8 @@ pub mod cso_citadel_hideout_lobby {
         pub hideout_holiday_award_2024: ::core::option::Option<bool>,
         #[prost(bool, optional, tag = "32")]
         pub hideout_holiday_award_2025: ::core::option::Option<bool>,
+        #[prost(uint32, optional, tag = "33")]
+        pub ranked_season_1_season_rank: ::core::option::Option<u32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(
@@ -7326,8 +7328,6 @@ pub struct CsoCitadelParty {
     pub match_making_start_time: ::core::option::Option<u32>,
     #[prost(string, optional, tag = "12")]
     pub server_search_key: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(bool, optional, tag = "13")]
-    pub is_high_skill_range_party: ::core::option::Option<bool>,
     #[prost(
         enumeration = "cso_citadel_party::EChatMode",
         optional,
@@ -7443,6 +7443,8 @@ pub mod cso_citadel_party {
         pub unlocked_heroes: ::prost::alloc::vec::Vec<u32>,
         #[prost(bool, optional, tag = "6")]
         pub in_calibration: ::core::option::Option<bool>,
+        #[prost(uint32, optional, tag = "7")]
+        pub max_rank_display_badge: ::core::option::Option<u32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, PartialEq, ::prost::Message)]
@@ -9722,6 +9724,7 @@ pub enum ECitadelGameMode {
     KECitadelGameModeStreetBrawl = 4,
     KECitadelGameModeExploreNyc = 5,
     KECitadelGameModeInternal = 6,
+    KECitadelGameModeInternal02 = 7,
 }
 impl ECitadelGameMode {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -9737,6 +9740,7 @@ impl ECitadelGameMode {
             Self::KECitadelGameModeStreetBrawl => "k_ECitadelGameMode_StreetBrawl",
             Self::KECitadelGameModeExploreNyc => "k_ECitadelGameMode_ExploreNYC",
             Self::KECitadelGameModeInternal => "k_ECitadelGameMode_Internal",
+            Self::KECitadelGameModeInternal02 => "k_ECitadelGameMode_Internal02",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -9749,6 +9753,7 @@ impl ECitadelGameMode {
             "k_ECitadelGameMode_StreetBrawl" => Some(Self::KECitadelGameModeStreetBrawl),
             "k_ECitadelGameMode_ExploreNYC" => Some(Self::KECitadelGameModeExploreNyc),
             "k_ECitadelGameMode_Internal" => Some(Self::KECitadelGameModeInternal),
+            "k_ECitadelGameMode_Internal02" => Some(Self::KECitadelGameModeInternal02),
             _ => None,
         }
     }
@@ -10207,6 +10212,16 @@ pub struct CCitadelClientMsgMapLine {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CCitadelClientMsgMapTargetingCursor {
+    #[prost(int32, optional, tag = "1")]
+    pub x: ::core::option::Option<i32>,
+    #[prost(int32, optional, tag = "2")]
+    pub y: ::core::option::Option<i32>,
+    #[prost(bool, optional, tag = "3")]
+    pub active: ::core::option::Option<bool>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CCitadelClientMsgQuickResponse {
     #[prost(uint32, optional, tag = "1")]
     pub ping_wheel_message_id: ::core::option::Option<u32>,
@@ -10481,6 +10496,7 @@ pub enum ECitadelClientMessages {
     CitadelCmPlayerTyping = 1026,
     CitadelCmHideoutInteract = 1027,
     CitadelCmHeroReleaseVote = 1028,
+    CitadelCmMapTargetingCursor = 1029,
 }
 impl ECitadelClientMessages {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -10522,6 +10538,7 @@ impl ECitadelClientMessages {
             Self::CitadelCmPlayerTyping => "CITADEL_CM_PlayerTyping",
             Self::CitadelCmHideoutInteract => "CITADEL_CM_HideoutInteract",
             Self::CitadelCmHeroReleaseVote => "CITADEL_CM_HeroReleaseVote",
+            Self::CitadelCmMapTargetingCursor => "CITADEL_CM_MapTargetingCursor",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -10564,6 +10581,7 @@ impl ECitadelClientMessages {
             "CITADEL_CM_PlayerTyping" => Some(Self::CitadelCmPlayerTyping),
             "CITADEL_CM_HideoutInteract" => Some(Self::CitadelCmHideoutInteract),
             "CITADEL_CM_HeroReleaseVote" => Some(Self::CitadelCmHeroReleaseVote),
+            "CITADEL_CM_MapTargetingCursor" => Some(Self::CitadelCmMapTargetingCursor),
             _ => None,
         }
     }
@@ -11432,6 +11450,10 @@ pub struct CsoAccountHeroInfo {
     pub hero_xp: ::core::option::Option<u32>,
     #[prost(uint32, optional, tag = "7")]
     pub brawl_wins: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "8")]
+    pub losses: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "9")]
+    pub brawl_losses: ::core::option::Option<u32>,
 }
 /// Nested message and enum types in `CSOAccountHeroInfo`.
 pub mod cso_account_hero_info {
@@ -20689,6 +20711,8 @@ pub mod c_msg_match_data {
         pub imbued_ability_id: ::core::option::Option<u32>,
         #[prost(uint32, optional, tag = "7")]
         pub upgrade_info: ::core::option::Option<u32>,
+        #[prost(uint32, optional, tag = "8")]
+        pub purchase_source: ::core::option::Option<u32>,
     }
     #[derive(serde::Serialize, serde::Deserialize)]
     #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
@@ -22520,6 +22544,18 @@ pub struct CCitadelUserMsgMapLine {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CCitadelUserMsgMapTargetingCursor {
+    #[prost(int32, optional, tag = "1", default = "-1")]
+    pub sender_player_slot: ::core::option::Option<i32>,
+    #[prost(int32, optional, tag = "2")]
+    pub x: ::core::option::Option<i32>,
+    #[prost(int32, optional, tag = "3")]
+    pub y: ::core::option::Option<i32>,
+    #[prost(bool, optional, tag = "4")]
+    pub active: ::core::option::Option<bool>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CCitadelUserMsgTeamRewards {
     #[prost(uint32, optional, tag = "1")]
     pub xp: ::core::option::Option<u32>,
@@ -23507,6 +23543,18 @@ pub struct CCitadelUserMsgSoulBagPickup {
 }
 #[derive(serde::Serialize, serde::Deserialize)]
 #[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
+pub struct CCitadelUserMsgItemAcquired {
+    #[prost(uint32, optional, tag = "1", default = "16777215")]
+    pub player: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "2")]
+    pub ability_id: ::core::option::Option<u32>,
+    #[prost(uint32, optional, tag = "3")]
+    pub upgrade_bits: ::core::option::Option<u32>,
+    #[prost(bool, optional, tag = "4")]
+    pub purchased: ::core::option::Option<bool>,
+}
+#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, ::prost::Message)]
 pub struct CCitadelUserMsgHeroReleaseVote {
     #[prost(int32, optional, tag = "1", default = "-1")]
     pub player_slot: ::core::option::Option<i32>,
@@ -23584,6 +23632,8 @@ pub enum CitadelUserMessageIds {
     KEUserMsgLocalLobby = 371,
     KEUserMsgSoulBagPickup = 372,
     KEUserMsgHeroReleaseVote = 373,
+    KEUserMsgItemAcquired = 374,
+    KEUserMsgMapTargetingCursor = 375,
 }
 impl CitadelUserMessageIds {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -23671,6 +23721,8 @@ impl CitadelUserMessageIds {
             Self::KEUserMsgLocalLobby => "k_EUserMsg_LocalLobby",
             Self::KEUserMsgSoulBagPickup => "k_EUserMsg_SoulBagPickup",
             Self::KEUserMsgHeroReleaseVote => "k_EUserMsg_HeroReleaseVote",
+            Self::KEUserMsgItemAcquired => "k_EUserMsg_ItemAcquired",
+            Self::KEUserMsgMapTargetingCursor => "k_EUserMsg_MapTargetingCursor",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
@@ -23765,6 +23817,8 @@ impl CitadelUserMessageIds {
             "k_EUserMsg_LocalLobby" => Some(Self::KEUserMsgLocalLobby),
             "k_EUserMsg_SoulBagPickup" => Some(Self::KEUserMsgSoulBagPickup),
             "k_EUserMsg_HeroReleaseVote" => Some(Self::KEUserMsgHeroReleaseVote),
+            "k_EUserMsg_ItemAcquired" => Some(Self::KEUserMsgItemAcquired),
+            "k_EUserMsg_MapTargetingCursor" => Some(Self::KEUserMsgMapTargetingCursor),
             _ => None,
         }
     }
